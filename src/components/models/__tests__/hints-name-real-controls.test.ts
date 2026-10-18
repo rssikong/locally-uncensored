@@ -143,8 +143,12 @@ describe('the effort control in the composer says what it is and what it costs',
   })
 
   it('its tooltip names the rung, the gesture and the price', () => {
+    // Fork note: the sentence is translated now, so its fixed part sits inside
+    // `t('…')`. What this asserts — the rung is in the tooltip, next to the
+    // gesture and the price — is unchanged.
+    expect(chatInput).toMatch(/effortLabel\(effortNow\)/)
     expect(chatInput).toMatch(
-      /Reasoning effort: \$\{effortLabel\(effortNow\)\}\. Click to cycle\. Higher effort spends more output tokens\./,
+      /Click to cycle\. Higher effort spends more output tokens\./,
     )
   })
 

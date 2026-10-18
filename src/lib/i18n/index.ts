@@ -26,7 +26,8 @@
  * vitest or under the Playwright web server, and `zh-CN` for the shipped app.
  * Translation never touches the gate.
  */
-import { ZH_CN } from './zh-CN'
+import { translate } from './pack'
+import { installI18nBridge } from './bridge'
 
 export type Locale = 'zh-CN' | 'en'
 
@@ -41,9 +42,12 @@ function isLocale(value: unknown): value is Locale {
   return value === 'zh-CN' || value === 'en'
 }
 
-/** The dictionary for a locale, or null when it is the source language. */
-function tableFor(locale: Locale): Record<string, string> | null {
-  return locale === 'zh-CN' ? ZH_CN : null
+/**
+ * True when this locale is the source language. Kept as a function because
+ * callers ask "is the UI translated?" rather than "which dictionary exists?".
+ */
+export function isTranslated(locale: Locale = resolveLocale()): boolean {
+  return locale === 'zh-CN'
 }
 
 /**
@@ -80,11 +84,6 @@ export function getLocale(): Locale {
   return resolveLocale()
 }
 
-/** True when this locale has its own dictionary (i.e. it is not the source). */
-export function isTranslated(locale: Locale = resolveLocale()): boolean {
-  return tableFor(locale) !== null
-}
-
 /**
  * Pin the language for this session and remember it. `reload` is the honest
  * default: the tree is already rendered, and re-rendering every text from the
@@ -105,9 +104,20 @@ export function setLocale(locale: Locale, options: { reload?: boolean } = {}): v
  * `<html lang>` and nothing else. The CSS keys off `.dark`, not off the
  * language, so there is no second place to change.
  */
+/**
+ * Tells the document which language it speaks, and in Chinese mode starts the
+ * runtime bridge that translates what is already on screen.
+ *
+ * Both live here so `src/main.tsx` needs exactly one call: keeping the fork's
+ * footprint in upstream files at one line is the whole point (see AGENTS.md).
+ * The bridge is idempotent, and it is never installed in English mode — which
+ * is why the 1660 existing tests, all English, cannot be affected by it.
+ */
 export function applyDocumentLocale(): void {
   if (typeof document === 'undefined') return
-  document.documentElement.setAttribute('lang', resolveLocale())
+  const locale = resolveLocale()
+  document.documentElement.setAttribute('lang', locale)
+  if (locale === 'zh-CN') installI18nBridge()
 }
 
 function interpolate(text: string, vars: Record<string, string | number>): string {
@@ -124,12 +134,13 @@ function interpolate(text: string, vars: Record<string, string | number>): strin
  * "undefined", which is how a half-translated sentence stays readable.
  */
 export function t(source: string, vars?: Record<string, string | number>): string {
-  const table = tableFor(resolveLocale())
-  const text = table?.[source] ?? source
+  // English mode is the identity: the app's own copy is already English, and
+  // every one of the 1660 unit tests runs in it.
+  const text = resolveLocale() === 'zh-CN' ? (translate(source) ?? source) : source
   return vars ? interpolate(text, vars) : text
 }
 
 /** Translation without the fallback, for tooling and tests. */
 export function translationFor(source: string, locale: Locale = resolveLocale()): string | null {
-  return tableFor(locale)?.[source] ?? null
+  return locale === 'zh-CN' ? translate(source) : null
 }
