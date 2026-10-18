@@ -6,6 +6,13 @@
 
 **The all-in-one local AI studio for your desktop. Chat, images, video and a coding agent in one app. Install it, pick a model, go.**
 
+> **中文构建说明 · Chinese build notice**
+> 本仓库是 [Locally Uncensored](https://github.com/PurpleDoubleD/locally-uncensored) 的第三方 fork，仅把界面汉化为简体中文，不改动功能。
+> 本构建与上游项目及 LU Labs **无隶属关系**，不代表其发布，也不代售其云服务；上游的云功能在你的构建里仍然指向官方服务。
+> 源代码依 AGPL-3.0 提供；汉化方式见 `I18N.md`。
+>
+> This is a third-party fork that translates the interface into Simplified Chinese. It is not affiliated with the upstream project or LU Labs, and ships no cloud service of its own.
+
 Free and open source. In local mode everything runs on your own machine. No Docker, no terminal, no config files. The platforms are listed under [Download](#download).
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)

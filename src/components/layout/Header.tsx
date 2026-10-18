@@ -22,6 +22,7 @@ import { closeDialog, isTopDialog, nextFocusIndex, openDialog } from '../ui/dial
 import { MONOGRAM, MONOGRAM_INVERT } from './brand'
 import type { View } from '../../stores/uiStore'
 import { modelListIsStale } from '../../lib/model-list-staleness'
+import { t as tr } from '../../lib/i18n'
 
 /**
  * Die Navigation als Daten, nicht als sechs abgeschriebene Knoepfe.
@@ -45,15 +46,17 @@ interface NavTarget {
 }
 
 const NAV_TARGETS: readonly NavTarget[] = [
-  { id: 'chat', label: 'Chat', view: 'chat' },
-  { id: 'create', label: 'Create', view: 'create' },
+  // `tr` and not `t`: the list below is filtered and mapped with `(t) => …`
+  // further down, and an imported `t` would be shadowed there.
+  { id: 'chat', label: tr('Chat'), view: 'chat' },
+  { id: 'create', label: tr('Create'), view: 'create' },
   // Voice has no cloud service yet, so with the Cloud switch on it goes the
   // way Benchmark and Models go.
-  { id: 'voice', label: 'Voice', view: 'voice', localOnly: true },
-  { id: 'compare', label: 'Compare', view: null },
-  { id: 'benchmark', label: 'Benchmark', view: 'benchmark', localOnly: true },
-  { id: 'models', label: 'Models', view: 'models', localOnly: true },
-  { id: 'settings', label: 'Settings', view: 'settings' },
+  { id: 'voice', label: tr('Voice'), view: 'voice', localOnly: true },
+  { id: 'compare', label: tr('Compare'), view: null },
+  { id: 'benchmark', label: tr('Benchmark'), view: 'benchmark', localOnly: true },
+  { id: 'models', label: tr('Models'), view: 'models', localOnly: true },
+  { id: 'settings', label: tr('Settings'), view: 'settings' },
 ]
 
 export function Header() {

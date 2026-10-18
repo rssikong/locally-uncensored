@@ -733,7 +733,7 @@ jobs:
           LD_LIBRARY_PATH: ${{ matrix.platform == 'ubuntu-22.04' && format('{0}/src-tauri/resources/llama/{1}', github.workspace, matrix.sidecar_triple) || '' }}
         with:
           tagName: ${{ github.event.release.tag_name || github.event.inputs.tag || 'v1.3.0' }}
-          releaseName: 'LU ${{ github.event.release.tag_name || github.event.inputs.tag }}'
+          releaseName: '本地 AI 工作室 中文版 ${{ github.event.release.tag_name || github.event.inputs.tag }}'
           # The Mac paragraph hangs on the same switch as the Mac lane
           # (vars.LU_MAC_RELEASE, see build-tauri-macos). Off, the expression
           # at the end of the Linux line is the empty string and the text is
@@ -745,6 +745,10 @@ jobs:
           # names an asset that is not there: take it out of the release text
           # by hand (RELEASE-CHECKLISTE-MAC.md, A7). Like every input of this
           # step it only applies when this run creates the release.
+          # Fork note: this text stays English on purpose. `mac-release-lane.test.ts`
+          # compares it byte for byte with a constant, and translating it would
+          # turn a rule about the Mac paragraph into a translation chore on every
+          # upstream sync. Only `releaseName` above is localised.
           releaseBody: |
             ## Download
 
