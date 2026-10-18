@@ -28,6 +28,7 @@ import { MONOGRAM, MONOGRAM_INVERT } from '../layout/brand'
 import { fitTextarea } from '../../lib/fit-textarea'
 import { createActive, createChatLive, createInChatOf, servedWindowOf } from '../../lib/create/chat-switch'
 import { useCreateChatReleased } from '../../lib/create/chat-release'
+import { t } from '../../lib/i18n'
 import {
   ATTACH_TOO_LARGE, ATTACH_TOO_MANY, addPendingMedia, mediaKindOf, tooLargeToAttach, type PendingMedia,
 } from '../../lib/create/chat-attachments'
@@ -719,7 +720,7 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
                   <span className="truncate">{clip.name}</span>
                   <button
                     onClick={() => setMedia(prev => prev.filter((_, k) => k !== i))}
-                    aria-label={`Remove ${clip.name}`}
+                    aria-label={`${t('Remove')} ${clip.name}`}
                     className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-0.5 text-gray-500 hover:bg-gray-200 hover:text-gray-800 dark:hover:bg-white/10 dark:hover:text-gray-200"
                   >
                     <X size={10} />
@@ -763,7 +764,7 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
             onKeyDown={handleKeyDown}
             onBlur={() => setTimeout(() => setCmdMenu([]), 120)}
             onPaste={handlePaste}
-            placeholder={disabled ? "Unavailable" : isDragOver ? "Drop files here..." : isTranscribing ? "Transcribing..." : isVoiceRecording ? "Recording..." : "Message..."}
+            placeholder={disabled ? t('Unavailable') : isDragOver ? t('Drop files here...') : isTranscribing ? t('Transcribing...') : isVoiceRecording ? t('Recording...') : t('Message...')}
             disabled={disabled}
             rows={1}
             className="lu-fokus-am-kasten w-full bg-transparent resize-none text-gray-800 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-600 focus:outline-none text-[12px] leading-relaxed max-h-[200px] disabled:opacity-50 scrollbar-thin"
@@ -791,7 +792,7 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
             onClick={() => fileInputRef.current?.click()}
             disabled={isGenerating || preparingImages || preparingFiles}
             className="lu-control lu-control--icon"
-            title={createOn ? 'Attach images, clips, audio or files' : 'Attach images or files'}
+            title={createOn ? t('Attach images, clips, audio or files') : t('Attach images or files')}
           >
             <Paperclip size={14} />
           </button>
@@ -832,15 +833,15 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
             className="lu-control"
             title={
               thinkLockedOn
-                ? 'Thinking is always on for this model'
+                ? t('Thinking is always on for this model')
                 : canThink
-                  ? (thinkingEnabled ? 'Thinking ON' : 'Thinking OFF')
-                  : 'Model does not support thinking'
+                  ? (thinkingEnabled ? t('Thinking ON') : t('Thinking OFF'))
+                  : t('Model does not support thinking')
             }
           >
             <Brain size={11} />
             {/* In a narrow composer the icon and the tooltip carry it. */}
-            <span className="@max-[30rem]:hidden">Think</span>
+            <span className="@max-[30rem]:hidden">{t('Think')}</span>
           </button>
 
           {/* Reasoning effort. Same shape and size as the Think button beside
@@ -860,9 +861,9 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
             <button
               data-testid="effort-toggle"
               onClick={() => updateSettings({ reasoningEffort: nextEffort(effortLevels, effortNow) })}
-              aria-label={`Reasoning effort: ${effortLabel(effortNow)}`}
+              aria-label={`${t('Reasoning effort')}: ${effortLabel(effortNow)}`}
               className="lu-control"
-              title={`Reasoning effort: ${effortLabel(effortNow)}. Click to cycle. Higher effort spends more output tokens.`}
+              title={`${t('Reasoning effort')}: ${effortLabel(effortNow)}. ${t('Click to cycle. Higher effort spends more output tokens.')}`}
             >
               <Gauge size={11} />
               <span>{effortLabel(effortNow)}</span>
@@ -879,7 +880,7 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
           {cloudMode && (
             <span
               data-testid="composer-cloud-state"
-              title="Cloud mode: this message runs on LU's hosted GPUs and is billed to your lu-labs.ai credits. The Cloud switch up in the header turns it off."
+              title={t("Cloud mode: this message runs on LU's hosted GPUs and is billed to your lu-labs.ai credits. The Cloud switch up in the header turns it off.")}
               className="flex items-center gap-1 px-1.5 py-1.5 rounded-md shrink-0 t-micro font-medium bg-lu-cloud/15 text-lu-cloud dark:text-lu-cloud-lift border border-lu-cloud/30"
             >
               <img
@@ -890,7 +891,7 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
                 draggable={false}
                 className={`shrink-0 select-none ${MONOGRAM_INVERT}`}
               />
-              <span>Cloud</span>
+              <span>{t('Cloud')}</span>
             </span>
           )}
 
@@ -926,7 +927,7 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
                 // auffindbar bleibt, ohne die Fehlerfarbe zu tragen.
                 data-active="true"
                 className="lu-control lu-control--icon w-full h-full"
-                aria-label="Stop generation"
+                aria-label={t('Stop generation')}
               >
                 <Square size={13} />
               </button>
@@ -935,7 +936,7 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
                 onClick={handleSend}
                 disabled={preparingImages || preparingFiles || (!input.trim() && images.length === 0 && files.length === 0 && media.length === 0) || isTranscribing || !!waitingForLocalLane}
                 className="lu-control lu-control--icon lu-primary w-full h-full"
-                aria-label="Send message"
+                aria-label={t('Send message')}
               >
                 <Send size={13} />
               </button>

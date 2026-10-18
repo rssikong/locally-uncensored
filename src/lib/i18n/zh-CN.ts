@@ -22,4 +22,27 @@ export const ZH_CN: Record<string, string> = {
   Benchmark: '跑分',
   Models: '模型',
   Settings: '设置',
+
+  // ── Chat composer (ChatInput.tsx) ───────────────────────────────────────
+  Unavailable: '不可用',
+  'Drop files here...': '拖放到此处…',
+  'Transcribing...': '转写中…',
+  'Recording...': '录音中…',
+  'Message...': '说点什么…',
+  'Attach images, clips, audio or files': '添加图片、视频、音频或文件',
+  'Attach images or files': '添加图片或文件',
+  Remove: '移除',
+  Think: '思考',
+  'Thinking is always on for this model': '该模型的思考始终开启',
+  'Thinking ON': '思考已开',
+  'Thinking OFF': '思考已关',
+  'Model does not support thinking': '该模型不支持思考',
+  'Reasoning effort': '推理强度',
+  'Click to cycle. Higher effort spends more output tokens.':
+    '点击切换。强度越高，消耗的输出 token 越多。',
+  "Cloud mode: this message runs on LU's hosted GPUs and is billed to your lu-labs.ai credits. The Cloud switch up in the header turns it off.":
+    '云端模式：这条消息在 LU 托管的 GPU 上运行，并计入你的 lu-labs.ai 额度。顶栏的 Cloud 开关可以关掉它。',
+  Cloud: '云端',
+  'Stop generation': '停止生成',
+  'Send message': '发送消息',
 }

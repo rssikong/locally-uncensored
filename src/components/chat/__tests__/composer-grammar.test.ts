@@ -337,7 +337,11 @@ describe('jedes Control der Leiste traegt eins der zwei Rezepte', () => {
       c.includes('lu-primary'),
     )
     expect(emphasised).toHaveLength(1)
-    const send = INPUT.slice(INPUT.indexOf('aria-label="Send message"') - 400, INPUT.indexOf('aria-label="Send message"'))
+    // Fork note: the label is translated now, so the attribute may be written
+    // either way. What the rule asserts — the Send control carries the primary
+    // recipe — is unchanged.
+    const sendAt = INPUT.search(/aria-label=(?:"Send message"|\{t\('Send message'\)\})/)
+    const send = INPUT.slice(sendAt - 400, sendAt)
     expect(send).toContain('lu-primary')
   })
 
@@ -345,7 +349,8 @@ describe('jedes Control der Leiste traegt eins der zwei Rezepte', () => {
     // Der Grund steht in index.css und im Audit: Stop ist der
     // Normalabschluss, kein destruktiver Bestaetigungsknopf, und Rot heisst
     // in dieser App an 94 Stellen „kaputt oder wird geloescht".
-    const at = INPUT.indexOf('aria-label="Stop generation"')
+    // Fork note: `t('…')` wrapper accepted, same reason as the Send assertion.
+    const at = INPUT.search(/aria-label=(?:"Stop generation"|\{t\('Stop generation'\)\})/)
     expect(at).toBeGreaterThan(-1)
     const stop = INPUT.slice(at - 500, at)
     expect(stop).toContain('lu-control')
@@ -578,7 +583,10 @@ describe('der Zustand kommt aus ARIA, nicht aus einer zweiten Klassenkette', () 
     // `max` und saehe an beiden Enden gleich aus. Die Stufe steht deshalb im
     // zugaenglichen Namen und sichtbar im Knopf; sichtbar ist er ohnehin nur,
     // solange Denken an ist, und das meldet der Think-Knopf daneben.
-    expect(EFFORT).toMatch(/aria-label=\{`Reasoning effort: \$\{effortLabel\(effortNow\)\}`\}/)
+    // Fork note: the fixed sentence now comes through `t('Reasoning effort')`.
+    // What this asserts is that the current LEVEL is inside the accessible
+    // name, not how the sentence around it is spelled.
+    expect(EFFORT).toMatch(/aria-label=\{`[^`]*\$\{effortLabel\(effortNow\)\}[^`]*`\}/)
     expect(EFFORT).not.toContain('aria-pressed')
     expect(INPUT).toContain('<span>{effortLabel(effortNow)}</span>')
     // Das blaue Pill der Release-Linie ist weg. Es war dieselbe Farbe wie der
