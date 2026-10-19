@@ -92,13 +92,30 @@ for (const result of results) {
   }
 }
 
+// Fragment artefacts: a sentence cut around an inline value can leave pieces
+// that are only punctuation (",") or a sentence stub ("(The"). Storing a
+// translation for those either does nothing useful or silently drops content
+// — and the runtime bridge would then apply it everywhere that fragment
+// appears. Keep the English instead; it is the safe direction.
+const CJK = /[\u3400-\u9fff]/
+const pruned = []
+for (const [key, value] of Object.entries(current)) {
+  if (CJK.test(value)) continue
+  if (!/[A-Za-z]/.test(key)) continue
+  if (value === key) continue
+  pruned.push(`${JSON.stringify(key)} → ${JSON.stringify(value)}`)
+  delete current[key]
+}
+
 const keys = Object.keys(current).sort()
 const body = keys.map((k) => '  ' + JSON.stringify(k) + ': ' + JSON.stringify(current[k]) + ',').join('\n')
 const file = `// GENERATED FILE — do not edit by hand.\n// Written by scripts/i18n-apply.mjs. Keys are the English text the app renders,\n// values are the Chinese copy. A key that is missing here stays English at\n// runtime (the bridge never guesses), which is why adding a translation is\n// never able to break a screen.\nexport const ZH_CN: Record<string, string> = {\n${body}\n}\n\n/**\n * Dynamic strings. \`{0}\`, \`{1}\` … are captured from the rendered text and\n * substituted back, so a count or a name inside a sentence still matches.\n */\nexport const ZH_PATTERNS: ReadonlyArray<readonly [string, string]> = []\n`
 
-console.log(`新增 ${added}  更新 ${updated}  跳过 ${skipped.length}  合计 ${keys.length}`)
+console.log(`新增 ${added}  更新 ${updated}  跳过 ${skipped.length}  剔除片段伪译 ${pruned.length}  合计 ${keys.length}`)
 for (const s of skipped.slice(0, 20)) console.log(`  跳过 ${s.id}: ${s.why}`)
 if (skipped.length > 20) console.log(`  …还有 ${skipped.length - 20} 条`)
+for (const line of pruned.slice(0, 12)) console.log(`  剔除 ${line}`)
+if (pruned.length > 12) console.log(`  …还有 ${pruned.length - 12} 条`)
 
 if (dryRun) {
   console.log('--dry-run：未写入')
