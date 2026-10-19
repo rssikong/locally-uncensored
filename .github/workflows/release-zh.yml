@@ -60,12 +60,45 @@ jobs:
             *)       echo "matrix={\"include\":[$linux,$windows]}" >> "$GITHUB_OUTPUT" ;;
           esac
 
-  # The same gate a release gets: upstream's own CI, run on the tag.
+  # A fast gate, not upstream's full CI.
+  #
+  # Upstream's `ci.yml` takes ~35 minutes and its longest job is the e2e suite,
+  # whose two geometry specs (`elementFromPoint`) go red on a loaded runner
+  # often enough to be this fork's most frequent red — three times, once per
+  # theme. It also re-runs `tauri build` on both platforms, which the build job
+  # below does anyway. So the release gate is: does the tagged tree still
+  # install, type-check, hold a valid dictionary, and pass the unit suite?
+  # Upstream's CI still runs on every push, independently of any release.
   gate:
     if: ${{ !inputs.dry_run }}
-    uses: ./.github/workflows/ci.yml
-    with:
-      ref: ${{ inputs.tag }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ inputs.tag }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - name: Install npm dependencies
+        shell: bash
+        run: |
+          ok=0
+          for attempt in 1 2 3; do
+            if npm ci; then ok=1; break; fi
+            echo "npm ci failed (attempt $attempt), retrying"
+            sleep $((attempt * 15))
+          done
+          [ "$ok" = "1" ] || { echo '::error::npm ci failed after 3 attempts'; exit 1; }
+
+      - name: Dictionary, types and the unit suite
+        run: |
+          node scripts/i18n-check.mjs
+          npx tsc -b --force
+          npx vitest run
 
   build:
     needs: [prepare, gate]

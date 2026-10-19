@@ -26,7 +26,12 @@ export default defineConfig({
   testDir: './e2e',
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
-  retries: 0,
+  // Two specs measure geometry (`elementFromPoint` has to hit the element whose
+  // box was just measured) and go red on a loaded runner often enough to be the
+  // fork's most frequent red: `beta-marks.spec.ts:102` failed three separate
+  // times, once per theme. The flake is timing, so CI retries twice; a genuine
+  // break still fails all three attempts.
+  retries: process.env.CI ? 2 : 0,
   workers: 1,
   reporter: [['list']],
   timeout: 60_000,
