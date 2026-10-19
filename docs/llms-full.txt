@@ -14,7 +14,7 @@ https://lu-labs.ai/product-facts
 
 > Free, open-source (AGPL-3.0) plug-and-play local AI studio for Windows, Linux and Mac: chat with 20+ providers, generate images and video on your own machine (through ComfyUI on Windows and Linux), and code with a built-in agent. One installer, no command line, no Docker. No analytics kit, and no account for local use. Cloud only when you switch it on.
 
-Current version: v3.0.6.
+Current version: v3.0.7.
 
 This file is the full, citable reference for Locally Uncensored. Facts are stated plainly so they can be quoted directly.
 
@@ -157,6 +157,20 @@ Yes. The endpoint is OpenAI-compatible Chat Completions at the base URL https://
 - FramePack F1 (image-to-video on 6 GB VRAM)
 - AnimateDiff Lightning, Mochi, Cosmos, SVD
 - Removed in v2.5.9 because they could never run: CogVideoX (both bundles) and Pyramid Flow. Their pipelines were built against ComfyUI node names that no version of the wrappers registers, so every generation came back an error. Nothing already on disk is deleted; they are simply no longer offered. Wan 2.1 and 2.2, LTX, SVD, FramePack, Hunyuan, Mochi and Cosmos are unaffected.
+
+## What Changed in v3.0.7
+
+- Characters everywhere: a trained character can be picked on Image, Edit and every video tab of Create and sets the Z Image model it was trained for. A video with a character runs in two steps, a picture of the character first, then the clip from that picture. The chat's image and video tools take a character by name or trigger word.
+- More ways to a character: frames from a video as a training set, a character trained on LU Cloud saved for local use, Edit with up to three of the photos a character was trained on, a text field per photo so a character can change clothes, and Low VRAM training for cards under 12 GB on Windows and Linux.
+- ComfyUI workflows import in the format ComfyUI saves (Save or Export), from files or a whole folder, with subgraphs unpacked. Settings, AI Backends manages ComfyUI node packs on Windows and Linux (install from a repository link, update, remove to the trash). Every setting of an imported workflow can be changed in Create under Workflow parameters (issue 8, issue 14).
+- Edit with Qwen-Image 2.1 takes up to ten images on your own machine, up from four.
+- A chat can be duplicated or branched from any message, and Regenerate and Save & resend keep earlier answers as versions (issue 174). Editing an earlier message no longer sends it or deletes the rest (issue 172).
+- Chat: sampling values per persona and group member (issue 175), fixes for personas (issue 170) and group chats (issues 165, 169), character cards as personas with their greeting, a ChatGPT export imported as chats, attached text files that fit the context (issue 171), reasoning effort for local models (issue 176), a think budget, a Chat Reply Timeout (issue 177), and Read aloud that speaks only what the answer shows (issue 160).
+- ComfyUI in Create: a workflow imported in the Workflows window and paired with a Wan Animate model now runs in Motion Control. Wan Animate, Wan VACE and Wan S2V files show under Installed, and a search in Get new covers both catalogue tabs. A picture made in the chat loads through the app, so a current ComfyUI no longer shows it as a broken frame.
+- Create: Enhance Image runs locally on Windows and Linux (Real-ESRGAN x4plus, 2x or 4x), the gallery has folders and shows the settings a result was made with, and the number of images per run sits next to the Create button.
+- Models and backends: a LoRA from a CivitAI or Hugging Face link, Check files and Repair for installed models (issue 113), several OpenAI-compatible backends at the same time (issue 173), a GGUF file from anywhere on the drive, and context sizes taken from the server (issues 166, 167, 168).
+- Mac (beta): training a character, Talking Character, Motion Control, Music with ACE-Step 1.5, Enhance Image with SeedVR2 3B, Remove Background through the subject detection built into macOS, Edit with a mask, HiRes fix, LoRAs and sizes for video, Extend Video, and a Qwen prompt enhancer.
+- Fixes: ComfyUI starts when no Python on the machine has PyTorch, GPU layers -1 on AMD and Intel cards (issue 156), the microphone on Linux (issue 162). ComfyUI, LM Studio and the LU Engine answer to LU only when LU starts them.
 
 ## What Changed in v3.0.6
 

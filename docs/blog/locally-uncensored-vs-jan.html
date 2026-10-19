@@ -14,7 +14,7 @@
 <meta name="robots" content="index, follow">
 <!-- Privacy: No external fonts loaded. Using system fonts. -->
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"Article","headline":"Locally Uncensored vs Jan.ai: Which Local AI App Is Better?","author":{"@type":"Person","name":"PurpleDoubleD"},"datePublished":"2026-03-30","dateModified":"2026-10-16","publisher":{"@type":"Organization","name":"Locally Uncensored"}}
+{"@context":"https://schema.org","@type":"Article","headline":"Locally Uncensored vs Jan.ai: Which Local AI App Is Better?","author":{"@type":"Person","name":"PurpleDoubleD"},"datePublished":"2026-03-30","dateModified":"2026-10-19","publisher":{"@type":"Organization","name":"Locally Uncensored"}}
 </script>
 <script type="application/ld+json">
 {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Is Locally Uncensored better than Jan.ai?","acceptedAnswer":{"@type":"Answer","text":"It depends on your priorities. Locally Uncensored is better if you want text chat, image generation, video generation, a coding agent, and agent tools with MCP in one app under an open AGPL-3.0 license. It works with local engines and cloud providers such as OpenAI and Anthropic. Jan.ai is better if you prefer a polished ChatGPT-like interface focused on chat."}},{"@type":"Question","name":"Does Jan.ai support image generation?","acceptedAnswer":{"@type":"Answer","text":"Jan's feature list includes no image or video generation; it covers LLM chat with local and cloud models, assistants and MCP tools. For local image and video generation, you need a tool like Locally Uncensored, which runs ComfyUI with models such as FLUX and Wan on Windows and Linux and generates on the Mac itself on Apple Silicon."}},{"@type":"Question","name":"Is Jan.ai open source?","acceptedAnswer":{"@type":"Answer","text":"Yes. Jan is released under the Apache 2.0 license, a permissive one. Locally Uncensored is open source under the AGPL-3.0 license, which keeps changes open. Both are fully auditable and you can modify either one."}},{"@type":"Question","name":"Do Jan and Locally Uncensored use the same app framework?","acceptedAnswer":{"@type":"Answer","text":"Both are Tauri apps: a Rust core with the system webview, not a bundled Chromium. Inference memory depends on the model size and context, not on the app around it."}}]}
@@ -54,7 +54,7 @@
 </nav>
 <article class="lu-doc">
 <h1>Locally Uncensored vs Jan.ai</h1>
-<div class="meta">Published March 30, 2026 &middot; Updated October 16, 2026 &middot; 6 min read</div>
+<div class="meta">Published March 30, 2026 &middot; Updated October 19, 2026 &middot; 6 min read</div>
 
 <p>Jan.ai has earned a reputation as one of the most polished, ChatGPT-like interfaces among local AI apps. Built on Tauri with a clean design, it supports both local models and cloud APIs from providers like OpenAI, Anthropic, Mistral and Groq. For users who want a single chat interface that bridges local and cloud AI, Jan is an appealing option.</p>
 
@@ -82,7 +82,7 @@
 <tr><td>Coding Agent</td><td><span class="check hl">Yes</span></td><td>Jan Agent, a separate terminal agent (preview)</td></tr>
 <tr><td>MCP Tools</td><td><span class="check hl">Built-in agent tools plus your own MCP servers</span></td><td><span class="check">Yes (MCP servers)</span></td></tr>
 <tr><td>File Upload + Vision</td><td><span class="check hl">Yes</span></td><td><span class="check">Yes (documents, audio and images for models that support them)</span></td></tr>
-<tr><td>Thinking Mode</td><td><span class="check hl">Yes, with an effort control where the model has one</span></td><td><span class="check">Yes (Auto, On or Off, with local llama.cpp models)</span></td></tr>
+<tr><td>Thinking Mode</td><td><span class="check hl">Yes, with an effort control where the model has one, for local models too since 3.0.7</span></td><td><span class="check">Yes (Auto, On or Off, with local llama.cpp models)</span></td></tr>
 <tr><td>Granular Permissions</td><td><span class="check hl">A permission gate on every tool call</span></td><td><span class="check">Approve each MCP tool call, or allow all</span></td></tr>
 <tr><td>Model Load/Unload</td><td><span class="check hl">Yes (VRAM mgmt)</span></td><td><span class="check">Yes (loads and unloads on demand)</span></td></tr>
 <tr><td>Platforms</td><td>Windows, Linux, macOS 14+ on Apple Silicon (Beta)</td><td>Windows, macOS, Linux</td></tr>
@@ -101,6 +101,19 @@
 </ul>
 <p>Version 3.0.6 also brings document chat with a local index, phone access over your LAN or a tunnel, side by side model compare and a local benchmark, and two beta features: Voice, a spoken conversation run on your own machine, and computer control, which is off until you switch it on.</p>
 
+<h2>What Locally Uncensored 3.0.7 adds</h2>
+<p>Version 3.0.7 adds these points that matter next to Jan:</p>
+<ul>
+<li><strong>Duplicate and branch</strong>: Duplicate chat copies a conversation with its persona and settings, Branch from here starts a new chat from any message, and Regenerate keeps the earlier answer as a version you can switch back to. These have run in automated tests only.</li>
+<li><strong>Several local servers at once</strong>: KoboldCpp, LM Studio, a llama.cpp server or any other OpenAI compatible backend each get their own row in Settings, AI Backends, and their models sit in the picker under that name. Adding one no longer pushes another out, and a group chat can mix models from several of them. The context window comes from each server itself. So far this has run in automated tests only, not yet in the app with two real servers.</li>
+<li><strong>Reasoning effort for local models</strong>: the Low, Medium, High and Max button next to Think now works on the LU Engine, on LM Studio 0.4.8 and later, on KoboldCpp (Low to High) and on a llama.cpp server whose chat template reads it. It is one setting for all models, and it has run in automated tests only, not against a real LM Studio, KoboldCpp or llama.cpp server. A separate think budget in tokens works with the LU Engine and with Anthropic.</li>
+<li><strong>Any GGUF file on your drive</strong>: the Model Manager links a GGUF file from anywhere on the same drive into the LU Engine as a chat model, without copying it.</li>
+<li><strong>ChatGPT export as real chats</strong>: the .zip of a ChatGPT data export turns into separate chats with their titles and dates, and a second import adds nothing twice. Tried in the app with an export built in ChatGPT's format; a real export from ChatGPT has not been tried yet.</li>
+<li><strong>Character cards</strong>: a card as PNG or JSON (versions 1, 2 and 3) becomes a persona with the card picture. A new chat opens with the card's greeting, alternate greetings switch with arrows, and a card persona exports back as a version 2 JSON file. Checked in the app with Holo and Qwen models, not with Gemma.</li>
+<li><strong>More of Create on a Mac</strong>: Talking Character, Motion Control, Music, Enhance Image, Remove Background, masks in Edit and character training now run on the Mac itself. They ran with the real engine on one Mac with 48 GB; Macs with less memory have not been tried, and the Mac parts have not been clicked through in a built app yet.</li>
+</ul>
+<p>The Settings, Local API page still reaches only the LU Engine, Ollama and LM Studio. Our check of 3.0.7 in the real app ran on one Windows machine.</p>
+
 <h2>Where Jan.ai Wins</h2>
 <ul>
 <li><strong>Cloud API support</strong>: Jan connects to OpenAI, Anthropic, Mistral, Groq, MiniMax and other cloud providers alongside local models. Locally Uncensored now takes OpenAI, Anthropic, OpenRouter, Groq, Together, DeepSeek, Mistral and any OpenAI compatible address, so this gap is much smaller than it was.</li>
@@ -118,7 +131,7 @@
 <div class="verdict">
 <h3>The Verdict</h3>
 <p><strong>Choose Jan.ai</strong> if you want a polished ChatGPT-like interface that supports both local models and cloud APIs like OpenAI and Anthropic. Jan is the right choice if text chat is all you need and you value a clean UI with HuggingFace model browsing.</p>
-<p><strong>Choose Locally Uncensored</strong> if you want text, image, and video generation in one app. Version 3.0.6 adds a coding agent, agent tools with MCP, vision, document chat, local engines next to cloud providers, thinking with an effort control, and VRAM management. The AGPL-3.0 license and uncensored defaults make it the better choice for users who want a complete creative AI suite.</p>
+<p><strong>Choose Locally Uncensored</strong> if you want text, image, and video generation in one app. It also has a coding agent, agent tools with MCP, vision, document chat, local engines next to cloud providers, thinking with an effort control, and VRAM management. The AGPL-3.0 license and uncensored defaults make it the better choice for users who want a complete creative AI suite.</p>
 </div>
 <p style="font-size:0.85em;color:#888">What this page says about Jan comes from its official website, documentation, changelog and GitHub repository, as of October 2026.</p>
 

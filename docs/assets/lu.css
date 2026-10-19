@@ -619,3 +619,13 @@ font.goog-text-highlight{background:none!important;box-shadow:none!important}
   .lu-cloud-box p{font-size:.9rem}
 }
 
+
+/* The phone app banner (lu.js wirePhoneApp): in the page flow under the nav. */
+.lu-phone-app{position:relative;margin:12px 16px 0;padding:14px 44px 14px 16px;border:1px solid var(--brand-violet-strong);border-radius:14px;background:var(--panel);color:var(--fg);font-size:.92rem;line-height:1.45;z-index:2}
+.lu-phone-app p{margin:0 0 10px}
+.lu-phone-app-title{font-weight:600;font-size:1rem}
+.lu-phone-app-cta{display:flex;align-items:center;justify-content:center;min-height:48px;border-radius:10px;background:var(--accent);color:#fff!important;font-weight:600;text-decoration:none}
+.lu-phone-app-note{margin:8px 0 0!important;font-size:.8rem;opacity:.7}
+.lu-phone-app-note a{color:var(--accent-soft)}
+.lu-phone-app-x{position:absolute;top:6px;right:6px;width:36px;height:36px;border:none;background:none;color:inherit;opacity:.6;cursor:pointer;font-size:1rem}
+@media(min-width:768px){.lu-phone-app{max-width:640px;margin:16px auto 0}}

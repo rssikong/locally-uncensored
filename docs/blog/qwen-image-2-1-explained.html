@@ -27,7 +27,7 @@
 <link rel="icon" href="../favicon.png">
 <!-- Privacy: No external fonts loaded. Using system fonts. -->
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"BlogPosting","headline":"Qwen-Image 2.1 Explained: 7B, Alpha Channel, Ten References, and a New License","description":"What changed in Qwen-Image 2.1 against the rest of the series: a 7B image model in place of 20B, a Qwen3-VL-8B text encoder, a 64 channel VAE with an alpha channel, up to ten reference images in one pass, one model instead of a separate edit model, and the Qwen Research License in place of Apache 2.0.","image":"https://raw.githubusercontent.com/PurpleDoubleD/locally-uncensored/master/docs/social-preview.png","datePublished":"2026-09-22","dateModified":"2026-09-22","inLanguage":"en","author":{"@type":"Person","name":"PurpleDoubleD","url":"https://github.com/PurpleDoubleD"},"publisher":{"@type":"Organization","name":"Locally Uncensored","url":"https://locallyuncensored.com/"},"mainEntityOfPage":{"@type":"WebPage","@id":"https://locallyuncensored.com/blog/qwen-image-2-1-explained.html"},"keywords":"qwen-image 2.1 explained, qwen image architecture, qwen3-vl-8b text encoder, qwen research license, qwen image alpha channel, qwen image edit model"}
+{"@context":"https://schema.org","@type":"BlogPosting","headline":"Qwen-Image 2.1 Explained: 7B, Alpha Channel, Ten References, and a New License","description":"What changed in Qwen-Image 2.1 against the rest of the series: a 7B image model in place of 20B, a Qwen3-VL-8B text encoder, a 64 channel VAE with an alpha channel, up to ten reference images in one pass, one model instead of a separate edit model, and the Qwen Research License in place of Apache 2.0.","image":"https://raw.githubusercontent.com/PurpleDoubleD/locally-uncensored/master/docs/social-preview.png","datePublished":"2026-09-22","dateModified":"2026-10-19","inLanguage":"en","author":{"@type":"Person","name":"PurpleDoubleD","url":"https://github.com/PurpleDoubleD"},"publisher":{"@type":"Organization","name":"Locally Uncensored","url":"https://locallyuncensored.com/"},"mainEntityOfPage":{"@type":"WebPage","@id":"https://locallyuncensored.com/blog/qwen-image-2-1-explained.html"},"keywords":"qwen-image 2.1 explained, qwen image architecture, qwen3-vl-8b text encoder, qwen research license, qwen image alpha channel, qwen image edit model"}
 </script>
 <script type="application/ld+json">
 {"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://locallyuncensored.com/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://locallyuncensored.com/blog/"},{"@type":"ListItem","position":3,"name":"Qwen-Image 2.1 Explained: 7B, Alpha Channel, Ten References, and a New License","item":"https://locallyuncensored.com/blog/qwen-image-2-1-explained.html"}]}
@@ -67,7 +67,7 @@
 
   <div class="post-meta">
     <span class="post-tag">Model Guide</span>
-    <span>September 22, 2026</span>
+    <span>September 22, 2026, updated October 19</span>
     <span>&middot;</span>
     <span>5 min read</span>
   </div>
@@ -135,7 +135,7 @@
     <p>Several of the model's new abilities are not exposed in 3.0.1, stated as they stand and with nothing said about plans:</p>
 
     <ul>
-      <li>Multiple reference images. The model takes ten, the Edit lane takes one. Not in this release.</li>
+      <li>Multiple reference images. The model takes ten, the Edit lane in 3.0.1 took one. Update: since 3.0.7 the Edit lane takes up to ten as well, each image scaled smaller once there are more than four, and ten images have not run with a real model on Windows and Linux yet.</li>
       <li>RGBA output. The VAE has the channel, the app does not write it out. Not in this release.</li>
       <li>Masks with this model. Closed deliberately, because the edit path here is reference plus prompt.</li>
       <li>A prompt enhancer, and the KV cache node. Neither is wired up. Not in this release.</li>

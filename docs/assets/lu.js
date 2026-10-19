@@ -255,11 +255,54 @@
     else setGoogTrans(null);
   }
 
+  // ── The phone app (19.10.2026) ──────────────────────────────────────
+  // On a phone, first thing under the navigation: the iPhone app is in review
+  // at the App Store, Google Play follows; on Android the APK of the latest
+  // release downloads now (the GitHub release asset), an iPhone
+  // uses LU Cloud in the browser until then. A computer sees nothing; closed
+  // stays closed in this browser.
+  var PHONE_KEY = "lu_phone_app_banner_closed";
+  var APK_URL = "https://github.com/PurpleDoubleD/locally-uncensored/releases/latest/download/LU-3.0.7-Android.apk";
+  function phoneKind() {
+    var ua = navigator.userAgent || "";
+    if (/android/i.test(ua)) return "android";
+    if (/iphone|ipad|ipod/i.test(ua)) return "ios";
+    if (/macintosh/i.test(ua) && (navigator.maxTouchPoints || 0) > 1) return "ios";
+    return null;
+  }
+  function wirePhoneApp() {
+    var kind = phoneKind();
+    if (!kind) return;
+    try { if (localStorage.getItem(PHONE_KEY) === "1") return; } catch (e) {}
+    var box = document.createElement("aside");
+    box.className = "lu-phone-app";
+    box.setAttribute("aria-label", "Locally Uncensored on your phone");
+    box.setAttribute("data-kind", kind);
+    box.innerHTML = kind === "android"
+      ? '<p class="lu-phone-app-title">LU is on your phone now</p>' +
+        '<p>The iPhone app is in review at the App Store, and Google Play follows in the next days to two weeks. On Android you can download it now.</p>' +
+        '<a class="lu-phone-app-cta" href="' + APK_URL + '">Download for Android</a>' +
+        '<p class="lu-phone-app-note">Android 7.0 or newer, 64-bit, about 27 MB. <a href="/android/">How to install</a></p>'
+      : '<p class="lu-phone-app-title">LU for iPhone is on its way</p>' +
+        '<p>The app is in review at the App Store and should arrive there in the next days to two weeks. Until then, use LU Cloud right here in your browser.</p>' +
+        '<a class="lu-phone-app-cta" href="https://lu-labs.ai/app?src=luc-phone-banner">Open LU Cloud</a>';
+    var x = document.createElement("button");
+    x.type = "button"; x.className = "lu-phone-app-x"; x.setAttribute("aria-label", "Close"); x.textContent = "\u2715";
+    x.addEventListener("click", function () {
+      try { localStorage.setItem(PHONE_KEY, "1"); } catch (e) {}
+      box.remove();
+    });
+    box.appendChild(x);
+    var nav = document.querySelector(".lu-nav");
+    if (nav && nav.parentNode) nav.parentNode.insertBefore(box, nav.nextSibling);
+    else document.body.insertBefore(box, document.body.firstChild);
+  }
+
   function init() {
     injectAmbient();
     var monos = document.querySelectorAll("[data-mono]");
     for (var i = 0; i < monos.length; i++) buildMono(monos[i]);
-    wireTheme(); wireNav(); wireScrollArrow(); wireFunnelSource(); wireLang();
+    wireTheme(); wireNav(); wireScrollArrow(); wireFunnelSource(); wireLang(); wirePhoneApp();
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);

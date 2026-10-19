@@ -80,7 +80,7 @@
     <p>Locally Uncensored 3.0.7 has a new plugin for Agent and Code: REA, short for Reverse Engineer Anything. It is an open source MCP server under the MIT license, and it gives your model tools to look inside apps and files, so you can ask "what does this program send, and where?" and get an answer built from the program itself. This guide covers how to switch it on, what it reads, which model to use and what has been tried so far.</p>
 
     <div class="callout info"><div class="callout-title">Desktop app only, tried on one Mac</div>
-    <p>REA runs in the desktop app, not in a browser. A full run from the built app has not been tried yet: the complete answer so far came from LU's tool code outside the app, on one Mac. Use REA on software you own or are allowed to examine.</p>
+    <p>REA runs in the desktop app, not in a browser. A full analysis with an answer has run on one Mac so far, with LU's tool code outside the app. On Windows, the built app has started REA and handed its tools to a model, but no full analysis has run there yet. Use REA on software you own or are allowed to examine.</p>
     </div>
 
     <h2>What You Need</h2>
@@ -95,7 +95,7 @@
 
     <p>Open the Plugins menu in the composer of Agent or Code. REA has its own row there and is off by default. When you switch it on, LU fetches the official <code>rea-agents</code> package in version 6.5.0, checks it against the checksum the npm registry publishes, and checks it again before every start. LU starts that exact file and never runs REA's own setup, which would write into the settings of other apps.</p>
 
-    <p>The first start downloads REA's dependencies and can take a few minutes on a slow line. On a Windows machine with a slow connection it took about two minutes and then brought up 207 tools; a second start, from the cache, took 22 seconds.</p>
+    <p>The first start downloads REA's dependencies and can take a minute or more. In the built app on Windows, a first start with an empty cache took 62 seconds and brought up 207 tools; a second start, from the cache, took 22 seconds.</p>
 
     <h2>207 Tools, but Not All at Once</h2>
 
@@ -127,7 +127,7 @@
 
     <ul>
       <li>REA has run on a Mac with LU's tool code outside the app, with Qwen 3.8 27B and Qwen 3.5 9B on Ollama. Only the 27B model wrote a complete answer</li>
-      <li>A full run from the built app, analysis runs on Windows and Linux, and cloud models have not been tried</li>
+      <li>On Windows the built app has started REA and passed its tools to a model; a full analysis there, any run on Linux, and cloud models have not been tried</li>
       <li>REA needs Node.js on the computer; LU does not install it</li>
       <li>Use it on software you own or are allowed to examine</li>
     </ul>

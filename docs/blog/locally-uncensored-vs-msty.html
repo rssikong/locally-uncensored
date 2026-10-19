@@ -14,7 +14,7 @@
 <meta name="robots" content="index, follow">
 <!-- Privacy: No external fonts loaded. Using system fonts. -->
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"Article","headline":"Locally Uncensored vs Msty","author":{"@type":"Person","name":"PurpleDoubleD"},"datePublished":"2026-03-30","dateModified":"2026-10-16","publisher":{"@type":"Organization","name":"Locally Uncensored"}}
+{"@context":"https://schema.org","@type":"Article","headline":"Locally Uncensored vs Msty","author":{"@type":"Person","name":"PurpleDoubleD"},"datePublished":"2026-03-30","dateModified":"2026-10-19","publisher":{"@type":"Organization","name":"Locally Uncensored"}}
 </script>
 <script type="application/ld+json">
 {"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://locallyuncensored.com/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://locallyuncensored.com/blog/"},{"@type":"ListItem","position":3,"name":"Locally Uncensored vs Msty","item":"https://locallyuncensored.com/blog/locally-uncensored-vs-msty.html"}]}
@@ -51,7 +51,7 @@
 </nav>
 <article class="lu-doc">
 <h1>Locally Uncensored vs Msty</h1>
-<div class="meta">Published March 30, 2026 &middot; Updated October 16, 2026 &middot; 6 min read</div>
+<div class="meta">Published March 30, 2026 &middot; Updated October 19, 2026 &middot; 6 min read</div>
 
 <p>Msty Studio positions itself as a private AI workspace for both local and online models. It offers Knowledge Stacks for document RAG, Split Chats for side-by-side model comparison, an MCP Toolbox and a Media Studio for images and video. Msty is closed source, with a free plan and a paid Aurum license for some features.</p>
 <p>Locally Uncensored 3.0.6 takes the fully open-source approach with an AGPL-3.0 license. Where Msty centers on a multi-provider workspace, Locally Uncensored makes images and video on your own GPU, adds a coding agent and an agent with built-in tools and your own MCP servers, and works with local engines and cloud providers such as OpenAI and Anthropic side by side.</p>
@@ -66,7 +66,7 @@
 <tr><td>Coding Agent</td><td><span class="check hl">Yes</span></td><td><span class="cross">Not listed</span></td></tr>
 <tr><td>MCP Tools</td><td><span class="check hl">Built-in agent tools (web search, files, shell, screenshots and more) plus your own MCP servers</span></td><td><span class="check">Yes (MCP Toolbox)</span></td></tr>
 <tr><td>File Upload + Vision</td><td><span class="check hl">Yes</span></td><td><span class="check">Yes (files, images and more as attachments; vision models)</span></td></tr>
-<tr><td>Thinking Mode</td><td><span class="check hl">Yes, with an effort control where the model has one</span></td><td><span class="check">Yes (thinking effort for reasoning models)</span></td></tr>
+<tr><td>Thinking Mode</td><td><span class="check hl">Yes, with an effort control where the model has one, for local models too since 3.0.7</span></td><td><span class="check">Yes (thinking effort for reasoning models)</span></td></tr>
 <tr><td>Granular Permissions</td><td><span class="check hl">A permission gate on every tool call</span></td><td>Not documented</td></tr>
 <tr><td>Model Load/Unload</td><td><span class="check hl">Yes</span></td><td>Not documented</td></tr>
 <tr><td>Document RAG</td><td><span class="check">Yes (Document Chat, local index)</span></td><td><span class="check">Yes (Knowledge Stacks)</span></td></tr>
@@ -90,6 +90,18 @@
 <li><strong>No paywall in the app</strong>: every feature of the desktop app is free, with no premium tiers inside it. The optional LU Cloud for models too big for a desktop card is paid, and you never need it to use the app.</li>
 </ul>
 <p>Version 3.0.6 also brings a Local API that serves your local models on one OpenAI compatible address, phone access over your LAN or a tunnel, and two beta features: Voice, a spoken conversation run on your own machine, and computer control, which is off until you switch it on.</p>
+
+<h2>What Locally Uncensored 3.0.7 adds</h2>
+<p>Version 3.0.7 adds these points that matter next to Msty:</p>
+<ul>
+<li><strong>Several local servers at once</strong>: KoboldCpp, LM Studio, a llama.cpp server or any other OpenAI compatible backend each get their own row in Settings, AI Backends, and their models sit in the picker under that name. Adding one no longer pushes another out, and a group chat can mix models from several of them. The context window comes from each server itself. So far this has run in automated tests only, not yet in the app with two real servers.</li>
+<li><strong>Duplicate and branch</strong>: Duplicate chat copies a conversation with its persona and settings, Branch from here starts a new chat from any message, and Regenerate keeps the earlier answer as a version you can switch back to. These have run in automated tests only.</li>
+<li><strong>Sampling per persona</strong>: a persona can carry its own temperature, top P, top K, min P, max tokens, repeat, presence and frequency penalty and DRY multiplier, also on its seat in a group chat. Values set in the chat still win, and each value only goes to a backend that reads it. Automated tests only so far.</li>
+<li><strong>Character cards</strong>: a card as PNG or JSON (versions 1, 2 and 3) becomes a persona with the card picture. A new chat opens with the card's greeting, alternate greetings switch with arrows, and a card persona exports back as a version 2 JSON file. Checked in the app with Holo and Qwen models, not with Gemma.</li>
+<li><strong>ChatGPT export as real chats</strong>: the .zip of a ChatGPT data export turns into separate chats with their titles and dates, and a second import adds nothing twice. Tried in the app with an export built in ChatGPT's format; a real export from ChatGPT has not been tried yet.</li>
+<li><strong>Reasoning effort for local models</strong>: the Low, Medium, High and Max button next to Think now works on the LU Engine, on LM Studio 0.4.8 and later, on KoboldCpp (Low to High) and on a llama.cpp server whose chat template reads it. It is one setting for all models, and it has run in automated tests only, not against a real LM Studio, KoboldCpp or llama.cpp server. A separate think budget in tokens works with the LU Engine and with Anthropic.</li>
+</ul>
+<p>The Settings, Local API page still reaches only the LU Engine, Ollama and LM Studio. Our check of 3.0.7 in the real app ran on one Windows machine.</p>
 
 <h2>Where Msty Wins</h2>
 <ul>

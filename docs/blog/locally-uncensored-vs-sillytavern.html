@@ -14,7 +14,7 @@
 <meta name="robots" content="index, follow">
 <!-- Privacy: No external fonts loaded. Using system fonts. -->
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"Article","headline":"Locally Uncensored vs SillyTavern — Which Uncensored AI Tool Is Better?","author":{"@type":"Person","name":"PurpleDoubleD"},"datePublished":"2026-03-29","dateModified":"2026-04-05","publisher":{"@type":"Organization","name":"Locally Uncensored"}}
+{"@context":"https://schema.org","@type":"Article","headline":"Locally Uncensored vs SillyTavern — Which Uncensored AI Tool Is Better?","author":{"@type":"Person","name":"PurpleDoubleD"},"datePublished":"2026-03-29","dateModified":"2026-10-19","publisher":{"@type":"Organization","name":"Locally Uncensored"}}
 </script>
 <script type="application/ld+json">
 {"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://locallyuncensored.com/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://locallyuncensored.com/blog/"},{"@type":"ListItem","position":3,"name":"Locally Uncensored vs SillyTavern","item":"https://locallyuncensored.com/blog/locally-uncensored-vs-sillytavern.html"}]}
@@ -51,7 +51,7 @@
 </nav>
 <article class="lu-doc">
 <h1>Locally Uncensored vs SillyTavern</h1>
-<div class="meta">Published March 29, 2026 · 5 min read</div>
+<div class="meta">Published March 29, 2026 &middot; Updated October 19, 2026 &middot; 7 min read</div>
 
 <p>Both <strong>SillyTavern</strong> and <strong>Locally Uncensored</strong> are built for people who want unrestricted AI without cloud censorship. But they target different use cases.</p>
 <p>SillyTavern is the king of AI roleplay and character chat — a powerful tool with a massive character card ecosystem. Locally Uncensored is a general-purpose local AI app that combines chat, image generation, and video creation in one interface.</p>
@@ -61,7 +61,7 @@
 <thead><tr><th>Feature</th><th class="hl">Locally Uncensored</th><th>SillyTavern</th></tr></thead>
 <tbody>
 <tr><td>AI Chat</td><td class="check hl">Yes</td><td>Yes</td></tr>
-<tr><td>Character Cards</td><td class="check hl">25 built-in personas</td><td>Thousands (community)</td></tr>
+<tr><td>Character Cards</td><td class="check hl">Card v1, v2 and v3 import as personas, plus 25 built-in personas</td><td>Thousands (community)</td></tr>
 <tr><td>Image Generation</td><td class="check hl"><span class="check">Yes (ComfyUI built-in)</span></td><td><span class="check">Yes (via SD / ComfyUI extension)</span></td></tr>
 <tr><td>Video Generation</td><td class="check hl"><span class="check">Yes (Wan 2.1)</span></td><td><span class="cross">No</span></td></tr>
 <tr><td>Coding Agent</td><td class="check hl"><span class="check">Yes</span></td><td><span class="cross">No</span></td></tr>
@@ -73,13 +73,23 @@
 <tr><td>Granular Permissions</td><td class="check hl"><span class="check">7 categories, 3 levels</span></td><td><span class="cross">No</span></td></tr>
 <tr><td>Uncensored</td><td class="check hl"><span class="check">Yes</span></td><td><span class="check">Yes</span></td></tr>
 <tr><td>Setup Complexity</td><td class="check hl">One command</td><td>Node.js + config</td></tr>
-<tr><td>Group Chat / Multi-char</td><td class="check hl"><span class="cross">No</span></td><td><span class="check">Yes</span></td></tr>
-<tr><td>World Building Tools</td><td class="check hl"><span class="cross">No</span></td><td><span class="check">Yes</span></td></tr>
+<tr><td>Group Chat / Multi-char</td><td class="check hl"><span class="check">Yes (2 to 4 models, each with its own persona)</span></td><td><span class="check">Yes</span></td></tr>
+<tr><td>World Building Tools</td><td class="check hl"><span class="cross">No (a card's lorebook is not used)</span></td><td><span class="check">Yes</span></td></tr>
 <tr><td>Modern UI</td><td class="check hl"><span class="check">Glassmorphism</span></td><td>Functional</td></tr>
 <tr><td>License</td><td class="check hl">AGPL-3.0</td><td>AGPL</td></tr>
 
 </tbody>
 </table>
+
+<h2>Role Play in Locally Uncensored 3.0.7</h2>
+<p>Since version 3.0.7, Locally Uncensored covers the core of character chat itself.</p>
+<ul>
+<li><strong>Character cards</strong>: import a card as a PNG or JSON file, in card version 1, 2 or 3. It becomes a persona with the card picture as its tile. A new chat with that persona opens with the card's greeting as the first answer, and the arrows switch between alternate greetings until you write. A card persona exports back as a version 2 JSON file. A lorebook inside a card imports with it but is not used.</li>
+<li><strong>Group chats</strong>: two to four models answer in turn inside one conversation, each on its own persona. A member whose model has left the model list sits out until it comes back and shows as unavailable in the group menu, and each turn keeps the persona it was written as (issues 165 and 169).</li>
+<li><strong>Sampling per persona and per group member</strong>: a persona can carry its own temperature, top P, top K, min P, max tokens, repeat, presence and frequency penalty and DRY multiplier. They apply wherever the persona speaks, also on its seat in a group chat. An empty field follows the chat, and values set in the chat's Sampling popup still win (issue 175).</li>
+<li><strong>Branches and answer versions</strong>: Duplicate chat makes a full copy with persona, group members and sampling values. Branch from here starts a new chat with the history up to that message. Regenerate, and Save &amp; resend on an edited message, keep the earlier answer as a version you can page back to with arrows. Save on an edited earlier message changes only its text and keeps every later turn (issues 174 and 172).</li>
+</ul>
+<p>Where this stands: character cards were checked in the app with Holo and Qwen models, not with Gemma. Duplicate chat, Branch from here, the kept answers, sampling per persona and the group chat fixes have run in automated tests only so far. Duplicate chat is not offered in Remote Access.</p>
 
 <h2>Where Locally Uncensored Wins</h2>
 <ul>
@@ -99,7 +109,6 @@
 <h2>Where SillyTavern Wins</h2>
 <ul>
 <li><strong>Character ecosystem</strong> — Thousands of community-created character cards. SillyTavern IS the platform for AI roleplay.</li>
-<li><strong>Group chat</strong> — Multiple AI characters talking to each other and to you. Great for storytelling.</li>
 <li><strong>World building</strong> — Lorebooks, scenario descriptions, and persistent memory for complex narratives.</li>
 <li><strong>Mature community</strong> — Years of development, extensive documentation, active Discord.</li>
 <li><strong>Advanced prompting</strong> — Fine-grained control over system prompts, jailbreaks, and character behavior.</li>
@@ -107,7 +116,7 @@
 
 <div class="verdict">
 <h3>The Verdict</h3>
-<p><strong>Choose SillyTavern</strong> if AI roleplay and character chat is your main use case. Its character card ecosystem and group chat features are unmatched.</p>
+<p><strong>Choose SillyTavern</strong> if AI roleplay and character chat is your main use case. Its community card ecosystem, lorebooks and fine prompt control go further than anything in Locally Uncensored.</p>
 <p><strong>Choose Locally Uncensored</strong> if you want a general-purpose uncensored AI app that also generates images and video, has a built-in coding agent, 13 MCP tools, vision support, and multi-provider flexibility. It's the better choice if you need more than just chat, or if you want a cleaner, simpler experience.</p>
 </div>
 

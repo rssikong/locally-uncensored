@@ -26,7 +26,7 @@
 <meta name="theme-color" content="#0a0a0a">
 <link rel="icon" href="../favicon.png">
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"Article","headline":"Local AI Music Generation: Free, On Your Own GPU","description":"How to generate music with AI locally: Locally Uncensored runs ACE-Step as a local Create lane on your own GPU and returns an audio tile with an inline player. Setup step by step, the honest hardware picture, how to prompt a music model, and where the lane still has rough edges.","image":"https://raw.githubusercontent.com/PurpleDoubleD/locally-uncensored/master/docs/social-preview.png","datePublished":"2026-07-28","dateModified":"2026-07-28","author":{"@type":"Person","name":"PurpleDoubleD","url":"https://github.com/PurpleDoubleD"},"publisher":{"@type":"Organization","name":"Locally Uncensored","url":"https://locallyuncensored.com/"},"mainEntityOfPage":{"@type":"WebPage","@id":"https://locallyuncensored.com/blog/local-ai-music-generation.html"},"keywords":"local ai music generation, generate music locally ai, ace-step local, ai music generator offline, free local ai music"}
+{"@context":"https://schema.org","@type":"Article","headline":"Local AI Music Generation: Free, On Your Own GPU","description":"How to generate music with AI locally: Locally Uncensored runs ACE-Step as a local Create lane on your own GPU and returns an audio tile with an inline player. Setup step by step, the honest hardware picture, how to prompt a music model, and where the lane still has rough edges.","image":"https://raw.githubusercontent.com/PurpleDoubleD/locally-uncensored/master/docs/social-preview.png","datePublished":"2026-07-28","dateModified":"2026-10-19","author":{"@type":"Person","name":"PurpleDoubleD","url":"https://github.com/PurpleDoubleD"},"publisher":{"@type":"Organization","name":"Locally Uncensored","url":"https://locallyuncensored.com/"},"mainEntityOfPage":{"@type":"WebPage","@id":"https://locallyuncensored.com/blog/local-ai-music-generation.html"},"keywords":"local ai music generation, generate music locally ai, ace-step local, ai music generator offline, free local ai music"}
 </script>
 <script type="application/ld+json">
 {"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://locallyuncensored.com/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://locallyuncensored.com/blog/"},{"@type":"ListItem","position":3,"name":"Local AI Music Generation","item":"https://locallyuncensored.com/blog/local-ai-music-generation.html"}]}
@@ -69,7 +69,7 @@
 </nav>
 <article class="lu-doc">
 <h1>Local AI Music Generation: Free, on Your Own GPU</h1>
-<div class="meta">Published July 28, 2026 &middot; PurpleDoubleD &middot; 8 min read</div>
+<div class="meta">Published July 28, 2026, updated October 19, 2026 &middot; PurpleDoubleD &middot; 8 min read</div>
 
 <p>Yes &mdash; you can generate music with AI locally, on your own GPU, for free. <a href="/">Locally Uncensored</a> ships Music as a local Create lane: it runs ACE-Step on your card and returns an audio tile with an inline player, no hosted endpoint involved. The lane starts around 4 GB, so mid-range hardware is enough to begin.</p>
 
@@ -91,7 +91,7 @@
 
 <p>Locally Uncensored is an all-in-one local AI studio &mdash; chat, image, video, music and a coding agent in one installer &mdash; and Music is one of its four local Create lanes, alongside Talking Character, Extend Video and Motion Control. In Local mode the lane builds a ComfyUI graph out of core node families and runs on your GPU. Per the release notes: <em>&ldquo;Music runs ACE-Step and returns a real audio tile with an inline player.&rdquo;</em></p>
 
-<p>Two version facts worth knowing. The local lanes arrived in 2.5.8, but 2.5.9 is the release that made them genuinely installable &mdash; before that, pressing Download &amp; install gave you a spinner and no way out. And the split between local and hosted is explicit: only Upscale, Erase Object and Character Studio are cloud-only; the four lanes above run on your own hardware.</p>
+<p>Two version facts worth knowing. The local lanes arrived in 2.5.8, but 2.5.9 is the release that made them genuinely installable: before that, pressing Download &amp; install gave you a spinner and no way out. And the split between local and hosted is explicit: the four lanes above run on your own hardware, Character Studio trains on your own card, and since 3.0.7 Enhance Image runs locally too. Erase Object is the one Create tool that stays cloud-only.</p>
 
 <h2>Step by Step: Your First Track</h2>
 
@@ -116,7 +116,7 @@
 
 <ul>
 <li><strong>Entry point:</strong> around 4 GB, per the release notes. Plan on a mid-range GPU for comfortable use.</li>
-<li><strong>Platforms:</strong> Windows 10/11 and Linux (deb, rpm, AppImage). An NVIDIA card is the safe assumption for the Create stack.</li>
+<li><strong>Platforms:</strong> Windows 10/11 and Linux (deb, rpm, AppImage). An NVIDIA card is the safe assumption for the Create stack. Since 3.0.7 a Mac with Apple Silicon runs Music too, without ComfyUI: ACE-Step 1.5 installs from the Music rail of the Model Manager, about 10 GB, and makes tracks from 10 seconds to 4 minutes. That ran on one Mac with 48 GB, not yet on a Mac with less memory.</li>
 <li><strong>Speed:</strong> depends on your card, your settings and the length of the piece. We are not going to invent a benchmark table &mdash; try a short clip first and scale up from there.</li>
 </ul>
 

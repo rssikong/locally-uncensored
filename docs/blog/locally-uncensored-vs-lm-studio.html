@@ -14,7 +14,7 @@
 <meta name="robots" content="index, follow">
 <!-- Privacy: No external fonts loaded. Using system fonts. -->
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"Article","headline":"Locally Uncensored vs LM Studio: Open Source All-in-One vs Polished Chat Client","author":{"@type":"Person","name":"PurpleDoubleD"},"datePublished":"2026-03-29","dateModified":"2026-10-16","publisher":{"@type":"Organization","name":"Locally Uncensored"}}
+{"@context":"https://schema.org","@type":"Article","headline":"Locally Uncensored vs LM Studio: Open Source All-in-One vs Polished Chat Client","author":{"@type":"Person","name":"PurpleDoubleD"},"datePublished":"2026-03-29","dateModified":"2026-10-19","publisher":{"@type":"Organization","name":"Locally Uncensored"}}
 </script>
 <script type="application/ld+json">
 {"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://locallyuncensored.com/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://locallyuncensored.com/blog/"},{"@type":"ListItem","position":3,"name":"Locally Uncensored vs LM Studio","item":"https://locallyuncensored.com/blog/locally-uncensored-vs-lm-studio.html"}]}
@@ -51,7 +51,7 @@
 </nav>
 <article class="lu-doc">
 <h1>Locally Uncensored vs LM Studio</h1>
-<div class="meta">Published March 29, 2026 · Updated October 16, 2026 · 5 min read</div>
+<div class="meta">Published March 29, 2026 · Updated October 19, 2026 · 5 min read</div>
 
 <p><strong>LM Studio</strong> is one of the most polished local AI apps available, a native desktop client that makes running LLMs feel effortless. <strong>Locally Uncensored</strong> takes a different approach: an open source desktop app that combines chat with image and video generation, a coding agent and an agent with tools.</p>
 <p>Both apps let you run AI models locally without cloud dependencies. The question is what matters more to you: polish and simplicity, or features and freedom. They also work together: Locally Uncensored detects a running LM Studio, uses its server and can link the models it already stores.</p>
@@ -74,7 +74,7 @@
 <tr><td>Coding Agent</td><td class="check hl"><span class="check">Yes</span></td><td>Not in LM Studio; the separate Bionic app has one</td></tr>
 <tr><td>MCP Tools</td><td class="check hl"><span class="check">Built-in agent tools plus your own MCP servers</span></td><td><span class="check">Yes (MCP servers)</span></td></tr>
 <tr><td>File Upload + Vision</td><td class="check hl"><span class="check">Yes</span></td><td><span class="check">Yes (documents, and images for vision models)</span></td></tr>
-<tr><td>Thinking Mode</td><td class="check hl"><span class="check">Yes, with an effort control where the model has one</span></td><td><span class="check">Yes (collapsible thinking block)</span></td></tr>
+<tr><td>Thinking Mode</td><td class="check hl"><span class="check">Yes, with an effort control where the model has one, for local models too since 3.0.7</span></td><td><span class="check">Yes (collapsible thinking block)</span></td></tr>
 <tr><td>Granular Permissions</td><td class="check hl"><span class="check">A permission gate on every tool call</span></td><td><span class="check">Confirmation dialog for tool calls</span></td></tr>
 <tr><td>Multi-Provider</td><td class="check hl"><span class="check">Local engines + OpenAI, Anthropic, OpenRouter and any OpenAI compatible address</span></td><td>Local models, plus models on your other machines through LM Link</td></tr>
 <tr><td>Model Load/Unload</td><td class="check hl"><span class="check">Yes (VRAM mgmt)</span></td><td><span class="check">Yes</span></td></tr>
@@ -92,9 +92,21 @@
 <li><strong>Coding agent</strong>: it builds a map of the repo, edits only the lines you asked for, shows the diff before it applies anything, and runs your tests. LM Studio itself has none; its coding agent lives in Bionic, a separate app.</li>
 <li><strong>Agent tools and MCP</strong>: web search and fetch, file operations, a shell, code execution, screenshots and image and video generation are built in, and your own MCP servers add more. LM Studio connects MCP servers too.</li>
 <li><strong>Multi-provider support</strong>: local engines next to OpenAI, Anthropic and other cloud providers with your own keys. LM Studio runs local models and, through LM Link, models on your other machines.</li>
-<li><strong>Model load/unload</strong>: manage VRAM directly from the UI by loading and unloading models on demand. Loading a model in LM Studio can be cancelled from Locally Uncensored too.</li>
+<li><strong>Model load/unload</strong>: manage VRAM directly from the UI by loading and unloading models on demand. LM Studio loads and unloads models as well, and a load in LM Studio can be cancelled from Locally Uncensored.</li>
 </ul>
 <p>Version 3.0.6 also brings document chat with a local index, phone access over your LAN or a tunnel, side by side model compare and a local benchmark, and two beta features: Voice, a spoken conversation run on your own machine, and computer control, which is off until you switch it on.</p>
+
+<h2>What Locally Uncensored 3.0.7 adds</h2>
+<p>Version 3.0.7 adds these points that matter next to LM Studio:</p>
+<ul>
+<li><strong>Several local servers at once</strong>: KoboldCpp, LM Studio, a llama.cpp server or any other OpenAI compatible backend each get their own row in Settings, AI Backends, and their models sit in the picker under that name. Adding one no longer pushes another out, and a group chat can mix models from several of them. The context window comes from each server itself. So far this has run in automated tests only, not yet in the app with two real servers.</li>
+<li><strong>Reasoning effort for local models</strong>: the Low, Medium, High and Max button next to Think now works on the LU Engine, on LM Studio 0.4.8 and later, on KoboldCpp (Low to High) and on a llama.cpp server whose chat template reads it. It is one setting for all models, and it has run in automated tests only, not against a real LM Studio, KoboldCpp or llama.cpp server. A separate think budget in tokens works with the LU Engine and with Anthropic.</li>
+<li><strong>LM Studio keeps your context size</strong>: a size picked for a model is saved and used whenever Locally Uncensored loads it, and a picture or clip no longer starts a closed LM Studio. The context size part was tested with a stand in for LM Studio, not with LM Studio itself.</li>
+<li><strong>Any GGUF file on your drive</strong>: the Model Manager links a GGUF file from anywhere on the same drive into the LU Engine as a chat model, without copying it.</li>
+<li><strong>Duplicate and branch</strong>: Duplicate chat copies a conversation with its persona and settings, Branch from here starts a new chat from any message, and Regenerate keeps the earlier answer as a version you can switch back to. These have run in automated tests only.</li>
+<li><strong>More of Create on a Mac</strong>: Talking Character, Motion Control, Music, Enhance Image, Remove Background, masks in Edit and character training now run on the Mac itself. They ran with the real engine on one Mac with 48 GB; Macs with less memory have not been tried, and the Mac parts have not been clicked through in a built app yet.</li>
+</ul>
+<p>The Settings, Local API page still reaches only the LU Engine, Ollama and LM Studio. Our check of 3.0.7 in the real app ran on one Windows machine.</p>
 
 <h2>Where LM Studio Wins</h2>
 <ul>
@@ -109,7 +121,7 @@
 <div class="verdict">
 <h3>The Verdict</h3>
 <p><strong>Choose LM Studio</strong> if you want the most polished local chat experience with zero setup friction, and you do not need image or video generation. It's the "just works" option.</p>
-<p><strong>Choose Locally Uncensored</strong> if open source matters to you, if you want image and video generation alongside chat, or if you prefer uncensored models by default. Version 3.0.6 adds a coding agent, agent tools with MCP, vision, document chat, cloud providers next to local engines, and VRAM management. It does more, you own it, and it can keep using the LM Studio you already have.</p>
+<p><strong>Choose Locally Uncensored</strong> if open source matters to you, if you want image and video generation alongside chat, or if you prefer uncensored models by default. It also has a coding agent, agent tools with MCP, vision, document chat, cloud providers next to local engines, and VRAM management. It does more, you own it, and it can keep using the LM Studio you already have.</p>
 </div>
 <p style="font-size:0.85em;color:#888">What this page says about LM Studio comes from its official website, documentation and release notes, and from the installed app, as of October 2026.</p>
 

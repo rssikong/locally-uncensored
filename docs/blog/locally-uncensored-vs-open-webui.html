@@ -14,7 +14,7 @@
 <meta name="robots" content="index, follow">
 <!-- Privacy: No external fonts loaded. Using system fonts. -->
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"Article","headline":"Locally Uncensored vs Open WebUI: Which Local AI Frontend Is Better?","author":{"@type":"Person","name":"PurpleDoubleD"},"datePublished":"2026-03-29","dateModified":"2026-10-16","publisher":{"@type":"Organization","name":"Locally Uncensored"}}
+{"@context":"https://schema.org","@type":"Article","headline":"Locally Uncensored vs Open WebUI: Which Local AI Frontend Is Better?","author":{"@type":"Person","name":"PurpleDoubleD"},"datePublished":"2026-03-29","dateModified":"2026-10-19","publisher":{"@type":"Organization","name":"Locally Uncensored"}}
 </script>
 <script type="application/ld+json">
 {"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://locallyuncensored.com/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://locallyuncensored.com/blog/"},{"@type":"ListItem","position":3,"name":"Locally Uncensored vs Open WebUI","item":"https://locallyuncensored.com/blog/locally-uncensored-vs-open-webui.html"}]}
@@ -51,7 +51,7 @@
 </nav>
 <article class="lu-doc">
 <h1>Locally Uncensored vs Open WebUI</h1>
-<div class="meta">Published March 29, 2026 · Updated October 16, 2026 · 5 min read</div>
+<div class="meta">Published March 29, 2026 · Updated October 19, 2026 · 5 min read</div>
 
 <p>Choosing between local AI frontends? <strong>Open WebUI</strong> and <strong>Locally Uncensored</strong> both publish their code and both run AI locally. Locally Uncensored uses AGPL-3.0, Open WebUI its own Open WebUI License. They solve different problems.</p>
 <p>Open WebUI is one of the most popular Ollama frontends, with more than 150K GitHub stars. It's battle-tested, feature-rich, and has a massive community. Locally Uncensored is newer and takes a different approach: instead of being the best chat UI, it is a desktop app that combines <strong>chat, image generation, video creation and a coding agent</strong> in one window.</p>
@@ -76,7 +76,7 @@
 <tr><td>Coding Agent</td><td class="check hl"><span class="check">Yes</span></td><td>No dedicated one; Open Terminal lets a model run commands and code</td></tr>
 <tr><td>MCP Tools</td><td class="check hl"><span class="check">Built-in agent tools plus your own MCP servers</span></td><td><span class="check">Yes (native MCP over Streamable HTTP, plus OpenAPI tool servers)</span></td></tr>
 <tr><td>File Upload + Vision</td><td class="check hl"><span class="check">Yes</span></td><td><span class="check">Yes</span></td></tr>
-<tr><td>Thinking Mode</td><td class="check hl"><span class="check">Yes, with an effort control where the model has one</span></td><td><span class="check">Yes (collapsible thinking block)</span></td></tr>
+<tr><td>Thinking Mode</td><td class="check hl"><span class="check">Yes, with an effort control where the model has one, for local models too since 3.0.7</span></td><td><span class="check">Yes (collapsible thinking block)</span></td></tr>
 <tr><td>Granular Permissions</td><td class="check hl"><span class="check">A permission gate on every tool call</span></td><td><span class="check">Roles and group permissions; tool call approval as an experimental option</span></td></tr>
 <tr><td>Multi-Provider</td><td class="check hl"><span class="check">Local engines + OpenAI, Anthropic, OpenRouter and any OpenAI compatible address</span></td><td><span class="check">Yes</span></td></tr>
 <tr><td>Model Load/Unload</td><td class="check hl"><span class="check">Yes (VRAM mgmt)</span></td><td><span class="check">Eject button for Ollama models (admins)</span></td></tr>
@@ -95,6 +95,18 @@
 <li><strong>Permissions</strong>: every tool call passes a permission gate you control, and a read only run stays read only. In Open WebUI, approving tool calls is an experimental option.</li>
 </ul>
 <p>Version 3.0.6 also brings phone access over your LAN or a tunnel, side by side model compare and a local benchmark, a Local API that serves your local models on one OpenAI compatible address, and two beta features: Voice, a spoken conversation run on your own machine, and computer control, which is off until you switch it on.</p>
+
+<h2>What Locally Uncensored 3.0.7 adds</h2>
+<p>Version 3.0.7 adds these points that matter next to Open WebUI:</p>
+<ul>
+<li><strong>ComfyUI workflows in the normal save format</strong>: the Workflows view imports a workflow saved with Save or Export in ComfyUI, one file or a whole folder, and Create then shows every node setting of it to change. Node packs install, update and move to the trash from Settings, AI Backends. Windows and Linux only; a Mac runs no ComfyUI workflows. Subgraphs and updating a node pack have run in automated tests only.</li>
+<li><strong>Several local servers at once</strong>: KoboldCpp, LM Studio, a llama.cpp server or any other OpenAI compatible backend each get their own row in Settings, AI Backends, and their models sit in the picker under that name. Adding one no longer pushes another out, and a group chat can mix models from several of them. The context window comes from each server itself. So far this has run in automated tests only, not yet in the app with two real servers.</li>
+<li><strong>Duplicate and branch</strong>: Duplicate chat copies a conversation with its persona and settings, Branch from here starts a new chat from any message, and Regenerate keeps the earlier answer as a version you can switch back to. These have run in automated tests only.</li>
+<li><strong>Character cards</strong>: a card as PNG or JSON (versions 1, 2 and 3) becomes a persona with the card picture. A new chat opens with the card's greeting, alternate greetings switch with arrows, and a card persona exports back as a version 2 JSON file. Checked in the app with Holo and Qwen models, not with Gemma.</li>
+<li><strong>Reasoning effort for local models</strong>: the Low, Medium, High and Max button next to Think now works on the LU Engine, on LM Studio 0.4.8 and later, on KoboldCpp (Low to High) and on a llama.cpp server whose chat template reads it. It is one setting for all models, and it has run in automated tests only, not against a real LM Studio, KoboldCpp or llama.cpp server. A separate think budget in tokens works with the LU Engine and with Anthropic.</li>
+<li><strong>Agent safety</strong>: text from a page the agent fetches reaches the model marked as page content, not as instructions, and the LU Engine only runs models for the app that started it.</li>
+</ul>
+<p>The Settings, Local API page still reaches only the LU Engine, Ollama and LM Studio. Our check of 3.0.7 in the real app ran on one Windows machine.</p>
 
 <h2>Where Open WebUI Wins</h2>
 <ul>

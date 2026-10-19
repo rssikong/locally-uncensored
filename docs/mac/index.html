@@ -24,7 +24,7 @@
 {"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://locallyuncensored.com/"},{"@type":"ListItem","position":2,"name":"Mac","item":"https://locallyuncensored.com/mac/"}]}
 </script>
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Is there a Mac version of Locally Uncensored?","acceptedAnswer":{"@type":"Answer","text":"Yes, since version 3.0.6, in beta. The Mac build is for Apple Silicon and needs macOS 14 or newer."}},{"@type":"Question","name":"Does it run on an Intel Mac?","acceptedAnswer":{"@type":"Answer","text":"No. Intel Macs are not supported. On an Intel Mac you can use the hosted studio in a browser."}},{"@type":"Question","name":"Do I need ComfyUI on the Mac?","acceptedAnswer":{"@type":"Answer","text":"No. On the Mac, Create makes images and video on the Mac itself, without ComfyUI."}},{"@type":"Question","name":"Is the Mac build finished?","acceptedAnswer":{"@type":"Answer","text":"It is a beta. We tested it on an M5 Pro with 48 GB. Tell us how it runs on yours. Remote Access and the automatic update are not confirmed on macOS, and computer control is not fully tested yet."}},{"@type":"Question","name":"Is it free on the Mac?","acceptedAnswer":{"@type":"Answer","text":"Yes. Local use is free and needs no account. The app is open source under AGPL-3.0."}}]}
+{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Is there a Mac version of Locally Uncensored?","acceptedAnswer":{"@type":"Answer","text":"Yes, since version 3.0.6, in beta. The Mac build is for Apple Silicon and needs macOS 14 or newer."}},{"@type":"Question","name":"Does it run on an Intel Mac?","acceptedAnswer":{"@type":"Answer","text":"No. Intel Macs are not supported. On an Intel Mac you can use the hosted studio in a browser."}},{"@type":"Question","name":"Do I need ComfyUI on the Mac?","acceptedAnswer":{"@type":"Answer","text":"No. On the Mac, Create makes images and video on the Mac itself, without ComfyUI. Since 3.0.7 that includes Music, Enhance Image, Remove Background, Talking Character, Motion Control and training a character."}},{"@type":"Question","name":"Is the Mac build finished?","acceptedAnswer":{"@type":"Answer","text":"It is a beta. We tested it on an M5 Pro with 48 GB. Tell us how it runs on yours. Remote Access and the automatic update are not confirmed on macOS, and computer control is not fully tested yet."}},{"@type":"Question","name":"Is it free on the Mac?","acceptedAnswer":{"@type":"Answer","text":"Yes. Local use is free and needs no account. The app is open source under AGPL-3.0."}}]}
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -53,7 +53,7 @@
     <span class="lu-nav-sep"></span>
     <div class="switch" id="theme-switch" role="button" aria-label="Toggle theme"></div>
     <a class="he-cta" href="/pricing/" aria-label="LU Cloud plans and what they include"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>Cloud</a>
-    <a class="lu-nav-dl" href="https://github.com/PurpleDoubleD/locally-uncensored/releases/latest/download/LU_3.0.6_aarch64.dmg" download><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>Download</a>
+    <a class="lu-nav-dl" href="https://github.com/PurpleDoubleD/locally-uncensored/releases/latest/download/LU_3.0.7_aarch64.dmg" download><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>Download</a>
     <button type="button" class="lu-nav-toggle" aria-label="Menu"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
   </div>
 </nav>
@@ -72,7 +72,7 @@
 
     <p><strong>The short version:</strong> yes, there is a Mac build since version 3.0.6, and it is in beta. It is for Apple Silicon and needs macOS 14 or newer. Intel Macs are not supported. On any Mac, Intel included, the hosted studio opens in a browser.</p>
 
-    <p><a class="cta-btn" href="https://github.com/PurpleDoubleD/locally-uncensored/releases/latest/download/LU_3.0.6_aarch64.dmg" download>Download for Mac (.dmg)</a></p>
+    <p><a class="cta-btn" href="https://github.com/PurpleDoubleD/locally-uncensored/releases/latest/download/LU_3.0.7_aarch64.dmg" download>Download for Mac (.dmg)</a></p>
 
     <h2>What Runs on the Mac</h2>
 
@@ -80,7 +80,8 @@
       <thead><tr><th>Part</th><th>On the Mac</th></tr></thead>
       <tbody>
         <tr><td>Chat</td><td>Local models through the bundled server, with Metal</td></tr>
-        <tr><td>Create</td><td>Images and video on the Mac itself, without ComfyUI. Beta</td></tr>
+        <tr><td>Create</td><td>Images and video on the Mac itself, without ComfyUI. Since 3.0.7 also Music, Enhance Image, Remove Background, masks in Edit, Extend Video, Talking Character and Motion Control. Beta</td></tr>
+        <tr><td>Character training</td><td>Since 3.0.7, on the Mac itself. Slow: about 7 seconds a step on an M5 Pro</td></tr>
         <tr><td>Voice</td><td>Available</td></tr>
         <tr><td>Computer control</td><td>In the app, not fully tested yet on macOS</td></tr>
         <tr><td>Remote Access</td><td>Not confirmed on macOS</td></tr>
@@ -88,19 +89,22 @@
       </tbody>
     </table>
 
-    <p>We tested it on an M5 Pro with 48 GB, and it keeps the beta label until more Macs have run it. Tell us how it runs on yours: if something breaks, the <a href="https://github.com/PurpleDoubleD/locally-uncensored/issues">issue tracker</a> is the place to say so.</p>
+    <p>3.0.7 has run on one Mac so far, an M5 Pro with 48 GB on macOS 26.3.1. Macs with less memory have not been tested, and neither have the large LTX video models, which need 64 GB. That is why the build carries the beta label. If something breaks on your machine, the <a href="https://github.com/PurpleDoubleD/locally-uncensored/issues">issue tracker</a> is the place to say so.</p>
 
     <h2>How to Install</h2>
 
     <ol>
-      <li><a href="https://github.com/PurpleDoubleD/locally-uncensored/releases/latest/download/LU_3.0.6_aarch64.dmg" download>Download the .dmg</a> for Apple Silicon.</li>
+      <li><a href="https://github.com/PurpleDoubleD/locally-uncensored/releases/latest/download/LU_3.0.7_aarch64.dmg" download>Download the .dmg</a> for Apple Silicon.</li>
       <li>Open the .dmg and drag the app into Applications.</li>
       <li>Start it. The setup wizard picks a first model for your machine.</li>
     </ol>
 
     <p>
     The .dmg is signed and notarized.
+    The signature is an Apple Developer ID. It runs on Apple Silicon with macOS 14 or newer. Intel Macs are not supported.
     </p>
+
+    <p>On the first start macOS asks whether you want to open an app downloaded from the internet. That is expected, click Open. If macOS says LU is damaged or cannot be checked for malicious software, the download is incomplete or not the file from the Releases page. Do not open it and do not work around the message. Download the .dmg again from the <a href="https://github.com/PurpleDoubleD/locally-uncensored/releases/latest">Releases page</a>, and if the message comes back, tell us in the <a href="https://locallyuncensored.com/discord" target="_blank" rel="noopener">Discord</a>.</p>
 
     <p>Local use is free and needs no account. The app is open source under AGPL-3.0.</p>
 
@@ -126,7 +130,7 @@
     <p>No. Intel Macs are not supported. On an Intel Mac you can use the hosted studio in a browser.</p>
 
     <h3>Do I need ComfyUI on the Mac?</h3>
-    <p>No. On the Mac, Create makes images and video on the Mac itself, without ComfyUI.</p>
+    <p>No. On the Mac, Create makes images and video on the Mac itself, without ComfyUI. Since 3.0.7 that includes Music, Enhance Image, Remove Background, Talking Character, Motion Control and training a character.</p>
 
     <h3>Is the Mac build finished?</h3>
     <p>It is a beta. We tested it on an M5 Pro with 48 GB. Tell us how it runs on yours. Remote Access and the automatic update are not confirmed on macOS, and computer control is not fully tested yet.</p>
@@ -137,7 +141,7 @@
 
   <div class="post-footer">
     <p>Local AI on Apple Silicon. Free and open source, in beta.</p>
-    <a href="https://github.com/PurpleDoubleD/locally-uncensored/releases/latest/download/LU_3.0.6_aarch64.dmg" class="cta-btn" download>
+    <a href="https://github.com/PurpleDoubleD/locally-uncensored/releases/latest/download/LU_3.0.7_aarch64.dmg" class="cta-btn" download>
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       Download for Mac (.dmg)
     </a>

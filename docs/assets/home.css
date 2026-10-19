@@ -892,3 +892,5 @@ html.hm .hp-get.in .get-mark-p+.get-mark-p{transition-delay:.53s}
   .proof-row span[aria-hidden]{display:none}
   .dl-card--xl::after{display:none}
 }
+.dl-android{margin:0 0 12px;font-size:.86rem;color:var(--fg-50);text-align:center}
+.dl-android a{color:var(--accent-soft);font-weight:600}

@@ -14,7 +14,7 @@
 <meta name="robots" content="index, follow">
 <!-- Privacy: No external fonts loaded. Using system fonts. -->
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"Article","headline":"Locally Uncensored vs GPT4All: Which Local AI App Is Better?","author":{"@type":"Person","name":"PurpleDoubleD"},"datePublished":"2026-03-30","dateModified":"2026-10-16","publisher":{"@type":"Organization","name":"Locally Uncensored"}}
+{"@context":"https://schema.org","@type":"Article","headline":"Locally Uncensored vs GPT4All: Which Local AI App Is Better?","author":{"@type":"Person","name":"PurpleDoubleD"},"datePublished":"2026-03-30","dateModified":"2026-10-19","publisher":{"@type":"Organization","name":"Locally Uncensored"}}
 </script>
 <script type="application/ld+json">
 {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Is Locally Uncensored better than GPT4All?","acceptedAnswer":{"@type":"Answer","text":"It depends on your needs. Locally Uncensored is better if you want text chat, image generation and video generation in one app. GPT4All is the simpler choice if document chat through its LocalDocs feature is all you need. Locally Uncensored has document chat too."}},{"@type":"Question","name":"Does GPT4All support image generation?","acceptedAnswer":{"@type":"Answer","text":"GPT4All's documentation and release notes list no image generation; the app runs language models and chats with your documents. For local image and video generation, you need a tool like Locally Uncensored, which runs ComfyUI on Windows and Linux and generates on the Mac itself on Apple Silicon."}},{"@type":"Question","name":"Can I use uncensored models with GPT4All?","acceptedAnswer":{"@type":"Answer","text":"GPT4All runs GGUF models from Hugging Face, so you can add an uncensored one yourself. Locally Uncensored is built around uncensored models by default."}},{"@type":"Question","name":"Which app uses less RAM?","acceptedAnswer":{"@type":"Answer","text":"Mostly the model decides: inference memory depends on the model size and context, not on the app around it. Locally Uncensored is built on Tauri (Rust and the system webview), GPT4All on Qt and C++."}}]}
@@ -54,7 +54,7 @@
 </nav>
 <article class="lu-doc">
 <h1>Locally Uncensored vs GPT4All</h1>
-<div class="meta">Published March 30, 2026 &middot; Updated October 16, 2026 &middot; 6 min read</div>
+<div class="meta">Published March 30, 2026 &middot; Updated October 19, 2026 &middot; 6 min read</div>
 
 <p>GPT4All by Nomic AI is one of the most popular local AI chatbots with over 70K GitHub stars. It is a solid choice for running LLMs locally with its LocalDocs feature for chatting with your own documents. Its latest release, v3.10.0, came out in February 2025. But how does it compare to <a href="https://locallyuncensored.com/">Locally Uncensored</a>, the open-source desktop app that puts text chat, image generation and video generation in one window?</p>
 <p>Both apps let you run AI models on your own hardware with no data leaving your machine. The difference is scope. Locally Uncensored 3.0.6 goes well beyond text chat: it makes images and video on your own GPU, has a coding agent and an agent with tools and your own MCP servers, and works with local engines and optional cloud providers side by side. GPT4All focuses on text: chat, documents and, optionally, remote models. If you are exploring the <a href="best-local-ai-apps-2026.html">best local AI apps in 2026</a>, these two represent very different philosophies.</p>
@@ -67,7 +67,7 @@
 <tr><td>Coding Agent</td><td><span class="check hl">Yes</span></td><td><span class="cross">Not listed</span></td></tr>
 <tr><td>MCP Tools</td><td><span class="check hl">Built-in agent tools plus your own MCP servers</span></td><td><span class="cross">Not listed (one built-in tool: a JavaScript code interpreter)</span></td></tr>
 <tr><td>File Upload + Vision</td><td><span class="check hl">Yes (any file, images to vision models)</span></td><td>Text, Markdown and Excel attachments; image input not listed</td></tr>
-<tr><td>Thinking Mode</td><td><span class="check hl">Yes, with an effort control where the model has one</span></td><td><span class="check">Shows the reasoning of models such as DeepSeek-R1</span></td></tr>
+<tr><td>Thinking Mode</td><td><span class="check hl">Yes, with an effort control where the model has one, for local models too since 3.0.7</span></td><td><span class="check">Shows the reasoning of models such as DeepSeek-R1</span></td></tr>
 <tr><td>Granular Permissions</td><td><span class="check hl">A permission gate on every tool call</span></td><td>Not documented</td></tr>
 <tr><td>Multi-Provider</td><td><span class="check hl">Local engines + OpenAI, Anthropic, OpenRouter and any OpenAI compatible address</span></td><td><span class="check">Local, plus remote models from OpenAI, Groq, Mistral or an OpenAI compatible address</span></td></tr>
 <tr><td>Model Load/Unload</td><td><span class="check hl">Yes (VRAM mgmt)</span></td><td>Not documented</td></tr>
@@ -99,6 +99,18 @@
 <li><strong>Permissions</strong>: every tool call passes a permission gate you control, and a read only run stays read only.</li>
 </ul>
 <p>Locally Uncensored 3.0.6 also has a Local API (Settings, Local API) that serves your local models on one OpenAI compatible address, port 8129 by default, behind a token. It adds phone access over your LAN or a tunnel, side by side model compare and a local benchmark, and two beta features: Voice, a spoken conversation run on your own machine, and computer control, which is off until you switch it on.</p>
+
+<h2>What Locally Uncensored 3.0.7 adds</h2>
+<p>Version 3.0.7 adds these points that matter next to GPT4All:</p>
+<ul>
+<li><strong>Files in chat</strong>: an attached text file is no longer cut to its first 4000 characters; the model gets the whole file when it fits next to the conversation, or as much of its start as fits, and is told how much it got. Other files go up to 256 MB. The text file change has run in automated tests only.</li>
+<li><strong>Any GGUF file on your drive</strong>: the Model Manager links a GGUF file from anywhere on the same drive into the LU Engine as a chat model, without copying it.</li>
+<li><strong>ChatGPT export as real chats</strong>: the .zip of a ChatGPT data export turns into separate chats with their titles and dates, and a second import adds nothing twice. Tried in the app with an export built in ChatGPT's format; a real export from ChatGPT has not been tried yet.</li>
+<li><strong>Duplicate and branch</strong>: Duplicate chat copies a conversation with its persona and settings, Branch from here starts a new chat from any message, and Regenerate keeps the earlier answer as a version you can switch back to. These have run in automated tests only.</li>
+<li><strong>Reasoning effort for local models</strong>: the Low, Medium, High and Max button next to Think now works on the LU Engine, on LM Studio 0.4.8 and later, on KoboldCpp (Low to High) and on a llama.cpp server whose chat template reads it. It is one setting for all models, and it has run in automated tests only, not against a real LM Studio, KoboldCpp or llama.cpp server. A separate think budget in tokens works with the LU Engine and with Anthropic.</li>
+<li><strong>More of Create on a Mac</strong>: Talking Character, Motion Control, Music, Enhance Image, Remove Background, masks in Edit and character training now run on the Mac itself. They ran with the real engine on one Mac with 48 GB; Macs with less memory have not been tried, and the Mac parts have not been clicked through in a built app yet.</li>
+</ul>
+<p>The Settings, Local API page still reaches only the LU Engine, Ollama and LM Studio. Our check of 3.0.7 in the real app ran on one Windows machine.</p>
 
 <h2>Where GPT4All Wins</h2>
 <ul>
