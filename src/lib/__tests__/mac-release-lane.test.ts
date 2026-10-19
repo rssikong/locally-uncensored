@@ -636,15 +636,19 @@ describe('release.yml, a dry run signs its updater archive with a key of its own
 })
 
 describe('release.yml, the release text names the Mac only behind the switch', () => {
-  /** The text Windows and Linux releases carried before the Mac lane. */
+  /** The text the release carries while the Mac lane is off. */
   const BEFORE = [
-    '## Download',
+    '## 下载',
     '',
-    '**Windows:** Download the `.exe` installer. During setup, choose "Install for current user only" for a portable/no-install experience. Or use the `.msi` for system-wide installation.',
+    '**Windows**',
+    '- `..._x64-setup.exe`（推荐）：安装时可选「仅当前用户」，无需管理员权限。',
+    '- `..._x64_zh-CN.msi`：系统级安装，适合企业统一部署。',
     '',
-    '**Linux:** Download the `.AppImage`, make it executable (`chmod +x`), and run. No installation needed.',
+    '**Linux**',
+    '- `.AppImage`：下载后 `chmod +x` 直接运行，无需安装。',
+    '- `.deb`（Debian/Ubuntu）、`.rpm`（Fedora/openSUSE）：用包管理器安装。',
     '',
-    '> All versions are portable-friendly, no admin rights required. LU by LU Labs.',
+    '> 全部免管理员权限。LU by LU Labs.',
   ].join('\n')
 
   /** The block scalar under `releaseBody: |`, indentation removed. */

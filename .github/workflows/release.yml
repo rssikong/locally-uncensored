@@ -809,7 +809,7 @@ jobs:
           # translating the same upstream version twice does not overwrite the
           # earlier assets or its updater signature.
           tagName: ${{ steps.zhver.outputs.tag || github.event.release.tag_name || github.event.inputs.tag || 'v1.3.0' }}
-          releaseName: '本地 AI 工作室 中文版 ${{ steps.zhver.outputs.version || github.event.release.tag_name || github.event.inputs.tag }}'
+          releaseName: '本地 AI 工作室 中文版 ${{ steps.zhver.outputs.version || github.event.release.tag_name || github.event.inputs.tag }}（Windows / Linux）'
           # The Mac paragraph hangs on the same switch as the Mac lane
           # (vars.LU_MAC_RELEASE, see build-tauri-macos). Off, the expression
           # at the end of the Linux line is the empty string and the text is
@@ -821,18 +821,22 @@ jobs:
           # names an asset that is not there: take it out of the release text
           # by hand (RELEASE-CHECKLISTE-MAC.md, A7). Like every input of this
           # step it only applies when this run creates the release.
-          # Fork note: this text stays English on purpose. `mac-release-lane.test.ts`
-          # compares it byte for byte with a constant, and translating it would
-          # turn a rule about the Mac paragraph into a translation chore on every
-          # upstream sync. Only `releaseName` above is localised.
+          # Fork note: the text below is Chinese and lists the files per system,
+          # because the asset names alone (`..._x64_zh-CN.msi`, `.AppImage`) made
+          # people ask which one belongs to them. `mac-release-lane.test.ts`
+          # pins it byte for byte, so change both together.
           releaseBody: |
-            ## Download
+            ## 下载
 
-            **Windows:** Download the `.exe` installer. During setup, choose "Install for current user only" for a portable/no-install experience. Or use the `.msi` for system-wide installation.
+            **Windows**
+            - `..._x64-setup.exe`（推荐）：安装时可选「仅当前用户」，无需管理员权限。
+            - `..._x64_zh-CN.msi`：系统级安装，适合企业统一部署。
 
-            **Linux:** Download the `.AppImage`, make it executable (`chmod +x`), and run. No installation needed.${{ vars.LU_MAC_RELEASE == '1' && format('{0}{0}**macOS (Apple Silicon, macOS 14 or newer):** Download the `.dmg`, open it and drag LU to Applications. The app is signed with an Apple Developer ID and notarized by Apple. Intel Macs are not supported.', fromJSON('"\n"')) || '' }}
+            **Linux**
+            - `.AppImage`：下载后 `chmod +x` 直接运行，无需安装。
+            - `.deb`（Debian/Ubuntu）、`.rpm`（Fedora/openSUSE）：用包管理器安装。
 
-            > All versions are portable-friendly, no admin rights required. LU by LU Labs.
+            > 全部免管理员权限。LU by LU Labs.${{ vars.LU_MAC_RELEASE == '1' && format('{0}{0}**macOS (Apple Silicon, macOS 14 or newer):** Download the `.dmg`, open it and drag LU to Applications. The app is signed with an Apple Developer ID and notarized by Apple. Intel Macs are not supported.', fromJSON('"\n"')) || '' }}
           releaseDraft: false
           # A build is not a decision. This workflow used to publish straight to
           # a full release, so the moment CI finished, GitHub's `latest` pointed
