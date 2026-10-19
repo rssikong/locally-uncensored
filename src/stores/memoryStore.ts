@@ -10,6 +10,7 @@ import { scoreMemoriesBlended, isStale, type BlendCandidate } from '../lib/memor
 import type { ResolutionDecision } from '../lib/memory-extraction'
 import { isRecord, prop, asString, asNumber, asStringArray } from '../types/json-guards'
 import { log } from '../lib/logger'
+import { charsPerToken } from '../lib/token-estimate'
 import { useCloudAuthStore } from './cloudAuthStore'
 import type { MemorySyncBaseline } from '../lib/memory-sync-plan'
 
@@ -294,7 +295,10 @@ export function renderMemoryContext(ordered: MemoryFile[], budgetTokens: number)
   }
   for (const entry of ordered) grouped[entry.type].push(entry)
 
-  const maxChars = cappedTokens * 4
+  // GH #167: the cap is in tokens. A flat 4 characters per token let a
+  // Japanese memory block run to about 2.8 times its budget; the script aware
+  // density keeps it at the budget, and pure ASCII still reads 4.
+  const overBudget = (text: string) => text.length > cappedTokens * charsPerToken(text)
   let result = ''
   const memoryIds: string[] = []
 
@@ -303,13 +307,13 @@ export function renderMemoryContext(ordered: MemoryFile[], budgetTokens: number)
     if (items.length === 0) continue
 
     const header = `### ${TYPE_SECTION_HEADERS[type]}\n`
-    if (result.length + header.length > maxChars) break
+    if (overBudget(result + header)) break
     result += header
 
     for (const item of items) {
       const sanitized = sanitizeForInjection(item.content).replace(/\n/g, ' ')
       const line = `- ${item.title}: ${sanitized}\n`
-      if (result.length + line.length > maxChars) break
+      if (overBudget(result + line)) break
       result += line
       memoryIds.push(item.id)
     }

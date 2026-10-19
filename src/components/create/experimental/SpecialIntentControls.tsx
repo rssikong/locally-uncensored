@@ -6,7 +6,7 @@
 // specialized lanes), and the surfaces below fork only where the two lanes
 // genuinely differ (extend's source pick, the cloud voice maker).
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { usePopoverPlatz } from '../../../hooks/usePopoverPlatz'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
@@ -17,20 +17,32 @@ import { useCloudCatalogStore, cloudModelById, lengthCredits, lengthPrice, model
 import { listLoras, deleteLora, downloadLora, type CloudLora, type LoraDownloadProgress } from '../../../api/cloud/loras'
 import { errorText } from '../../../types/json-guards'
 import {
-  characterTrainerStatus, installCharacterTrainer, parseLocalCharacterLora,
-  TRAINER_BASE_FILES, baseDownloadRunning, baseDownloadPercent, type TrainerStatus,
+  characterTrainerStatus, deleteLocalCharacter, installCharacterTrainer, parseLocalCharacterLora,
+  TRAINER_BASE_FILES, baseDownloadRunning, baseDownloadPercent, missingTrainerBases, missingBasesLine, aboutSize, baseBytes, type TrainerStatus,
 } from '../../../api/trainer'
 import { startModelDownload, getDownloadProgress, catalogDigestFor } from '../../../api/discover'
 import { useDownloadStore } from '../../../stores/downloadStore'
-import { getLoraModels } from '../../../api/comfyui'
+import { refreshComfyModels } from '../../../api/comfyui'
+import { isMlxImageHost } from '../../../api/mlx-image'
+import { buildMlxVideoModels, listVideoModels, mlxTalkingEntry, mlxVideoModelIdFor } from '../../../api/mlx-video'
+import { openMlxLoraFolder } from '../../../api/mlx-loras'
+import { getMacTrainStatus, macTrainNote, type MacTrainStatus } from '../../../api/mlx-train'
+import { characterLoraFile, listLocalCharacters, type CharacterRef } from '../../../lib/characters'
 import { isWindows, isMacOS } from '../../../api/backend'
 import { LOCAL_MUSIC_TEXT, SECONDS_LENGTH, musicHowtoLines, musicLength, musicText } from '../../../lib/render/music-ui'
+import { MAC_MUSIC_MIN_SECONDS } from '../../../lib/mac-music'
 import { createRunModel, studioShownValue } from '../../../lib/render/create-studio'
 import { galleryLabelShort } from '../../../lib/render/gallery-label'
-import { TRAIN_PRESETS, trainStepsNote } from '../../../lib/trainer-presets'
+import { TRAIN_PRESETS, TRAIN_VRAM_PRESETS, LOW_VRAM_NOTE, trainStepsNote, trainVramSuggestion, type TrainVramPreset } from '../../../lib/trainer-presets'
+import { useGraphicsCardGb } from '../../../hooks/useGraphicsMemory'
 import { trainerPathPlaceholder } from '../../../lib/trainer-path-placeholder'
 import { trainerRootHint } from '../../../lib/trainer-root-hint'
 import { useCreateExp } from './CreateContext'
+import { CharacterUseLocally } from './CharacterUseLocally'
+import { useLocalPick } from './localPick'
+import { characterBaseModel, characterRunBlock } from '../../../lib/character-base'
+import { HINWEIS_TEXT } from '../../../lib/hinweis'
+import { lastFrame } from '../../../lib/video-frames'
 import { loadImageRef } from './loadImage'
 import { mediaRefFrom } from './mediaRef'
 import { fetchGalleryItemBlob } from './galleryUrl'
@@ -247,7 +259,9 @@ function CharacterPanel() {
           ]}
         />
       </div>
-      {characterTab === 'train' && localLane ? (
+      {characterTab === 'train' && localLane && isMlxImageHost() ? (
+        <MacTrainControls />
+      ) : characterTab === 'train' && localLane ? (
         <LocalTrainControls />
       ) : characterTab === 'use' && localLane ? (
         <LocalCharacterShelf />
@@ -293,6 +307,7 @@ function CharacterPanel() {
                   <span className="t-label text-gray-500">{FAMILY_LABEL[c.base_family] ?? c.base_family}</span>
                 </button>
                 <CharacterDownload lora={c} />
+                <CharacterUseLocally lora={c} />
                 <button
                   onClick={() => {
                     void deleteLora(c.id)
@@ -416,7 +431,13 @@ function LocalTrainControls() {
   const trainImages = useCreateStore((s) => s.trainImages)
   const trainSteps = useCreateStore((s) => s.trainSteps)
   const setTrainSteps = useCreateStore((s) => s.setTrainSteps)
+  const trainVramPreset = useCreateStore((s) => s.trainVramPreset)
+  const setTrainVramPreset = useCreateStore((s) => s.setTrainVramPreset)
   const isGenerating = useCreateStore((s) => s.isGenerating)
+  // 3.0.8 D20: the card's memory, for the Low VRAM suggestion under the
+  // switch. The same reading the Model Manager uses (one probe per app run).
+  const cardGb = useGraphicsCardGb()
+  const vramHint = trainVramSuggestion(cardGb, trainVramPreset)
   const [status, setStatus] = useState<TrainerStatus | null>(null)
   const [busy, setBusy] = useState<'install' | 'bases' | null>(null)
   const [note, setNote] = useState<string | null>(null)
@@ -452,6 +473,13 @@ function LocalTrainControls() {
     characterTrainerStatus().then(setStatus).catch(() => setStatus(null))
   }, [])
   useEffect(() => { refresh() }, [refresh])
+
+  // Only the files this machine lacks get downloaded, named and sized (box
+  // run: z_image_bf16 alone was missing, the line said 19 GB). The poll below
+  // reads them through the ref so its interval does not restart per status.
+  const missingBases = useMemo(() => (status ? missingTrainerBases(status) : []), [status])
+  const missingRef = useRef(missingBases)
+  useEffect(() => { missingRef.current = missingBases }, [missingBases])
 
   // K5 Nachbesserung, point 3: the field must always show the actually
   // valid path, not stay blank while a customized root is already active
@@ -497,9 +525,11 @@ function LocalTrainControls() {
         }
       } else {
         const prog = await getDownloadProgress().catch(() => ({} as Record<string, { progress: number; total: number; status: string; filename: string; error?: string }>))
-        const pct = baseDownloadPercent(prog)
+        const fetching = missingRef.current
+        const pct = baseDownloadPercent(prog, fetching.length ? fetching.map((f) => f.filename) : undefined)
         if (pct !== null) {
-          setNote(`Downloading base files (${pct}% of about 19 GB)...`)
+          const size = aboutSize(baseBytes(fetching.length ? fetching : TRAINER_BASE_FILES))
+          setNote(`Downloading base files (${pct}% of ${size})...`)
           return
         }
         const failed = TRAINER_BASE_FILES.map((f) => prog[f.filename]).find((r) => r?.status === 'error')
@@ -549,10 +579,7 @@ function LocalTrainControls() {
     if (!status) return
     setBusy('bases')
     setNote('Starting the downloads...')
-    const missing = TRAINER_BASE_FILES.filter((f) =>
-      (f.subfolder === 'diffusion_models' && !status.dit) ||
-      (f.subfolder === 'text_encoders' && !status.textEncoder) ||
-      (f.subfolder === 'vae' && !status.vae))
+    const missing = missingTrainerBases(status)
     // Same tray registration the Create install cards do: without it the header
     // Downloads tray reads "No active downloads" through a multi GB transfer and
     // its cancel + retry buttons never appear.
@@ -594,7 +621,7 @@ function LocalTrainControls() {
     return (
       <div className="flex flex-col items-center gap-1.5">
         <div className="flex items-center gap-2">
-          <span className="t-label text-gray-500">Z Image training base files are missing (about 19 GB, one time).</span>
+          <span className="t-label text-gray-500">{missingBasesLine(missingBases)}</span>
           <Button size="sm" variant="secondary" icon={Download} loading={busy === 'bases'} disabled={busy === 'bases'} onClick={startBases}>
             {busy === 'bases' ? 'Downloading…' : 'Download base files'}
           </Button>
@@ -625,6 +652,13 @@ function LocalTrainControls() {
           onChange={(v) => setTrainSteps(Number(v))}
           options={TRAIN_PRESETS.map((p) => ({ value: String(p.steps), label: p.label }))}
         />
+        <Segmented
+          size="sm"
+          layoutId="train-vram"
+          value={trainVramPreset}
+          onChange={(v) => setTrainVramPreset(v as TrainVramPreset)}
+          options={TRAIN_VRAM_PRESETS.map((p) => ({ value: p.value, label: p.label }))}
+        />
         <span className="t-label text-gray-600">
           {trainImages.length}/{maxTrainImages('local')} photos{trainImages.length < MIN_TRAIN_IMAGES ? `, need at least ${MIN_TRAIN_IMAGES}` : ''}
         </span>
@@ -651,6 +685,23 @@ function LocalTrainControls() {
           </button>
         </div>
       )}
+      {!isGenerating && trainVramPreset === 'low-vram' && (
+        <div className="t-label text-gray-600 max-w-[560px] text-center" data-testid="low-vram-note">{LOW_VRAM_NOTE}</div>
+      )}
+      {!isGenerating && vramHint && (
+        <div className="t-label text-gray-500 flex items-center justify-center gap-1.5 flex-wrap max-w-[560px] text-center" data-testid="low-vram-suggestion">
+          <span>{vramHint.text}</span>
+          {vramHint.switchTo && (
+            <button
+              type="button"
+              onClick={() => setTrainVramPreset(vramHint.switchTo as TrainVramPreset)}
+              className="underline underline-offset-2 text-gray-400 hover:text-gray-200 transition-colors"
+            >
+              Use Low VRAM
+            </button>
+          )}
+        </div>
+      )}
       {note && <div role="status" tabIndex={0} className="text-xs leading-relaxed text-gray-600 max-w-[520px] max-h-40 overflow-y-auto select-text whitespace-pre-wrap text-center break-words">{note}</div>}
       <TrainerReinstallModal
         open={reinstallOpen}
@@ -658,6 +709,80 @@ function LocalTrainControls() {
         status={status}
         onConfirm={confirmReinstall}
       />
+    </div>
+  )
+}
+
+// Training a character on the Mac: the trainer of the Mac's own image engine
+// (api/mlx-train.ts), on the Z-Image Turbo pack Create runs. The inputs are
+// the ones of the Windows trainer; the gates are the Mac's: the Z-Image pack
+// and enough memory. The run itself is the Create button, like on Windows.
+function MacTrainControls() {
+  const triggerWord = useCreateStore((s) => s.triggerWord)
+  const setTriggerWord = useCreateStore((s) => s.setTriggerWord)
+  const trainImages = useCreateStore((s) => s.trainImages)
+  const trainSteps = useCreateStore((s) => s.trainSteps)
+  const setTrainSteps = useCreateStore((s) => s.setTrainSteps)
+  const isGenerating = useCreateStore((s) => s.isGenerating)
+  const [status, setStatus] = useState<MacTrainStatus | null>(null)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    let live = true
+    getMacTrainStatus()
+      .then((s) => { if (live) setStatus(s) })
+      .catch(() => { if (live) setFailed(true) })
+    return () => { live = false }
+  }, [isGenerating])
+
+  if (failed) {
+    return <div className="t-label text-gray-600 text-center" data-testid="mac-train-note">The trainer could not be asked whether it is ready. Restart the app and try again.</div>
+  }
+  if (!status) {
+    return <div className="t-label text-gray-600 text-center">Checking the trainer…</div>
+  }
+  if (status.memoryRefusal) {
+    return <div role="alert" className={cn('t-label text-center max-w-md mx-auto', HINWEIS_TEXT.fehler)} data-testid="mac-train-note">{status.memoryRefusal}</div>
+  }
+  if (!status.engineReady || !status.base) {
+    return (
+      <div className="t-label text-gray-500 text-center max-w-md mx-auto" data-testid="mac-train-note">
+        Training a character on this Mac needs Z-Image Turbo. Install it in the Model Manager first, then come back here.
+      </div>
+    )
+  }
+  return (
+    <div className="flex flex-col items-center gap-1.5" data-testid="mac-train-controls">
+      <div className="flex items-center justify-center gap-2 flex-wrap">
+        <input
+          value={triggerWord}
+          onChange={(e) => setTriggerWord(e.target.value)}
+          placeholder="Trigger word, e.g. davechar"
+          className="t-control w-44 px-2.5 h-[var(--control-h-sm)] rounded-md bg-white/[0.03] border border-white/[0.06] text-gray-200 placeholder-gray-600 focus:outline-none focus:border-white/15"
+        />
+        <Segmented
+          size="sm"
+          layoutId="train-steps"
+          value={String(trainSteps)}
+          onChange={(v) => setTrainSteps(Number(v))}
+          options={TRAIN_PRESETS.map((p) => ({ value: String(p.steps), label: p.label }))}
+        />
+        <span className="t-label text-gray-600">
+          {trainImages.length}/{maxTrainImages('local')} photos{trainImages.length < MIN_TRAIN_IMAGES ? `, need at least ${MIN_TRAIN_IMAGES}` : ''}
+        </span>
+      </div>
+      {!isGenerating && (
+        <div className="t-label text-gray-600 text-center max-w-[560px]" data-testid="mac-train-hint">
+          {macTrainNote(trainStepsNote(trainSteps), status)}{' '}
+          <button
+            onClick={() => { void openMlxLoraFolder().catch(() => undefined) }}
+            className="underline underline-offset-2 text-gray-500 hover:text-gray-300"
+            data-testid="mac-train-open-folder"
+          >
+            Open the LoRA folder
+          </button>
+        </div>
+      )}
     </div>
   )
 }
@@ -671,61 +796,154 @@ function LocalCharacterShelf() {
   const selectedLoras = useCreateStore((s) => s.selectedLoras)
   const toggleLora = useCreateStore((s) => s.toggleLora)
   const charactersVersion = useCreateStore((s) => s.charactersVersion)
-  const [files, setFiles] = useState<string[] | null>(null)
+  const setImageModel = useCreateStore((s) => s.setImageModel)
+  const { list: imageModels, value: runModel } = useLocalPick()
+  const [chars, setChars] = useState<CharacterRef[] | null>(null)
+  // The character the delete dialog asks about, and what went wrong if the
+  // file could not be moved to the Trash or the Recycle Bin.
+  const [confirmDelete, setConfirmDelete] = useState<{ file: string; trigger: string } | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+
+  const removeCharacter = async (file: string) => {
+    setDeleting(true)
+    try {
+      await deleteLocalCharacter(file)
+      // The file is gone: the pick and the LoRA it rode on go with it, so the
+      // next render does not ask for a file that is no longer there.
+      const store = useCreateStore.getState()
+      if (characterLoraFile(store.selectedCharacter) === file) store.setSelectedCharacter(null)
+      if (store.selectedLoras.some((l) => l.name === file)) store.toggleLora(file)
+      setConfirmDelete(null)
+      // ComfyUI rereads its loras folder, then the shelf asks again.
+      await refreshComfyModels().catch(() => { /* rescan is best-effort */ })
+      store.bumpCharactersVersion()
+    } catch (e) {
+      setConfirmDelete(null)
+      setDeleteError(errorText(e))
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   useEffect(() => {
     let live = true
-    getLoraModels()
-      .then((l) => { if (live) setFiles(l) })
-      .catch(() => { if (live) setFiles([]) })
+    listLocalCharacters()
+      .then((l) => { if (live) setChars(l) })
+      .catch(() => { if (live) setChars([]) })
     return () => { live = false }
   }, [charactersVersion])
 
-  const chars = (files ?? []).map(parseLocalCharacterLora)
-    .filter((c): c is NonNullable<ReturnType<typeof parseLocalCharacterLora>> => c !== null)
+  // A character from an earlier session, or a model changed after the pick:
+  // the shelf says so, with the way back. Nothing is said before the model
+  // list is in, where every model would read as missing.
+  const pickedFile = characterLoraFile(selectedCharacter)
+  const base = pickedFile ? characterBaseModel(pickedFile, imageModels, runModel) : null
+  const runType = imageModels.find((m) => m.name === runModel)?.type
+  const block = pickedFile && runType ? characterRunBlock(pickedFile, runType, !!base) : null
 
   return (
     <div className="flex items-center justify-center gap-1.5 flex-wrap">
-      {files === null && <span className="t-label text-gray-600">Loading your characters…</span>}
-      {files !== null && chars.length === 0 && (
+      {chars === null && <span className="t-label text-gray-600">Loading your characters…</span>}
+      {chars !== null && chars.length === 0 && (isMlxImageHost() ? (
+        <span className="t-label text-gray-600 w-full text-center" data-testid="mac-no-characters">
+          No characters in the LoRA folder yet. A trained character is a file named {'char_<name>_zimage.safetensors'}.{' '}
+          <button onClick={() => { void openMlxLoraFolder().catch(() => undefined) }} className="underline text-gray-400 hover:text-white">Open the LoRA folder</button>
+        </span>
+      ) : (
         <span className="t-label text-gray-600">No local characters yet. Train one first.</span>
-      )}
-      {chars.map((c) => {
-        const active = selectedCharacter?.id === `local:${c.file}`
+      ))}
+      {(chars ?? []).map((ref) => {
+        const active = selectedCharacter?.id === ref.id
+        const c = { file: characterLoraFile(ref) ?? '', trigger: ref.triggerWord }
         return (
-          <button
-            key={c.file}
-            onClick={() => {
-              if (active) {
-                setSelectedCharacter(null)
-                if (selectedLoras.some((l) => l.name === c.file)) toggleLora(c.file)
-                return
-              }
-              // One character at a time: drop other char LoRAs from the chain.
-              for (const l of selectedLoras) {
-                if (l.name !== c.file && parseLocalCharacterLora(l.name)) toggleLora(l.name)
-              }
-              if (!selectedLoras.some((l) => l.name === c.file)) toggleLora(c.file)
-              setSelectedCharacter({ id: `local:${c.file}`, name: c.trigger, triggerWord: c.trigger, family: 'z-image' })
-            }}
-            className={cn(
-              't-control flex items-center gap-1.5 px-2.5 h-[var(--control-h-sm)] rounded-md border transition-colors',
-              active
-                ? 'bg-white/10 border-white/20 text-white'
-                : 'bg-white/[0.03] border-white/[0.06] text-gray-400 hover:text-gray-200',
-            )}
-            title={`Trigger word: ${c.trigger}`}
-          >
-            <span className="max-w-[110px] truncate">{c.trigger}</span>
-            <span className="t-label text-gray-500">Z-Image</span>
-          </button>
+          <div key={ref.id} className="flex items-center">
+            <button
+              onClick={() => {
+                if (active) {
+                  setSelectedCharacter(null)
+                  if (selectedLoras.some((l) => l.name === c.file)) toggleLora(c.file)
+                  return
+                }
+                // One character at a time: drop other char LoRAs from the chain.
+                for (const l of selectedLoras) {
+                  if (l.name !== c.file && parseLocalCharacterLora(l.name)) toggleLora(l.name)
+                }
+                if (!selectedLoras.some((l) => l.name === c.file)) toggleLora(c.file)
+                // GH #161: the character brings the model it was trained for.
+                const base = characterBaseModel(c.file, imageModels, runModel)
+                if (base && base.name !== runModel) setImageModel(base.name, base.type)
+                setSelectedCharacter(ref)
+              }}
+              className={cn(
+                't-control flex items-center gap-1.5 px-2.5 h-[var(--control-h-sm)] rounded-md border transition-colors',
+                active
+                  ? 'bg-white/10 border-white/20 text-white'
+                  : 'bg-white/[0.03] border-white/[0.06] text-gray-400 hover:text-gray-200',
+              )}
+              title={`Trigger word: ${c.trigger}`}
+            >
+              <span className="max-w-[110px] truncate">{c.trigger}</span>
+              <span className="t-label text-gray-500">Z-Image</span>
+            </button>
+            <button
+              onClick={() => setConfirmDelete(c)}
+              className="p-1 text-gray-600 hover:text-red-400"
+              title="Delete character"
+              aria-label={`Delete character ${c.trigger}`}
+              data-testid="local-character-delete"
+            >
+              <Trash2 size={11} />
+            </button>
+          </div>
         )
       })}
-      {selectedCharacter && (
-        <span className="t-label text-gray-500 w-full text-center">
-          Put “{selectedCharacter.triggerWord}” in your prompt. Works best with a Z Image base model.
+      {selectedCharacter && !block && (
+        <span className="t-label text-gray-500 w-full text-center" data-testid="character-use-hint">
+          Put “{selectedCharacter.triggerWord}” in your prompt and describe the key features too. The trigger word alone often does not hold the look.
         </span>
       )}
+      {block && (
+        <span role="alert" className={cn('t-label w-full text-center flex items-center justify-center gap-2 flex-wrap', HINWEIS_TEXT.fehler)} data-testid="character-model-warning">
+          {block}
+          {base && (
+            <button
+              onClick={() => setImageModel(base.name, base.type)}
+              className="underline text-gray-300 hover:text-white"
+              data-testid="character-model-switch"
+            >
+              Switch model
+            </button>
+          )}
+        </span>
+      )}
+      <Modal open={!!confirmDelete} onClose={() => { if (!deleting) setConfirmDelete(null) }} title="Delete character">
+        <p className="text-[0.7rem] text-gray-600 dark:text-gray-300 mb-3">
+          Delete the character <span className="text-gray-900 dark:text-white font-mono">{confirmDelete?.trigger}</span>?
+          Its file moves to the {isMacOS() ? 'Trash' : 'Recycle Bin'}, so you can put it back from there.
+        </p>
+        <ModalActions>
+          <ModalButton variant="quiet" onClick={() => setConfirmDelete(null)} disabled={deleting}>
+            Cancel
+          </ModalButton>
+          <ModalButton
+            variant="danger"
+            onClick={() => confirmDelete && void removeCharacter(confirmDelete.file)}
+            disabled={deleting}
+            data-testid="local-character-delete-confirm"
+          >
+            {deleting ? 'Deleting…' : 'Delete'}
+          </ModalButton>
+        </ModalActions>
+      </Modal>
+      <Modal open={!!deleteError} onClose={() => setDeleteError(null)} title="Delete failed">
+        <p className="text-[0.7rem] text-red-500 dark:text-red-400 mb-3">{deleteError}</p>
+        <ModalActions>
+          <ModalButton onClick={() => setDeleteError(null)}>
+            Close
+          </ModalButton>
+        </ModalActions>
+      </Modal>
     </div>
   )
 }
@@ -738,14 +956,18 @@ function LipsyncControls() {
   const setAudioInput = useCreateStore((s) => s.setAudioInput)
   const voiceFromJob = useCreateStore((s) => s.voiceFromJob)
   const setVoiceFromJob = useCreateStore((s) => s.setVoiceFromJob)
+  // A Mac runs Talking Character itself (LTX-2.3 a2v): a portrait and a voice,
+  // never a clip to resync, whatever the cloud catalogue says about its pick.
+  const macLocal = useCreateStore((s) => s.backend) === 'local' && isMlxImageHost()
   // Catalog subscription so the chip row re-renders when the live catalog
   // arrives and flips the picked model's source type.
   useCloudCatalogStore((s) => s.fetchedAt)
   const model = cloudModelById(modelForOp('video', 'lipsync', cloudOpModel))
-  const needsClip = model?.lipsync_source === 'video'
+  const needsClip = !macLocal && model?.lipsync_source === 'video'
 
   return (
     <div className="flex items-center justify-center gap-2 flex-wrap">
+      {macLocal && <MacTalkingPart />}
       {needsClip ? (
         <DrivingVideoChip empty="Add video to resync" />
       ) : (
@@ -758,6 +980,76 @@ function LipsyncControls() {
         onPickVoice={(jobId, label) => setVoiceFromJob({ jobId, label })}
         onClear={() => { setAudioInput(null); setVoiceFromJob(null) }}
       />
+      {macLocal && <MacTalkingWords />}
+    </div>
+  )
+}
+
+/** What the voice says, on a Mac. Quoted in the run's prompt it makes the lips
+ *  follow the words (lib/mac-talking macTalkingPrompt); left empty the run
+ *  goes on the voice alone. */
+function MacTalkingWords() {
+  const words = useCreateStore((s) => s.talkingWords)
+  const setWords = useCreateStore((s) => s.setTalkingWords)
+  return (
+    <input
+      value={words}
+      onChange={(e) => setWords(e.target.value)}
+      maxLength={600}
+      aria-label="What the voice says"
+      placeholder="What does the voice say? Optional, the lips follow the words better with it"
+      className="t-control w-full max-w-[520px] px-2.5 h-[var(--control-h-sm)] rounded-md bg-white/[0.03] border border-white/[0.06] text-gray-200 placeholder-gray-600 focus:outline-none focus:border-white/15"
+    />
+  )
+}
+
+/**
+ * The line of the Mac's Talking Character tab while the model it runs on
+ * lacks its own download (the dev transformer of LTX-2.3, about 11 GB). One
+ * button gets it on the slot of a video model install; with it on disk the
+ * line is gone and the run can start.
+ */
+function MacTalkingPart() {
+  // The model the run takes: the pick of the tab's model chip (localPick).
+  const localOpModel = useCreateStore((s) => s.localOpModel)
+  const videoModelList = useCreateStore((s) => s.videoModelList)
+  const entry = mlxTalkingEntry(videoModelList, localOpModel)
+  const [busy, setBusy] = useState(false)
+  const [line, setLine] = useState<string | null>(null)
+  const [failed, setFailed] = useState<string | null>(null)
+  const id = entry ? mlxVideoModelIdFor(entry.name) : null
+  if (!entry || !id || entry.mlxVideo?.talking !== 'missing') return null
+  const name = entry.name.replace(/^MLX /, '')
+  const get = async () => {
+    setBusy(true)
+    setFailed(null)
+    try {
+      // Loaded on the click: the install module brings the install store,
+      // which nothing else on this surface needs.
+      const install = await import('../../../api/mlx-install')
+      try {
+        await install.installMlxTalking({ id, name }, (msg) => setLine(msg))
+      } catch (e) {
+        if (e instanceof install.MlxInstallCancelled) return
+        throw e
+      }
+      useCreateStore.getState().setVideoModelList(buildMlxVideoModels(await listVideoModels()))
+    } catch (e) {
+      setFailed(errorText(e))
+    } finally {
+      setBusy(false)
+      setLine(null)
+    }
+  }
+  return (
+    <div className="w-full flex flex-col items-center gap-1.5" data-testid="mac-talking-part">
+      <p className={cn('t-label text-center', HINWEIS_TEXT.ruhig)}>
+        Talking Character runs on {name} and needs one more download for it, {entry.mlxVideo?.talkingGB ?? 11.3} GB.
+      </p>
+      <Button size="sm" variant="secondary" icon={Download} loading={busy} disabled={busy} onClick={() => void get()}>
+        {busy ? (line ?? 'Starting the download…') : 'Get Talking Character'}
+      </Button>
+      {failed && <p role="alert" className={cn('t-label text-center', HINWEIS_TEXT.fehler)}>{failed}</p>}
     </div>
   )
 }
@@ -905,7 +1197,7 @@ function VoiceChip({
                     <select
                       value={voice}
                       onChange={(e) => setVoice(e.target.value)}
-                      className="t-control flex-1 px-2 h-[var(--control-h-sm)] rounded-md bg-white/[0.03] border border-white/[0.06] text-gray-200 focus:outline-none"
+                      className="t-control flex-1 min-w-0 px-2 h-[var(--control-h-sm)] rounded-md bg-white/[0.03] border border-white/[0.06] text-gray-200 focus:outline-none"
                     >
                       {TTS_VOICES.map((v) => (
                         <option key={v} value={v}>{v.replace(/_/g, ' ')}</option>
@@ -916,7 +1208,7 @@ function VoiceChip({
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
                       placeholder="warm narrator, slight rasp…"
-                      className="t-control flex-1 px-2 h-[var(--control-h-sm)] rounded-md bg-white/[0.03] border border-white/[0.06] text-gray-200 placeholder-gray-600 focus:outline-none"
+                      className="t-control flex-1 min-w-0 px-2 h-[var(--control-h-sm)] rounded-md bg-white/[0.03] border border-white/[0.06] text-gray-200 placeholder-gray-600 focus:outline-none"
                     />
                   )}
                 </div>
@@ -984,7 +1276,9 @@ function MusicControls() {
   // field the run sends: the store's seconds for a local or a classic cloud
   // model, the model's own option for a Studio one (the same option the price
   // is computed from).
-  const length = isCloud ? musicLength(model) : SECONDS_LENGTH
+  // The Mac's music engine makes nothing under ten seconds (music.rs), and
+  // the slider does not offer what the run would round up.
+  const length = isCloud ? musicLength(model) : isMlxImageHost() ? { ...SECONDS_LENGTH, min: MAC_MUSIC_MIN_SECONDS } : SECONDS_LENGTH
   const lengthOption = length?.option
   const seconds = length && lengthOption
     ? Math.round(Number(studioShownValue(model, studioOptions, lengthOption)) / length.perSecond)
@@ -1094,30 +1388,12 @@ function MusicControls() {
 
 // ── Extend ──────────────────────────────────────────────────────────────────
 
-/** Grab the LAST frame of a video (blob URL or object URL) as a PNG File —
- *  the local extend lane feeds it to the regular I2V graph as the start
- *  image. Uses a same-origin blob URL so the canvas never taints. */
+/** The LAST frame of a video (blob URL or object URL) as a PNG File: the
+ *  local extend lane feeds it to the regular image to video run as the start
+ *  image, through ComfyUI on Windows and through MLX on the Mac
+ *  (lib/video-frames lastFrame). */
 async function lastFrameFile(videoUrl: string, name: string): Promise<File> {
-  const video = document.createElement('video')
-  video.muted = true
-  video.preload = 'auto'
-  video.src = videoUrl
-  await new Promise<void>((res, rej) => {
-    video.onloadedmetadata = () => res()
-    video.onerror = () => rej(new Error('could not read the video'))
-  })
-  // Seek close to the end; some containers refuse duration exactly.
-  video.currentTime = Math.max(0, (video.duration || 1) - 0.05)
-  await new Promise<void>((res, rej) => {
-    video.onseeked = () => res()
-    video.onerror = () => rej(new Error('could not seek the video'))
-  })
-  const canvas = document.createElement('canvas')
-  canvas.width = video.videoWidth || 832
-  canvas.height = video.videoHeight || 480
-  canvas.getContext('2d')!.drawImage(video, 0, 0)
-  const blob = await new Promise<Blob>((res, rej) =>
-    canvas.toBlob((b) => (b ? res(b) : rej(new Error('could not capture the frame'))), 'image/png'))
+  const blob = await lastFrame(videoUrl)
   return new File([blob], `${name.replace(/\.[^.]+$/, '')}_lastframe.png`, { type: 'image/png' })
 }
 

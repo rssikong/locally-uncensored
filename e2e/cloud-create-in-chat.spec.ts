@@ -110,7 +110,8 @@ test('a server from before Create in chat: no switch, no tools, no word in the p
   const wire = await boot(page)
   await pick(page, /GLM 5\.3 Flash/)
   await plugins(page).click()
-  await expect(page.getByText('Tools', { exact: false }).first()).toBeVisible()
+  // The menu is open (Chat Tools, the old marker here, have no row since 3.0.7).
+  await expect(page.getByText('Caveman', { exact: false }).first()).toBeVisible()
   await expect(createSwitch(page)).toHaveCount(0)
   await page.keyboard.press('Escape')
   await ask(page, 'make an image of a red fox in the snow')
@@ -200,8 +201,8 @@ test('approval by word: "yes" starts the order without a model turn in between',
   const card = page.getByTestId('create-order').first()
   await expect(card.getByRole('button', { name: /^Start/ })).toBeVisible({ timeout: 30_000 })
   const before = wire.chats.length
-  // The composer drops a second send within 700 ms of the first (its
-  // double-fire guard), and the mocked model answers faster than that.
+  // The composer's double-fire guard (700 ms) holds only for the same message
+  // since 3.0.7, so "yes" would go out at once. The wait stays as a margin.
   await page.waitForTimeout(800)
   await ask(page, 'yes')
   await expect(card.locator('img').first()).toBeVisible({ timeout: 30_000 })

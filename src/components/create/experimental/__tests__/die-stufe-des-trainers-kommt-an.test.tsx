@@ -53,7 +53,10 @@ vi.mock('../../../../api/trainer', async () => {
     installCharacterTrainer: vi.fn(async () => undefined),
   }
 })
-vi.mock('../../../../api/comfyui', () => ({ getLoraModels: vi.fn(async () => []) }))
+vi.mock('../../../../api/comfyui', () => ({ getLoraModels: vi.fn(async () => []), getSystemVRAM: vi.fn(async () => null) }))
+// 3.0.8 D20: the Low VRAM suggestion reads the card's memory; a 12 GB card
+// keeps this file about the step presets alone.
+vi.mock('../../../../hooks/useGraphicsMemory', () => ({ useGraphicsCardGb: () => 12 }))
 vi.mock('../../../../api/cloud/loras', () => ({ listLoras: vi.fn(async () => []), deleteLora: vi.fn() }))
 
 import { SpecialControls } from '../SpecialIntentControls'
@@ -130,13 +133,13 @@ describe('die gewaehlte Zahl erreicht den Lauf', () => {
   it('der Auftrag an den Trainer traegt die Zahl der Stufe', async () => {
     await startCharacterTraining('t3char', 't3char', 't3char', 400)
     expect(backendCall).toHaveBeenCalledWith('start_character_training', {
-      setId: 't3char', name: 't3char', triggerWord: 't3char', steps: 400,
+      setId: 't3char', name: 't3char', triggerWord: 't3char', steps: 400, preset: null,
     })
   })
 
   it('der Absendeweg nimmt die Zahl aus dem Store, nicht eine eigene', () => {
     const hook = readFileSync(resolve(__dirname, '../../../..', 'hooks/useCreate.ts'), 'utf8')
-    expect(hook).toContain('await startCharacterTraining(setId, trigger, trigger, state.trainSteps)')
+    expect(hook).toContain('await startCharacterTraining(setId, trigger, trigger, state.trainSteps, state.trainVramPreset)')
   })
 
   it('und der Trainer legt sie auf die Befehlszeile', () => {

@@ -29,6 +29,7 @@ const INITIAL_STATE = {
   civitaiApiKey: '',
   civitaiHost: 'civitai.com',
   managerNoticeSeen: false,
+  paramOverrides: {},
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -702,6 +703,40 @@ describe('workflowStore', () => {
       // Installing a workflow must not resurrect the notice.
       useWorkflowStore.getState().installWorkflow(makeWorkflow('wf-9', 'Any'))
       expect(useWorkflowStore.getState().managerNoticeSeen).toBe(true)
+    })
+  })
+
+  // ── Workflow parameters (GitHub wish #8) ───────────────────
+
+  describe('paramOverrides', () => {
+    it('keeps only what differs from the file, per workflow, and Reset drops it', () => {
+      const { setParamOverride, resetParamOverrides } = useWorkflowStore.getState()
+      setParamOverride('wf-1', '3', 'denoise', 0.5)
+      setParamOverride('wf-1', '10', 'lora_name', 'a.safetensors')
+      setParamOverride('wf-2', '3', 'denoise', 0.7)
+      expect(useWorkflowStore.getState().paramOverrides).toEqual({
+        'wf-1': { '3': { denoise: 0.5 }, '10': { lora_name: 'a.safetensors' } },
+        'wf-2': { '3': { denoise: 0.7 } },
+      })
+      setParamOverride('wf-1', '10', 'lora_name', undefined)
+      expect(useWorkflowStore.getState().paramOverrides['wf-1']).toEqual({ '3': { denoise: 0.5 } })
+      resetParamOverrides('wf-1')
+      expect(useWorkflowStore.getState().paramOverrides).toEqual({ 'wf-2': { '3': { denoise: 0.7 } } })
+    })
+
+    it('is persisted with the workflow store, which the update backup covers', () => {
+      useWorkflowStore.getState().setParamOverride('wf-1', '11', 'stop_at_clip_layer', -1)
+      const options = useWorkflowStore.persist.getOptions()
+      expect(options.name).toBe('workflow-store')
+      const saved = options.partialize!(useWorkflowStore.getState()) as { paramOverrides?: unknown }
+      expect(saved.paramOverrides).toEqual({ 'wf-1': { '11': { stop_at_clip_layer: -1 } } })
+    })
+
+    it('goes with the workflow when it is removed', () => {
+      useWorkflowStore.getState().installWorkflow(makeWorkflow('wf-1', 'Mine'))
+      useWorkflowStore.getState().setParamOverride('wf-1', '3', 'denoise', 0.5)
+      useWorkflowStore.getState().removeWorkflow('wf-1')
+      expect(useWorkflowStore.getState().paramOverrides).toEqual({})
     })
   })
 })

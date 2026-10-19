@@ -373,6 +373,20 @@ describe('VoiceSessionPanel', () => {
     expect(session.startVoiceSession).toHaveBeenCalledTimes(1)
   })
 
+  it('a blocked microphone on Linux points at the sound settings, not at a privacy switch Linux does not have (#162)', () => {
+    const agent = vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko)')
+    try {
+      const view = render(createElement(VoiceSessionPanel))
+      send({ type: 'start', at: Date.now(), muted: false }, { type: 'failed', error: { kind: 'microphone-denied', message: 'LU is not allowed to use the microphone.' } })
+      const alert = view.getByRole('alert').textContent ?? ''
+      expect(alert).toContain('chosen as the input in the sound settings')
+      expect(alert).not.toMatch(/privacy/i)
+      expect(alert).toMatch(/Then start again\.$/)
+    } finally {
+      agent.mockRestore()
+    }
+  })
+
   it('the empty surface gives one calm line of advice for a small chat model, and none while a session runs', () => {
     useModelStore.setState({ activeModel: 'openai::Qwen3-4B-Q4_K_M', models: [] })
     const view = render(createElement(VoiceSessionPanel))

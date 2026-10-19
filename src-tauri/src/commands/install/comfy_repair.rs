@@ -216,19 +216,18 @@ pub fn repair_comfyui_env(state: State<'_, AppState>) -> Result<serde_json::Valu
         let torch_package_refs: Vec<&str> = torch_packages.iter().map(|s| s.as_str()).collect();
         // Repair always rebuilds the venv from this interpreter, so the
         // strict ensurepip probe applies (Runde 6, F11).
-        let chosen_python = match super::torch::choose_torch_python(&python_bin, torch_index.as_deref(), &torch_package_refs, "press \"Repair environment\" again", true) {
-            super::torch::TorchPythonDecision::Proceed => python_bin.clone(),
-            super::torch::TorchPythonDecision::UseInstead { path, .. } => {
-                update(
-                    "installing",
-                    &format!(
-                        "The default Python ({python_bin}) does not have a PyTorch wheel for \
-                         this machine yet; using {path} instead, found on this machine already."
-                    ),
-                );
-                path
+        // Nothing on the machine fits: LU's own Python 3.12 instead of a
+        // dead end (Discord 14.10.2026, a machine with only 3.15). Fetched
+        // here, before the old venv is touched, like everything above.
+        let decision = super::torch::choose_torch_python(&python_bin, torch_index.as_deref(), &torch_package_refs, "press \"Repair environment\" again", true);
+        let progress = crate::private_python::StatusProgress { status: &install_status, cancel: &cancel_flag };
+        let chosen_python = match super::torch::base_for_new_venv(decision, &python_bin, &progress, &|line| update("installing", line)) {
+            Ok(path) => path,
+            Err(e) if e == "cancelled" => {
+                update("cancelled", "Repair cancelled while LU's own Python was being set up. Nothing was changed.");
+                return;
             }
-            super::torch::TorchPythonDecision::Blocked(msg) => {
+            Err(msg) => {
                 update("error", &msg);
                 return;
             }
@@ -1087,10 +1086,23 @@ pub fn update_comfyui(state: State<'_, AppState>, app: tauri::AppHandle) -> Resu
                 update("error", &msg);
                 return;
             }
-            crate::python::ComfyVenv::Absent => state.python_bin.lock().unwrap().clone(),
+            // Discord 14.10.2026: the Python that holds this install's torch,
+            // not whatever LU resolves as its default today.
+            crate::python::ComfyVenv::Absent => {
+                let default = state.python_bin.lock().unwrap().clone();
+                match crate::commands::process::bound_comfy_python(&comfy_dir, &default) {
+                    Some(p) => p,
+                    None => {
+                        let msg = crate::commands::process::comfy_no_torch_python_message(&comfy_dir);
+                        error!("comfyui update aborted: {}", msg);
+                        update("error", &msg);
+                        return;
+                    }
+                }
+            }
         };
         if python_bin.is_empty() || !crate::python::is_real_python(&python_bin) {
-            let msg = "No usable Python found for this ComfyUI. Install Python first, then retry the update.";
+            let msg = "No usable Python found for this ComfyUI. Press \"Repair environment\" in Settings: LU builds ComfyUI an environment of its own, then retry the update.";
             error!("comfyui update aborted: {}", msg);
             update("error", msg);
             return;
@@ -1136,6 +1148,10 @@ pub fn update_comfyui(state: State<'_, AppState>, app: tauri::AppHandle) -> Resu
             super::torch::TorchPythonDecision::Proceed => {}
             super::torch::TorchPythonDecision::UseInstead { path, current_version, chosen_version } => {
                 update("error", &super::torch::existing_venv_needs_repair_message(current_version, &path, chosen_version));
+                return;
+            }
+            super::torch::TorchPythonDecision::UseOwn { current_version, own_version } => {
+                update("error", &super::torch::existing_venv_needs_own_python_message(current_version, own_version));
                 return;
             }
             super::torch::TorchPythonDecision::Blocked(msg) => {

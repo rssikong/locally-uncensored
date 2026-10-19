@@ -18,6 +18,7 @@
  */
 
 import { extractToolCallsWithRanges, stripRanges } from './tool-call-repair'
+import { stripNonCanonicalTags } from './thinking-stripper'
 
 export interface StripOptions {
   /** Also strip tool-call JSON emitted as prose. On for Code + Agent. */
@@ -25,10 +26,9 @@ export interface StripOptions {
 }
 
 export function stripModelNoise(text: string, opts: StripOptions = {}): string {
-  let t = text
-    .replace(/<\|?channel>?\s*thought\s*/gi, '')
-    .replace(/<\|?channel\|?>/gi, '')
-    .replace(/<channel\|>/gi, '')
+  // Reasoning first, through the same routine that settles a turn: a thought
+  // is never part of the answer, whichever surface shows or speaks it.
+  let t = stripNonCanonicalTags(text)
   // ChatML / special-token delimiters. A degenerating local model can spew its
   // own template tokens as content — qwen2.5-coder:14b emitted a burst of
   // <|im_start|> mid-stream 2026-06-02. <|im_start|>, <|im_end|>, <|endoftext|>,

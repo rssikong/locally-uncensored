@@ -93,6 +93,8 @@ import { REJECTED_CALL_FOR_MODEL } from '../lib/rejected-call'
 import { buildLoopRecheck, loopPassSaysDone } from '../lib/agent-commands'
 import { applyStoredCompaction } from '../lib/compact-summary'
 import { maybeAutoCompact } from '../lib/run-compact-command'
+import { autoCompactOn } from '../lib/compact-trigger'
+import { compactRunMidway, newRunCompactState } from '../lib/run-compact-midway'
 import { generateEmbeddings } from '../api/rag'
 import { truncateToolResult } from '../lib/truncate-tool-result'
 import { toolFailureNote } from '../lib/tool-failure-note'
@@ -109,6 +111,7 @@ import { explainError as explainToolError } from '../api/agents/error-hints'
 import { hasUnrecoveredOutsideRefusal, OUTSIDE_WORKSPACE_NOTICE } from '../lib/workspace-refusal'
 import { useChatNoticeStore, CHAT_NOTICE_MS } from '../stores/chatNoticeStore'
 import { copyFailedMessage, fileMessageFields, filesWithoutWorkspace, placeChatFiles, type ChatFileInput } from '../lib/chat-files'
+import { fitFilesForSend, requestTextOf } from './chat-file-room'
 import { settleThinking } from '../lib/thinking-stripper'
 import { openPlanGap, planReconcileSteer, PLAN_RECONCILE_BUDGET } from '../lib/plan-reconcile'
 import { planResumeAnchor } from '../lib/plan-resume'
@@ -131,6 +134,8 @@ import { asString, errorText, isRecord, prop } from '../types/json-guards'
 import type { ToolArgs } from '../api/mcp/types'
 import { CREDITS_EXHAUSTED_MESSAGE } from '../lib/credits-exhausted'
 import { buildChatSystemPrompt } from '../lib/system-prompt'
+import { withChatPersona, samplingPresetFor, speakerPersonaFor } from '../lib/chat-persona'
+import { injectPersonaNote, noteTokens, personaNoteOf } from '../lib/persona-note'
 
 // ── Hook ──────────────────────────────────────────────────────
 
@@ -894,11 +899,18 @@ export function useAgentChat() {
         useChatNoticeStore.getState().show('file-attach', copyFailedMessage(placed.failed), 'ruhig', CHAT_NOTICE_MS)
       }
     }
-    const fileFields = fileMessageFields(
-      userContent,
-      attachedFiles,
-      opts?.chatToolsMode === true ? 'chat' : 'workspace',
-    )
+    // GH #171: an attached text goes out whole when it fits, and as far as it
+    // fits otherwise, with a line saying so. Chat Tools sends in the chat
+    // window; full Agent mode in the agent window, beside its tool catalogue.
+    const fileSurface = opts?.chatToolsMode === true ? 'chat' : 'workspace'
+    attachedFiles = await fitFilesForSend({
+      files: attachedFiles,
+      models: [modelToUse],
+      use: fileSurface === 'chat' ? 'chat' : 'agent',
+      otherText: requestTextOf(useChatStore.getState().conversations.find((c) => c.id === convId), userContent),
+      surface: fileSurface,
+    })
+    const fileFields = fileMessageFields(userContent, attachedFiles, fileSurface)
 
     // Create on: the model learns what hangs on the message (a model without
     // eyes would not see an image, and no model sees a clip). The customer
@@ -953,7 +965,9 @@ export function useAgentChat() {
     // Per-chat persona toggle — default OFF. Only apply persona prompt
     // when user explicitly flipped it on. See useChat.ts for the
     // full rationale (Devil's Advocate hijack bug).
-    let systemPrompt = buildChatSystemPrompt(conv, settings.personasEnabled !== false)
+    // GH #170: the persona of THIS chat, the one its Plugins menu names.
+    const { personas, activePersonaId } = useSettingsStore.getState()
+    let systemPrompt = buildChatSystemPrompt(withChatPersona(conv, personas, activePersonaId), settings.personasEnabled !== false)
     const ragState = useRAGStore.getState()
     const ragEnabled = ragState.ragEnabled[convId] ?? false
     let ragSuffix = ''
@@ -1018,7 +1032,7 @@ export function useAgentChat() {
     // for when to stop. Step by step in this chat (computer_use) it carried
     // every look in the history of the chat and went in circles (box,
     // 09.10.2026). A cloud model keeps both.
-    const screenByTaskOnly = onlyTheTaskForTheScreen(providerId, (name) => !!toolRegistry.getToolByName(name))
+    const screenByTaskOnly = onlyTheTaskForTheScreen(providerId, (name) => !!toolRegistry.getToolByName(name), activeModel)
     const toolMatchesCurated = (name: string) =>
       (!curated || curated.includes(name)) && !(opts?.readOnly && !allowedInReadOnlyTurn(name)) && !(screenByTaskOnly && name === COMPUTER_USE_TOOL_NAME)
     // Cloud mode AND Create in chat released for the account. Without the
@@ -1167,7 +1181,9 @@ export function useAgentChat() {
     // would summarise itself again and again; the cooldown in
     // shouldAutoCompact would catch it, but relying on a guard to undo a
     // wrong call site is not the same as calling it in the right place.
-    if (useSettingsStore.getState().settings.autoCompactThreshold) {
+    // Inside the loop, the run's own working payload has its own check with
+    // its own cooldown (compactRunMidway, before trimWorkingHistory).
+    if (autoCompactOn(useSettingsStore.getState().settings)) {
       await maybeAutoCompact({ conversationId: convId, activeModel })
     }
     const convForPayload =
@@ -1443,6 +1459,9 @@ export function useAgentChat() {
     // Step number for the decay audit trail. The loop is a while, so it has
     // no index of its own.
     let stepNo = 0
+    // Auto-compact in the middle of this run (3.0.7): one state for the whole
+    // run, so it cools down between summaries and gives up after failures.
+    const laufVerdichtung = newRunCompactState()
     try {
       // ── Agent Loop ──────────────────────────────────────────
       // A separate running flag used to be checked here too; it was only
@@ -1522,22 +1541,31 @@ export function useAgentChat() {
         // overrides temperature regardless, so it is not subject to that
         // omission (it never was: the owner's clamp is a correctness measure,
         // not a preference the user can leave untouched).
-        const convSampling = store.conversations.find((c) => c.id === convId)?.sampling
-        const sampling = buildSamplingRequest(settings, convSampling)
+        const samplingConv = store.conversations.find((c) => c.id === convId)
+        const convSampling = samplingConv?.sampling
+        // GH #175: the chat persona's preset sits under this chat's own values,
+        // while the persona is on for the chat, as its prompt is.
+        const { personas: allPersonas, activePersonaId: pickedPersonaId } = useSettingsStore.getState()
+        const personaPreset = samplingConv
+          ? samplingPresetFor(samplingConv, activeModel, allPersonas, pickedPersonaId, settings.personasEnabled !== false).preset
+          : undefined
+        const sampling = { topK: settings.topK, ...buildSamplingRequest(settings, convSampling, personaPreset) }
         if (settings.smallModelMode) {
           // Small-Model Mode (Knob 6): gently clamp temperature for tool turns.
           // FOLKLORE, not measured — research found NO temperature finding for
           // tool-calling. A low, low-entropy setting is *plausible* for valid
           // tool-call JSON, so we cap downward (never raise) rather than force.
-          const effectiveTemp = effectiveSampling(settings, convSampling).temperature
+          const effectiveTemp = effectiveSampling(settings, convSampling, personaPreset).temperature
           sampling.temperature = Math.min(effectiveTemp, 0.3)
         }
         const chatOptions = {
           ...sampling,
-          topK: settings.topK,
           window: 'agent' as const,
           thinking: thinkOpt as unknown as boolean,
           reasoningEffort: settings.reasoningEffort,
+          localEffortChosen: settings.localEffortChosen,
+          // Think budget (D12): only the backends that take a count read it.
+          thinkingBudget: settings.thinkingBudget,
           effortLevels: agentEffortLevels,
           effortDefault: agentEffortDefault,
           signal: abort.signal,
@@ -1565,7 +1593,7 @@ export function useAgentChat() {
           sendWindowTokens: sendWindowFor(settings, activeModel),
           capEnabled: decayOn,
           smallModelMode: settings.smallModelMode,
-          localBackend: sendsToALanBackend(providerId),
+          localBackend: sendsToALanBackend(providerId, activeModel),
         })
         // The tool catalogue rides on the wire next to the messages and is
         // not in their estimate. On a local 32K window that was the overflow
@@ -1573,7 +1601,15 @@ export function useAgentChat() {
         // context size (32768 tokens)"): the messages alone were allowed 80 %
         // of the window, and the catalogue came on top. So the catalogue of
         // the step before comes off the budget of the messages.
-        const sendBudget = budgetBesideTheCatalog(sendWindow, catalogTokens)
+        // GH #181: the chat persona's reminder, as in plain chat: while the
+        // persona is on for the chat, near the end of what this step sends.
+        // Its cost comes off the history's budget like the catalogue's, and
+        // it goes on the send copy only, never into agentMessages.
+        const personaNote = samplingConv
+          ? personaNoteOf(speakerPersonaFor(samplingConv, activeModel, allPersonas, pickedPersonaId, settings.personasEnabled !== false))
+          : null
+        const besideCatalog = budgetBesideTheCatalog(sendWindow, catalogTokens)
+        const sendBudget = personaNote ? Math.max(1, besideCatalog - noteTokens(personaNote)) : besideCatalog
         let sendMessages: ChatMessage[] = agentMessages.slice()
         let trimmedReadKeys: ReadonlySet<string> = NO_TRIMMED_KEYS
         try {
@@ -1583,6 +1619,22 @@ export function useAgentChat() {
           // moves every step is a prompt prefix that is never the same twice.
           // Whole messages are dropped here, never shortened: decay stays on
           // the send copy alone, so the store keeps every result complete.
+          // Before the trim: when the run nears the window, its older steps
+          // are summarised by the run's own model instead of only dropped.
+          // Copies only, so the chain saved at the end (werkzeugKette) keeps
+          // every result complete. The trim below stays the safety net.
+          const verdichtet = await compactRunMidway({
+            messages: agentMessages,
+            budgetTokens: sendBudget,
+            modelWindow: agentCtx,
+            activeModel,
+            convId,
+            beforeMessageId: assistantMessage.id,
+            signal: abort.signal,
+            state: laufVerdichtung,
+            decay: { enabled: decayOn },
+          })
+          if (verdichtet.compacted) agentMessages = verdichtet.messages
           agentMessages = trimWorkingHistory(agentMessages, sendBudget, { enabled: decayOn, hysteresis: decayOn }).messages
           const built = buildRequestMessages(agentMessages, {
             budgetTokens: sendBudget,
@@ -1632,6 +1684,7 @@ export function useAgentChat() {
         } catch {
           sendMessages = agentMessages.slice()
         }
+        sendMessages = injectPersonaNote(sendMessages, personaNote)
 
         // Honouring a long `retry-after` means the run goes quiet for up to a
         // minute, and a silent gap reads as a freeze (which is exactly the
@@ -3241,7 +3294,7 @@ export function useAgentChat() {
       {
         const voice = useVoiceStore.getState()
         if (voice.ttsEnabled && voice.autoReadAloud && runState.content.trim()) {
-          autoSpeak(runState.content)
+          autoSpeak(convId!, assistantMessage.id)
         }
       }
 

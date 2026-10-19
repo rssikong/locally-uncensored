@@ -210,6 +210,10 @@ describe('the commands, executed in order', () => {
     expect(readFileSync(built()).equals(UNPATCHED)).toBe(true)
   })
 
+  it('app-binary names the file the installers must carry signed', () => {
+    expect(run('app-binary')).toContain('binary=probe-app.exe')
+  })
+
   it('stage-app refuses a build that is signed already', () => {
     writeFileSync(built(), fakeSign(UNPATCHED))
     expect(() => run('stage-app', join(repo, 'staged'))).toThrow(/already signed/)

@@ -23,6 +23,7 @@ import { WorkflowsModal } from '../WorkflowsModal'
 import { Hinweis } from '../../ui/Hinweis'
 import { BannerText } from './BannerText'
 import { MacVideoMemoryNotice } from './MacVideoMemoryNotice'
+import { CreateCloudOffer } from './CreateCloudOffer'
 import { MaskEditor } from './MaskEditor'
 import { VhsInstallModal } from './VhsInstallModal'
 import { CloudHiddenNotice } from '../../cloud/CloudHiddenNotice'
@@ -47,6 +48,7 @@ import { modelForOp, useCloudCatalogStore } from '../../../stores/cloudCatalogSt
 import { stageShowsSetupCard, laneModelCount } from './stageGate'
 import { isMlxImageHost } from '../../../api/mlx-image'
 import { mlxTakesStartImage } from '../../../api/mlx-video'
+import { mlxTakesEditImage } from '../../../lib/image-engines'
 import { fetchGalleryItemBlob } from './galleryUrl'
 import { loadImageRef } from './loadImage'
 
@@ -78,6 +80,7 @@ function CreateExperimentalInner() {
   const audioModelList = useCreateStore((s) => s.audioModelList)
   const lipsyncModelList = useCreateStore((s) => s.lipsyncModelList)
   const motionModelList = useCreateStore((s) => s.motionModelList)
+  const upscaleModelList = useCreateStore((s) => s.upscaleModelList)
   const { modelLoadError, connected, modelsLoaded, mlxMissing, comfyOnCpu, comfyCpuBanner } = useCreateExp()
 
   // P9: AdvancedDrawer needs the same studioModel Composer.tsx derives
@@ -253,20 +256,26 @@ function CreateExperimentalInner() {
     modelsLoaded,
     laneModelCount: laneModelCount(intent, INTENT_MAP[intent].requiresModels, {
       image: imageModelList, video: videoModelList, audio: audioModelList,
-      lipsync: lipsyncModelList, motion: motionModelList,
+      lipsync: lipsyncModelList, motion: motionModelList, upscale: upscaleModelList,
     }),
   })
   // While ComfyUI starts, "ComfyUI is starting up." is the one voice; the
   // load error "is not running" said the opposite in red next to it
   // (3.0.4 Gegenprobe 8).
-  const banner = error ?? (setupCardOwnsStage || comfyStarting ? null : modelLoadError)
+  //
+  // In Cloud mode nothing renders on this machine. `modelLoadError` is the
+  // state of the LOCAL model list, which is fetched whatever the mode is, so
+  // on a Windows or Linux machine with no ComfyUI running the Cloud tab stood
+  // under "ComfyUI is not running. Start it from Settings or wait for
+  // auto-start." (how-to recording 12.10.2026). It belongs to the local lane.
+  const banner = error ?? (backend === 'cloud' ? null : setupCardOwnsStage || comfyStarting ? null : modelLoadError)
 
   // "Edit with mask" on a finished image force-sets the 'edit' intent and
-  // opens the mask editor. The MLX Mac has no mask lane: its local Edit is
-  // Qwen-Image 2.1, an edit from the prompt alone, and that tab is reached
-  // through the bar. So the rule is asked without the Mac's Edit lane, and
-  // the action stays hidden there.
-  const editAvailable = isIntentAvailable('edit', backend, isMlxImageHost())
+  // opens the mask editor. On the MLX Mac that is Qwen-Image 2.1 on the
+  // second engine, which paints under a mask (mflux `--mask-image`), so the
+  // action is there while such a model is installed, as the Edit tab is.
+  const mlxEdit = useCreateStore((s) => mlxTakesEditImage(s.imageModelList))
+  const editAvailable = isIntentAvailable('edit', backend, isMlxImageHost(), false, mlxEdit)
   const mlxAnimate = useCreateStore((s) => mlxTakesStartImage(s.videoModelList))
   const animateAvailable = isIntentAvailable('animate', backend, isMlxImageHost(), mlxAnimate)
 
@@ -382,6 +391,11 @@ function CreateExperimentalInner() {
       {/* A Mac with less memory than the lane's video model is recommended
           for. The run is not held back, so it is said before it starts. */}
       <MacVideoMemoryNotice />
+
+      {/* The run on screen does not fit this machine (too big for the card,
+          only partly on it for a video, or a long Mac run): one quiet line
+          that LU Cloud runs it, closable for the session. */}
+      <CreateCloudOffer />
 
       {/* Idle outage (R18 Befund 2): ComfyUI died while nobody was rendering
           and the tab said nothing about it for 180 seconds. One quiet line,

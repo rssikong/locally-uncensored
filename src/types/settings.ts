@@ -74,6 +74,12 @@ export interface Settings {
    *  prompt (raw model). Default true. Ported from the web companion. */
   personasEnabled: boolean
   thinkingEnabled: boolean
+  /** Emoticons such as :) become emojis while typing in the chat composer
+   *  (Chat, Agent, Code; not Create). Default on (lib/emoticons.ts). */
+  emojiAutoReplace: boolean
+  /** REA, the reverse engineering plugin of the agents (lib/plugins/rea.ts):
+   *  on starts its local MCP server. Default off. */
+  reaPluginEnabled: boolean
   /**
    * How hard a reasoning model should think (2.6.8). One global rung, the same
    * way thinkingEnabled is one global switch, and it reaches Chat, Agent mode
@@ -87,6 +93,24 @@ export interface Settings {
    */
   reasoningEffort: EffortLevel
   /**
+   * Has the user picked a rung on a LOCAL model himself (3.0.7, after issue
+   * 176)? Local servers take effort since 3.0.7, but the global rung above
+   * defaults to 'high', and sending that would have changed every local
+   * model's thinking without anyone choosing it (gpt-oss reads 'high' in its
+   * template where it used to run on its own Medium). So until this is true
+   * a local request stays as it was before 3.0.7 and the composer says
+   * Default. Set by the effort button on a local model, cleared when the user
+   * cycles back to Default.
+   */
+  localEffortChosen: boolean
+  /**
+   * Think budget (D12): the most tokens a model may spend on reasoning, 0 for
+   * auto. Global like thinkingEnabled, so Chat, Agent mode and the Coding
+   * Agent read the same number. Only backends that really take a count get it
+   * (lib/think-budget.ts); a profile from before this field reads as 0.
+   */
+  thinkingBudget?: number
+  /**
    * Small-Model Mode (v2.5.0). Evidence-backed lean profile that maximises
    * tool-call reliability + context retention on small local models (3B-8B,
    * e.g. gemma4:e4b, Llama-3.2-3B, Qwen3-8B). When on it flips: a tighter
@@ -98,16 +122,6 @@ export interface Settings {
    * Default false (big models are unaffected). Manual knob, not auto-forced.
    */
   smallModelMode: boolean
-  /**
-   * Chat-Tools (v2.5.3, 2026-06-11). When on (default), PLAIN chat can
-   * use a curated set of five tools — web_search, web_fetch, file_write,
-   * image_generate, video_generate — without the user flipping the full Agent
-   * toggle. A lightweight intent detector routes only tool-worthy messages
-   * through the agent executor with that restricted allow-list + a chat-style
-   * prompt; ordinary conversation stays on the plain path. Off = plain chat is
-   * pure text (the pre-v2.5.3 behaviour); the full Agent toggle still works.
-   */
-  chatToolsEnabled: boolean
   /**
    * Create in chat: the "Create" switch under Plugins. On = create_options and
    * create_order ride along with every message in the cloud chat and in Agent
@@ -121,6 +135,15 @@ export interface Settings {
   searchProvider: SearchProvider
   braveApiKey: string
   tavilyApiKey: string
+  /**
+   * D16 (3.0.7): the User-Agent the free search tiers and `web_fetch` send.
+   * Empty or absent = the one each of them always sent. Optional on purpose:
+   * a store saved before 3.0.7 lacks it and means the default, so no
+   * migration is needed. Checked again on
+   * the Rust side (`search::custom_user_agent`), where an unusable value
+   * falls back to the default instead of failing the request.
+   */
+  searchUserAgent?: string
   // Agent budget (Phase 10 v2.4.0) — hard caps that halt a runaway agent.
   /** Hard cap on tool calls per user turn. 0 = unlimited (not recommended). */
   agentMaxToolCalls: number
@@ -153,6 +176,9 @@ export interface Settings {
   /** Cap for the model files LU downloads itself, in MB/s, shared by all
    *  downloads at once. 0 = no limit (Discord 2026-09-23). */
   downloadLimitMBps: number
+  /** Model ids an OpenAI-compatible server serves but does not list in
+   *  /models, by endpoint (lib/extra-model-ids.ts `endpointKey`). GitHub #112. */
+  extraModelIds: Record<string, string[]>
   // Generation timeouts (Bug P v2.4.7 — Discord 2026-05-19,
   // Intel UHD CPU-only setup hit the 20-min cap at sampling 9/25 on a 1024px
   // Juggernaut-XL gen).
@@ -160,6 +186,12 @@ export interface Settings {
   imageGenTimeoutMinutes: number
   /** Video generation timeout in minutes. Default 60. */
   videoGenTimeoutMinutes: number
+  /** Seconds a chat waits for the first byte of an answer before it gives
+   *  up, 0 = Off. Default 600 (issue 177, lib/chat-reply-timeout.ts). */
+  chatFirstReplyTimeoutSeconds: number
+  /** GitHub #19: the browser tab name of the Remote Access page on the
+   *  phone. Empty keeps "AI Terminal" (lib/remote-page-title.ts). */
+  remotePageTitle: string
   // Bug AA v2.5.0 — Discord 2026-05-27. Ollama defaults `num_ctx` to
   // 2048, which silently caps RAG payloads and long-turn chats even on
   // models that support way more. This override is forwarded to Ollama
@@ -210,23 +242,40 @@ export interface Settings {
    */
   cloudSendWindowByModel?: Record<string, number>
   /**
+   * Auto-compact on or off. 3.0.7: on by default (owner decision 17.10.2026,
+   * "auf Claude-Code-Desktop-Niveau"). Before 3.0.7 the feature was opt-in and
+   * a 0 in `autoCompactThreshold` was the off switch; nobody could choose
+   * "off" any other way, so a stored 0 means "never chosen" and reads as on.
+   * Only a real `false` here is off. The rehydration in settingsStore makes
+   * sure a profile without the key arrives as `true`.
+   *
+   * When it is on, the older part of a conversation is summarised before a
+   * turn once the payload nears the window, and the older steps of a long
+   * tool run are summarised in the middle of the run the same way
+   * (lib/run-compact-midway.ts). The mechanical trim stays underneath both.
+   */
+  autoCompact: boolean
+  /**
    * Auto-compact trigger, as a fraction of the send window. 2.6.8.
    *
-   * 0 IS THE FEATURE SWITCH, not a tuning value. Owner decision 2026-09-02,
-   * "einstellbar sonst aus": auto-compact replaces conversation history with a
-   * model's summary of it, and when that summary is wrong the user loses work
-   * silently. Nothing fires until someone sets a number here.
-   *
-   * Valid range [0.3, 0.95]; anything outside — including a stored profile
-   * from before this field existed, where it arrives as `undefined` — reads as
-   * off. The range and the reading both live in lib/compact-trigger.ts
-   * (MIN_THRESHOLD / MAX_THRESHOLD / usableThreshold), so this is a value, not
-   * a second rule.
+   * 0 = fit the model: the threshold follows the context window, earlier on a
+   * small window because the summary call and the answer need room there too
+   * (adaptiveCompactThreshold in lib/compact-trigger.ts), and only from a 32K
+   * model window up (MIN_AUTO_COMPACT_WINDOW, owner decision 18.10.2026). A value in
+   * [0.3, 0.95] is a fixed threshold the user chose. Whether the feature runs
+   * at all is `autoCompact`, not this number.
    *
    * The manual `/compact` command does NOT consult this. It is the user asking
    * for one compaction on purpose; the threshold governs only the automatic one.
    */
   autoCompactThreshold: number
+  /**
+   * The most an attached text file may take of one message, in tokens (GH
+   * #171). 0 = no limit of its own: the whole file goes out when it fits the
+   * model's context next to the conversation and room for the answer, and as
+   * much of it as fits otherwise. Either way the chat says what was cut.
+   */
+  attachmentTokenLimit: number
   /**
    * Auto memory extraction on lu-cloud only with explicit opt-in (2.6.6, plan
    * A7): every extraction is a paid model call. Local and BYOK providers are
@@ -386,8 +435,70 @@ export interface Persona {
   id: string
   name: string
   icon: string
+  /** For a character card persona: built from the card on import, with the
+   *  `{{char}}` / `{{user}}` macros left in. They are filled in when a chat
+   *  starts (lib/character-card.ts). */
   systemPrompt: string
   isBuiltIn: boolean
+  /** Set when the persona came from a character card (3.0.7). Absent on every
+   *  persona from before, which keeps them loading unchanged. */
+  card?: CharacterCard
+  /** Small picture shown instead of the icon, today only the card's image. */
+  imageDataUrl?: string
+  /** GH #175: sampling values this persona brings along. Applied wherever the
+   *  persona speaks (its chat, or its seat in a group); a chat's own values
+   *  from the Sampling popup still win. Absent on every persona from before. */
+  sampling?: SamplerValues
+  /** GH #181: a short reminder sent near the end of the prompt on every turn
+   *  this persona speaks (lib/persona-note.ts). Payload only, never stored
+   *  in a chat. Absent on every persona from before. */
+  note?: string
+  /** How many messages from the end the reminder sits, 0 is the latest.
+   *  Absent means the default depth. */
+  noteDepth?: number
+}
+
+/**
+ * Sampling values as a chat or a persona sets them (lib/sampling.ts has the
+ * rules). Every field is optional: absent means "not set at this level".
+ */
+export interface SamplerValues {
+  temperature?: number
+  topP?: number
+  maxTokens?: number
+  topK?: number
+  minP?: number
+  repeatPenalty?: number
+  presencePenalty?: number
+  frequencyPenalty?: number
+  /** The DRY sampler's multiplier, 0 is off. Only llama-server and KoboldCpp
+   *  read it. */
+  dryMultiplier?: number
+}
+
+/**
+ * The fields of an imported character card that LU keeps. Names follow LU's
+ * casing; lib/character-card.ts maps them to and from the card's own
+ * snake_case keys.
+ */
+export interface CharacterCard {
+  description: string
+  personality: string
+  scenario: string
+  /** The greeting a new chat opens with. */
+  firstMessage: string
+  exampleMessages: string
+  alternateGreetings: string[]
+  /** The card's own system prompt, '' for the standard sentence. */
+  systemPrompt: string
+  postHistoryInstructions: string
+  /** Shown in the persona panel, never sent to the model. */
+  creatorNotes: string
+  creator?: string
+  characterVersion?: string
+  tags?: string[]
+  /** Kept as is so an export hands the card back with them. */
+  extensions?: Record<string, unknown>
 }
 
 // Voice settings (sttEnabled, ttsEnabled, ttsVoice, ttsRate, ttsPitch) are

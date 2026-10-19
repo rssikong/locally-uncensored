@@ -7,7 +7,6 @@
 
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { keepPersistedState } from '../lib/persist-version'
 import { safeJSONStorage } from '../lib/storage-quota'
 import type { ProviderId, ProviderConfig } from '../api/providers/types'
 import { clearProviderCache } from '../api/providers/client-cache'
@@ -15,7 +14,8 @@ import { onLocalSlotChanged } from '../lib/builtin-slot-eviction'
 import { LU_ENGINE_NAME, renameLegacyEngine } from '../lib/engine-name'
 import { announceDarkenedSlots } from '../lib/provider-slot-darkening'
 import { honourUserDisable } from '../lib/provider-visibility'
-import { secretGet, secretSet, secretDelete } from '../api/backend'
+import { secretGet, secretSet, secretDelete, secretParkGet, secretParkSet, secretParkDelete } from '../api/backend'
+import { isOpenAIEntryId, OPENAI_ENTRY_PREFIX } from '../api/providers/model-name'
 import { CLOUD_BASE } from '../api/cloud/config'
 
 // ── API Key storage ────────────────────────────────────────────
@@ -61,6 +61,8 @@ const PROVIDER_IDS: ProviderId[] = ['ollama', 'openai', 'anthropic']
 // obfuscated key in localStorage as a fallback so a flaky/locked credential
 // store can't silently drop the key on the next restart.
 const _keychainFailed = new Set<ProviderId>()
+// The same, per additional OpenAI-compatible entry (GitHub #173).
+const _entryKeychainFailed = new Set<string>()
 
 // ── Default provider configs ───────────────────────────────────
 
@@ -157,6 +159,85 @@ function dropPicksForDarkenedSlots(
   )
 }
 
+/**
+ * GitHub #173: the same invariant for the additional OpenAI-compatible
+ * entries. An entry that goes dark (switched off, removed) makes every pick
+ * named `openai:<entry>::...` unservable; the key announced is that prefix,
+ * which is what `modelBackendKey` answers for such a pick.
+ */
+function dropPicksForDarkenedEntries(before: ProviderConfig[], after: ProviderConfig[]): void {
+  const darkened = before
+    .filter((b) => b.enabled && b.entryId && !after.some((a) => a.entryId === b.entryId && a.enabled))
+    .map((b) => b.entryId as string)
+  if (darkened.length === 0) return
+  announceDarkenedSlots(() =>
+    darkened
+      .filter((id) => !useProviderStore.getState().openaiEntries.some((e) => e.entryId === id && e.enabled))
+      .map((id) => `${OPENAI_ENTRY_PREFIX}${id}` as const),
+  )
+}
+
+/** Keychain account (the parked namespace, slug only) of an entry's key. */
+function entryKeyAccount(entryId: string): string {
+  return `entry-${entryId}`
+}
+
+/** A fresh entry id: a slug from the backend's name plus four random hex. */
+function newEntryId(name: string, taken: readonly string[]): string {
+  const base = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) || 'backend'
+  for (let i = 0; i < 50; i++) {
+    const rnd = Math.floor(Math.random() * 0x10000).toString(16).padStart(4, '0')
+    const id = `${base}-${rnd}`
+    if (isOpenAIEntryId(id) && !taken.includes(id)) return id
+  }
+  return `backend-${Date.now().toString(16)}`
+}
+
+/**
+ * One persisted entry, made safe to use. Anything that is not an object with
+ * a valid, unused id is dropped; the fields the four fixed slots own
+ * (`managed`, `displaced`) never ride on an entry, because the app manages no
+ * entry's lifecycle and an entry pushes nobody out.
+ */
+export function sanitizeOpenAIEntries(raw: unknown): ProviderConfig[] {
+  if (!Array.isArray(raw)) return []
+  const out: ProviderConfig[] = []
+  for (const e of raw) {
+    if (!e || typeof e !== 'object') continue
+    const r = e as Partial<ProviderConfig>
+    if (!isOpenAIEntryId(r.entryId) || out.some((o) => o.entryId === r.entryId)) continue
+    out.push({
+      id: 'openai',
+      entryId: r.entryId,
+      name: typeof r.name === 'string' && r.name.trim() ? r.name : 'OpenAI compatible',
+      enabled: r.enabled === true,
+      baseUrl: typeof r.baseUrl === 'string' ? r.baseUrl : '',
+      apiKey: typeof r.apiKey === 'string' ? r.apiKey : '',
+      isLocal: r.isLocal === true,
+      ...(r.disabledByUser === true ? { disabledByUser: true } : {}),
+    })
+  }
+  return out
+}
+
+/**
+ * The persisted shape, from any older version to the current one.
+ *
+ * Version 2 (3.0.7, GitHub #173) adds `openaiEntries`, the OpenAI-compatible
+ * backends that run NEXT TO the `openai` slot. A version 1 blob has none, so
+ * it gets an empty list, and every model id it ever stored (`openai::<model>`)
+ * keeps pointing at the slot it always pointed at. Nothing else changes, which
+ * is also why an older build reading a version 2 blob keeps every backend: its
+ * migrate is the identity and it simply ignores the new key.
+ */
+export function migrateProviderState(persisted: unknown, version: number): unknown {
+  const p = (persisted && typeof persisted === 'object' ? { ...(persisted as Record<string, unknown>) } : {})
+  if (version < 2) {
+    p.openaiEntries = sanitizeOpenAIEntries(p.openaiEntries)
+  }
+  return p
+}
+
 // ── Store Interface ────────────────────────────────────────────
 
 interface ProviderState {
@@ -181,6 +262,21 @@ interface ProviderState {
    * so a LATER real eviction is still caught.
    */
   engineOptedOut: boolean
+  /**
+   * GitHub #173: additional OpenAI-compatible backends, each with its own
+   * address, key and model list, running NEXT TO the `openai` slot instead of
+   * taking it over. Every entry carries `id: 'openai'` and its own `entryId`;
+   * its models are `openai:<entryId>::<model>`. The `openai` slot itself stays
+   * where it was, so every stored `openai::<model>` keeps meaning what it meant.
+   */
+  openaiEntries: ProviderConfig[]
+
+  /** Adds an entry and returns its id. Enabled right away. */
+  addOpenAIEntry: (input: { name: string; baseUrl: string; isLocal: boolean }) => string
+  updateOpenAIEntry: (entryId: string, updates: Partial<Pick<ProviderConfig, 'name' | 'baseUrl' | 'isLocal' | 'enabled' | 'disabledByUser'>>) => void
+  setOpenAIEntryApiKey: (entryId: string, key: string) => void
+  getOpenAIEntryApiKey: (entryId: string) => string
+  removeOpenAIEntry: (entryId: string) => void
 
   setProviderConfig: (id: ProviderId, updates: Partial<ProviderConfig>) => void
   setProviderApiKey: (id: ProviderId, key: string) => void
@@ -212,6 +308,59 @@ export const useProviderStore = create<ProviderState>()(
       providers: DEFAULT_PROVIDERS,
       hideBackendSelector: false,
       engineOptedOut: false,
+      openaiEntries: [],
+
+      addOpenAIEntry: ({ name, baseUrl, isLocal }) => {
+        const entryId = newEntryId(name, get().openaiEntries.map((e) => e.entryId as string))
+        set((s) => ({
+          openaiEntries: [
+            ...s.openaiEntries,
+            { id: 'openai', entryId, name, baseUrl, isLocal, enabled: true, apiKey: '' },
+          ],
+        }))
+        clearProviderCache()
+        return entryId
+      },
+
+      updateOpenAIEntry: (entryId, updates) => {
+        const before = get().openaiEntries
+        set((s) => ({
+          openaiEntries: s.openaiEntries.map((e) => (e.entryId === entryId ? { ...e, ...updates } : e)),
+        }))
+        clearProviderCache()
+        dropPicksForDarkenedEntries(before, get().openaiEntries)
+      },
+
+      setOpenAIEntryApiKey: (entryId, key) => {
+        set((s) => ({
+          openaiEntries: s.openaiEntries.map((e) => (e.entryId === entryId ? { ...e, apiKey: obfuscate(key) } : e)),
+        }))
+        // Same two tiers as the slots: the vault when it works, the obfuscated
+        // localStorage copy when the write fails or there is no vault.
+        if (keychainReady) {
+          _entryKeychainFailed.delete(entryId)
+          secretParkSet(entryKeyAccount(entryId), key).catch(() => {
+            _entryKeychainFailed.add(entryId)
+            set((s) => ({ openaiEntries: [...s.openaiEntries] }))
+          })
+        }
+        clearProviderCache()
+      },
+
+      getOpenAIEntryApiKey: (entryId) => {
+        return deobfuscate(get().openaiEntries.find((e) => e.entryId === entryId)?.apiKey || '')
+      },
+
+      removeOpenAIEntry: (entryId) => {
+        const before = get().openaiEntries
+        set((s) => ({ openaiEntries: s.openaiEntries.filter((e) => e.entryId !== entryId) }))
+        if (keychainReady) {
+          void secretParkDelete(entryKeyAccount(entryId)).catch(() => { /* best-effort */ })
+        }
+        _entryKeychainFailed.delete(entryId)
+        clearProviderCache()
+        dropPicksForDarkenedEntries(before, get().openaiEntries)
+      },
 
       setHideBackendSelector: (hide) => set({ hideBackendSelector: hide }),
       setEngineOptedOut: (optedOut) => set({ engineOptedOut: optedOut }),
@@ -273,7 +422,9 @@ export const useProviderStore = create<ProviderState>()(
 
       getEnabledProviders: () => {
         const providers = get().providers
-        return Object.values(providers)
+        // GitHub #173: the additional OpenAI-compatible entries list next to
+        // the slots, each as its own provider with its own model list.
+        return [...Object.values(providers), ...get().openaiEntries]
           .filter((p) => p.enabled)
           .map((p) => ({
             ...p,
@@ -325,6 +476,14 @@ export const useProviderStore = create<ProviderState>()(
         // slot back to LU Engine too, and the field's own comment promises
         // the mark clears on "a full Reset".
         set({ engineOptedOut: false })
+        // GitHub #173: the shipped default has no additional entries, so they
+        // go off. Off, not gone: their rows stay with Enable on them, the same
+        // way the reset keeps the keys the user typed.
+        const entriesBefore = get().openaiEntries
+        set((s) => ({
+          openaiEntries: s.openaiEntries.map((e) => (e.enabled ? { ...e, enabled: false, disabledByUser: true } : e)),
+        }))
+        dropPicksForDarkenedEntries(entriesBefore, get().openaiEntries)
         clearProviderCache()
         // Reset hands the slot back to the app's own engine, which voids a
         // pending unload rather than causing one.
@@ -365,7 +524,34 @@ export const useProviderStore = create<ProviderState>()(
           }
         }
         if (!usable) return
+        // GitHub #173: the entries' keys live in the parked namespace, one
+        // account per entry. Same migration rule as above: a key found only in
+        // localStorage moves into the vault once.
+        const loadedEntries: Record<string, string> = {}
+        for (const e of get().openaiEntries) {
+          const id = e.entryId
+          if (!id) continue
+          try {
+            const stored = await secretParkGet(entryKeyAccount(id))
+            if (stored != null && stored !== '') {
+              loadedEntries[id] = stored
+            } else {
+              const existing = deobfuscate(get().openaiEntries.find((x) => x.entryId === id)?.apiKey || '')
+              if (existing) {
+                try { await secretParkSet(entryKeyAccount(id), existing) } catch { _entryKeychainFailed.add(id) }
+              }
+            }
+          } catch {
+            _entryKeychainFailed.add(id)
+          }
+        }
         keychainReady = true
+        set((s) => ({
+          openaiEntries: s.openaiEntries.map((e) => {
+            const key = e.entryId ? loadedEntries[e.entryId] : undefined
+            return key !== undefined ? { ...e, apiKey: obfuscate(key) } : e
+          }),
+        }))
         // Overlay ONLY the vault-loaded keys onto the LIVE state and re-persist.
         // A whole-map snapshot taken before the awaits would revert every
         // concurrent write (e.g. useCloudAuth enabling lu-cloud, or a Settings
@@ -387,12 +573,12 @@ export const useProviderStore = create<ProviderState>()(
     {
       name: 'lu-providers',
       storage: safeJSONStorage(),
-      version: 1,
+      // 2 since 3.0.7 (GitHub #173): `openaiEntries`. See migrateProviderState.
+      version: 2,
       // A version WITHOUT a migrate is the one combination that loses data:
       // zustand logs "couldn't be migrated" and hydrates from defaults, i.e. it
-      // throws every configured backend away. Harmless today (no blob carries a
-      // numeric version yet), fatal the day this store goes to 2.
-      migrate: keepPersistedState,
+      // throws every configured backend away.
+      migrate: (persisted, version) => migrateProviderState(persisted, version) as ProviderState,
       // Blobs persisted before the lu-cloud provider existed lack its entry,
       // backfill every missing provider from defaults so getProvider() can't
       // hit an undefined config after an update.
@@ -453,6 +639,8 @@ export const useProviderStore = create<ProviderState>()(
           ...p,
           providers: merged,
           engineOptedOut,
+          // GitHub #173: whatever arrives, only well formed entries stay.
+          openaiEntries: sanitizeOpenAIEntries(p.openaiEntries),
         }
       },
       // Don't persist transient state, only configs + user's "don't show again" preference.
@@ -479,6 +667,11 @@ export const useProviderStore = create<ProviderState>()(
         ) as Record<ProviderId, ProviderConfig>,
         hideBackendSelector: state.hideBackendSelector,
         engineOptedOut: state.engineOptedOut,
+        // GitHub #173: an entry's key leaves localStorage once the vault holds
+        // it, exactly like a slot's key above.
+        openaiEntries: state.openaiEntries.map((e) =>
+          keychainReady && e.entryId && !_entryKeychainFailed.has(e.entryId) ? { ...e, apiKey: '' } : e,
+        ),
       }),
     }
   )

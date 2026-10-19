@@ -19,16 +19,35 @@ import { MAC_LORA_MODELS, MAC_LORA_MODEL_FAMILIES, mlxLoraRefusal } from '../mlx
 const root = resolve(__dirname, '../../..')
 const read = (file: string) => readFileSync(resolve(root, file), 'utf-8')
 
-/** Name and engine of every image catalogue entry, as Rust writes them. */
-function catalogue(): { name: string; secondEngine: boolean }[] {
+/** The packs of image_mflux.rs that enhance instead of making a picture
+ *  (`family: Family::SeedVR2`). They take no LoRA. */
+function upscalerPacks(): Set<string> {
+  const source = read('src-tauri/src/commands/image_mflux.rs')
+  const out = new Set<string>()
+  for (const block of source.split('pub(super) const ').slice(1)) {
+    const name = block.match(/^([A-Z0-9_]+): Pack = Pack \{/)?.[1]
+    if (name && /family: Family::SeedVR2,/.test(block.slice(0, block.indexOf('};')))) out.add(name)
+  }
+  return out
+}
+
+/** Name and engine of every image catalogue entry, as Rust writes them.
+ *  `secondEngine` is a picture model of the second engine: the upscaler
+ *  runs there too, but makes no picture and takes no LoRA. */
+function catalogue(): { name: string; secondEngine: boolean; upscaler: boolean }[] {
   const source = read('src-tauri/src/commands/mlx.rs')
-  const out: { name: string; secondEngine: boolean }[] = []
+  const upscalers = upscalerPacks()
+  const out: { name: string; secondEngine: boolean; upscaler: boolean }[] = []
   let name: string | null = null
   for (const line of source.split('\n')) {
     const n = line.match(/^ {8}name: "([^"]+)",$/)
     if (n) name = n[1]
-    const m = line.match(/^ {8}mflux: (None|Some\()/)
-    if (m && name) { out.push({ name, secondEngine: m[1] !== 'None' }); name = null }
+    const m = line.match(/^ {8}mflux: (None|Some\(&mflux::([A-Z0-9_]+)\))/)
+    if (m && name) {
+      const upscaler = !!m[2] && upscalers.has(m[2])
+      out.push({ name, secondEngine: m[1] !== 'None' && !upscaler, upscaler })
+      name = null
+    }
   }
   return out
 }
@@ -40,6 +59,8 @@ describe('the models that take a LoRA', () => {
     expect(entries.length).toBeGreaterThan(20)
     expect(entries.filter((e) => e.secondEngine).length).toBeGreaterThanOrEqual(7)
     expect(entries.find((e) => e.name === 'SD Turbo')?.secondEngine).toBe(false)
+    // The upscaler is read as one, and is no LoRA model.
+    expect(entries.filter((e) => e.upscaler).map((e) => e.name)).toEqual(['SeedVR2 3B'])
   })
 
   it('are exactly the ones whose name ends in 4-bit or 8-bit', () => {
@@ -89,10 +110,25 @@ describe('what the stack says before the click is what the run says after it', (
     expect(mlxLoraRefusal(undefined, true)).toBeNull()
   })
 
+  it('follows lora_stack in video.rs: LTX reads lora_A / lora_B, Wan both namings', () => {
+    const rust = read('src-tauri/src/commands/video.rs')
+    expect(rust).toContain('if ltx && !ltx_reads_lora(&tensor_names(&file).unwrap_or_default()) {')
+    expect(rust).toContain('if !ltx && header.keys == Keys::Other {')
+    expect(mlxLoraRefusal('peft', false, 'ltx')).toBeNull()
+    expect(mlxLoraRefusal('kohya', false, 'ltx')?.label).toBe('Kohya format')
+    expect(mlxLoraRefusal('other', false, 'ltx')?.label).toBe('not a plain LoRA')
+    expect(mlxLoraRefusal('peft', false, 'wan')).toBeNull()
+    expect(mlxLoraRefusal('kohya', false, 'wan')).toBeNull()
+    expect(mlxLoraRefusal('other', false, 'wan')?.label).toBe('not a plain LoRA')
+    expect(mlxLoraRefusal('unreadable', false, 'wan')?.label).toBe('not readable')
+  })
+
   it('the Qwen-Image 2.1 family is the one Create opens as "qwenimage" on the Mac', () => {
     expect(read('src/api/mlx-image.ts')).toContain("if (m.id.startsWith('qwen-image-2.1')) return 'qwenimage'")
     expect(read('src-tauri/src/commands/image_mflux.rs')).toContain('Family::Qwen21 => "qwen-image-2.1",')
-    expect(read('src/components/create/experimental/ParamGroups.tsx')).toContain("mlxLoraRefusal(loraKeys?.[name], laneType === 'qwenimage')")
+    // Since 14.10.2026 the video lane passes which video engine reads the file,
+    // and a video lane is never Qwen-Image 2.1.
+    expect(read('src/components/create/experimental/ParamGroups.tsx')).toContain("mlxLoraRefusal(loraKeys?.[name], !isVideo && laneType === 'qwenimage', macVideoEngine)")
   })
 })
 

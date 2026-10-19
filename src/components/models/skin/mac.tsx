@@ -5,7 +5,7 @@
 //
 // Only macOS draws it (skin/which.ts). Windows and Linux keep skin/classic.
 import { useEffect, useRef, useState } from 'react'
-import { ArrowLeft, Download, RefreshCw, Search, X as XIcon } from 'lucide-react'
+import { ArrowLeft, Download, FilePlus, RefreshCw, Search, X as XIcon } from 'lucide-react'
 import { useGraphicsMemoryGb } from '../../../hooks/useGraphicsMemory'
 import { getTotalRamGb } from '../../../lib/hardware'
 import { isMacOS } from '../../../api/backend'
@@ -13,6 +13,7 @@ import { ICON_MD, ICON_SM } from '../../ui/icon-size'
 import { BundleTile, CapLegend, HardwareChip, HardwareFoot, ModelTile } from '../ModelTiles'
 import { ModelEmptyState, ModelQuietLine, SectionHead } from '../ModelPageParts'
 import { LoraManager } from '../LoraManager'
+import { ADD_GGUF_TITLE } from './types'
 import type {
   EmptyStateProps, FilterBarProps, HeadProps, ManagerFrameProps, ModelSkin, RailKey,
 } from './types'
@@ -25,6 +26,7 @@ const LANE_HEAD: Record<RailKey, { title: string; text: (here: string) => string
   video: { title: 'Video models', text: (here) => `The models that make your videos. They run on ${here}.` },
   // The Mac's LoRAs go to its image engine alone; its video engine takes none.
   lora: { title: 'LoRAs', text: () => 'Small add-ons that give an image model a style or a subject.' },
+  music: { title: 'Music models', text: (here) => `The model that makes your tracks, songs with vocals or instrumentals. It runs on ${here}.` },
 }
 
 // One accent for all of them. The active entry is marked the way the Settings
@@ -66,7 +68,7 @@ function CountingDots({ label }: { label: string }) {
   )
 }
 
-function MacManagerFrame({ rail, entries, onBack, tab, onTab, installedBadge, searchRef, search, onRefresh, onPull, children }: ManagerFrameProps) {
+function MacManagerFrame({ rail, entries, onBack, tab, onTab, installedBadge, searchRef, search, onRefresh, onPull, onAddFile, children }: ManagerFrameProps) {
   // What the verdicts of this page are measured against, for the foot of the
   // rail. The same two readings the catalogue takes (DiscoverModels), so the
   // rail and a tile cannot name two different machines.
@@ -196,6 +198,15 @@ function MacManagerFrame({ rail, entries, onBack, tab, onTab, installedBadge, se
                 title="Pull any Ollama model by name"
               >
                 <Download size={ICON_SM} /> Pull
+              </button>
+            )}
+            {onAddFile && (
+              <button
+                onClick={onAddFile}
+                className="lu-control lu-control--outline"
+                title={ADD_GGUF_TITLE}
+              >
+                <FilePlus size={ICON_SM} /> GGUF file
               </button>
             )}
           </div>

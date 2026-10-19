@@ -25,6 +25,11 @@ export const MAC_VIDEO_ENGINE_SI_GB = 1
  *  venv measured 0.49 GB after a real install (09.10.2026). */
 export const MAC_VIDEO_LTX_ENGINE_SI_GB = 0.5
 
+/** The music engine's venv (`ENGINE_INSTALL_BYTES` in music.rs). Not
+ *  measured yet: its wheels are 0.33 GB, and torch and MLX unpack to several
+ *  times that, so this is the room the install asks for. */
+export const MAC_MUSIC_ENGINE_SI_GB = 3
+
 /** "about 5 GB" for a size the catalogue gives in decimal GB. */
 export function aboutGb(siGb: number): string {
   return `about ${Math.max(1, Math.round(siGbToBytes(siGb) / 1024 ** 3))} GB`
@@ -34,6 +39,8 @@ export function aboutGb(siGb: number): string {
 export const MAC_IMAGE_SETUP_SIZE = aboutGb(MAC_IMAGE_ENGINE_SI_GB + MAC_IMAGE_STARTER_SI_GB)
 /** The video engine alone, as Settings and the Model Manager set it up. */
 export const MAC_VIDEO_ENGINE_SIZE = aboutGb(MAC_VIDEO_ENGINE_SI_GB)
+/** The music engine, which comes with the Get of its one model. */
+export const MAC_MUSIC_ENGINE_SIZE = aboutGb(MAC_MUSIC_ENGINE_SI_GB)
 
 /**
  * Everything the video setup of Create fetches for its starter, in decimal

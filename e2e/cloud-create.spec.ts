@@ -115,13 +115,17 @@ test('local mode: local lanes usable, cloud-only ops shown as locked teasers', a
   // in trainer.rs), so it renders as a plain selectable tab now.
   await expect(page.getByRole('radio', { name: 'Character Studio', exact: true })).toBeVisible()
 
-  // cloudOnly WITHOUT a local lane (upscale / eraser) renders locked:
-  // aria-label gains ", runs on LU Cloud" and a click opens the teaser
-  // instead of switching the lane.
-  await expect(page.getByRole('radio', { name: 'Enhance Image, runs on LU Cloud' })).toBeVisible()
+  // Enhance Image runs on local ComfyUI on Windows and Linux since 3.0.7
+  // (Discord wish D10), so it is a plain local tab here, not a teaser.
+  await expect(page.getByRole('radio', { name: 'Enhance Image', exact: true })).toBeVisible()
+  await expect(page.getByRole('radio', { name: 'Enhance Image, runs on LU Cloud' })).toHaveCount(0)
+
+  // cloudOnly WITHOUT a local lane (eraser) renders locked: aria-label gains
+  // ", runs on LU Cloud" and a click opens the teaser instead of switching
+  // the lane.
   await expect(page.getByRole('radio', { name: 'Erase Object, runs on LU Cloud' })).toBeVisible()
 
-  await page.getByRole('radio', { name: 'Enhance Image, runs on LU Cloud' }).click()
+  await page.getByRole('radio', { name: 'Erase Object, runs on LU Cloud' }).click()
   await expect(page.getByRole('radio', { name: 'Image', exact: true })).toBeChecked()
 })
 

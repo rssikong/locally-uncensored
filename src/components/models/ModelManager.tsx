@@ -4,7 +4,7 @@ import { motion } from 'framer-motion'
 import {
   MessagesSquare, Images, Clapperboard,
   Sparkles, PackageOpen, Video as VideoIcon, Image as ImageIcon,
-  Settings as SettingsIcon, Layers,
+  Settings as SettingsIcon, Layers, Music,
 } from 'lucide-react'
 import { useModels } from '../../hooks/useModels'
 import { useModelStore } from '../../stores/modelStore'
@@ -14,6 +14,7 @@ import { ModelCard } from './ModelCard'
 import { PullModelDialog } from './PullModelDialog'
 import { DiscoverModels } from './DiscoverModels'
 import { CivitaiSearchPanel } from './CivitaiSearchPanel'
+import { LoraLinkPanel } from './LoraLinkPanel'
 import { LORA_USE_HINT, type LoraRow } from './LoraManager'
 import { LoraAddons } from './LoraAddons'
 import { Modal } from '../ui/Modal'
@@ -27,7 +28,7 @@ import { useMlxLoras } from '../../hooks/useMlxLoras'
 import { modelSkin, type RailEntry } from './skin'
 import { useMlxMedia } from '../../hooks/useMlxMedia'
 import { backendCall } from '../../api/backend'
-import { customModelDirs, deleteBundledModel, stopBundledEngine } from '../../api/engine'
+import { addGgufFile, customModelDirs, deleteBundledModel, stopBundledEngine } from '../../api/engine'
 import { counterView } from '../../lib/inventory-counter'
 import { groupInstalledByProvider, needsBackendSwitchHeading, foldedRowsSentence, LU_ENGINE_GROUP } from '../../lib/lu-engine-rows'
 import { isBuiltinEngineEntry } from '../../lib/lmstudio-match'
@@ -47,7 +48,7 @@ type Mode = Extract<ModelCategory, 'text' | 'image' | 'video'>
  *  not a fourth model category, they are the add-on files that sit beside the
  *  image models. So the rail selection is Mode PLUS that one lane, and only
  *  the three real categories are written back into the store. */
-type Rail = Mode | 'lora'
+type Rail = Mode | 'lora' | 'music'
 
 // The lanes of the rail. How an entry looks, and how the active one is
 // marked, is the business of the face the page wears (skin/classic.tsx on
@@ -62,6 +63,11 @@ const RAIL_ITEMS: { key: Mode; label: string; icon: typeof MessagesSquare }[] = 
  *  attach to. Its own item rather than a member of RAIL_ITEMS above: that list
  *  is typed on the store's category and this one is not a category. */
 const LORA_RAIL = { key: 'lora' as const, label: 'LoRAs', icon: Layers }
+
+/** The Mac's music engine (ACE-Step 1.5, commands/music.rs). Its own entry
+ *  for the same reason as LoRAs, and only on the Mac: on Windows and Linux a
+ *  music model is a ComfyUI checkpoint of the Image lane. */
+const MUSIC_RAIL = { key: 'music' as const, label: 'Music', icon: Music }
 
 export function ModelManager() {
   const {
@@ -127,9 +133,9 @@ export function ModelManager() {
   // Mac local media is MLX: there the lane is the LoRA folder of the Mac's
   // image engine (MacLoraLane), which the LoRA stack in Create reads. Until
   // that folder existed the rail was not offered on the Mac at all.
-  const [loraRail, setLoraRail] = useState(false)
-  const rail: Rail = loraRail ? 'lora' : mode
-  const showMlxPanel = macMlxMedia && rail !== 'lora' && (mode === 'image' || mode === 'video')
+  const [extraRail, setExtraRail] = useState<'lora' | 'music' | null>(null)
+  const rail: Rail = extraRail === 'lora' ? 'lora' : extraRail === 'music' && macMlxMedia ? 'music' : mode
+  const showMlxPanel = macMlxMedia && rail !== 'lora' && (rail === 'music' || mode === 'image' || mode === 'video')
   /** The Mac's own LoRA lane, in place of the ComfyUI one below. */
   const showMacLoras = macMlxMedia && rail === 'lora'
   const macLoras = useMlxLoras(macMlxMedia)
@@ -139,7 +145,10 @@ export function ModelManager() {
   const mlxInstalled = {
     image: mlxMedia.image.models.filter((m) => m.installed).length,
     video: mlxMedia.video.models.filter((m) => m.installed).length,
+    music: mlxMedia.music.models.filter((m) => m.installed).length,
   }
+  /** The Mac lane on screen, when it is one. */
+  const macLane = rail === 'music' ? 'music' : mode === 'video' ? 'video' : 'image'
 
   useEffect(() => {
     fetchModels()
@@ -182,6 +191,22 @@ export function ModelManager() {
   }
 
   const [deleteError, setDeleteError] = useState<string | null>(null)
+
+  // D17: a GGUF from anywhere on the drive. The dialog picks it, the import
+  // links it into the LU Engine folder, and the Installed list shows it with
+  // its Use button. What happened is said in a dialog either way.
+  const [ggufNote, setGgufNote] = useState<{ ok: boolean; text: string } | null>(null)
+  const handleAddGguf = async () => {
+    try {
+      const name = await addGgufFile()
+      if (!name) return
+      await fetchModels()
+      setTab('installed')
+      setGgufNote({ ok: true, text: `${name} is now one of your LU Engine models. Find it under Installed and press Use to chat with it.` })
+    } catch (e) {
+      setGgufNote({ ok: false, text: e instanceof Error ? e.message : String(e) })
+    }
+  }
   const handleDelete = async (name: string) => {
     try {
       const model = models.find((m: AIModel) => m.name === name)
@@ -237,14 +262,14 @@ export function ModelManager() {
     ? macLoras.loras.length
     : rail === 'lora'
     ? loraRows.length
-    : showMlxPanel ? mlxInstalled[mode as 'image' | 'video'] : filteredModels.length
+    : showMlxPanel ? mlxInstalled[macLane] : filteredModels.length
   // One rule for the rail badges and the Installed badge, so the two can
   // never again disagree about what an uncounted lane looks like.
   const inventoryState = { loaded: inventoryLoaded, refreshing: inventoryRefreshing }
   /** The Mac's media lanes count their own catalogue, which has its own
    *  moment of not knowing yet. */
   const mlxInventoryState = { loaded: mlxMedia.loaded, refreshing: false }
-  const macMediaKey = (key: string): key is 'image' | 'video' => macMlxMedia && (key === 'image' || key === 'video')
+  const macMediaKey = (key: string): key is 'image' | 'video' | 'music' => macMlxMedia && (key === 'image' || key === 'video' || key === 'music')
 
   // d37d7bf5 + neejuh (2.5.5): "models show installed in Discover but the
   // Installed tab is empty and I can't select them." Image/video models are
@@ -282,7 +307,7 @@ export function ModelManager() {
   const skin = modelSkin()
 
   const macLoraState = { loaded: macLoras.loaded, refreshing: false }
-  const railEntries: RailEntry[] = [...RAIL_ITEMS, LORA_RAIL].map(({ key, label, icon }) => ({
+  const railEntries: RailEntry[] = [...RAIL_ITEMS, ...(macMlxMedia ? [MUSIC_RAIL] : []), LORA_RAIL].map(({ key, label, icon }) => ({
     key,
     label,
     Icon: icon,
@@ -298,8 +323,8 @@ export function ModelManager() {
         inventoryState,
       ),
     onPick: () => {
-      if (key === 'lora') { setLoraRail(true); return }
-      setLoraRail(false)
+      if (key === 'lora' || key === 'music') { setExtraRail(key); return }
+      setExtraRail(null)
       setCategoryFilter(key)
     },
   }))
@@ -327,11 +352,13 @@ export function ModelManager() {
         // Pull fetches an Ollama chat model by name. On the media and LoRA
         // rails it has nothing to pull into.
         onPull={ollamaEnabled && rail === 'text' ? () => setPullOpen(true) : undefined}
+        // A GGUF runs on the LU Engine, which serves the chat lane only.
+        onAddFile={rail === 'text' ? () => { void handleAddGguf() } : undefined}
       >
           {/* Views */}
           {showMlxPanel && (
             <MacMediaLane
-              kind={mode === 'image' ? 'image' : 'video'}
+              kind={macLane}
               media={mlxMedia}
               tab={tab}
               search={searchQuery}
@@ -530,6 +557,7 @@ export function ModelManager() {
                 <p className={skin.cls.loraDiscoverNote}>
                   Downloads land in ComfyUI&apos;s models/loras folder. {LORA_USE_HINT}
                 </p>
+                <LoraLinkPanel installed={loraRows.map((r) => r.name)} />
                 <LoraAddons search={searchQuery} />
                 <CivitaiSearchPanel
                   modelType="LORA"
@@ -576,6 +604,15 @@ export function ModelManager() {
         <p className="text-[0.7rem] text-red-500 dark:text-red-400 mb-3">{deleteError}</p>
         <ModalActions>
           <ModalButton onClick={() => setDeleteError(null)}>
+            Close
+          </ModalButton>
+        </ModalActions>
+      </Modal>
+
+      <Modal open={!!ggufNote} onClose={() => setGgufNote(null)} title={ggufNote?.ok ? 'Model added' : 'Could not add the model'}>
+        <p className={ggufNote?.ok ? 't-micro text-gray-600 dark:text-gray-300 mb-3' : 't-micro text-red-500 dark:text-red-400 mb-3'}>{ggufNote?.text}</p>
+        <ModalActions>
+          <ModalButton onClick={() => setGgufNote(null)}>
             Close
           </ModalButton>
         </ModalActions>

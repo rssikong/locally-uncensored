@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { INTENTS, INTENT_MAP, isIntentAvailable, isIntentLocked, visibleIntents } from '../intents'
-import { LOCAL_LANE_OPS } from '../../../../stores/createStore'
+import { LOCAL_LANE_OPS, LOCAL_UTILITY_OPS } from '../../../../stores/createStore'
 
 // 2026-07-10 made the advanced ops cloud-only; 2026-07-12 brought
 // Edit BACK to local as the 4th local tab (checkpoint mask inpaint —
@@ -8,8 +8,9 @@ import { LOCAL_LANE_OPS } from '../../../../stores/createStore'
 // Animate (local I2V) back as the 5th. 2.5.8 gives FOUR specialized categories
 // REAL local lanes (hasLocalLane): music / lipsync / extend / motion on core
 // ComfyUI node families (motion additionally needs the DWPose pack, which
-// loads fine on Windows via the OpenCV CPU fallback). Upscale and eraser
-// stay hosted-only. Character was cloud-first through 2.5.x; 2.6.0 ships the
+// loads fine on Windows via the OpenCV CPU fallback). Eraser stays hosted
+// only; upscale got a local lane in 3.0.7 (core upscale nodes). Character
+// was cloud-first through 2.5.x; 2.6.0 ships the
 // musubi trainer runtime (trainer.rs), so its train lane is local now too.
 /** The pills the bar shows, in order. */
 const shown = (backend: 'local' | 'cloud', mlxHost: boolean) =>
@@ -22,11 +23,15 @@ const teasers = (backend: 'local' | 'cloud', mlxHost: boolean) =>
   visibleIntents(backend, mlxHost, true).filter((m) => isIntentLocked(m, backend, mlxHost)).map((m) => m.id)
 
 describe('intent cloud gating', () => {
-  it('upscale and eraser stay hosted-only (no local lane)', () => {
-    for (const id of ['upscale', 'eraser'] as const) {
-      expect(INTENT_MAP[id].cloudOnly, id).toBe(true)
-      expect(INTENT_MAP[id].hasLocalLane, id).toBeUndefined()
-    }
+  it('eraser stays hosted-only (no local lane)', () => {
+    expect(INTENT_MAP.eraser.cloudOnly).toBe(true)
+    expect(INTENT_MAP.eraser.hasLocalLane).toBeUndefined()
+  })
+
+  it('upscale keeps its hosted endpoint and runs locally too since 3.0.7', () => {
+    expect(INTENT_MAP.upscale.cloudOnly).toBe(true)
+    expect(INTENT_MAP.upscale.hasLocalLane).toBe(true)
+    expect(INTENT_MAP.upscale.requiresModels).toBe('upscale')
   })
 
   it('image, edit, video, removebg and animate stay available locally', () => {
@@ -42,14 +47,14 @@ describe('intent cloud gating', () => {
     }
   })
 
-  it('intent metadata mirrors the store LOCAL_LANE_OPS set exactly', () => {
+  it('intent metadata mirrors the store LOCAL_LANE_OPS plus LOCAL_UTILITY_OPS exactly', () => {
     const fromMeta = INTENTS.filter((m) => m.hasLocalLane).map((m) => m.id).sort()
-    expect(fromMeta).toEqual([...LOCAL_LANE_OPS].sort())
+    expect(fromMeta).toEqual([...LOCAL_LANE_OPS, ...LOCAL_UTILITY_OPS].sort())
   })
 
-  it('the local IntentBar filter keeps the 5 classic tabs plus the 5 lanes selectable', () => {
+  it('the local IntentBar filter keeps the 5 classic tabs, Enhance and the 5 lanes selectable', () => {
     const selectable = INTENTS.filter((m) => !m.cloudOnly || m.hasLocalLane).map((m) => m.id)
-    expect(selectable).toEqual(['image', 'edit', 'removebg', 'video', 'animate', 'character', 'lipsync', 'music', 'extend', 'motion'])
+    expect(selectable).toEqual(['image', 'edit', 'removebg', 'upscale', 'video', 'animate', 'character', 'lipsync', 'music', 'extend', 'motion'])
     // …and that IS what the pure filter reports for a ComfyUI local host.
     expect(unlocked('local', false)).toEqual(selectable)
   })
@@ -91,14 +96,17 @@ describe('intent cloud gating', () => {
 // /upload/image, which does not exist there either. So on a local MLX Mac an
 // intent must never render as an active local tab unless MLX really runs it.
 describe('intent gating on a local MLX Mac (no ComfyUI)', () => {
-  it('only image and video stay real local tabs', () => {
-    expect(unlocked('local', true)).toEqual(['image', 'video'])
+  it('only image, video, the cutout and Character Studio stay real local tabs', () => {
+    // Remove Background runs on Vision in macOS (commands/mlx_cutout.rs).
+    // Character Studio runs "Use character" through mflux with the LoRA from
+    // the Mac's LoRA folder; its Train tab says where to train.
+    expect(unlocked('local', true)).toEqual(['image', 'removebg', 'video', 'character'])
   })
 
   it('the hosted-only tools AND the 2.5.8 lanes become cloud teasers', () => {
     // Same locked pill + ", runs on LU Cloud" label the 2.6.0 bar already
     // uses — visible, honest, and it opens the teaser sheet on tap.
-    expect(teasers('local', true)).toEqual(['upscale', 'eraser', 'character', 'lipsync', 'music', 'extend', 'motion'])
+    expect(teasers('local', true)).toEqual(['upscale', 'eraser', 'lipsync', 'music', 'extend', 'motion'])
   })
 
   it('every Mac teaser has a cloud endpoint to teased about', () => {
@@ -107,13 +115,13 @@ describe('intent gating on a local MLX Mac (no ComfyUI)', () => {
     }
   })
 
-  it('edit, removebg and animate are hidden rather than shown as dead tabs', () => {
+  it('edit and animate are hidden rather than shown as dead tabs', () => {
     // No hosted-only flag means no teaser sheet exists for them, and MLX
     // silently DROPS a source + mask (it only takes prompt/steps/seed/size/
     // negative) — which produced an unrelated fresh image instead of an edit.
     // Hiding is the only honest state left.
     const hidden = INTENTS.map((m) => m.id).filter((id) => !shown('local', true).includes(id))
-    expect(hidden).toEqual(['edit', 'removebg', 'animate'])
+    expect(hidden).toEqual(['edit', 'animate'])
   })
 
   it('nothing is hidden on cloud or on a ComfyUI local host', () => {
@@ -144,6 +152,40 @@ describe('intent gating on a local MLX Mac (no ComfyUI)', () => {
             .toBe(unlocked(backend, mlxHost).includes(m.id))
         }
       }
+    }
+  })
+
+  // M1 (14.10.2026): Extend Video continues from the last frame of a clip
+  // through image to video, so on a Mac it runs on the models that Animate
+  // runs on, and only while one is installed. Until then it was a cloud
+  // teaser on every Mac.
+  it('on a Mac, Extend Video is a local tab exactly while Animate is one', () => {
+    for (const mlxAnimate of [false, true]) {
+      const extend = INTENTS.find((m) => m.id === 'extend')!
+      expect(isIntentLocked(extend, 'local', true, mlxAnimate), `animate ${mlxAnimate}`).toBe(!mlxAnimate)
+      expect(isIntentAvailable('extend', 'local', true, mlxAnimate)).toBe(isIntentAvailable('animate', 'local', true, mlxAnimate))
+    }
+    // The other ComfyUI lanes stay teasers whatever is installed.
+    for (const id of ['lipsync', 'music', 'motion'] as const) {
+      expect(isIntentLocked(INTENTS.find((m) => m.id === id)!, 'local', true, true, true), id).toBe(true)
+    }
+  })
+
+  // 3.0.8: Talking Character runs on LTX-2.3 4-bit (the engine's a2v) while
+  // that model is installed, and is the cloud teaser it was without it.
+  it('on a Mac, Talking Character is a local tab exactly while a model that talks is installed', () => {
+    const lipsync = INTENT_MAP.lipsync
+    for (const mlxTalk of [false, true]) {
+      expect(isIntentLocked(lipsync, 'local', true, false, false, false, false, false, mlxTalk), `talk ${mlxTalk}`).toBe(!mlxTalk)
+      expect(isIntentAvailable('lipsync', 'local', true, false, false, false, false, false, mlxTalk)).toBe(mlxTalk)
+      expect(visibleIntents('local', true, false, false, false, false, false, false, mlxTalk).includes(lipsync)).toBe(mlxTalk)
+    }
+    // It frees no other lane, and a ComfyUI host is not touched by it.
+    const others = (talk: boolean) => INTENTS.filter((m) => m.id !== 'lipsync' && !isIntentLocked(m, 'local', true, false, false, false, false, false, talk)).map((m) => m.id)
+    expect(others(true)).toEqual(others(false))
+    for (const talk of [false, true]) {
+      expect(isIntentLocked(lipsync, 'local', false, false, false, false, false, false, talk)).toBe(false)
+      expect(isIntentLocked(lipsync, 'cloud', true, false, false, false, false, false, talk)).toBe(false)
     }
   })
 })

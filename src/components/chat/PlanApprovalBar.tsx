@@ -57,12 +57,16 @@ export function PlanApprovalBar({ onApprove }: { onApprove: (instruction: string
   return (
     <div className="w-full p-1.5" data-testid="plan-approval-panel">
       <div className="w-full rounded-md border border-gray-200 dark:border-white/[0.06] bg-white dark:bg-white/[0.02]">
-        <div className="flex items-center gap-1.5 px-2 py-1">
+        {/* The row is wider than the column at its default width (280 px).
+            It wraps then: the button moves to a second line, and the toggle
+            keeps its words on one. Before, the toggle was squeezed to the
+            width of one word and stood as four lines. */}
+        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 px-2 py-1">
           <ClipboardCheck size={9} className="text-lu-accent shrink-0" />
           <span className="text-[0.55rem] uppercase tracking-wider text-gray-500 shrink-0">plan ready</span>
           <button
             onClick={() => setExpanded(!expanded)}
-            className="flex-1 min-w-0 flex items-center gap-1 text-left text-[0.55rem] text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+            className="flex-auto flex items-center gap-1 whitespace-nowrap text-left text-[0.55rem] text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
           >
             <span>{expanded ? 'Hide the full plan' : 'Show the full plan'}</span>
             <ChevronDown size={9} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} />
@@ -70,7 +74,7 @@ export function PlanApprovalBar({ onApprove }: { onApprove: (instruction: string
           <button
             onClick={approve}
             title={`Runs the plan in ${CODEX_MODE_SHORT[target]} mode. ${CODEX_MODE_DESCRIPTIONS[target]}`}
-            className="shrink-0 px-2 py-0.5 rounded text-[0.55rem] font-medium bg-lu-accent/15 text-lu-accent hover:bg-lu-accent/25 transition-colors"
+            className="shrink-0 ml-auto px-2 py-0.5 rounded text-[0.55rem] font-medium bg-lu-accent/15 text-lu-accent hover:bg-lu-accent/25 transition-colors"
           >
             {`Approve and run (${CODEX_MODE_SHORT[target]})`}
           </button>

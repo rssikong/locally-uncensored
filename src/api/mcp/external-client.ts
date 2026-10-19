@@ -8,6 +8,7 @@
 import type { Child } from '@tauri-apps/plugin-shell'
 import type { MCPToolDefinition, MCPServerConfig, ToolArgs } from './types'
 import { log } from '../../lib/logger'
+import { APP_VERSION } from '../../lib/app-version'
 import { isTauri } from '../backend'
 import { isRecord, prop, asString, asNumber, asRecordArray, errorText } from '../../types/json-guards'
 
@@ -103,6 +104,10 @@ function isToolInputSchema(v: unknown): v is MCPToolDefinition['inputSchema'] {
 }
 
 /** The schema a tool gets when the server did not send a usable one. */
+/** How long one JSON-RPC request waits for its answer unless the caller says
+ *  otherwise (the handshake can, see MCPServerConfig.initializeTimeoutMs). */
+export const REQUEST_TIMEOUT_MS = 30_000
+
 const EMPTY_INPUT_SCHEMA: MCPToolDefinition['inputSchema'] = {
   type: 'object',
   properties: {},
@@ -228,6 +233,7 @@ export class MCPExternalClient {
       for (const program of candidates) {
         const command = Command.create(program, this.config.args, {
           env: this.config.env,
+          ...(this.config.cwd ? { cwd: this.config.cwd } : {}),
         })
 
         // Handle stdout — parse JSON-RPC responses
@@ -272,12 +278,14 @@ export class MCPExternalClient {
       // removes it again if the handshake fails outright.
       liveClients.add(this)
 
-      // Initialize the MCP connection
+      // Initialize the MCP connection. The server's own config may give the
+      // handshake longer: an npx server installs its packages before it
+      // answers (d307-k, 19.10.2026: REA's first start on a slow line).
       await this.sendRequest('initialize', {
         protocolVersion: '2024-11-05',
         capabilities: {},
-        clientInfo: { name: 'locally-uncensored', version: '2.3.0' },
-      })
+        clientInfo: { name: 'locally-uncensored', version: APP_VERSION },
+      }, this.config.initializeTimeoutMs)
 
       // Discover tools
       const toolsResult = await this.sendRequest('tools/list', {})
@@ -427,7 +435,7 @@ export class MCPExternalClient {
 
   // ── Private ─────────────────────────────────────────────────
 
-  private sendRequest(method: string, params?: unknown): Promise<unknown> {
+  private sendRequest(method: string, params?: unknown, timeoutMs: number = REQUEST_TIMEOUT_MS): Promise<unknown> {
     return new Promise((resolve, reject) => {
       if (!this.child) {
         reject(new Error('Not connected'))
@@ -445,7 +453,7 @@ export class MCPExternalClient {
         if (this.pendingRequests.delete(id)) {
           reject(new Error(`Request ${method} timed out`))
         }
-      }, 30000)
+      }, timeoutMs > 0 ? timeoutMs : REQUEST_TIMEOUT_MS)
 
       this.pendingRequests.set(id, { resolve, reject, timer })
 

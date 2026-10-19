@@ -14,8 +14,9 @@
  *
  * The ComfyUI canvas can also save a Web/UI format (`{ nodes: [...],
  * links: [...] }`, numeric node ids, positional `widgets_values`), but
- * nothing in this app reads that shape (R2-32), so it is not modelled here;
- * the Import dialog tells the user to re-export with Save (API Format).
+ * nothing downstream reads that shape (R2-32), so it is not modelled here.
+ * The import converts it to API format first (api/comfy-ui-format.ts, which
+ * also holds its types).
  *
  * Type-only plus pure guards, no imports, a leaf module that cannot join an
  * import cycle.

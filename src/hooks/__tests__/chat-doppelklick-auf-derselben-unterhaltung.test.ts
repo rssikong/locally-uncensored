@@ -57,7 +57,7 @@ beforeEach(() => {
   useChatStore.setState({ conversations: [], activeConversationId: null })
   useGenerationStore.setState({ generating: {}, aborters: {}, runs: {} })
   useSettingsStore.setState({
-    settings: { ...DEFAULT_SETTINGS, appMode: 'cloud', cavemanMode: 'off', chatToolsEnabled: false },
+    settings: { ...DEFAULT_SETTINGS, appMode: 'cloud', cavemanMode: 'off' },
   })
   useProviderStore.setState((s) => ({
     providers: { ...s.providers, 'lu-cloud': { ...s.providers['lu-cloud'], enabled: true } },

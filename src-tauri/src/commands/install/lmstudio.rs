@@ -335,6 +335,17 @@ pub async fn start_lmstudio_server() -> Result<serde_json::Value, String> {
         .map_err(|e| format!("start_lmstudio_server task: {e}"))?
 }
 
+/// The arguments LU starts LM Studio's server with.
+///
+/// Until 3.0.6 they carried `--cors`. LM Studio's server has no login, and
+/// with that flag it answers any origin: a web page open in the user's
+/// browser could list the models and run them. LU does not need it, every
+/// request to a local backend goes through the Rust proxy (`proxy_localhost`),
+/// which is no browser and knows no origin rule.
+pub(super) fn lms_server_args() -> [String; 4] {
+    ["server".into(), "start".into(), "--port".into(), LMSTUDIO_DEFAULT_PORT.to_string()]
+}
+
 fn start_lmstudio_server_blocking() -> Result<serde_json::Value, String> {
     if lmstudio_server_running() {
         return Ok(serde_json::json!({"status": "already_running"}));
@@ -342,8 +353,7 @@ fn start_lmstudio_server_blocking() -> Result<serde_json::Value, String> {
     match lmstudio_lms_path() {
         Some(p) => {
             let mut srv = crate::process_util::foreign_system_command(&p);
-            srv.args(["server", "start", "--cors", "--port"])
-                .arg(LMSTUDIO_DEFAULT_PORT.to_string())
+            srv.args(lms_server_args())
                 .stdout(Stdio::null())
                 .stderr(Stdio::null());
             crate::process_util::suppress_window(&mut srv);
@@ -776,6 +786,14 @@ pub async fn lmstudio_unload_model(model: String, timeout_ms: Option<u64>) -> Re
 }
 
 fn lmstudio_unload_model_blocking(model: String, deadline: Instant) -> Result<serde_json::Value, String> {
+    // Nothing to unload from an LM Studio that is not running, and `lms`
+    // would start it to find that out (box runs d307-b and d307-c, H4: every
+    // VRAM hand-off before a render left "LM Studio.exe --run-as-service"
+    // behind on a box where LM Studio had been closed).
+    if !should_run_lms_unload(lmstudio_daemon_answers(), lmstudio_process_running) {
+        eprintln!("[lmstudio_unload_model] skipped model='{}': LM Studio is not running", model);
+        return Ok(serde_json::json!({ "ok": true, "model": model, "skipped": "not_running" }));
+    }
     let lms = lmstudio_lms_path()
         .ok_or_else(|| "lms CLI not found".to_string())?;
     let mut cmd = crate::process_util::foreign_system_command(&lms);
@@ -789,8 +807,130 @@ fn lmstudio_unload_model_blocking(model: String, deadline: Instant) -> Result<se
     }
 }
 
+// ── Is LM Studio running at all ────────────────────────────────
+//
+// `lms unload` does not fail on a closed LM Studio, it wakes it: the CLI asks
+// its daemon for `/lms-status` on a fixed list of loopback ports and, when
+// nobody answers, spawns the app from `~/.lmstudio/.internal/
+// app-install-location.json` with `--run-as-service` (or the headless
+// `llmster` from `llmster-install-location.json`). Read from the `lms` 0.4.15
+// bundle on a Mac (`findOrStartLlmster`, `wakeUpServiceFromLocation`,
+// `apiServerPorts`). The port 1234 probe above cannot stand in for this: it is
+// the OpenAI server, which can be off while the app runs with a model loaded.
+//
+// So the unload asks the same question `lms` asks first, and only when that
+// comes back empty does it look at the process table as a second opinion, in
+// case a later `lms` moved its ports. A process only counts as "not LM Studio"
+// when neither its name nor its executable path says LM Studio in any
+// spelling: "LM Studio.exe" on Windows (box run d307-c), "LM Studio" and its
+// helpers inside "LM Studio.app" on the Mac, the node worker under
+// `~/.lmstudio/.internal`, an AppImage named lm-studio, or `llmster`. Too wide
+// a match only costs the old behaviour (an unload that wakes nothing new).
+
+/// The loopback ports `lms` 0.4.15 probes for its daemon (`apiServerPorts`).
+const LMSTUDIO_DAEMON_PORTS: [u16; 5] = [41343, 52993, 16141, 39414, 22931];
+
+/// Whether a `/lms-status` reply is LM Studio's: `lms` accepts a 200 with a
+/// string `package` and a string `version`, and so does this.
+fn is_lms_status(body: &serde_json::Value) -> bool {
+    body.get("package").and_then(|p| p.as_str()).is_some()
+        && body.get("version").and_then(|v| v.as_str()).is_some()
+}
+
+/// One daemon port, bounded like `lmstudio_port_open`: a closed port refuses
+/// in at most 300 ms, an open one gets 800 ms to answer.
+fn lmstudio_daemon_at(port: u16) -> bool {
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
+    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
+    if TcpStream::connect_timeout(&addr, Duration::from_millis(300)).is_err() {
+        return false;
+    }
+    let Ok(client) = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_millis(800))
+        .connect_timeout(Duration::from_millis(400))
+        .no_proxy()
+        .build()
+    else {
+        return false;
+    };
+    match client.get(format!("http://127.0.0.1:{port}/lms-status")).send() {
+        Ok(r) if r.status().is_success() => r.json::<serde_json::Value>().map(|b| is_lms_status(&b)).unwrap_or(false),
+        _ => false,
+    }
+}
+
+/// Whether LM Studio's daemon answers on any of its ports. The ports are asked
+/// side by side, so the closed case costs one 300 ms refusal, not five.
+fn lmstudio_daemon_answers() -> bool {
+    std::thread::scope(|s| {
+        let asks: Vec<_> = LMSTUDIO_DAEMON_PORTS
+            .iter()
+            .map(|&p| s.spawn(move || lmstudio_daemon_at(p)))
+            .collect();
+        asks.into_iter().any(|h| h.join().unwrap_or(false))
+    })
+}
+
+/// Whether a name or path says LM Studio: lower case, with spaces, dashes and
+/// underscores dropped, it contains "lmstudio" or "llmster".
+fn says_lmstudio(text: &str) -> bool {
+    let squeezed: String = text
+        .chars()
+        .filter(|c| !matches!(c, ' ' | '-' | '_'))
+        .flat_map(char::to_lowercase)
+        .collect();
+    squeezed.contains("lmstudio") || squeezed.contains("llmster")
+}
+
+/// Whether any process in the list is LM Studio, by its name or the path of
+/// its executable. The command line is left out on purpose: LU's own engine
+/// can run a model file that lies under `~/.lmstudio/models`.
+fn lmstudio_in_process_list<'a>(procs: impl IntoIterator<Item = (&'a str, Option<&'a Path>)>) -> bool {
+    procs
+        .into_iter()
+        .any(|(name, exe)| says_lmstudio(name) || exe.is_some_and(|p| says_lmstudio(&p.to_string_lossy())))
+}
+
+/// The live process table through [`lmstudio_in_process_list`].
+fn lmstudio_process_running() -> bool {
+    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
+    let mut sys = System::new();
+    sys.refresh_processes_specifics(
+        ProcessesToUpdate::All,
+        true,
+        ProcessRefreshKind::nothing().with_exe(UpdateKind::OnlyIfNotSet),
+    );
+    let names: Vec<(String, Option<PathBuf>)> = sys
+        .processes()
+        .values()
+        .map(|p| (p.name().to_string_lossy().into_owned(), p.exe().map(Path::to_path_buf)))
+        .collect();
+    lmstudio_in_process_list(names.iter().map(|(n, e)| (n.as_str(), e.as_deref())))
+}
+
+/// Whether `lms unload` may run: when the daemon answers, or failing that,
+/// when any LM Studio process is there. Skipped only when both say no.
+fn should_run_lms_unload(daemon_answers: bool, process_running: impl FnOnce() -> bool) -> bool {
+    daemon_answers || process_running()
+}
+
 #[cfg(test)]
 mod tests {
+    /// Security pass of 2026-10-13: the server was started with a flag that
+    /// lets any web page read it.
+    #[test]
+    fn the_server_start_does_not_open_lm_studio_to_every_web_page() {
+        let args = super::lms_server_args();
+        assert_eq!(args, ["server", "start", "--port", "1234"]);
+        let flag = ["\"--", "cors\""].concat();
+        for (name, source) in [
+            ("lmstudio.rs", include_str!("lmstudio.rs")),
+            ("lmstudio_install.rs", include_str!("lmstudio_install.rs")),
+        ] {
+            assert!(!source.contains(&flag), "{name} passes the open flag again");
+        }
+    }
+
     use super::lmstudio_chat_model_file;
     use super::{lms_limit, loaded_ids, LMS_LIMIT_CEILING, LMS_LOAD_LIMIT};
     use std::time::Duration;
@@ -801,6 +941,84 @@ mod tests {
         assert_eq!(lms_limit(Some(0), LMS_LOAD_LIMIT), LMS_LOAD_LIMIT);
         assert_eq!(lms_limit(Some(1500), LMS_LOAD_LIMIT), Duration::from_millis(1500));
         assert_eq!(lms_limit(Some(u64::MAX), LMS_LOAD_LIMIT), LMS_LIMIT_CEILING);
+    }
+
+    mod is_lm_studio_running {
+        use super::super::{is_lms_status, lmstudio_in_process_list, should_run_lms_unload};
+        use std::path::Path;
+
+        fn list<'a>(rows: &'a [(&'a str, Option<&'a str>)]) -> impl Iterator<Item = (&'a str, Option<&'a Path>)> + 'a {
+            rows.iter().map(|(n, e)| (*n, e.map(Path::new)))
+        }
+
+        /// The processes of a closed LM Studio are none of these, and then
+        /// the unload must not run (it would start the service).
+        #[test]
+        fn a_box_without_lm_studio_skips_the_unload() {
+            let rows = [
+                ("Locally Uncensored.exe", Some(r"C:\Program Files\Locally Uncensored\Locally Uncensored.exe")),
+                ("lu-llama-server.exe", Some(r"C:\Program Files\Locally Uncensored\lu-llama-server.exe")),
+                ("python.exe", Some(r"C:\ComfyUI\venv\Scripts\python.exe")),
+                ("ollama.exe", Some(r"C:\Users\u\AppData\Local\Programs\Ollama\ollama.exe")),
+                ("explorer.exe", None),
+            ];
+            assert!(!lmstudio_in_process_list(list(&rows)));
+            assert!(!should_run_lms_unload(false, || lmstudio_in_process_list(list(&rows))));
+        }
+
+        /// The service LM Studio leaves running, by name alone.
+        #[test]
+        fn the_windows_service_counts() {
+            let rows = [("explorer.exe", None), ("LM Studio.exe", None)];
+            assert!(lmstudio_in_process_list(list(&rows)));
+        }
+
+        /// What this Mac shows with LM Studio 0.4.15 running as a service.
+        #[test]
+        fn the_mac_app_its_helpers_and_its_node_worker_count() {
+            for row in [
+                ("LM Studio", Some("/Applications/LM Studio.app/Contents/MacOS/LM Studio")),
+                (
+                    "LM Studio Helper (GPU)",
+                    Some("/Applications/LM Studio.app/Contents/Frameworks/LM Studio Helper (GPU).app/Contents/MacOS/LM Studio Helper (GPU)"),
+                ),
+                ("node", Some("/Users/u/.lmstudio/.internal/utils/node")),
+            ] {
+                assert!(lmstudio_in_process_list(list(&[row])), "{row:?}");
+            }
+        }
+
+        /// Spellings no box has shown yet, matched on purpose: too wide only
+        /// costs an unload that wakes nothing new.
+        #[test]
+        fn an_appimage_and_llmster_count() {
+            assert!(lmstudio_in_process_list(list(&[("lm-studio", Some("/tmp/.mount_LM-StuAbc/lm-studio"))])));
+            assert!(lmstudio_in_process_list(list(&[("AppRun", Some("/home/u/Apps/LM_Studio-0.4.15.AppImage"))])));
+            assert!(lmstudio_in_process_list(list(&[("llmster", Some("/home/u/.cache/lm-studio/llmster"))])));
+        }
+
+        /// A model file under ~/.lmstudio/models in LU's own engine is not LM
+        /// Studio: only the name and the executable are read, never the argv.
+        #[test]
+        fn lus_engine_on_an_lm_studio_model_file_does_not_count() {
+            let rows = [("lu-llama-server", Some("/Applications/LU.app/Contents/MacOS/lu-llama-server"))];
+            assert!(!lmstudio_in_process_list(list(&rows)));
+        }
+
+        /// The daemon answering is enough, the process table is not even read.
+        #[test]
+        fn a_daemon_that_answers_runs_the_unload_without_the_table() {
+            assert!(should_run_lms_unload(true, || panic!("the process table must not be read")));
+            assert!(should_run_lms_unload(false, || true));
+        }
+
+        #[test]
+        fn only_lm_studios_status_reply_counts() {
+            assert!(is_lms_status(&serde_json::json!({ "package": "lmstudio", "version": "0.4.15+2" })));
+            assert!(!is_lms_status(&serde_json::json!({ "package": "lmstudio" })));
+            assert!(!is_lms_status(&serde_json::json!({ "status": "ok" })));
+            assert!(!is_lms_status(&serde_json::json!(null)));
+        }
     }
 
     #[test]

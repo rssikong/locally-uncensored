@@ -132,3 +132,101 @@ describe('a click moves the rung, in the store every surface reads', () => {
     )
   })
 })
+
+describe('local models (issue 176)', () => {
+  const localModel = (over: Partial<AIModel> & { name: string }): AIModel =>
+    ({
+      model: over.name, size: 0, type: 'text', provider: 'openai',
+      providerName: 'LM Studio', contextLength: 32768, supportsTools: true, thinkMode: 'toggle',
+      ...over,
+    }) as AIModel
+
+  it('a local model with rungs shows the live control', () => {
+    const oss = localModel({ name: 'openai::openai/gpt-oss-20b', effortLevels: ['low', 'medium', 'high'] })
+    useModelStore.setState({ models: [oss], activeModel: oss.name })
+    render(createElement(ChatInput, { onSend: () => {}, onStop: () => {}, isGenerating: false }))
+    expect(effortButton()!.textContent).toBe('High')
+  })
+
+  it('a local model without rungs shows it greyed, with the reason, and a click changes nothing', () => {
+    const gemma = localModel({
+      name: 'openai::google/gemma-4-26b-a4b',
+      effortNote: 'LM Studio lists no effort levels for this model.',
+    })
+    useModelStore.setState({ models: [gemma], activeModel: gemma.name })
+    render(createElement(ChatInput, { onSend: () => {}, onStop: () => {}, isGenerating: false }))
+    expect(effortButton()).toBeNull()
+    const greyed = screen.getByTestId('effort-toggle-unsupported') as HTMLButtonElement
+    expect(greyed.disabled).toBe(true)
+    expect(greyed.getAttribute('title')).toBe('Reasoning effort: LM Studio lists no effort levels for this model.')
+    fireEvent.click(greyed)
+    expect(useSettingsStore.getState().settings.reasoningEffort).toBe('high')
+  })
+
+  it('and shows nothing at all while Think is off', () => {
+    useSettingsStore.setState({ settings: { ...DEFAULT_SETTINGS, thinkingEnabled: false } })
+    const gemma = localModel({ name: 'openai::google/gemma-4-26b-a4b', effortNote: 'x' })
+    useModelStore.setState({ models: [gemma], activeModel: gemma.name })
+    render(createElement(ChatInput, { onSend: () => {}, onStop: () => {}, isGenerating: false }))
+    expect(screen.queryByTestId('effort-toggle-unsupported')).toBeNull()
+  })
+})
+
+/**
+ * 3.0.7, after issue 176: rungs read from a local server wait for the user's
+ * own pick. Until then the button says Default, because the request carries
+ * no rung the model reads, and the round on a local model ends at Default
+ * again so the old behaviour stays one click away.
+ */
+describe('a local model nobody picked a rung for', () => {
+  const oss = {
+    model: 'openai::openai/gpt-oss-20b', name: 'openai::openai/gpt-oss-20b', size: 0, type: 'text',
+    provider: 'openai', providerName: 'LU Engine', contextLength: 32768, supportsTools: true,
+    thinkMode: 'toggle', effortLevels: ['low', 'medium', 'high'], effortLocal: true,
+  } as AIModel
+  const mount = () => {
+    useModelStore.setState({ models: [oss], activeModel: oss.name })
+    render(createElement(ChatInput, { onSend: () => {}, onStop: () => {}, isGenerating: false }))
+  }
+
+  it('says Default, not the global High that does not go out', () => {
+    mount()
+    expect(effortButton()!.textContent).toBe('Default')
+    expect(effortButton()!.getAttribute('aria-label')).toBe('Reasoning effort: Default')
+    expect(effortButton()!.getAttribute('title')).toBe(
+      'Reasoning effort: Default, the model decides. Click to pick a level. Higher effort spends more output tokens.',
+    )
+  })
+
+  it('the first click is the pick: the lowest rung, and the pick is remembered', () => {
+    mount()
+    fireEvent.click(effortButton()!)
+    const s = useSettingsStore.getState().settings
+    expect(s.localEffortChosen).toBe(true)
+    expect(s.reasoningEffort).toBe('low')
+    expect(effortButton()!.textContent).toBe('Low')
+  })
+
+  it('after a pick it cycles the rungs as usual', () => {
+    useSettingsStore.setState({ settings: { ...DEFAULT_SETTINGS, localEffortChosen: true, reasoningEffort: 'low' } })
+    mount()
+    fireEvent.click(effortButton()!)
+    expect(useSettingsStore.getState().settings.reasoningEffort).toBe('medium')
+    expect(effortButton()!.textContent).toBe('Medium')
+  })
+
+  it('and past the top rung it goes back to Default', () => {
+    useSettingsStore.setState({ settings: { ...DEFAULT_SETTINGS, localEffortChosen: true, reasoningEffort: 'high' } })
+    mount()
+    fireEvent.click(effortButton()!)
+    expect(useSettingsStore.getState().settings.localEffortChosen).toBe(false)
+    expect(effortButton()!.textContent).toBe('Default')
+  })
+
+  it('a hosted model is untouched by it and still shows the global rung', () => {
+    show(ALWAYS)
+    expect(effortButton()!.textContent).toBe('High')
+    fireEvent.click(effortButton()!)
+    expect(useSettingsStore.getState().settings.localEffortChosen).toBe(false)
+  })
+})

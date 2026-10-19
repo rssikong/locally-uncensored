@@ -250,6 +250,7 @@ export const SMALL_MODEL_MAX_TOOLS = ALWAYS_INCLUDE.length + 2
 export const EMBEDDING_ROUTING_THRESHOLD = 15
 
 import type { EmbeddingFn } from '../api/agents/embedding-router'
+import { REA_SERVER_ID, reaToolsFor } from './plugins/rea-tools'
 import { selectToolsByEmbedding } from '../api/agents/embedding-router'
 
 /**
@@ -287,9 +288,13 @@ export function selectRelevantTools(
   // the builtin names, so on this path a connected server's tools were
   // unreachable no matter what the user typed. Connecting the server is
   // itself the signal that its tools are wanted: always offer them.
+  // REA (lib/plugins/rea-tools.ts) is the exception: its 207 tools would fill
+  // a local model's context, so a turn gets the ones its words point at.
   for (const t of allTools) {
-    if (t.source === 'external') selectedNames.add(t.name)
+    if (t.source === 'external' && t.serverId !== REA_SERVER_ID) selectedNames.add(t.name)
   }
+  const reaNames = allTools.filter((t) => t.serverId === REA_SERVER_ID).map((t) => t.name)
+  if (reaNames.length > 0) for (const n of reaToolsFor(userMessage, reaNames)) selectedNames.add(n)
 
   // A tool the user names verbatim is always offered, builtin or external.
   for (const t of allTools) {

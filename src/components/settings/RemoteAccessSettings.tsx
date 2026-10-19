@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react'
 import { useRemoteStore } from '../../stores/remoteStore'
 import { backendCall } from '../../api/backend'
 import { isMlxImageHost } from '../../api/mlx-image'
-import { Shield, Smartphone, Trash2 } from 'lucide-react'
+import { useSettingsStore } from '../../stores/settingsStore'
+import { DEFAULT_REMOTE_PAGE_TITLE, MAX_REMOTE_PAGE_TITLE } from '../../lib/remote-page-title'
+import { Shield, Smartphone, Tag, Trash2 } from 'lucide-react'
 
 export function RemoteAccessSettings() {
   const {
@@ -10,6 +12,8 @@ export function RemoteAccessSettings() {
     refreshStatus, refreshDevices, setPermissions,
   } = useRemoteStore()
   const [disconnecting, setDisconnecting] = useState<string | null>(null)
+  const pageTitle = useSettingsStore((s) => s.settings.remotePageTitle ?? '')
+  const updateSettings = useSettingsStore((s) => s.updateSettings)
 
   useEffect(() => {
     refreshStatus()
@@ -50,6 +54,27 @@ export function RemoteAccessSettings() {
       <p className="text-[0.55rem] text-gray-600">
         Remote access is now controlled from the <span className="text-gray-400 font-medium">Remote</span> tab in the sidebar. Use <span className="text-gray-400 font-medium">Dispatch</span> to start a remote chat session.
       </p>
+
+      {/* GitHub #19: the phone's tab name. The Rust server writes it into
+          the page it serves (lib/remote-page-title.ts). */}
+      <div className="space-y-1">
+        <div className="flex items-center gap-1.5">
+          <Tag size={12} className="text-gray-500" />
+          <label htmlFor="remote-page-title" className="t-micro font-medium text-gray-400">Tab name on your phone</label>
+        </div>
+        <input
+          id="remote-page-title"
+          type="text"
+          value={pageTitle}
+          maxLength={MAX_REMOTE_PAGE_TITLE}
+          placeholder={DEFAULT_REMOTE_PAGE_TITLE}
+          onChange={(e) => updateSettings({ remotePageTitle: e.target.value })}
+          className="w-full px-2 py-1 rounded bg-transparent border border-gray-300 dark:border-white/8 t-micro text-gray-700 dark:text-gray-300 focus:outline-none focus:border-gray-400 dark:focus:border-white/20"
+        />
+        <p className="t-micro text-gray-500 dark:text-gray-600">
+          The name of the browser tab and of the home screen icon. Leave it empty for {DEFAULT_REMOTE_PAGE_TITLE}. Reload the page on the phone to see a new name.
+        </p>
+      </div>
 
       {/* Permissions */}
       <div className="space-y-2">

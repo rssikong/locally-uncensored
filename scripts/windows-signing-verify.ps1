@@ -2,8 +2,8 @@
 #
 # Runs after a signing lane of the Windows build, never on the unsigned path:
 #   - Azure Artifact Signing (release.yml, after `tauri build` signed in place)
-#   - SignPath (.github/actions/windows-signpath, after the second signing
-#     request came back)
+#   - SignPath (.github/actions/windows-signpath-finish, after the second
+#     signing request came back)
 # A configured lane that silently signed nothing must not look like a signed
 # release.
 #

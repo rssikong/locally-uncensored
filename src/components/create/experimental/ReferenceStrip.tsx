@@ -3,15 +3,26 @@
 // this photo into that scene" could not be asked. Layout picked by the owner on
 // 2026-10-01: the source stays large, the further images sit as small tiles
 // below it with a "+ Reference" tile, and the prompt names them image 2,
-// image 3. Shown for a local model that takes more than one image, and (02.10.2026,
+// image 3. Up to nine tiles (3.0.8, Discord D7), so the row wraps. Shown for a local model that takes more than one image, and (02.10.2026,
 // figure from photos without training) in the cloud for the Studio models that
 // read a list of images: the multi-image editors and the reference-to-video
 // models. The photos go to the user's own storage at the start, never as a URL.
+// On a Mac (15.10.2026) the strip offers only as many slots as the Mac's
+// memory takes at the canvas set in Create (lib/mac-edit-memory), the same
+// estimate the engine refuses a run by. Images already in the strip past that
+// stay and are marked not sent. Through ComfyUI (18.10.2026) the line under
+// the strip follows what the graphics card carries (lib/comfy-edit-memory).
 import { useRef, useState } from 'react'
 import { ImagePlus, Loader2, X } from 'lucide-react'
 import { useCreateStore } from '../../../stores/createStore'
-import { useReferenceSlots } from './referenceSlots'
+import { useMacEditReferenceRoom, useReferenceSlots } from './referenceSlots'
+import { MANY_REFERENCES, MANY_REFERENCES_LINE, referenceNames } from '../../../lib/edit-references'
+import { laneImageModel } from '../../../lib/image-engines'
+import { macEditNoRoomLine, macEditOverRoomLine } from '../../../lib/mac-edit-memory'
+import { comfyEditFullImages, qwenEditPlusOverCard } from '../../../lib/comfy-edit-memory'
+import { useGraphicsCardGb } from '../../../hooks/useGraphicsMemory'
 import { SavedCharacterChips } from './SavedCharacters'
+import { TrainedCharacterChips } from './TrainedCharacterChips'
 import { loadPhotosAsReferences } from './characterPhotos'
 import { loadImageRef } from './loadImage'
 import { GALLERY_DRAG_TYPE, fetchGalleryItemBlob } from './galleryUrl'
@@ -27,15 +38,42 @@ export function ReferenceStrip() {
   const gallery = useCreateStore((s) => s.gallery)
   const backend = useCreateStore((s) => s.backend)
   const intent = useCreateStore((s) => s.intent())
+  // The Mac's own engine: only its catalogue rows carry `editImages`
+  // (lib/image-engines), a ComfyUI list never does.
+  const macEngine = useCreateStore((s) => s.imageModelList.find((m) => m.name === laneImageModel(s.imageModelList, s.imageModel, s.intent()))?.editImages !== undefined)
   const inputRef = useRef<HTMLInputElement>(null)
   const [loading, setLoading] = useState(false)
   const [drag, setDrag] = useState(false)
 
   const cloud = backend === 'cloud'
-  const slots = useReferenceSlots()
-  if (slots === 0) return null
-  const shown = references.slice(0, slots)
+  const modelSlots = useReferenceSlots()
+  const { room, memoryGb } = useMacEditReferenceRoom()
+  const cardGb = useGraphicsCardGb()
+  if (modelSlots === 0) return null
+  // The images the store keeps for this model stay on screen; on a Mac only
+  // as many as its memory takes are sent (useCreate cuts at the same number).
+  const shown = references.slice(0, modelSlots)
+  const slots = room === null ? modelSlots : Math.min(modelSlots, room)
+  const memoryLimited = room !== null && room < modelSlots
+  const overRoom = memoryLimited && shown.length > slots
   const canAdd = shown.length < slots
+  // Not a single further image fits: a quiet line instead of the slots.
+  if (slots === 0 && shown.length === 0) {
+    return (
+      <p className="mt-3 t-label text-gray-600 text-center max-w-md mx-auto text-balance" data-testid="reference-strip-no-room">
+        {macEditNoRoomLine(memoryGb ?? 0)}
+      </p>
+    )
+  }
+  // Past what the graphics card carries at full size (four images, fewer on
+  // a card under 24 GB), ComfyUI scales every one of them smaller and the
+  // result follows the first (referenceSide in lib/edit-references). The
+  // Mac's own engine keeps its canvas, only the images shrink there, so it
+  // says nothing. Qwen-Image-Edit (two slots) cannot shrink them: past the
+  // card it is refused at Create, and the strip says so first.
+  const comfyLane = !cloud && !macEngine
+  const shrinks = comfyLane && slots > 2 && 1 + shown.length > comfyEditFullImages(cardGb)
+  const overCard = comfyLane && slots === 2 ? qwenEditPlusOverCard(1 + Math.min(shown.length, slots), cardGb) : null
 
   const add = async (load: () => Promise<File>) => {
     setLoading(true)
@@ -50,7 +88,7 @@ export function ReferenceStrip() {
   }
 
   // Mehrere Dateien auf einmal, soweit Platz ist (die Cloud-Modelle lesen bis zu
-  // vier weitere Fotos). Jede Datei geht durch dieselbe Pruefung wie eine einzelne.
+  // vier weitere Fotos, Qwen-Image 2.1 lokal bis zu neun). Jede Datei geht durch dieselbe Pruefung wie eine einzelne.
   const addFiles = async (files: File[]) => {
     let room = slots - shown.length
     for (const file of files) {
@@ -67,7 +105,7 @@ export function ReferenceStrip() {
   return (
     <div className="mt-3 flex flex-col items-center gap-2" data-testid="reference-strip">
       <div
-        className={cn('flex items-center gap-2 rounded-xl p-1 transition-colors', drag && 'bg-blue-500/10')}
+        className={cn('flex flex-wrap justify-center items-center gap-2 rounded-xl p-1 max-w-md transition-colors', drag && 'bg-blue-500/10')}
         onDragOver={(e) => { if (canAdd) { e.preventDefault(); setDrag(true) } }}
         onDragLeave={() => setDrag(false)}
         onDrop={(e) => {
@@ -85,13 +123,15 @@ export function ReferenceStrip() {
         }}
       >
         {shown.map((ref, i) => (
-          <div key={`${ref.url.slice(-24)}-${i}`} className={cn(TILE, 'relative')}>
+          <div key={`${ref.url.slice(-24)}-${i}`} className={cn(TILE, 'relative')} data-not-sent={i >= slots ? 'true' : undefined}>
             <img
               src={ref.url}
               alt={`${cloud ? 'photo' : 'image'} ${i + 2}`}
-              className={cn(TILE, 'object-cover border border-white/[0.06]')}
+              className={cn(TILE, 'object-cover border border-white/[0.06]', i >= slots && 'opacity-40')}
             />
-            <span className="absolute bottom-1 left-1 t-micro text-gray-200 bg-black/60 px-1 rounded">{i + 2}</span>
+            {i >= slots
+              ? <span className="absolute bottom-1 left-1 t-micro text-gray-300 bg-black/70 px-1 rounded" title="This Mac's memory does not take this image at this size">not sent</span>
+              : <span className="absolute bottom-1 left-1 t-micro text-gray-200 bg-black/60 px-1 rounded">{i + 2}</span>}
             <button
               onClick={() => removeReference(i)}
               className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center rounded-md bg-black/60 text-gray-300 hover:text-white"
@@ -114,12 +154,14 @@ export function ReferenceStrip() {
           </button>
         )}
       </div>
-      <p className="t-label text-gray-600 text-center max-w-sm">
+      <p className="t-label text-gray-600 text-center max-w-md text-balance">
         {cloud
-          ? `Add up to ${slots + 1} photos of your character.${intent === 'edit' && shown.length > 0 ? ` Name them in the prompt as ${shown.map((_, i) => `image ${i + 2}`).join(', ')}.` : ''}`
-          : shown.length === 0
-            ? `Add up to ${slots} more images, for example a person or an outfit to bring into this one.`
-            : `Name them in the prompt as ${shown.map((_, i) => `image ${i + 2}`).join(', ')}.`}
+          ? `Add up to ${slots + 1} photos of your character.${intent === 'edit' && shown.length > 0 ? ` Name them in the prompt as ${referenceNames(shown.length)}.` : ''}`
+          : memoryLimited && slots === 0
+            ? `${macEditNoRoomLine(memoryGb ?? 0)} The images here stay and are not sent.`
+            : shown.length === 0
+              ? `Add up to ${slots === 1 ? 'one more image' : `${slots} more images`}, for example a person or an outfit to bring into this one.${memoryLimited ? ' That is what the memory of this Mac takes at this size.' : ''}`
+              : `Name them in the prompt as ${referenceNames(Math.min(shown.length, slots))}.${Math.min(shown.length, slots) >= MANY_REFERENCES ? ` ${MANY_REFERENCES_LINE}` : ''}${shrinks ? ' With this many images the edit comes out smaller, so it fits in memory.' : ''}${overCard ? ` ${overCard}` : ''}${overRoom ? ` ${macEditOverRoomLine(slots, memoryGb ?? 0)}` : ''}`}
       </p>
       {/* A character saved from a video (lib/saved-characters) loads its photos
           here with one click: they join the strip, and the first becomes the
@@ -136,6 +178,9 @@ export function ReferenceStrip() {
             .finally(() => setLoading(false))
         }}
       />
+      {/* A character trained on this machine brings the photos it was
+          trained on, so the edit keeps its face. */}
+      {!cloud && <TrainedCharacterChips slots={slots} disabled={loading} onBusy={setLoading} />}
       <input
         ref={inputRef}
         type="file"

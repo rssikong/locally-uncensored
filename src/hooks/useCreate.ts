@@ -1,6 +1,8 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { blobFromUrl } from '../lib/render/data-url'
 import { videoRunGivenUp, videoRunProgress, videoRunStatus } from '../lib/mlx-video-progress'
+import { featherMaskBlob } from '../lib/mask-feather'
+import { macHiresPass } from '../lib/mac-hires'
 import { v4 as uuid } from 'uuid'
 import {
   checkComfyConnection,
@@ -10,6 +12,7 @@ import {
   getAudioModels,
   getLipsyncModels,
   getMotionModels,
+  getUpscaleModels,
   getCLIPModels,
   resolveLocalOpPick,
   uploadMediaFile,
@@ -27,8 +30,12 @@ import {
   canRunVideoIntent,
   classifyModel,
   isI2VModel,
+  isRunnableRef2V,
+  ref2vRefusal,
+  withReferenceModels,
   videoLaneModels,
   extractComfyOutputFiles,
+  freeMemory,
   galleryTypeForFile,
   MODEL_TYPE_DEFAULTS as COMFY_MODEL_DEFAULTS,
   type ClassifiedModel,
@@ -53,8 +60,9 @@ import {
   comfyWS, CLIENT_ID,
   type ComfyWSEvent,
 } from '../api/comfyui-ws'
-import { phaseForExecutingNode, phaseForProgressStep } from '../lib/render-phase-labels'
-import { buildDynamicWorkflow, buildLocalOpWorkflow, checkVideoOutputCapability, qwenEditResolution } from '../api/dynamic-workflow'
+import { phaseForExecutingNode, phaseForExecutionStart, phaseForProgressStep, phaseForSaveNode } from '../lib/render-phase-labels'
+import { buildDynamicWorkflow, buildLocalOpWorkflow, buildLocalUpscaleWorkflow, checkVideoOutputCapability, qwenEditResolution } from '../api/dynamic-workflow'
+import { normalizeUpscaleFactor, pickUpscaleModel, upscaleTarget, upscaleToolLabel, upscaleTooLargeLine } from '../lib/local-upscale'
 import { getAllNodeInfo, clearNodeCache } from '../api/comfyui-nodes'
 import { cutoutModelOf, cutoutDownloadLine } from '../api/cutout-model'
 import { apiNodes, type ComfyApiGraph, type ComfyExecutionMessage, type ComfyHistoryEntry } from '../types/comfy-graph'
@@ -65,36 +73,59 @@ import { renderFixupDeps } from '../api/render-fixup-deps'
 import { checkPromptSafety, SAFETY_BLOCK_MESSAGE } from '../lib/render/safety'
 import { transparentPrompt, wantsTransparent } from '../lib/transparent-image'
 import { scenePromptFor } from '../lib/ltx-multishot'
-import { intentTakesPrompt } from '../components/create/experimental/intents'
+import { intentTakesOptionalPrompt, intentTakesPrompt } from '../components/create/experimental/intents'
+import { knownMacMemoryGb } from '../lib/mac-memory'
+import { MIN_TRAIN_IMAGES, tooFewTrainPhotosLine } from '../lib/train-image-cap'
 import { improveKindForIntent, IMPROVING_PROMPT, type ImproveOutcome } from '../lib/render/improve-prompt'
 import { elapsedLine } from '../lib/elapsed-line'
 import { improvePrompt } from '../lib/render/improve-prompt-run'
-import { currentHelperModel } from '../lib/cloud-helper-model'
-import { pickQwenEnhancer, rewrittenByName, type ImproveWriter } from '../lib/render/qwen-enhancer'
+import { currentChatModelList, currentHelperModel } from '../lib/cloud-helper-model'
+import { enhancerNames, pickQwenEnhancer, rewrittenByName, type ImproveWriter } from '../lib/render/qwen-enhancer'
 import { buildQwenEnhancerWorkflow, runQwenEnhancer } from '../api/qwen-enhancer'
-import { extraReferenceSlots } from '../lib/edit-references'
+import { enhancePromptOnMac } from '../api/mlx-enhancer'
+import { extraReferenceSlots, referenceSide } from '../lib/edit-references'
+import { macEditReferenceRoom } from '../lib/mac-edit-memory'
+import { getSharedMemoryGb } from '../lib/hardware'
 import { resolveRunSeed } from '../lib/run-seed'
 import { bumpSeed } from '../lib/render/image-count'
 import {
   clearTrainingSet, stageTrainingImage, startCharacterTraining,
   characterTrainingStatus, cancelCharacterTraining,
 } from '../api/trainer'
-import { useCreateStore, EDIT_MAX_DENOISE } from '../stores/createStore'
+import { buildTrainCaption } from '../lib/train-captions'
+import { useCreateStore, EDIT_MAX_DENOISE, characterImageRun, deriveIntent, type CreateState } from '../stores/createStore'
 import { useWorkflowStore } from '../stores/workflowStore'
-import { injectParameters } from '../api/workflows'
+import { useSettingsStore } from '../stores/settingsStore'
+import { renderStallLimitMs, renderStallMessage } from '../lib/tool-timeout'
+import { injectParameters, injectLaneParameters } from '../api/workflows'
 import { applyNativeHiresFix } from '../api/hires-fix'
 import { lorasForRun, skippedLorasLine } from '../lib/lora-stack'
 import { macNoLocalLaneLine, macNoModelLine } from '../lib/mac-create-wording'
 import {
-  generateMlxImageDataUrl, isMlxImageHost, isMlxImageModel,
+  cutOutOnMac, generateMlxImageDataUrl, isMlxImageHost, isMlxImageModel, MAC_CUTOUT_TOOL,
   mlxStatus, listMlxImageModels, buildMlxImageModels, mergeImageModels, mlxModelIdFor,
+  mlxUpscalerInstalled, upscaleOnMac, MAC_UPSCALE_TOOL,
 } from '../api/mlx-image'
-import { anyImageEngineReady, editCanvas, imageLaneModels, macEditCanvas, macEditSide, takesMlxLoras } from '../lib/image-engines'
+import { anyImageEngineReady, editCanvas, imageLaneModels, installedMlxEnhancers, macEditCanvas, macEditSide, takesMlxLoras } from '../lib/image-engines'
+import { characterBaseModel, characterRunBlock } from '../lib/character-base'
+import {
+  CHAIN_STEP_IMAGE, CHAIN_STEP_VIDEO, CharacterChainCancelled, characterLoraFile, characterStartImage,
+  isLocalCharacter, withTriggerWord,
+} from '../lib/characters'
+import {
+  characterImagePrompt, characterImageSize, characterRunPlan, characterVideoLaneEmpty, CHARACTER_VIDEO_LANES, withCharacterLora, withoutCharacterLoras,
+} from '../lib/character-run'
+import { defaultLoraStrength } from '../lib/lora-strength'
+import { fetchGalleryItemBlob } from '../components/create/experimental/galleryUrl'
+import { loadImageRef } from '../components/create/experimental/loadImage'
 import { listMlxLoras } from '../api/mlx-loras'
 import {
   getVideoStatus, listVideoModels, generateVideo, getVideoProgress, cancelVideo,
-  buildMlxVideoModels, mlxFramesOnGrid, mlxVideoModelIdFor, mlxVideoSeconds, readVideoAsBlobUrl, stageStartImage,
+  buildMlxVideoModels, mlxFramesOnGrid, mlxTakesStartImage, mlxVideoModelIdFor, mlxVideoRunSize, mlxVideoRunSteps, mlxVideoSeconds, readVideoAsBlobUrl, stageStartImage, mlxTalking, mlxTalkingEntry, stageVoice,
+  buildMlxMotionModels, mlxFollowsMotion, stageMotionVideo, MLX_MOTION_PROMPT,
 } from '../api/mlx-video'
+import { MAC_TALKING_NO_MODEL, macTalkingPrompt } from '../lib/mac-talking'
+import { getMusicStatus, buildMacMusicModels, macMusicSeconds, runMacMusic, MusicRunCancelled, MAC_MUSIC_MODEL_NAME } from '../api/mlx-music'
 
 /** What the stage says while the graphics card is handed to the render
  *  (api/vram-handoff, RenderEvictionPhase). */
@@ -146,6 +177,26 @@ function historyMessages(entry: ComfyHistoryEntry | null): [string, ComfyExecuti
   return Array.isArray(raw) ? raw : []
 }
 
+interface RunOpts {
+  /** "Step 1 of 2: character image" and so on, in front of every line. */
+  stepLabel?: string
+  /** The character's trigger word, kept in a prompt the chat model rewrote. */
+  trigger?: string
+}
+
+/** The store as one run reads it: the live state with this run's fields
+ *  over it. The intent is derived from the merged fields, and the progress
+ *  line carries the step of a chain. Nothing is written to the store. */
+function withRunOverride(live: CreateState, override?: Partial<CreateState>, stepLabel?: string): CreateState {
+  if (!override && !stepLabel) return live
+  const merged: CreateState = { ...live, ...override }
+  return {
+    ...merged,
+    intent: () => deriveIntent(merged),
+    ...(stepLabel ? { setProgress: (p: number, text?: string) => live.setProgress(p, text ? `${stepLabel}. ${text}` : stepLabel) } : {}),
+  }
+}
+
 /** A click on Create after Cancel, while the engine is still at the image. */
 const PREVIOUS_IMAGE_FINISHING = 'The previous image is still finishing. Try again in a moment.'
 
@@ -173,6 +224,8 @@ export function useCreate() {
   const trainingActive = useRef(false)
   /** Stop pressed while a training run was being set up or running. */
   const trainingCancelRequested = useRef(false)
+  /** The character chain in flight (image, then video), for Stop. */
+  const chainAbort = useRef<AbortController | null>(null)
 
   // Cleanup on unmount
   useEffect(() => {
@@ -207,14 +260,46 @@ export function useCreate() {
       // catalog.
       let mlxVideoModels: ClassifiedModel[] = []
       if (mlxHost) {
+        // The prompt enhancers come in the same catalogue (GH #148). A read
+        // that finds no engine or fails leaves none, and not the last list:
+        // an enhancer removed since must not be offered.
+        let mlxEnhancers: string[] = []
+        // Enhance Image is a local tab while an upscaler is installed. It is
+        // no model of the picker, so the store carries it apart.
+        let upscaler = false
         try {
           const mlx = await mlxStatus()
-          if (anyImageEngineReady(mlx)) mlxImageModels = buildMlxImageModels(await listMlxImageModels())
+          if (anyImageEngineReady(mlx)) {
+            const catalog = await listMlxImageModels()
+            mlxImageModels = buildMlxImageModels(catalog)
+            mlxEnhancers = installedMlxEnhancers(catalog)
+            upscaler = mlxUpscalerInstalled(catalog)
+          }
         } catch { /* MLX engine not set up yet — treat as no MLX models */ }
+        useCreateStore.getState().setMlxEnhancerList(mlxEnhancers)
+        useCreateStore.getState().setMlxUpscale(upscaler)
         try {
           mlxVideoModels = buildMlxVideoModels(await listVideoModels())
         } catch { /* mlx-video status unavailable yet — treat as no MLX video models */ }
+        // Motion Control's lane: the packs that follow a motion video, once
+        // its LoRA is installed. Empty, the Stage offers the LoRA.
+        let macMotion: ClassifiedModel[] = []
+        if (mlxFollowsMotion(mlxVideoModels)) {
+          try {
+            macMotion = buildMlxMotionModels(mlxVideoModels, (await getVideoStatus()).motionInstalled === true)
+          } catch { /* the status cannot answer: the Stage offers the LoRA */ }
+        }
+        useCreateStore.getState().setMotionModelList(macMotion)
         setMlxMissing({ image: mlxImageModels.length === 0, video: mlxVideoModels.length === 0 })
+        // The music engine (commands/music.rs) has one model. Its list is the
+        // lane's, as the audio checkpoints are on a ComfyUI host, and it is
+        // set whatever the image and video lanes found: a Mac with only the
+        // music engine has a Music tab and nothing else.
+        let musicStatus: Awaited<ReturnType<typeof getMusicStatus>> | null = null
+        try {
+          musicStatus = await getMusicStatus()
+        } catch { /* the music engine cannot answer: no local Music tab */ }
+        useCreateStore.getState().setAudioModelList(buildMacMusicModels(musicStatus))
       }
 
       // Check connection first — if ComfyUI is down, don't waste time on model queries.
@@ -289,7 +374,7 @@ export function useCreate() {
       // and its internal cache hasn't updated yet.
       await refreshComfyModels()
 
-      const [comfyImgModels, comfyVidModels, samplers, schedulers, vBackend, _nodeInfo, audModels, lipModels, motModels] = await Promise.all([
+      const [comfyImgModels, comfyVidModels, samplers, schedulers, vBackend, _nodeInfo, audModels, lipModels, motModels, upModels] = await Promise.all([
         getImageModels(),
         getVideoModels(),
         getSamplers(),
@@ -301,6 +386,8 @@ export function useCreate() {
         getAudioModels().catch(() => [] as ClassifiedModel[]),
         getLipsyncModels().catch(() => [] as ClassifiedModel[]),
         getMotionModels().catch(() => [] as ClassifiedModel[]),
+        // Enhance Image (3.0.7): the files in models/upscale_models.
+        getUpscaleModels().catch(() => [] as string[]),
       ])
       // The text encoder files, for the prompt enhancers among them
       // ("Improve my prompt" on local Qwen-Image 2.1). Best effort.
@@ -312,7 +399,9 @@ export function useCreate() {
       // Mac video is MLX-only — never surface ComfyUI video checkpoints there,
       // even in the rare case ComfyUI happens to be reachable (a manual install
       // the user started outside LU).
-      const vidModels = mlxHost ? mlxVideoModels : comfyVidModels
+      // Animate also offers the reference models (D24), and Wan VACE sits on
+      // the Motion lane's list, not on the video list.
+      const vidModels = mlxHost ? mlxVideoModels : withReferenceModels(comfyVidModels, motModels)
       setImageModels(imgModels)
       setVideoModelsList(vidModels)
       setSamplerList(samplers)
@@ -329,6 +418,7 @@ export function useCreate() {
       st.setAudioModelList(audModels)
       st.setLipsyncModelList(lipModels)
       st.setMotionModelList(motModels)
+      st.setUpscaleModelList(upModels)
       st.setTextEncoderList(textEncoders)
 
       // If ComfyUI is connected but returns 0 models, do NOT set modelsLoaded — keep retrying.
@@ -457,6 +547,10 @@ export function useCreate() {
   const runCharacterTraining = useCallback(async () => {
     const state = useCreateStore.getState()
     const { setIsGenerating, setProgress, setError } = state
+    // A Mac trains with its own image engine (api/mlx-train.ts). The calls
+    // below go there by themselves (api/trainer.ts); what differs is how the
+    // memory is handed over.
+    const mac = isMlxImageHost()
     const trigger = state.triggerWord.trim()
     if (!trigger) {
       setError('Pick a trigger word first, e.g. davechar. It becomes the token that summons your character.')
@@ -465,10 +559,12 @@ export function useCreate() {
     // Blobs are runtime-only — after an app restart the thumbnails would
     // still render (object URLs die too, but names persist) with no bytes.
     const staged = state.trainImages.filter((i) => i.blob instanceof Blob)
-    if (staged.length < 4) {
+    if (staged.length < MIN_TRAIN_IMAGES) {
       setError(staged.length < state.trainImages.length
         ? 'Your photos did not survive the app restart. Re-add them, then train.'
-        : 'Add at least 4 photos of your character first (up to 30).')
+        // The local trainer's cap (100), the one the drop zone names, not
+        // the cloud's 30. A Mac trains locally too.
+        : tooFewTrainPhotosLine('local'))
       return
     }
     setError(null)
@@ -488,22 +584,29 @@ export function useCreate() {
       let n = 0
       for (const img of staged) {
         const bytes = Array.from(new Uint8Array(await img.blob.arrayBuffer()))
-        // Musubi has no trigger flag — the token must lead every caption.
-        await stageTrainingImage(setId, img.name, bytes, `${trigger}, a photo of ${trigger}`)
+        // Musubi has no trigger flag, the token must lead every caption. A
+        // photo's own description (D28: clothes, hair, place) follows it, so
+        // only what stays the same is learned into the trigger word.
+        await stageTrainingImage(setId, img.name, bytes, buildTrainCaption(trigger, state.trainCaptions[img.name]))
         n += 1
         setProgress(2 + Math.round((n / staged.length) * 5), `Staging photos (${n}/${staged.length})...`)
       }
-      setProgress(7, 'Freeing the card for training (the local chat model pauses until the run ends)...')
-      try {
-        trainingEviction = await evictChatBackendsForRender()
-      } catch { /* VRAM housekeeping is best-effort */ }
+      if (mac) {
+        // One pool of memory on a Mac: the chat model leaves it for the run.
+        trainingEviction = await freeMacMemoryForRender((line) => setProgress(7, line))
+      } else {
+        setProgress(7, 'Freeing the card for training (the local chat model pauses until the run ends)...')
+        try {
+          trainingEviction = await evictChatBackendsForRender()
+        } catch { /* VRAM housekeeping is best-effort */ }
+      }
       // Stop pressed during the hand-off: there is no run to cancel yet, and
       // starting one now would hand the card to a trainer nobody is watching
       // (the box, 06.09.2026: Cancel 0.6 s after Create, training ran on to
       // step 27 while the chat model was brought back beside it).
       if (trainingCancelRequested.current) return
       setProgress(8, 'Starting the training run...')
-      await startCharacterTraining(setId, trigger, trigger, state.trainSteps)
+      await startCharacterTraining(setId, trigger, trigger, state.trainSteps, state.trainVramPreset)
       let cancelRounds = 0
       for (;;) {
         await new Promise((r) => setTimeout(r, 3000))
@@ -566,8 +669,13 @@ export function useCreate() {
     }
   }, [])
 
-  const generateInner = useCallback(async () => {
-    const state = useCreateStore.getState()
+  // One run of the hook. `override` lays fields over the live store for this
+  // run only (the character chain runs its start image in the image tab's
+  // shape while the user stays on a video tab); `opts.stepLabel` puts
+  // "Step 1 of 2" in front of every progress line, `opts.trigger` keeps the
+  // character's trigger word in a prompt the chat model rewrote.
+  const runOnce = useCallback(async (override?: Partial<CreateState>, opts: RunOpts = {}) => {
+    const state = withRunOverride(useCreateStore.getState(), override, opts.stepLabel)
     // AI-CSAM gate — applies before any backend is touched. On this path there
     // is no server gate behind it: a local render goes straight to ComfyUI/MLX
     // on the user's own machine. triggerWord is in here because local character
@@ -585,8 +693,20 @@ export function useCreate() {
     // Motion Control, Remove Background, training) sends none: the store holds
     // one prompt for every tab, and the text left from another tab would steer
     // the run unseen or fail this check for words nobody sees here.
+    // Motion Control has an optional field here and sends what is typed in it.
     const typedPrompt = intentTakesPrompt(state.intent(), state.cloudOp === 'character' && state.characterTab === 'use')
+      || intentTakesOptionalPrompt(state.intent(), 'local')
       ? state.prompt
+      : ''
+    // The negative prompt sits next to the prompt field (Composer shows it
+    // only where there is one), so the same rule holds: Motion Control and
+    // Talking Character have no such field, and a negative typed on Image or
+    // Video went into their graphs unseen. Such a run takes its lane's own
+    // default, which is empty.
+    // The safety check below still reads the store's field, the same four
+    // fields as the cloud path (lib/__tests__/render-safety.test.ts).
+    const typedNegative = intentTakesPrompt(state.intent(), state.cloudOp === 'character' && state.characterTab === 'use')
+      ? state.negativePrompt
       : ''
     {
       const verdict = checkPromptSafety(
@@ -604,8 +724,9 @@ export function useCreate() {
       await runCharacterTraining()
       return
     }
+    const negativePrompt = typedNegative
     const {
-      mode, negativePrompt, imageModel, videoModel,
+      mode, imageModel, videoModel,
       sampler, scheduler, steps, cfgScale, width, height, seed, batchSize, frames, fps, denoise,
       hiresFixEnabled, hiresScale, hiresDenoise, hiresSteps, hiresUpscaleMethod, i2iImage, i2vImage,
       source, references, mask, growMaskBy, removebg, selectedLoras, selectedVae, clipSkip,
@@ -628,6 +749,12 @@ export function useCreate() {
     const effI2vImage = source?.filename ?? i2vImage
     const maskFilename = mask?.filename
     const isRemoveBg = mode === 'image' && removebg
+    // Enhance Image on local ComfyUI (3.0.7): core upscale nodes, its own
+    // model from models/upscale_models, no prompt and no picker model. A Mac
+    // never gets here with it (setBackend closes the tab there).
+    const isUpscale = mode === 'image' && state.utilityOp === 'upscale'
+    const upscaleModel = isUpscale ? pickUpscaleModel(state.upscaleModelList) : null
+    const upscaleFactor = normalizeUpscaleFactor(state.upscaleFactor)
 
     // ── 2.5.8 specialized local lanes. music / lipsync / motion build their
     // own core-node graphs (buildLocalOpWorkflow); extend rides the regular
@@ -660,6 +787,20 @@ export function useCreate() {
         ? imageModel
         : (imageLane[0]?.name ?? imageModel)
 
+    // GH #161: "Use character" on a model the character was not trained for
+    // stops here with the reason. The run used to leave the character out and
+    // render somebody else.
+    // 'local:' and the Mac's 'mlx:' both count (lib/characters).
+    const file = state.cloudOp === 'character' && state.characterTab === 'use' ? characterLoraFile(state.selectedCharacter) : null
+    if (file) {
+      const runType = state.imageModelList.find((m) => m.name === effImageModel)?.type ?? classifyModel(effImageModel)
+      const stop = characterRunBlock(file, runType, !!characterBaseModel(file, imageLane, effImageModel))
+      if (stop) {
+        setError(stop)
+        return
+      }
+    }
+
     // LTX 2.5 multishot: the prompt field is shot 1, the shots from the advanced
     // settings follow, each cut written out in plain words (lib/ltx-multishot).
     // The rewrite below sees the whole scene, so it keeps the cuts.
@@ -667,9 +808,11 @@ export function useCreate() {
     // the stored pick cannot run the intent, and so does the submit below.
     const capableVideo = !localOp && mode === 'video' && state.videoModelList.length > 0 ? videoLaneModels(state.videoModelList, intent) : []
     const effVideoModel = capableVideo.length > 0 && !capableVideo.some((m) => m.name === videoModel) ? capableVideo[0].name : videoModel
+    const effVideoEntry = state.videoModelList.find((m) => m.name === effVideoModel)
     const scenePrompt = scenePromptFor({
       prompt: typedPrompt, shots: state.videoShots, mode, intent, onMlxHost: isMlxImageHost(),
-      modelType: state.videoModelList.find((m) => m.name === effVideoModel)?.type ?? classifyModel(effVideoModel),
+      modelType: effVideoEntry?.type ?? classifyModel(effVideoModel),
+      macMultishot: effVideoEntry?.mlxVideo?.multishot === true,
     })
     // "Improve my prompt": the chat model the user picked rewrites the prompt
     // for this model before the run. Local chat models run on this machine,
@@ -682,25 +825,37 @@ export function useCreate() {
     // prompt, the model must not turn it into a refusal.
     const takeRewrite = (out: ImproveOutcome, writer: ImproveWriter['id']) => {
       if (out.status === 'improved' && !checkPromptSafety(out.prompt).blocked) {
-        prompt = out.prompt
-        improveFields = { promptOriginal: scenePrompt, rewrittenBy: rewrittenByName(writer, currentHelperModel()) }
+        prompt = opts.trigger ? withTriggerWord(out.prompt, opts.trigger) : out.prompt
+        improveFields = { promptOriginal: scenePrompt, rewrittenBy: rewrittenByName(writer, currentHelperModel(), currentChatModelList()) }
       } else if (out.status !== 'unchanged') {
         improveFields = { improveFailed: true }
       }
     }
     // A local Qwen-Image 2.1 run with a prompt enhancer installed: the
     // enhancer writes instead of the chat model (GH #148), for a new picture
-    // and for an edit. It is a ComfyUI job, so it runs further down, once
-    // ComfyUI is up and the chat model is off the card.
-    const qwenEnhancer = state.improvePrompt && !localOp && scenePrompt.trim()
+    // and for an edit. On Windows it is a ComfyUI job, so it runs further
+    // down, once ComfyUI is up and the chat model is off the card. On a Mac
+    // it is the MLX edition from the Model Manager, and it runs in the MLX
+    // image branch, once the chat model is out of memory and before the
+    // image model loads.
+    const onMac = isMlxImageHost()
+    // Only where the MLX branch runs the picture: a ComfyUI model on a Mac
+    // keeps the chat model's rewrite it had (`enhancerNames`).
+    const pickedEnhancer = state.improvePrompt && !localOp && scenePrompt.trim()
       ? pickQwenEnhancer({
-          local: !isMlxImageHost(),
+          local: true,
           intent,
           modelType: state.imageModelList.find((m) => m.name === effImageModel)?.type ?? classifyModel(effImageModel),
-          textEncoders: state.textEncoderList,
+          textEncoders: enhancerNames(
+            { onMac, mlxModel: isMlxImageModel(effImageModel) },
+            state.textEncoderList,
+            state.mlxEnhancerList,
+          ),
         }, state.improveWith)
       : null
-    const improveKind = state.improvePrompt && !qwenEnhancer ? improveKindForIntent(intent) : null
+    const qwenEnhancer = onMac ? null : pickedEnhancer
+    const macEnhancer = onMac ? pickedEnhancer : null
+    const improveKind = state.improvePrompt && !qwenEnhancer && !macEnhancer ? improveKindForIntent(intent) : null
     if (improveKind && scenePrompt.trim()) {
       const own = new AbortController()
       abortRef.current = own
@@ -725,6 +880,109 @@ export function useCreate() {
       takeRewrite(out, 'chat')
     }
 
+    // ── Remove Background on a Mac: no ComfyUI and no RMBG node. Vision in
+    // macOS finds the subject and its mask becomes the alpha channel
+    // (commands/mlx_cutout.rs). Nothing to install, nothing to free: the run
+    // takes well under a second and a few hundred MB. The image is read from
+    // disk, so one picked in cloud mode is staged first, as for an edit. ──
+    if (isRemoveBg && isMlxImageHost()) {
+      setError(null)
+      if (!source) { setError('Please add an image to remove its background.'); return }
+      const own = new AbortController()
+      abortRef.current = own
+      setIsGenerating(true)
+      state.setProgressPhase('sampling')
+      setProgress(30, 'Cutting out the subject...')
+      try {
+        const startTime = Date.now()
+        const staged = source.filename || await stageStartImage(await blobFromUrl(source.url))
+        const made = await cutOutOnMac(staged)
+        // Cancel came while Vision was at it: the result is not wanted.
+        if (own.signal.aborted) return
+        state.setLastGenTime(`${Math.round((Date.now() - startTime) / 1000)}s`)
+        addToGallery({
+          id: uuid(), type: 'image', filename: `cutout-${Date.now()}.png`, subfolder: '',
+          // localPath survives the restart, as for every image of this Mac.
+          dataUrl: made.dataUrl, localPath: made.localPath, prompt: '', negativePrompt: '',
+          model: MAC_CUTOUT_TOOL, modelType: 'unknown', toolModel: MAC_CUTOUT_TOOL,
+          seed: 0, steps: 0, cfgScale: 0, sampler, scheduler,
+          width: made.width, height: made.height, batchSize: 1,
+          createdAt: Date.now(), builderUsed: 'dynamic', intent,
+        })
+        state.setProgressPhase('complete')
+        setProgress(100, 'Complete!')
+      } catch (e) {
+        if (!own.signal.aborted) {
+          useCreateStore.getState().setError(`Remove Background failed: ${e instanceof Error ? e.message : String(e)}`)
+        }
+      } finally {
+        if (abortRef.current === own) {
+          abortRef.current = null
+          useCreateStore.getState().setIsGenerating(false)
+          useCreateStore.getState().setProgress(0)
+        }
+      }
+      return
+    }
+
+    // ── Enhance Image on a Mac: no ComfyUI graph and no hosted endpoint.
+    // SeedVR2 on the second engine makes the picture on the Stage larger by
+    // the factor picked under the prompt field (commands/mlx.rs mlx_upscale).
+    // It loads seven gigabytes, so the chat model is moved out of the way
+    // first, as for an image, and Rust unloads the other image engine. The
+    // picture is read from disk, so one without a file yet is staged first. ──
+    if (intent === 'upscale' && state.backend === 'local' && isMlxImageHost()) {
+      setError(null)
+      if (!state.mlxUpscale) { setError('No local model that enhances images is installed. Install SeedVR2 3B in the Model Manager.'); return }
+      if (!source) { setError('Please add an image to enhance.'); return }
+      const own = new AbortController()
+      abortRef.current = own
+      own.signal.addEventListener('abort', () => { imageStillFinishing.current = true })
+      setIsGenerating(true)
+      state.setProgressPhase('loading-model')
+      const macEviction = await freeMacMemoryForRender((text) => setProgress(5, text))
+      setProgress(10, 'Loading SeedVR2...')
+      try {
+        const startTime = Date.now()
+        const scale = state.macUpscaleScale
+        const staged = source.filename || await stageStartImage(await blobFromUrl(source.url))
+        state.setProgressPhase('sampling')
+        setProgress(40, `Enhancing ${scale}x with MLX...`)
+        const made = await upscaleOnMac(staged, { scale, seed: runSeed }, {
+          signal: own.signal,
+          onStep: (step, of) => setProgress(Math.min(95, 40 + Math.round((step / of) * 55)), `Enhancing ${scale}x, step ${step}/${of}`),
+        })
+        // Cancel ends the engine's process, and its last word is no result.
+        if (own.signal.aborted) return
+        state.setLastGenTime(`${Math.round((Date.now() - startTime) / 1000)}s`)
+        addToGallery({
+          id: uuid(), type: 'image', filename: `enhance-${Date.now()}.png`, subfolder: '',
+          // localPath survives the restart, as for every image of this Mac.
+          dataUrl: made.dataUrl, localPath: made.localPath, prompt: '', negativePrompt: '',
+          model: MAC_UPSCALE_TOOL, modelType: 'unknown', toolModel: MAC_UPSCALE_TOOL,
+          seed: runSeed, steps: made.steps ?? 1, cfgScale: 0, sampler, scheduler,
+          width: made.width, height: made.height, batchSize: 1,
+          createdAt: Date.now(), builderUsed: 'dynamic', intent,
+        })
+        state.setProgressPhase('complete')
+        setProgress(100, 'Complete!')
+      } catch (e) {
+        if (!own.signal.aborted) {
+          useCreateStore.getState().setError(`Enhance failed: ${e instanceof Error ? e.message : String(e)}`)
+        }
+      } finally {
+        if (macEviction) void restoreChatBackendsAfterRender(macEviction)
+        imageStillFinishing.current = false
+        if (useCreateStore.getState().error === PREVIOUS_IMAGE_FINISHING) useCreateStore.getState().setError(null)
+        if (abortRef.current === own) {
+          abortRef.current = null
+          useCreateStore.getState().setIsGenerating(false)
+          useCreateStore.getState().setProgress(0)
+        }
+      }
+      return
+    }
+
     // ── MLX image pipeline (Apple Silicon) — hard rule: Mac local image is the
     // in-process MLX path, never ComfyUI. Gated on the derived `image` intent
     // (which already means: no cloudOp, no utilityOp, no removebg, text2img)
@@ -734,15 +992,21 @@ export function useCreate() {
     // download work with no ComfyUI /view route.
     //
     // `edit` arrives here too: Qwen-Image 2.1 on the second engine edits the
-    // image on the Stage, with the references under it, from the prompt alone
-    // (no mask, as on Windows). The images are files already: loadImageRef
-    // stages them on disk on this host, and their paths go to the engine. ──
+    // image on the Stage, with the references under it, from the prompt, and
+    // where a mask was painted only under it. The images are files already:
+    // loadImageRef stages them on disk on this host, and their paths go to
+    // the engine. The mask is written next to them with its edge softened by
+    // the feather slider. ──
     const mlxEdit = intent === 'edit' && isMlxImageHost()
     if (mlxEdit && !imageLane.some((m) => m.name === effImageModel && (m.editImages ?? 0) > 0)) {
       setError('No local model that edits images is installed. Install Qwen-Image 2.1 in the Model Manager.')
       return
     }
-    if ((intent === 'image' || mlxEdit) && isMlxImageHost() && isMlxImageModel(effImageModel)) {
+    // "Use character" on a Mac: the character's LoRA from the Mac's LoRA
+    // folder is on the stack, and the run is a plain image from text on the
+    // second engine, as the local Use tab is a plain image run on Windows.
+    const macCharacter = intent === 'character' && state.characterTab === 'use' && isMlxImageHost()
+    if ((intent === 'image' || mlxEdit || macCharacter) && isMlxImageHost() && isMlxImageModel(effImageModel)) {
       setError(null)
       if (!prompt.trim()) { setError('Please enter a prompt.'); return }
       if (mlxEdit && !source) { setError('Please add a source image first.'); return }
@@ -753,12 +1017,24 @@ export function useCreate() {
       // TextEncodeQwenImage21. The result takes the shape of the source: with
       // one image the engine does that itself, with several it would follow
       // the last one, so the size is worked out here.
-      const editRefs = mlxEdit && source ? [source, ...references.slice(0, extraReferenceSlots(listed?.type, effImageModel))] : []
       // Never 1024 by 1024: the model does not edit on that canvas, the
       // engine would move the run to 1056, and the request names the size
       // that runs (`edit_side` and `canvas` in image_mflux.rs, mirrored).
       const editBudget = qwenEditResolution(width, height)
-      const editSide = macEditSide(editBudget)
+      // As many as this Mac's memory takes at that canvas, the number the
+      // reference strip offers (lib/mac-edit-memory); the ones past it stay
+      // in the strip, marked not sent.
+      const macRoom = mlxEdit && source && references.length > 0
+        ? macEditReferenceRoom(editBudget, listed?.packGb ?? 0, await Promise.resolve().then(() => getSharedMemoryGb()).catch(() => 0))
+        : null
+      const editRefs = mlxEdit && source
+        ? [source, ...references.slice(0, Math.min(extraReferenceSlots(listed?.type, effImageModel), macRoom ?? Infinity))]
+        : []
+      // More than four images share a pixel budget (referenceSide in
+      // lib/edit-references). Here only the images shrink: the engine takes
+      // the canvas apart from the budget, and the canvas below stays at the
+      // full size of the source.
+      const editSide = macEditSide(referenceSide(editBudget, editRefs.length))
       const editSize = mlxEdit && source && editRefs.length > 1 ? macEditCanvas(editCanvas(editBudget, source)) : null
       // "Transparent background": the same prompt wrapper the Windows graph
       // uses. The model writes the alpha channel and the engine keeps it.
@@ -801,6 +1077,26 @@ export function useCreate() {
         for (const ref of editRefs) {
           editImages.push(ref.filename || await stageStartImage(await blobFromUrl(ref.url)))
         }
+        const editMask = mlxEdit && mask?.url
+          ? await stageStartImage(await featherMaskBlob(await blobFromUrl(mask.url), growMaskBy))
+          : undefined
+        // "Improve my prompt" with the Qwen enhancer (GH #148): it rewrites
+        // now, with the chat model out of memory, and its process has ended
+        // before the image model loads. An edit shows it the same images, in
+        // the same order, that the edit reads. A rewrite that fails leaves
+        // the user's prompt; Cancel ends the enhancer and starts no image.
+        if (macEnhancer && !own.signal.aborted) {
+          const improving = elapsedLine((text) => setProgress(5, text), IMPROVING_PROMPT)
+          const out = await enhancePromptOnMac({
+            model: macEnhancer.file,
+            mode: macEnhancer.mode,
+            prompt: scenePrompt,
+            images: macEnhancer.mode === 'i2i' ? editImages : [],
+            seed: runSeed,
+          }, own.signal).finally(improving.stop)
+          if (!own.signal.aborted) takeRewrite(out, macEnhancer.variant)
+          setProgress(10, 'Starting MLX image generation...')
+        }
         for (let n = 0; n < count && !own.signal.aborted; n++) {
           const startTime = Date.now()
           const imageSeed = bumpSeed(runSeed, n)
@@ -811,7 +1107,7 @@ export function useCreate() {
             prompt: transparent ? transparentPrompt(prompt) : prompt,
             steps, seed: imageSeed, guidance: cfgScale,
             ...(mlxEdit
-              ? { images: editImages, resolution: editSide, ...(editSize ?? {}) }
+              ? { images: editImages, resolution: editSide, ...(editSize ?? {}), mask: editMask, strength: state.editStrength }
               : { width, height }),
             model: mlxModelIdFor(effImageModel),
             negativePrompt: negativePrompt || undefined,
@@ -821,17 +1117,41 @@ export function useCreate() {
             onStep: (step, of) => setProgress(Math.min(95, 10 + Math.round((step / of) * 85)), `${nth}Step ${step}/${of}`),
           })
           if (own.signal.aborted) break
+          // HiRes fix: the picture goes back in as the image of an edit at
+          // the larger size, started partway down the schedule (lib/mac-hires).
+          // Only a model that edits can, and only the final picture is kept,
+          // as on Windows.
+          let first = made
+          const pass = !mlxEdit && hiresFixEnabled && (listed?.editImages ?? 0) > 0
+            ? macHiresPass(made.width || width, made.height || height, { scale: hiresScale, steps: hiresSteps, denoise: hiresDenoise })
+            : null
+          if (pass) {
+            setProgress(60, `${nth}HiRes pass at ${pass.width}×${pass.height}...`)
+            const staged = await stageStartImage(await blobFromUrl(made.dataUrl))
+            first = await generateMlxImageDataUrl({
+              prompt: transparent ? transparentPrompt(prompt) : prompt,
+              steps: pass.steps, seed: imageSeed, guidance: cfgScale,
+              images: [staged], resolution: pass.resolution, width: pass.width, height: pass.height, strength: pass.strength,
+              model: mlxModelIdFor(effImageModel),
+              negativePrompt: negativePrompt || undefined,
+              ...(runLoras.length ? { loras: runLoras } : {}),
+            }, {
+              signal: own.signal,
+              onStep: (step, of) => setProgress(Math.min(95, 60 + Math.round((step / of) * 35)), `${nth}HiRes step ${step}/${of}`),
+            })
+            if (own.signal.aborted) break
+          }
           const elapsed = Math.round((Date.now() - startTime) / 1000)
           state.setLastGenTime(`${elapsed}s`)
           addToGallery({
             id: uuid(), type: 'image', filename: `mlx-${Date.now()}.png`, subfolder: '',
             // localPath is what survives the restart: partialize strips dataUrl,
             // and there is no ComfyUI /view to fall back to on a Mac.
-            dataUrl: made.dataUrl, localPath: made.localPath, prompt, ...improveFields, negativePrompt, model: effImageModel, modelType: 'unknown',
+            dataUrl: first.dataUrl, localPath: first.localPath, prompt, ...improveFields, negativePrompt, model: effImageModel, modelType: 'unknown',
             // What the run took: a pack with a Turbo adapter runs at its own
             // steps and guidance whatever the sliders say.
             seed: imageSeed, steps: made.steps ?? steps, cfgScale: made.guidance ?? cfgScale, sampler, scheduler,
-            width: made.width || width, height: made.height || height, batchSize: 1,
+            width: first.width || made.width || width, height: first.height || made.height || height, batchSize: 1,
             createdAt: Date.now(), builderUsed: 'dynamic', intent,
             ...(transparent ? { transparent: true as const } : {}),
             ...(macSkippedNote ? { runNote: macSkippedNote } : {}),
@@ -868,20 +1188,47 @@ export function useCreate() {
     // (fetchModels above), so every local video generation routes here. Two
     // intents arrive: `video` is text to video, and `animate` hands the engine
     // the image on the Stage as its first frame. Which models take one is the
-    // catalogue's word (`startImage` on the list entry). extend and motion have
-    // no local lane on this host. Generation is a subprocess polled via
-    // video_progress every 2s (no WebSocket/node graph). ──
-    if ((intent === 'video' || intent === 'animate') && isMlxImageHost()) {
+    // catalogue's word (`startImage` on the list entry). Generation is a
+    // subprocess polled via video_progress every 2s (no WebSocket/node graph).
+    // Motion Control runs here too (3.0.8): the character image on the Stage
+    // is the start image, and the motion video goes along, on an LTX-2.3 pack
+    // with its IC-LoRA (commands/video_motion.rs). The prompt is optional,
+    // as on ComfyUI; an empty one becomes MLX_MOTION_PROMPT.
+    // Extend Video runs here too (14.10.2026): as on Windows, the last frame
+    // of the picked clip is on the Stage (LocalExtendControls), and the run
+    // is an image to video run from it on a model that takes a start image. ──
+    // Talking Character runs here too (3.0.8): the portrait on the Stage and
+    // the voice become a clip whose lips follow the speech, on a model whose
+    // entry talks (the engine's a2v, api/mlx-video mlxTalking). The clip is as
+    // long as the voice; Rust reads that length itself.
+    const talking = intent === 'lipsync'
+    if ((intent === 'video' || intent === 'animate' || intent === 'extend' || intent === 'motion' || talking) && isMlxImageHost()) {
       setError(null)
+      const motionRun = intent === 'motion'
       // The model on the chip: the first one this lane can run when the stored
-      // pick cannot (see effVideoModel above).
-      const mlxModel = effVideoModel
-      const mlxEntry = state.videoModelList.find((m) => m.name === mlxModel)
-      if (!prompt.trim()) { setError('Please enter a prompt.'); return }
+      // pick cannot (see effVideoModel above). Motion Control picks from its
+      // own list, the way the chip does (localPick), and Talking Character
+      // takes the model that talks.
+      const talkEntry = talking ? mlxTalkingEntry(state.videoModelList, state.localOpModel) : undefined
+      const mlxModel = talking ? (talkEntry?.name ?? '') : motionRun ? localOpModel : effVideoModel
+      const mlxEntry = (motionRun ? state.motionModelList : state.videoModelList).find((m) => m.name === mlxModel)
+      if (talking) {
+        if (!talkEntry) { setError(MAC_TALKING_NO_MODEL); return }
+        if (talkEntry.mlxVideo?.talking !== 'ready') { setError('Get Talking Character first, with the button above the voice.'); return }
+        if (!source) { setError('Add the portrait the character should speak from.'); return }
+        if (!state.audioInput) { setError('Add a voice first. Upload the speech audio.'); return }
+        // What the voice says goes into the prompt, and passes the same check.
+        if (checkPromptSafety(state.talkingWords).blocked) { setError(SAFETY_BLOCK_MESSAGE); return }
+      }
+      if (motionRun && !prompt.trim()) prompt = MLX_MOTION_PROMPT
+      if (!talking && !prompt.trim()) { setError('Please enter a prompt.'); return }
+      const talkPrompt = macTalkingPrompt(state.talkingWords)
       // With nothing installed the picker is empty, and "pick one" has
       // nothing to pick from.
       if (!mlxModel) {
-        setError(state.videoModelList.length === 0 ? macNoModelLine('video') : 'No local video model selected. Pick one from the model picker.')
+        setError(motionRun
+          ? 'Motion Control is not installed yet. Use Download & install above, then Create again.'
+          : state.videoModelList.length === 0 ? macNoModelLine('video') : 'No local video model selected. Pick one from the model picker.')
         return
       }
       const catalogId = mlxVideoModelIdFor(mlxModel)
@@ -889,18 +1236,33 @@ export function useCreate() {
       // Before anything loads: a model that animates a start image would
       // spend minutes loading and then fail on a tensor shape.
       if (intent === 'animate' && !source) { setError('Add a start image first.'); return }
-      if (intent === 'video' && mlxEntry?.startImage === 'required') {
+      if (intent === 'extend' && !source) { setError('Pick the clip to extend first. Its last frame becomes the starting point.'); return }
+      if (motionRun && !source) { setError('Add the character image that should perform the motion.'); return }
+      if (motionRun && !state.videoInput) { setError('Add the driving video whose motion the character should copy.'); return }
+      // Step 2 of a character chain hands its picture over as the source.
+      const chainStart = opts.stepLabel === CHAIN_STEP_VIDEO && !!source
+      if (intent === 'video' && mlxEntry?.startImage === 'required' && !chainStart) {
         setError(`"${mlxModel}" needs a start image. Open Animate Image to give it one.`)
         return
       }
       // The engine reads the image from disk. One picked on this Mac in local
       // mode is staged already, one picked in cloud mode is staged now.
       let startImage: string | undefined
-      if (intent === 'animate' && source) {
+      if ((intent === 'animate' || intent === 'extend' || motionRun || talking || chainStart) && source) {
         try {
           startImage = source.filename || await stageStartImage(await blobFromUrl(source.url))
         } catch (e) {
           setError(`Could not prepare the start image: ${e instanceof Error ? e.message : String(e)}`)
+          return
+        }
+      }
+      // The voice is read from disk as well.
+      let voice: string | undefined
+      if (talking && state.audioInput) {
+        try {
+          voice = await stageVoice(state.audioInput.blob)
+        } catch (e) {
+          setError(`Could not prepare the voice: ${e instanceof Error ? e.message : String(e)}`)
           return
         }
       }
@@ -909,26 +1271,58 @@ export function useCreate() {
         if (!status.available) { setError('Local video generation is Apple Silicon only.'); return }
         if (!status.mlxInstalled && !status.ltx2MlxInstalled) { setError('The local video engine is not set up on this Mac yet (a one-time setup is needed before local video works).'); return }
         if (!status.installedModels.includes(catalogId)) { setError(`The local video model "${mlxModel}" isn't downloaded yet.`); return }
+        if (motionRun && !status.motionInstalled) { setError('Motion Control is not installed yet. Use Download & install above, then Create again.'); return }
       } catch (e) {
         setError(`Local video status check failed: ${e instanceof Error ? e.message : String(e)}`)
         return
+      }
+      // The motion video goes to disk the same way as the start image.
+      let motionVideo: string | undefined
+      if (motionRun && state.videoInput) {
+        try {
+          motionVideo = await stageMotionVideo(state.videoInput.blob)
+        } catch (e) {
+          setError(`Could not prepare the motion video: ${e instanceof Error ? e.message : String(e)}`)
+          return
+        }
       }
 
       const clip = mlxEntry?.mlxVideo
       const clipFps = clip?.fps ?? fps
       const clipSeconds = clip
-        ? mlxVideoSeconds(mlxFramesOnGrid(frames, clip.frameStep), clip.fps)
+        // The slider's grid and ceiling, by the same memory (lib/mac-memory).
+        ? mlxVideoSeconds(mlxFramesOnGrid(frames, clip.frameStep, motionRun ? null : knownMacMemoryGb()), clip.fps)
         : Math.max(0.5, frames / Math.max(1, fps))
       // The negative prompt reaches the models that read one (Wan, and the
       // dev pipelines of LTX). For every other one the field is not shown,
       // and what an earlier tab left in it goes neither out nor into the
       // gallery entry.
       const clipNegative = clip?.negativePrompt ? negativePrompt.trim() : ''
+      // The size and the steps the settings show (api/mlx-video): the canvas
+      // put on the model's grid and inside its own pixels, and the steps of
+      // a model that takes a count. The run makes exactly this. A talking
+      // clip takes the shape of its portrait: the tab shows no size.
+      const shape = talking && source?.width && source?.height ? { width: source.width, height: source.height } : { width, height }
+      const clipSize = clip ? mlxVideoRunSize(shape.width, shape.height, clip) : null
+      const clipSteps = clip ? mlxVideoRunSteps(steps, clip) : undefined
+      // The LoRA stack, for a model whose engine takes one (`loras` of its
+      // entry: the quantized LTX packs and Wan). The same rule as the image
+      // run above: the picks whose files are still in the LoRA folder and
+      // that fit this model. What is left out is said under the result.
+      let videoLoras: { name: string; strength: number }[] = []
+      let videoSkippedNote: string | null = null
+      if (selectedLoras.length && clip?.loras && !talking) {
+        const listedLoras = await listMlxLoras().then((l) => l.loras.map((f) => f.name)).catch(() => null)
+        const pick = lorasForRun(selectedLoras, listedLoras, mlxEntry?.type ?? 'unknown')
+        if (listedLoras && pick.missing.length) useCreateStore.getState().keepListedLoras(listedLoras)
+        videoSkippedNote = skippedLorasLine(pick.missing, pick.otherModel)?.replace('models/loras', 'the LoRA folder') ?? null
+        videoLoras = pick.use
+      }
 
       setIsGenerating(true)
       state.setProgressPhase('loading-model')
       setProgress(0, 'Starting MLX video generation...')
-      addToPromptHistory(typedPrompt)
+      if (!talking) addToPromptHistory(typedPrompt)
       const startTime = Date.now()
       abortRef.current = new AbortController()
       const macEviction = await freeMacMemoryForRender((text) => setProgress(0, text))
@@ -937,16 +1331,24 @@ export function useCreate() {
       try {
         result = await generateVideo({
           id: catalogId,
-          prompt,
+          // The tab has no prompt field: the scene is the portrait's, and
+          // what the voice says is the line under the chips.
+          prompt: talking ? talkPrompt : prompt,
           // The length in frames, on the model's grid and at the model's
           // rate, so the engine makes the clip the slider showed. The rate in
           // the store belongs to the stored pick, which on Animate may be
-          // another model than the one the lane runs.
-          seconds: clipSeconds,
+          // another model than the one the lane runs. A talking clip is as
+          // long as its voice.
+          seconds: talking ? undefined : clipSeconds,
+          ...(voice ? { audio: voice } : {}),
           fps: clipFps,
           seed: runSeed,
           initImage: startImage,
           negativePrompt: clipNegative || undefined,
+          ...(videoLoras.length ? { loras: videoLoras } : {}),
+          ...(clip?.sizeGrid && clipSize ? { width: clipSize.width, height: clipSize.height } : {}),
+          ...(clipSteps ? { steps: clipSteps } : {}),
+          ...(motionVideo ? { motionVideo } : {}),
         })
       } catch (e) {
         useCreateStore.getState().setError(`Failed to start: ${e instanceof Error ? e.message : String(e)}`)
@@ -1007,12 +1409,13 @@ export function useCreate() {
                   // Keep the real on-disk path too, for a future
                   // download-to-disk path that wants to reference it directly.
                   localPath: result.output,
-                  prompt, ...improveFields, negativePrompt: clipNegative, model: mlxModel, modelType: mlxEntry?.type ?? 'wan',
-                  seed: runSeed, steps, cfgScale, sampler, scheduler,
-                  // The size the run had is the entry's, not the store's:
-                  // the engine takes none from Create.
-                  width: clip?.width ?? width, height: clip?.height ?? height, batchSize: 1,
+                  prompt: talking ? talkPrompt : prompt, ...(talking ? {} : improveFields), negativePrompt: clipNegative, model: mlxModel, modelType: mlxEntry?.type ?? 'wan',
+                  seed: runSeed, steps: clipSteps ?? steps, cfgScale, sampler, scheduler,
+                  // The size the run had: the one it was sent with, which is
+                  // the entry's own for a model that takes none.
+                  width: clipSize?.width ?? width, height: clipSize?.height ?? height, batchSize: 1,
                   createdAt: Date.now(), builderUsed: 'dynamic', intent,
+                  ...(videoSkippedNote ? { runNote: videoSkippedNote } : {}),
                 })
                 resolve()
                 return
@@ -1040,6 +1443,58 @@ export function useCreate() {
       return
     }
 
+    // ── Music on a Mac: ACE-Step 1.5 as a process of its own (commands/
+    // music.rs, api/mlx-music.ts), no ComfyUI graph. It takes the style, the
+    // lyrics, the length and the seed, and nothing else: the turbo model runs
+    // at its own eight steps. Rust frees the image engine before the model
+    // loads; the chat model is freed here, as before a picture. ──
+    if (intent === 'music' && isMlxImageHost()) {
+      setError(null)
+      if (!prompt.trim()) { setError('Describe the track first. Genre, mood, tempo…'); return }
+      if (!localOpModel) {
+        setError('The music engine is not installed on this Mac. Get ACE-Step 1.5 in the Model Manager, under Music.')
+        return
+      }
+      const seconds = macMusicSeconds(state.musicDuration)
+      const own = new AbortController()
+      abortRef.current = own
+      setIsGenerating(true)
+      state.setProgressPhase('loading-model')
+      setProgress(0, 'Starting the music engine...')
+      addToPromptHistory(typedPrompt)
+      const macEviction = await freeMacMemoryForRender((text) => setProgress(0, text))
+      try {
+        state.setProgressPhase('sampling')
+        const track = await runMacMusic(
+          { prompt, lyrics: state.musicLyrics, seconds, seed: runSeed },
+          { signal: own.signal, onProgress: (percent, text) => setProgress(percent, text) },
+        )
+        setProgress(100, 'Complete!')
+        useCreateStore.getState().setLastGenTime(`${track.elapsedSec}s`)
+        addToGallery({
+          id: uuid(), type: 'audio', filename: '', subfolder: '',
+          dataUrl: track.url,
+          localPath: track.output,
+          prompt, ...improveFields, negativePrompt: '', model: MAC_MUSIC_MODEL_NAME, modelType: 'ace',
+          // What the run had: the seed Rust used, the engine's own steps, and
+          // no sampler, scheduler or guidance of Create's.
+          seed: track.seed, steps: track.steps, cfgScale: 0, sampler: '', scheduler: '',
+          width: 0, height: 0, batchSize: 1,
+          createdAt: Date.now(), builderUsed: 'dynamic', intent,
+        })
+      } catch (e) {
+        if (!(e instanceof MusicRunCancelled)) {
+          useCreateStore.getState().setError(`Generation failed: ${e instanceof Error ? e.message : String(e)}`)
+        }
+      } finally {
+        useCreateStore.getState().setIsGenerating(false)
+        useCreateStore.getState().setProgress(0)
+        if (abortRef.current === own) abortRef.current = null
+        if (macEviction) void restoreChatBackendsAfterRender(macEviction)
+      }
+      return
+    }
+
     // Everything below is the ComfyUI path. A Mac has no ComfyUI and never
     // starts one, so a run that was not taken by one of the two MLX branches
     // above ends here, in the Mac's words, before a sentence about ComfyUI
@@ -1051,7 +1506,7 @@ export function useCreate() {
     }
 
     setError(null)
-    let activeModel = localOp ? localOpModel : (mode === 'image' ? effImageModel : videoModel)
+    let activeModel = localOp ? localOpModel : isUpscale ? (upscaleModel ?? '') : (mode === 'image' ? effImageModel : videoModel)
     // Chip↔run agreement (live-caught on the extend E2E): the picker DISPLAYS
     // the first capable model when the stored pick can't run the current
     // intent, but submit read the raw store — the run then used a model the
@@ -1083,7 +1538,7 @@ export function useCreate() {
     // Background removal is prompt-free and model-independent (RMBG node);
     // lipsync/motion drive off their media inputs (the builder supplies a
     // neutral scene prompt when the field is empty).
-    const promptOptional = isRemoveBg || localOp === 'lipsync' || localOp === 'motion'
+    const promptOptional = isRemoveBg || isUpscale || localOp === 'lipsync' || localOp === 'motion'
     if (!promptOptional && !prompt.trim()) {
       setError(localOp === 'music' ? 'Describe the track first. Genre, mood, tempo…' : 'Please enter a prompt.')
       return
@@ -1095,6 +1550,17 @@ export function useCreate() {
     if (!localOp && isI2I && !isRemoveBg && !effInputImage) {
       setError('Please add a source image first.')
       return
+    }
+    if (isUpscale) {
+      if (!upscaleModel) {
+        setError('No upscale model installed. Use Download & install above, then hit Create again.')
+        return
+      }
+      const tooLarge = source ? upscaleTooLargeLine(source.width, source.height, upscaleFactor) : null
+      if (tooLarge) {
+        setError(tooLarge)
+        return
+      }
     }
     // No mask-required gate on Edit. In 2.5.8 this lane was inpaint-only and
     // the guard existed because an empty mask SILENTLY became plain img2img and
@@ -1153,7 +1619,12 @@ export function useCreate() {
           : 'Add the image you want to animate first.')
         return
       }
-      if (!isI2VModel(activeModel)) {
+      const refusal = intent === 'animate' ? ref2vRefusal(activeModel) : null
+      if (refusal) {
+        setError(refusal)
+        return
+      }
+      if (!isI2VModel(activeModel) && !(intent === 'animate' && isRunnableRef2V(activeModel))) {
         setError(`${activeModel} is text-to-video only. Pick an i2v-capable model (WAN i2v / WAN 2.2 ti2v / SVD / LTX) to ${intent === 'extend' ? 'extend a clip' : 'animate an image'}.`)
         return
       }
@@ -1243,7 +1714,8 @@ export function useCreate() {
       // The progress line is gone a second later, so the result keeps it
       // too (3.0.4 Gegenprobe 8: a deleted LoRA was left out "silently").
       let skippedNote: string | undefined
-      if (selectedLoras.length) {
+      // Enhance runs no diffusion model, so the LoRA stack has nothing to say.
+      if (selectedLoras.length && !isUpscale) {
         const listed = await listedLoras().catch(() => null)
         const pick = lorasForRun(selectedLoras, listed, imageModelType)
         if (listed && pick.missing.length) useCreateStore.getState().keepListedLoras(listed)
@@ -1300,6 +1772,22 @@ export function useCreate() {
       // legacy fallback here — REJECT-AND-REPORT via WorkflowUnavailableError
       // is the whole point (an "Update ComfyUI" message instead of a broken
       // graph). ──
+      if (isUpscale && upscaleModel && effInputImage) {
+        setProgress(5, 'Building workflow...')
+        const size = { width: source?.width || width, height: source?.height || height }
+        workflow = await buildWithFixups(
+          () => buildLocalUpscaleWorkflow({
+            image: effInputImage, model: upscaleModel, factor: upscaleFactor,
+            sourceWidth: size.width, sourceHeight: size.height,
+          }),
+          renderFixupDeps((line) => setProgress(5, line), abortRef.current?.signal),
+        )
+        builderUsed = 'dynamic'
+        const target = upscaleTarget(size.width, size.height, upscaleFactor)
+        outputWidth = target.width
+        outputHeight = target.height
+      }
+
       if (localOp) {
         let audioFile: string | undefined
         let drivingVideo: string | undefined
@@ -1351,15 +1839,31 @@ export function useCreate() {
           refImage: source?.filename || undefined,
           drivingVideo,
         }
-        workflow = await buildWithFixups(
-          () => buildLocalOpWorkflow(laneParams),
-          renderFixupDeps((line) => setProgress(5, line), abortRef.current?.signal),
-        )
-        builderUsed = 'dynamic'
+        // A workflow of the user's own, picked for this model in Advanced
+        // settings, runs instead of LU's Motion Control graph. Discord,
+        // 15.10.2026: the Wan 2.2 Animate example workflow ran in ComfyUI
+        // itself, and LU had no way to run it in this tab.
+        const laneWf = localOp === 'motion'
+          ? useWorkflowStore.getState().getWorkflowForModel(activeModel, imageModelType)
+          : null
+        if (laneWf) {
+          setProgress(5, `Using workflow: ${laneWf.name}...`)
+          workflow = injectLaneParameters(laneWf.workflow, laneWf.parameterMap, {
+            model: activeModel, seed: runSeed,
+            refImage: source?.filename || undefined, drivingVideo,
+          }, useWorkflowStore.getState().paramOverrides[laneWf.id])
+          builderUsed = 'custom'
+        } else {
+          workflow = await buildWithFixups(
+            () => buildLocalOpWorkflow(laneParams),
+            renderFixupDeps((line) => setProgress(5, line), abortRef.current?.signal),
+          )
+          builderUsed = 'dynamic'
+        }
       }
 
       // Check for custom workflow assignment — but verify it's compatible with the model
-      let customWf = localOp ? null : useWorkflowStore.getState().getWorkflowForModel(activeModel, imageModelType)
+      let customWf = localOp || isUpscale ? null : useWorkflowStore.getState().getWorkflowForModel(activeModel, imageModelType)
       if (customWf) {
         const wfNodes = apiNodes(customWf.workflow).map(([, n]) => n.class_type)
         const needsUnet = imageModelType === 'flux' || imageModelType === 'flux2' || imageModelType === 'zimage' || imageModelType === 'wan' || imageModelType === 'hunyuan'
@@ -1379,8 +1883,10 @@ export function useCreate() {
         builderUsed = 'custom'
         setProgress(5, `Using workflow: ${customWf.name}...`)
         const params = mode === 'video' ? { ...baseParams, frames, fps, ...(effI2vImage ? { inputImage: effI2vImage } : {}) } : baseParams
-        workflow = await injectParameters(customWf.workflow, customWf.parameterMap, params, imageModelType)
-      } else if (!localOp) {
+        // The values changed under "Workflow parameters" go in last (GitHub wish #8).
+        const overrides = useWorkflowStore.getState().paramOverrides[customWf.id]
+        workflow = await injectParameters(customWf.workflow, customWf.parameterMap, params, imageModelType, overrides)
+      } else if (!localOp && !isUpscale) {
         // Dynamic workflow builder — auto-detects nodes and builds the right pipeline
         setProgress(5, 'Building workflow...')
         try {
@@ -1527,7 +2033,7 @@ export function useCreate() {
       // The mark closes the rest of the window: the listener below cannot be
       // registered until the submit has returned the prompt id it filters on,
       // so anything that arrives in between is replayed instead of raced for.
-      const maxTime = mode === 'video' ? 60 * 60 * 1000 : 20 * 60 * 1000
+      const maxTime = renderStallLimitMs(mode === 'video' ? 'video' : 'image', useSettingsStore.getState().settings)
       let useWS = false
       let wsMark = 0
       try {
@@ -1542,7 +2048,9 @@ export function useCreate() {
       // its first run. Asked before the submit, so the wait can say so.
       const cutoutModel = isRemoveBg ? cutoutModelOf(workflow) : undefined
       const cutoutDownload = cutoutModel ? await cutoutDownloadLine(cutoutModel) : null
-      const toolFields = cutoutModel ? { toolModel: cutoutModel } : {}
+      const toolFields = cutoutModel ? { toolModel: cutoutModel }
+        : isUpscale && upscaleModel ? { toolModel: upscaleToolLabel(upscaleModel) }
+        : {}
 
       setProgress(10, 'Submitting to ComfyUI...')
       let promptId: string
@@ -1597,10 +2105,30 @@ export function useCreate() {
           // the SILENT gap — every WS event for our prompt, and a still-queued
           // prompt on the periodic check, count as life signs.
           let lastActivity = Date.now()
-          const timeoutTimer = setInterval(() => {
-            if (Date.now() - lastActivity > maxTime) {
+          // d308-a (Windows box, 15.10.2026): with the limit at 1 minute a
+          // running Z-Image render was called stalled during its long VAE
+          // decode (no events for 100 s) and its finished pictures were
+          // dropped. The queue refresh below comes once a minute, so with a
+          // short limit it lost the race. Like the polling path, the queue
+          // is asked before a run is given up: a prompt ComfyUI still runs
+          // or holds is alive, and one with a history entry has ended and
+          // is collected by the heartbeat.
+          let stallCheck = false
+          const timeoutTimer = setInterval(async () => {
+            if (stallCheck || Date.now() - lastActivity <= maxTime) return
+            stallCheck = true
+            try {
+              if (await isPromptQueued(promptId).catch(() => false)) {
+                lastActivity = Date.now()
+                return
+              }
+              // Finished a moment ago: the heartbeat's next history poll
+              // collects the pictures, so this is no stall either.
+              if (completionHandled || await getHistory(promptId).catch(() => null)) return
               cleanup()
-              reject(new Error(`Generation stalled: no progress from ComfyUI for ${Math.round(maxTime / 60000)} minutes.${cpuCauseSuffix(lastCpuRenderFacts())}`))
+              reject(new Error(`${renderStallMessage(maxTime)}${cpuCauseSuffix(lastCpuRenderFacts())}`))
+            } finally {
+              stallCheck = false
             }
           }, 15000)
 
@@ -1700,6 +2228,20 @@ export function useCreate() {
                 }
                 const classType = nodeClassMap.get(nodeId) || ''
                 const step = phaseForExecutingNode(classType, mode === 'video' ? 'video' : 'image', cutoutDownload)
+                  ?? phaseForSaveNode(classType, st.progressPhase)
+                if (step) {
+                  st.setProgressPhase(step.phase)
+                  setPhase(step.pct, step.label)
+                }
+                break
+              }
+              case 'execution_start':
+              case 'execution_cached': {
+                // d307-c H2: a cached Enhance sat on "Queued..." to the end.
+                const cached = event.type === 'execution_cached'
+                  ? (event.data.nodes ?? []).map((id) => nodeClassMap.get(id) || '')
+                  : []
+                const step = phaseForExecutionStart(st.progressPhase, cached)
                 if (step) {
                   st.setProgressPhase(step.phase)
                   setPhase(step.pct, step.label)
@@ -1708,7 +2250,7 @@ export function useCreate() {
               }
               case 'progress': {
                 const { value, max } = event.data
-                const step = phaseForProgressStep(value, max, st.progressPhase)
+                const step = phaseForProgressStep(value, max, st.progressPhase, isUpscale)
                 if (step) {
                   st.setProgressPhase(step.phase)
                   setPhase(step.pct, step.label)
@@ -1797,7 +2339,7 @@ export function useCreate() {
                 lastActivity = Date.now()
               } else {
                 if (pollRef.current) clearInterval(pollRef.current)
-                reject(new Error(`Generation stalled: no progress from ComfyUI for ${Math.round(maxTime / 60000)} minutes.${cpuCauseSuffix(lastCpuRenderFacts())}`))
+                reject(new Error(`${renderStallMessage(maxTime)}${cpuCauseSuffix(lastCpuRenderFacts())}`))
                 return
               }
             }
@@ -1918,6 +2460,111 @@ export function useCreate() {
     // veralteten Closure und leitete daraus den falschen `modelType` ab.
   }, [videoBackend, runCharacterTraining, videoModelsList])
 
+  // The character on the chip (lib/character-run). Image and Edit carry its
+  // LoRA and trigger word in the run; every video lane goes through the one
+  // chain: step 1 renders the character's start image on the normal image
+  // path, step 2 runs the video from it. The Mac wires its own engines into
+  // the same chain: both steps go through runOnce, whose Mac branches run
+  // the image on mflux with the LoRA and the video on MLX from that image.
+  const generateInner = useCallback(async () => {
+    const s = useCreateStore.getState()
+    const mac = isMlxImageHost()
+    if (s.backend !== 'local' || !isLocalCharacter(s.selectedCharacter)) {
+      await runOnce()
+      return
+    }
+    const intent = s.intent()
+    const imageLane = imageLaneModels(s.imageModelList, intent)
+    const effImage = imageLane.some((m) => m.name === s.imageModel) ? s.imageModel : (imageLane[0]?.name ?? s.imageModel)
+    const videoLane = intent === 'video' ? videoLaneModels(s.videoModelList, 'video') : []
+    const effVideo = videoLane.some((m) => m.name === s.videoModel) ? s.videoModel : (videoLane[0]?.name ?? s.videoModel)
+    const character = s.selectedCharacter!
+    const file = characterLoraFile(character)!
+    const plan = characterRunPlan({
+      intent,
+      character,
+      hasSource: !!s.source,
+      hasMask: !!s.mask,
+      imageModelType: s.imageModelList.find((m) => m.name === effImage)?.type ?? classifyModel(effImage),
+      baseInstalled: !!characterBaseModel(file, s.imageModelList, effImage),
+      // The Mac knows from its catalogue which model takes a start image;
+      // the name rule below is the one for ComfyUI's files.
+      videoModel: intent === 'video' && !mac ? effVideo : '',
+      // On a Mac step 2 always starts from the picture, so the lane is empty
+      // without an installed MLX video model that takes a start image.
+      videoLaneEmpty: mac
+        ? intent === 'motion' ? s.motionModelList.length === 0
+          : intent === 'lipsync' ? !mlxTalking(s.videoModelList).ready
+          : CHARACTER_VIDEO_LANES.has(intent) && !mlxTakesStartImage(s.videoModelList)
+        : characterVideoLaneEmpty(intent, { video: s.videoModelList, lipsync: s.lipsyncModelList, motion: s.motionModelList }),
+    })
+    const strength = s.loraStrengths[file] ?? defaultLoraStrength(file)
+    if (plan.kind === 'error') {
+      s.setError(plan.message)
+      return
+    }
+    if (plan.kind === 'image') {
+      await runOnce(
+        { prompt: withTriggerWord(s.prompt, character.triggerWord), selectedLoras: withCharacterLora(s.selectedLoras, file, strength) },
+        { trigger: character.triggerWord },
+      )
+      return
+    }
+    if (plan.kind !== 'chain') {
+      await runOnce()
+      return
+    }
+    const takesStart = s.videoModelList.find((m) => m.name === effVideo)?.startImage
+    // Motion Control needs its motion video, and is told before step 1
+    // spends minutes on the character's image.
+    if (mac && intent === 'motion' && !s.videoInput) {
+      s.setError('Add the driving video whose motion the character should copy.')
+      return
+    }
+    if (mac && intent === 'video' && (!takesStart || takesStart === 'none')) {
+      s.setError(`${effVideo} makes video from text only and cannot start from your character. Pick a model that takes a start image (LTX) or remove the character.`)
+      return
+    }
+    const own = new AbortController()
+    chainAbort.current = own
+    s.setError(null)
+    try {
+      const start = await characterStartImage(character, characterImagePrompt(intent, s.prompt, character.triggerWord), {
+        models: s.imageModelList,
+        currentModel: s.imageModel,
+        strength,
+        signal: own.signal,
+        onProgress: (line) => useCreateStore.getState().setProgress(0, line),
+        renderImage: async (req) => {
+          const before = new Set(useCreateStore.getState().gallery.map((g) => g.id))
+          await runOnce(characterImageRun(req, characterImageSize(s.width, s.height)), { stepLabel: CHAIN_STEP_IMAGE, trigger: character.triggerWord })
+          if (own.signal.aborted) throw new CharacterChainCancelled()
+          const after = useCreateStore.getState()
+          // The image step said what went wrong already; the video does not start.
+          if (after.error) throw new CharacterChainCancelled()
+          const made = after.gallery.find((g) => !before.has(g.id) && g.type === 'image')
+          if (!made) throw new Error('The character image did not come out, so the video did not start.')
+          const blob = await fetchGalleryItemBlob(made)
+          return loadImageRef(new File([blob], made.filename || 'character.png', { type: blob.type || 'image/png' }))
+        },
+      })
+      // Between the two steps the card is handed over the way it is after
+      // every render (vram-handoff): ComfyUI lets go of the image model
+      // before the video model loads.
+      // The Mac's image engine lets go of its model when the image is out,
+      // and its video branch frees the rest itself; there is no ComfyUI.
+      if (!mac) await freeMemory()
+      if (own.signal.aborted) return
+      await runOnce({ source: start, selectedLoras: withoutCharacterLoras(s.selectedLoras) }, { stepLabel: CHAIN_STEP_VIDEO })
+    } catch (e) {
+      if (!(e instanceof CharacterChainCancelled)) useCreateStore.getState().setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      if (chainAbort.current === own) chainAbort.current = null
+      useCreateStore.getState().setIsGenerating(false)
+      useCreateStore.getState().setProgress(0)
+    }
+  }, [runOnce])
+
   // Double-click idempotence: isGenerating only flips after the first await,
   // so a second click racing the first must be blocked SYNCHRONOUSLY — two
   // fast clicks were live-reproduced queueing two ComfyUI jobs.
@@ -1939,6 +2586,8 @@ export function useCreate() {
 
   const cancel = useCallback(async () => {
     abortRef.current?.abort()
+    // A character chain between or inside its two steps stops whole.
+    chainAbort.current?.abort()
     if (trainingActive.current) {
       // The run's poll loop reads this: it holds the card until the backend
       // confirms the run is gone, and re-sends the cancel if it is not.

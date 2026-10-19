@@ -10,6 +10,7 @@
 import { useState } from 'react'
 import { FolderOpen, Layers, Trash2 } from 'lucide-react'
 import { CivitaiSearchPanel } from './CivitaiSearchPanel'
+import { LoraLinkPanel } from './LoraLinkPanel'
 import { ModelEmptyState, ModelQuietLine, SectionHead } from './ModelPageParts'
 import { Hinweis } from '../ui/Hinweis'
 import { Modal } from '../ui/Modal'
@@ -82,9 +83,10 @@ export function MacLoraLane({ folder, tab, search, searchSubmitToken, onGetNew }
       <div className="space-y-4" data-testid="mac-lora-lane">
         {problems}
         <p className="text-xs leading-relaxed text-gray-500 dark:text-gray-400">
-          A LoRA is a .safetensors file in the LoRA folder. Put your own there, or search CivitAI below: what you pick lands in that folder. {MAC_LORA_USE_HINT}
+          A LoRA is a .safetensors file in the LoRA folder. Put your own there, paste a link below, or search CivitAI: what you pick lands in that folder. {MAC_LORA_USE_HINT}
         </p>
         {folderRow}
+        <LoraLinkPanel mac destDir={folder.dir || undefined} installed={folder.loras.map((l) => l.name)} />
         <CivitaiSearchPanel
           modelType="LORA"
           title="Search CivitAI for Qwen-Image 2.1 LoRAs"
@@ -93,9 +95,10 @@ export function MacLoraLane({ folder, tab, search, searchSubmitToken, onGetNew }
           searchSubmitToken={searchSubmitToken}
           baseModel={MAC_LORA_BASE_MODEL}
           destDir={folder.dir || undefined}
+          installed={folder.loras}
         />
         <p className="t-micro leading-relaxed text-gray-500 dark:text-gray-400">
-          The search lists LoRAs made for Qwen-Image 2.1. A LoRA for another model (Z-Image, FLUX.2, Qwen-Image) goes into the folder by hand and works with that model.
+          The search lists LoRAs made for Qwen-Image 2.1. A LoRA for another model (Z-Image, FLUX.2, Qwen-Image) comes in through a link above or by hand and works with that model.
         </p>
       </div>
     )

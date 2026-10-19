@@ -15,6 +15,13 @@
 // prompt field is shot 1, every further shot is one more sentence block, and
 // each cut is named in prose. There is no per shot length: the guide has no
 // syntax for one, the clip length stays the one length slider.
+//
+// On a Mac the LTX-2.5 packs of the second engine (ltx-2-mlx) take the same
+// paragraph: it is the model that cuts, and the pack reads the prompt through
+// its own Gemma like ComfyUI does. The engine's Prompt Relay (`--segment`)
+// was read and not used: it gates each text to an even slice of the
+// timeline by an attention penalty, with no cut of its own, and fails after
+// the model has loaded on a clip with fewer latent frames than shots.
 
 /** The model reads two to four shots well. */
 export const MAX_SHOTS = 4
@@ -53,10 +60,12 @@ export function shotCount(first: string, further: readonly string[]): number {
   return (first.trim() ? 1 : 0) + further.filter((s) => s.trim()).length
 }
 
-/** The prompt a local run sends. Only plain text-to-video on LTX 2.5 through
- *  ComfyUI takes the shot list: animate starts from one opening picture and the
- *  guide advises a single take there, and every other model or lane never saw
- *  the shots. Everything else keeps the prompt as typed. */
+/** The prompt a local run sends. Only plain text-to-video on LTX 2.5 takes the
+ *  shot list: through ComfyUI by the model's type, on a Mac where the video
+ *  catalogue says so (`macMultishot`, the LTX-2.5 packs). Animate starts from
+ *  one opening picture and the guide advises a single take there, and every
+ *  other model or lane never saw the shots. Everything else keeps the prompt
+ *  as typed. */
 export function scenePromptFor(run: {
   prompt: string
   shots: readonly string[]
@@ -64,7 +73,9 @@ export function scenePromptFor(run: {
   intent: string
   onMlxHost: boolean
   modelType: string | undefined | null
+  macMultishot?: boolean
 }): string {
-  const applies = run.mode === 'video' && run.intent === 'video' && !run.onMlxHost && supportsMultishot(run.modelType)
+  const model = run.onMlxHost ? run.macMultishot === true : supportsMultishot(run.modelType)
+  const applies = run.mode === 'video' && run.intent === 'video' && model
   return applies ? composeShots(run.prompt, run.shots) : run.prompt
 }

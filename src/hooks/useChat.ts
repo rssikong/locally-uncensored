@@ -7,6 +7,7 @@ import { useChatStore } from "../stores/chatStore"
 import { errorText } from "../types/json-guards"
 import { endTurnDurably } from "../stores/durability"
 import { useModelStore } from "../stores/modelStore"
+import { chatToolsReach } from "../lib/chat-tools-reach"
 import { useSettingsStore } from "../stores/settingsStore"
 import { useRAGStore } from "../stores/ragStore"
 import { useMemoryStore } from "../stores/memoryStore"
@@ -14,15 +15,16 @@ import { useVoiceStore } from "../stores/voiceStore"
 import { autoSpeak } from "../lib/ttsBridge"
 import { retrieveContext } from "../api/rag"
 import { buildRagSuffix, RETRIEVAL_FAILED_MESSAGE } from "../lib/rag-prompt"
-import { getModelMaxTokens, capMessageCount } from "../lib/context-compaction"
-import { applyChatSendBudget, chatBudgetApplies } from "../lib/chat-send-budget"
+import { getChatWindowTokens, capMessageCount, compactMessages, estimateMessageTokens } from "../lib/context-compaction"
+import { contextOverflowOf, shrunkSendWindow } from "./codex/context-overflow"
+import { applyChatSendBudget, chatBudgetApplies, sendBudgetWouldTrim } from "../lib/chat-send-budget"
 import { sendsToALanBackend } from "../lib/lan-openai-slot"
 import { isTooManyMessagesError, halveHistory, TOO_MANY_MESSAGES_MAX_HALVINGS } from "../lib/too-many-messages"
 import { requestGenerationCancel } from "../api/vram-handoff"
-import { buildSamplingRequest } from "../lib/sampling"
 import { useAgentChat } from "./useAgentChat"
 import { parseAgentCommand, parseLoopSpec } from '../lib/agent-commands'
 import { runCompactForConversation, compactOutcomeMessage, maybeAutoCompact } from '../lib/run-compact-command'
+import { autoCompactOn } from '../lib/compact-trigger'
 import { applyStoredCompaction } from '../lib/compact-summary'
 import { planResend } from '../lib/resend-plan'
 import { isOrphanRun } from '../lib/orphan-run'
@@ -46,7 +48,8 @@ import { isLocalModelByName } from "../api/agents/model-locality"
 import { isMultimodalUnsupportedError, MULTIMODAL_UNSUPPORTED_MESSAGE } from "../lib/ollama-errors"
 import type { ImageAttachment, Message } from "../types/chat"
 import { fileMessageFields, filesWithoutWorkspace, type ChatFileInput } from "../lib/chat-files"
-import { isGroupChat, groupSystemPrompt, groupHistory, groupSpeakers, stripImpersonatedSpeakers } from "../lib/group-chat"
+import { fitFilesForSend, requestTextOf } from "./chat-file-room"
+import { isGroupChat, availableGroupMembers, groupSystemPrompt, groupHistory, groupSpeakers, stripImpersonatedSpeakers, hasGroupHistory, soloSpeakers, soloTurnAuthorFields, soloHistoryTag, SOLO_HISTORY_LINE } from "../lib/group-chat"
 import { explainSendRefusal } from "../lib/template-refusal"
 import { builtinReloadNeeded, ensureBuiltinEngineAlive } from "../api/builtin-ensure"
 import { emptyAnswerExplanation } from "../lib/answer-notes"
@@ -57,6 +60,8 @@ import { shouldDowngradeThinking, engineDeniedThinking } from './codex/thinking-
 import { ProviderError } from '../api/providers/types'
 import { useBackgroundAgentWake } from './useBackgroundAgentWake'
 import { buildChatSystemPrompt } from '../lib/system-prompt'
+import { withChatPersona, speakerSamplingOptions, plainChatSpeaker, speakerPersonaFor } from '../lib/chat-persona'
+import { personaNoteOf } from '../lib/persona-note'
 import { toolRegistry } from '../api/mcp'
 import { syncCreateTools } from '../api/mcp/create-tools'
 import { CREATE_TOOL_NAMES, createActive, createChatLive, createSystemText, withCreateText } from '../lib/create/chat-switch'
@@ -94,6 +99,10 @@ async function runGroupTurn(convId: string, model: string, allModels: string[], 
   const { settings } = useSettingsStore.getState()
   const conv = useChatStore.getState().conversations.find((c) => c.id === convId)
   if (!conv) return
+  const { personas, activePersonaId } = useSettingsStore.getState()
+  // `allModels` is who takes a turn this round: a member whose model left the
+  // list sits out (GH #165) and is neither asked nor named to the others.
+  const speakers = groupSpeakers(allModels, conv.groupPersonas, personas)
 
   const assistantMessage: Message = {
     id: uuid(),
@@ -101,6 +110,11 @@ async function runGroupTurn(convId: string, model: string, allModels: string[], 
     content: '',
     thinking: '',
     modelId: model,
+    // GH #169: the turn remembers the persona it was written as, so it stays
+    // that persona's when another model takes the persona over.
+    ...(speakers[model]?.personaId
+      ? { groupPersonaId: speakers[model].personaId, groupSpeakerName: speakers[model].name }
+      : {}),
     timestamp: Date.now(),
   }
   useChatStore.getState().addMessage(convId, assistantMessage)
@@ -119,11 +133,10 @@ async function runGroupTurn(convId: string, model: string, allModels: string[], 
   // is off by default, and a persona picked for one participant in this
   // chat's group menu is as explicit as a choice gets. Picking "Chat persona"
   // there takes it back.
-  const speakers = groupSpeakers(allModels, conv.groupPersonas, useSettingsStore.getState().personas)
   const ownPersona = speakers[model]?.personaPrompt
   const personaPrompt = ownPersona !== undefined
     ? buildChatSystemPrompt({ systemPrompt: ownPersona, personaEnabled: true })
-    : buildChatSystemPrompt(conv)
+    : buildChatSystemPrompt(withChatPersona(conv, personas, activePersonaId))
   const providerId = getProviderIdFromModel(model)
   // Same count cap as the plain path: a long group chat must not outgrow the
   // proxy's message gate either.
@@ -138,23 +151,27 @@ async function runGroupTurn(convId: string, model: string, allModels: string[], 
   // member with a small window was the one most likely to be silently
   // truncated in a group round, because it carries the same shared history as
   // the 262k model beside it.
+  // GH #181: each member carries the reminder of the persona it plays, in
+  // its own request only, by the same rule as its prompt and its sampling.
+  const note = personaNoteOf(speakerPersonaFor(conv, model, personas, activePersonaId, true))
   const messages = applyChatSendBudget(
     capMessageCount([
       { role: 'system' as const, content: groupSystemPrompt(model, allModels, personaPrompt, speakers) },
-      ...groupHistory(conv.messages, model, speakers),
+      ...groupHistory(conv.messages, model, speakers, { groupPersonas: conv.groupPersonas, personas }),
     ]),
     {
+      note,
       providerId,
       // Only asked where the answer can change something — which, since the
       // notaus is now the only thing that closes the gate, means: unless the
       // user switched capping off. The lookup is cached per model, so a group
       // round does not pay an /api/show per member per turn.
       modelWindow: chatBudgetApplies(providerId, settings.contextDecay)
-        ? await getModelMaxTokens(model)
+        ? await getChatWindowTokens(model)
         : 0,
       sendWindowTokens: sendWindowFor(settings, model),
       contextDecay: settings.contextDecay,
-      localBackend: sendsToALanBackend(providerId),
+      localBackend: sendsToALanBackend(providerId, model),
     },
   ).messages
 
@@ -206,9 +223,11 @@ async function runGroupTurn(convId: string, model: string, allModels: string[], 
 
     const { provider, modelId } = getProviderForModel(model)
 
+    // GH #175: each member runs on the values of its own persona, the chat's
+    // own Sampling values on top. Not gated on the Personas switch, the same
+    // rule as the member's prompt above.
     const stream = provider.chatStream(modelId, messages, {
-      ...buildSamplingRequest(settings, conv?.sampling),
-      topK: settings.topK,
+      ...speakerSamplingOptions(settings, conv, model, personas, activePersonaId, true),
       window: 'chat',
       thinking: useThinking,
       signal: abort.signal,
@@ -392,7 +411,9 @@ export function useChat() {
     const { settings } = useSettingsStore.getState()
     if (!createActive(settings, activeModel)) return
     syncCreateTools(toolRegistry, true)
-    void sendAgentMessage(report, undefined, {
+    // Returned, so a Regenerate of the comment can wait for the turn before
+    // it checks whether anything was written (GH #174).
+    return sendAgentMessage(report, undefined, {
       curatedTools: CREATE_TOOL_NAMES,
       chatToolsMode: true,
       createTools: true,
@@ -444,7 +465,7 @@ export function useChat() {
    * a second local conversation could stream from the built-in engine at the
    * same time, silently, because `localLaneHolder()` never heard about the
    * group round at all. */
-  const runGroupRound = useCallback(async (convId: string, content: string, images: ImageAttachment[] | undefined, models: string[], files?: ChatFileInput[]) => {
+  const runGroupRound = useCallback(async (convId: string, content: string, images: ImageAttachment[] | undefined, members: string[], files?: ChatFileInput[]) => {
     // Auflage 3 (Review composer, 19.09.2026): derselbe Wiedereintritts-Riegel
     // wie sendMessage oben ("Re-entry guard"). Ohne ihn ueberschrieb ein
     // doppeltes Enter auf einem Gruppenchat den Token der ersten Runde weiter
@@ -473,15 +494,44 @@ export function useChat() {
     // deshalb ein reiner No-op, wenn das innere schon geraeumt hat
     // (Identitaetspruefung, wie ueberall in dieser Datei).
     try {
+      // GH #165: a member whose model is not in the model list right now sits
+      // this round out. Asking for it anyway is how the backend came to answer
+      // under its name with whatever model it had loaded. It stays a member,
+      // shown as unavailable in the group menu, and speaks again once its
+      // model is listed again.
+      const listed = useModelStore.getState()
+      const models = availableGroupMembers(members, listed.models, listed.inventoryLoaded)
+
+      // GH #171: an attached text goes out whole when it fits, and as far as
+      // it fits otherwise. One user line reaches every speaker, so it is
+      // fitted to the smallest window at the table (all members when none is
+      // listed: then nobody answers and the size does not matter).
+      const sendFiles = await fitFilesForSend({
+        files: filesWithoutWorkspace(files),
+        models: models.length ? models : members,
+        use: 'chat',
+        otherText: requestTextOf(useChatStore.getState().conversations.find((c) => c.id === convId), content),
+      })
       useChatStore.getState().addMessage(convId, {
         id: uuid(),
         role: 'user',
         // An attached file reaches every speaker as its summary, inside the
         // one user line they all share (lib/chat-files.ts).
-        ...fileMessageFields(content, filesWithoutWorkspace(files)),
+        ...fileMessageFields(content, sendFiles),
         images,
         timestamp: Date.now(),
       })
+
+      if (models.length === 0) {
+        useChatStore.getState().addMessage(convId, {
+          id: uuid(),
+          role: 'system',
+          notice: 'info',
+          content: 'No model of this group is in the model list right now, so nobody answered. Load one of them again, or change the group under Plugins.',
+          timestamp: Date.now(),
+        })
+        return
+      }
 
       // The round holds the lane its SPEAKERS need. Mixed local+cloud speakers
       // hold the local lane: a single local speaker anywhere in the round still
@@ -814,7 +864,9 @@ export function useChat() {
     // continuation we pass the prior generation's args so a bare "nochmal" / "go"
     // reproduces the SAME media. Pure conversation still falls through to the fast
     // plain path below, untouched. (Agent mode already returned above.)
-    if (activeModel && settings.chatToolsEnabled !== false) {
+    // Always on since 3.0.7, wherever the model can call tools; a model that
+    // cannot goes on in plain chat (lib/chat-tools-reach.ts).
+    if (activeModel && chatToolsReach(activeModel, useModelStore.getState().models)) {
       const activeConv = store.conversations.find((c) => c.id === store.activeConversationId)
       const recent: ChatToolRouteMsg[] = (activeConv?.messages ?? [])
         .slice(-12)
@@ -862,7 +914,9 @@ export function useChat() {
 
     let convId = store.activeConversationId
     if (!convId) {
-      convId = store.createConversation(activeModel, persona?.systemPrompt || "")
+      convId = store.createConversation(activeModel, persona?.systemPrompt || "", undefined, {
+        persona: settings.personasEnabled ? persona : null,
+      })
     }
 
     // Re-entry guard (Runde 5 Folgeposten 2): claimed synchronously, no
@@ -893,19 +947,35 @@ export function useChat() {
     // first); it only fires on a path the body never reaches.
     try {
     const memoryScope = store.conversations.find(c => c.id === convId)?.memoryScope
+    // GH #171: an attached text goes out whole when it fits the model's
+    // context, and as far as it fits otherwise, with a line saying so.
+    const sendFiles = await fitFilesForSend({
+      files: filesWithoutWorkspace(files),
+      models: [activeModel],
+      use: 'chat',
+      otherText: requestTextOf(useChatStore.getState().conversations.find((c) => c.id === convId), content),
+    })
     const userMessage = {
       id: uuid(),
       role: "user" as const,
       // Plain chat has no file tools, so an attached file is its summary and
       // nothing else: name, type, hash, a hex dump of the start and the
-      // readable strings (lib/chat-files.ts). `content` below stays the typed
-      // text, which is what retrieval and memory search with.
-      ...fileMessageFields(content, filesWithoutWorkspace(files)),
+      // readable strings, or the text of a text file (lib/chat-files.ts).
+      // `content` below stays the typed text, which is what retrieval and
+      // memory search with.
+      ...fileMessageFields(content, sendFiles),
       images,
       timestamp: Date.now(),
     }
     useChatStore.getState().addMessage(convId, userMessage)
 
+    // GH #180: in a thread that has been a group, this turn records who wrote
+    // it, the chat's persona or the model alone, so turning group chat back
+    // on keeps it this speaker's.
+    const soloConv = useChatStore.getState().conversations.find((c) => c.id === convId)
+    const soloPersona = soloConv && hasGroupHistory(soloConv)
+      ? { persona: plainChatSpeaker(soloConv, useSettingsStore.getState().personas, useSettingsStore.getState().activePersonaId, settings.personasEnabled !== false) }
+      : null
     const assistantMessage = {
       id: uuid(),
       role: "assistant" as const,
@@ -917,6 +987,7 @@ export function useChat() {
       // rewritten every time the picker moves. Written here, at the turn, so
       // it is a measurement and not a guess.
       modelId: activeModel,
+      ...(soloPersona ? soloTurnAuthorFields(soloPersona.persona) : {}),
       timestamp: Date.now(),
     }
     useChatStore.getState().addMessage(convId, assistantMessage)
@@ -936,7 +1007,9 @@ export function useChat() {
     // flipped it on via the Plugins dropdown does the persona prompt
     // apply. Undefined / unset → suppress, so a globally selected
     // persona never silently hijacks a new chat.
-    let systemPrompt = buildChatSystemPrompt(conv, settings.personasEnabled !== false)
+    // GH #170: the persona of THIS chat, the one its Plugins menu names.
+    const { personas, activePersonaId } = useSettingsStore.getState()
+    let systemPrompt = buildChatSystemPrompt(withChatPersona(conv, personas, activePersonaId), settings.personasEnabled !== false)
     // Create: this plain path only runs with Create off (or with a model it
     // does not work with). The system prompt then stays character for
     // character what it was; only when this message plainly asks for a medium
@@ -990,7 +1063,7 @@ export function useChat() {
 
     // Memory context injection (context-aware, sanitized)
     try {
-      const contextTokens = await getModelMaxTokens(activeModel)
+      const contextTokens = await getChatWindowTokens(activeModel)
       modelWindowTokens = contextTokens
       // Embedding-first retrieval; falls back to keyword scoring offline.
       // excludeToolResults: this is a PLAIN chat (agent already delegated
@@ -1086,24 +1159,63 @@ export function useChat() {
     // request that is actually about to go out. Earlier would measure the
     // previous turn; later would be after the budget already trimmed.
     //
-    // Costs nothing when the opt-in was never taken — maybeAutoCompact reads
-    // the threshold first and returns on the cheap path.
-    if (settings.autoCompactThreshold) {
+    // Costs nothing when auto-compact is switched off: maybeAutoCompact reads
+    // the switch first and returns on the cheap path.
+    if (autoCompactOn(settings)) {
+      // 3.0.7: would the send budget below trim this payload? Then the
+      // summary goes first. The trim measures with the token estimate and the
+      // auto compact ratio with the server's own count; on text the tokenizer
+      // packs densely the estimate runs ahead, and the trim used to cut old
+      // turns while auto compact still read 'below' (Windows run, 32K). The
+      // probe is the payload below without its per message decorations, which
+      // are a few tokens each and do not move a 15 percent trigger.
+      const convBefore = useChatStore.getState().conversations.find((c) => c.id === convId) ?? conv
+      const trimImminent = sendBudgetWouldTrim(
+        [
+          ...(systemPrompt ? [{ role: 'system', content: systemPrompt }] : []),
+          ...applyStoredCompaction(
+            convBefore.messages.filter((m) => m.role !== 'system' && m.content.trim() !== ''),
+            convBefore.compactions,
+          ).messages.map((m) => ({ role: m.role, content: m.content, ...(m.tool_calls?.length ? { tool_calls: m.tool_calls } : {}) })),
+        ],
+        {
+          providerId,
+          modelWindow: modelWindowTokens,
+          sendWindowTokens: sendWindowFor(settings, activeModel),
+          contextDecay: settings.contextDecay,
+          localBackend: sendsToALanBackend(providerId, activeModel),
+        },
+      )
       await maybeAutoCompact({
         conversationId: convId,
         activeModel,
         window: modelWindowTokens,
-        // Plain chat resolves the window through getModelMaxTokens, which is
-        // the model's real trained context on Ollama and the catalogue value
-        // on cloud — not a fallback guess. Zero means the lookup failed, and
+        // Plain chat resolves the window through getChatWindowTokens: on
+        // Ollama the num_ctx this turn is sent with (GH #166), on cloud the
+        // catalogue value. Zero means the lookup failed, and
         // shouldAutoCompact refuses a zero window outright.
         windowIsTrue: modelWindowTokens > 0,
+        trimImminent,
       })
     }
     // Re-read: a compaction just wrote a record, and the payload below has to
     // see it. The binding above was taken before the turn started.
     const convNow = useChatStore.getState().conversations.find((c) => c.id === convId) ?? conv
 
+    // GH #180: a thread that has been a group keeps who said what. The other
+    // speakers' turns go out as tagged user turns, as in the group itself,
+    // instead of as this model's own.
+    const soloSpeakerMap = soloPersona ? soloSpeakers(activeModel, soloPersona.persona) : null
+    const soloAuthors = { groupPersonas: convNow.groupPersonas, personas }
+    const soloTagOf = (m: Message) => soloSpeakerMap ? soloHistoryTag(m, activeModel, soloSpeakerMap, soloAuthors) : null
+    if (soloSpeakerMap && convNow.messages.some((m) => soloTagOf(m))) {
+      systemPrompt = systemPrompt ? `${systemPrompt}\n\n${SOLO_HISTORY_LINE}` : SOLO_HISTORY_LINE
+    }
+
+    // GH #181: the chat persona's reminder, near the end of the payload and
+    // inside its budget, while the persona is on for the chat as its prompt
+    // is. On the wire only; the store keeps the transcript as written.
+    const personaNote = personaNoteOf(speakerPersonaFor(convNow, activeModel, personas, activePersonaId, settings.personasEnabled !== false))
     const messages = applyChatSendBudget(
       capMessageCount([
         ...(systemPrompt ? [{ role: "system" as const, content: systemPrompt }] : []),
@@ -1126,11 +1238,14 @@ export function useChat() {
           convNow.messages.filter((m) => m.role !== 'system' && m.content.trim() !== ''),
           convNow.compactions,
         ).messages
-          .map((m) => ({
-            role: m.role as 'user' | 'assistant' | 'tool',
-            content: m.role === 'user' && cavemanReminder
-              ? `${cavemanReminder}\n${m.content}`
-              : m.content,
+          .map((m) => ({ m, tag: soloTagOf(m) }))
+          .map(({ m, tag }) => ({
+            role: (tag ? 'user' : m.role) as 'user' | 'assistant' | 'tool',
+            content: tag
+              ? `[${tag}] ${m.content}`
+              : m.role === 'user' && cavemanReminder
+                ? `${cavemanReminder}\n${m.content}`
+                : m.content,
             ...(m.images?.length ? { images: m.images.map(img => ({ data: img.data, mimeType: img.mimeType })) } : {}),
             // Bug B3 round 2: a plain chat can hold tool turns, because the
             // chat tools (web_search and friends) run inside it by default.
@@ -1144,6 +1259,7 @@ export function useChat() {
           })),
       ]),
       {
+        note: personaNote,
         providerId,
         modelWindow: modelWindowTokens,
         sendWindowTokens: sendWindowFor(settings, activeModel),
@@ -1153,7 +1269,7 @@ export function useChat() {
         // LAN-Server wurde bei 64000 gekappt statt bei 209715. Ein Server im
         // eigenen Netz stellt keine Rechnung; jeder andere Sendepfad gibt es
         // schon mit (useAgentChat, useCodex, useABCompare, run-compact-command).
-        localBackend: sendsToALanBackend(providerId),
+        localBackend: sendsToALanBackend(providerId, activeModel),
       },
     ).messages
 
@@ -1238,8 +1354,8 @@ export function useChat() {
             : settings.thinkingEnabled === true)
         : undefined
       const chatOpts = {
-        ...buildSamplingRequest(settings, conv.sampling),
-        topK: settings.topK,
+        // GH #175: the chat persona's preset under this chat's own values.
+        ...speakerSamplingOptions(settings, conv, activeModel, personas, activePersonaId, settings.personasEnabled !== false),
         // An Ollama model runs this turn in its chat window. The number is
         // resolved where the request is built (api/ollama.ts), the same place
         // every other call to this model gets its window from.
@@ -1249,6 +1365,10 @@ export function useChat() {
         // Agent mode and the Coding Agent cannot drift apart; the provider
         // clamps the wish onto the ladder and ignores both without one.
         reasoningEffort: settings.reasoningEffort,
+        // A local model's rung only once the user picked one there (3.0.7).
+        localEffortChosen: settings.localEffortChosen,
+        // Think budget (D12): only the backends that take a count read it.
+        thinkingBudget: settings.thinkingBudget,
         effortLevels,
         effortDefault,
         signal: abort.signal,
@@ -1280,6 +1400,26 @@ export function useChat() {
               }
             }
             throw err
+          }
+          // 3.0.7: the engine refused the prompt as larger than its context
+          // ("request (38214 tokens) exceeds the available context size
+          // (32768 tokens)", Windows run, 32K window). The estimate that sized
+          // this payload ran short of the server's own count. Cut the history
+          // once to a budget under what the server named and send again; the
+          // refusal comes before any token, so nothing shows twice. A second
+          // refusal ends the turn as before. The store is never touched.
+          const overflow = contextOverflowOf(err)
+          if (overflow) {
+            type Wire = Parameters<typeof estimateMessageTokens>[0]
+            const sent = estimateMessageTokens(messages as unknown as Wire)
+            const next = shrunkSendWindow(sent, overflow, sent)
+            const cut = next !== null
+              ? (compactMessages(messages as unknown as Wire, next) as unknown as typeof messages)
+              : messages
+            if (cut === messages || cut.length >= messages.length) throw err
+            log.info('chat.context_overflow_retry', { sent, next, window: overflow.window, promptTokens: overflow.promptTokens, kept: cut.length })
+            yield* provider.chatStream(modelId, cut, chatOpts)
+            return
           }
           // The ONE place that answers "must thinking be downgraded?" —
           // hooks/codex/thinking-downgrade.ts. It reads the status through
@@ -1646,7 +1786,7 @@ export function useChat() {
       {
         const voice = useVoiceStore.getState()
         if (voice.ttsEnabled && voice.autoReadAloud && run.content.trim()) {
-          autoSpeak(run.content)
+          autoSpeak(run.convId, assistantMessage.id)
         }
       }
 
@@ -1739,45 +1879,57 @@ export function useChat() {
    * attachments included. Deleting only the ANSWER left the question in place
    * for sendMessage to add a second time — the thread grew one more copy of it
    * per click and the model was asked it twice.
+   *
+   * "Leaves the thread" means it is KEPT as a version since GH #172 and #174:
+   * it used to be deleted for good, and one click on an early message threw
+   * away hours of a story. `forkFrom` moves it aside, the new turn is the
+   * newest version, and "< 1/2 >" goes back. Returns false when nothing was
+   * sent, so the edit field can keep the text instead of losing it.
    */
-  const resend = useCallback((conversationId: string, targetId: string, override?: string) => {
+  const resend = useCallback((conversationId: string, targetId: string, override?: string): boolean => {
     // sendMessage bails without a model, with a model from the other mode, and
     // while this conversation's run is in flight; deleting first would eat
     // the question. The last two were missing (bug hunt 01.10.2026, H9).
     const { activeModel } = useModelStore.getState()
-    if (!activeModel || modelOutOfMode(activeModel, useSettingsStore.getState().settings.appMode)) return
-    if (activeChatRuns.has(conversationId)) return
+    if (!activeModel || modelOutOfMode(activeModel, useSettingsStore.getState().settings.appMode)) return false
+    if (activeChatRuns.has(conversationId)) return false
     // While an order of this chat is rendering, its card must stay: Regenerate
-    // and Edit delete messages, and a deleted card would leave a run that
-    // still books credits with nothing on screen to stop it.
-    if (useCreateOrderStore.getState().ordersFor(conversationId).some((o) => o.state === 'running')) return
+    // and Edit move messages aside, and a card out of view would leave a run
+    // that still books credits with nothing on screen to stop it.
+    if (useCreateOrderStore.getState().ordersFor(conversationId).some((o) => o.state === 'running')) return false
     const conv = useChatStore.getState().conversations.find(c => c.id === conversationId)
-    if (!conv) return
+    if (!conv) return false
     const plan = planResend(conv.messages, targetId, override)
-    if (!plan) return
+    if (!plan) return false
     if (plan.createReport) {
       // The comment after a Create run answers a hidden report. It goes out
       // hidden again; sent as an ordinary message it would stand in the chat
       // as something the customer wrote.
-      if (!createActive(useSettingsStore.getState().settings, activeModel)) return
-      useChatStore.getState().deleteMessagesAfter(conversationId, plan.deleteFromId)
-      sendCreateReport(conversationId, plan.content)
-      return
+      if (!createActive(useSettingsStore.getState().settings, activeModel)) return false
+      const key = useChatStore.getState().forkFrom(conversationId, plan.deleteFromId)
+      void Promise.resolve(sendCreateReport(conversationId, plan.content))
+        .finally(() => { if (key) useChatStore.getState().restoreEmptyFork(conversationId, key) })
+      return true
     }
     // Clips and sound tracks of the question, as far as the session still
     // holds their bytes.
     const anchor = conv.messages.find((m) => m.id === plan.deleteFromId)
     const media = anchor ? pendingMediaOf(anchor) : []
-    useChatStore.getState().deleteMessagesAfter(conversationId, plan.deleteFromId)
-    sendMessage(plan.content, plan.images, plan.files?.map((attachment) => ({ attachment })), media.length ? media : undefined)
+    const key = useChatStore.getState().forkFrom(conversationId, plan.deleteFromId)
+    // sendMessage has refusals of its own past the checks above. When one of
+    // them wrote nothing, the version that was shown comes back instead of a
+    // chat that ends where the question was.
+    void sendMessage(plan.content, plan.images, plan.files?.map((attachment) => ({ attachment })), media.length ? media : undefined)
+      .finally(() => { if (key) useChatStore.getState().restoreEmptyFork(conversationId, key) })
+    return true
   }, [sendMessage, sendCreateReport])
 
   const regenerateMessage = useCallback((conversationId: string, assistantMessageId: string) => {
     resend(conversationId, assistantMessageId)
   }, [resend])
 
-  const editAndResend = useCallback((conversationId: string, messageId: string, newContent: string) => {
-    resend(conversationId, messageId, newContent)
+  const editAndResend = useCallback((conversationId: string, messageId: string, newContent: string): boolean => {
+    return resend(conversationId, messageId, newContent)
   }, [resend])
 
   return {

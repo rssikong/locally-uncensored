@@ -381,6 +381,31 @@ const ASSUMED_BLOCK_COUNT: u32 = 16;
 /// would be printing the sentinel.
 const ALL_LAYERS: u32 = 999;
 
+/// What `-ngl` carries when the engine decides the layer count itself (GH
+/// #156). Written into argv as `auto`, read back as this number, so the retry
+/// and the restart ladder below see "layers on the card" and keep handing the
+/// same word on. Never shown to anyone: `gpu_layers_reported` drops it like
+/// `ALL_LAYERS`.
+const ENGINE_DECIDES: u32 = 998;
+
+/// Whether the auto default goes to llama-server's own fit instead of the plan
+/// below (GH #156).
+///
+/// A reading that is not free memory is a card's total from `detect_gpus`:
+/// every AMD and Intel card on Windows and Linux, which run the Vulkan build.
+/// The plan has to guess the rest from that total (a 2 GiB reserve and a
+/// fixed cache size per layer). GH #156 reports "-1" running as slow as the
+/// processor on a Navi 10 card where a typed 99 was fast, and this guess is
+/// the only place where the two differ (no log of that machine was seen, so
+/// the layer count it got is not known). The pinned llama-server measures the
+/// memory of the device it really uses (`-ngl auto` with `--fit`, on by
+/// default), so where LU cannot measure, the engine does. A measured-free
+/// reading (`nvidia-smi`) keeps the plan, and so does the Mac, whose unified
+/// memory the plan has always handled.
+pub(crate) fn engine_fits_layers(card: Option<&crate::commands::gpu::VramReading>, mac: bool) -> bool {
+    card.is_some_and(|c| !c.free) && !mac
+}
+
 /// The numbers an offload decision is made from. Plain values, so the
 /// arithmetic can be checked without a graphics card in the machine.
 #[derive(Debug, Clone, PartialEq)]
@@ -573,8 +598,18 @@ pub(crate) fn stderr_blames_the_image_part(stderr: &str) -> bool {
 /// The retry reads the number back OUT of the arguments instead of working it
 /// out a second time, so the decision it makes can never disagree with what
 /// the first attempt was actually told.
+///
+/// `auto` reads back as `ENGINE_DECIDES`: layers are meant for the card, the
+/// engine picks how many.
 pub(crate) fn gpu_layers_in(args: &[String]) -> Option<u32> {
-    args.windows(2).find(|w| w[0] == "-ngl").and_then(|w| w[1].parse().ok())
+    args.windows(2).find(|w| w[0] == "-ngl").and_then(|w| {
+        if w[1] == "auto" { Some(ENGINE_DECIDES) } else { w[1].parse().ok() }
+    })
+}
+
+/// The `-ngl` word for an argv: a count, or `auto` for `ENGINE_DECIDES`.
+fn ngl_arg(layers: u32) -> String {
+    if layers == ENGINE_DECIDES { "auto".into() } else { layers.to_string() }
 }
 
 /// The layer count a surface may show the user, `None` when the start asked
@@ -585,7 +620,7 @@ pub(crate) fn gpu_layers_in(args: &[String]) -> Option<u32> {
 /// decided against the card (or the user typed one), which is the only case
 /// worth a line on screen.
 pub(crate) fn gpu_layers_reported(args: &[String]) -> Option<u32> {
-    gpu_layers_in(args).filter(|n| *n != ALL_LAYERS)
+    gpu_layers_in(args).filter(|n| *n != ALL_LAYERS && *n != ENGINE_DECIDES)
 }
 
 /// The argv with the `-ngl <n>` pair removed, for the idempotence check.
@@ -631,7 +666,7 @@ pub(crate) fn build_server_args(model_path: &str, tuning: &EngineTuning, port: u
         effective_ctx(tuning).to_string(),
         "-ngl".into(),
         if tuning.gpu_layers < 0 {
-            auto_ngl.unwrap_or(ALL_LAYERS).to_string()
+            ngl_arg(auto_ngl.unwrap_or(ALL_LAYERS))
         } else {
             tuning.gpu_layers.to_string()
         },
@@ -1794,6 +1829,44 @@ pub(crate) fn pick_save_slot(slots: &serde_json::Value) -> u32 {
     best
 }
 
+/// Whether llama-server can save and restore a slot for an engine started with
+/// these arguments. Not with an image part: in the pinned b9949 every slot
+/// save, restore and erase first runs `check_no_mtmd`, which answers 501 "This
+/// feature is not supported by multimodal" as soon as a projector is loaded
+/// (tools/server/server-context.cpp). No flag of that build lifts the check
+/// while the projector stays loaded. `--no-mmproj` turns the image part off
+/// and counts as without one.
+pub(crate) fn kv_handoff_possible(args: &[String]) -> bool {
+    !args.iter().any(|a| {
+        let flag = a.split('=').next().unwrap_or(a);
+        matches!(flag, "--mmproj" | "-mm" | "--mmproj-url" | "-mmu")
+    })
+}
+
+/// The model the "no KV hand-off with an image part" line was last written
+/// for. One line per model and session, not one per render.
+static KV_SKIP_NOTED_FOR: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+/// Whether the skip line is due for this model, and remember that it was.
+fn kv_skip_note_due(model: &str) -> bool {
+    let mut noted = KV_SKIP_NOTED_FOR.lock().unwrap_or_else(|e| e.into_inner());
+    if noted.as_deref() == Some(model) {
+        return false;
+    }
+    *noted = Some(model.to_string());
+    true
+}
+
+fn note_kv_handoff_skipped(model: &str) {
+    if kv_skip_note_due(model) {
+        tracing::info!(
+            target: "engine",
+            model = %model,
+            "KV hand-off skipped: llama-server cannot save a slot while the model runs with its image part; the next turn after a render re-reads the history"
+        );
+    }
+}
+
 /// Save or restore llama-server's KV cache across the VRAM handoff (GH #85).
 /// The webview cannot fetch the engine port directly (CSP; all engine traffic
 /// rides the Rust proxy), so the handoff calls this instead. One fixed
@@ -1805,17 +1878,40 @@ pub(crate) fn pick_save_slot(slots: &serde_json::Value) -> u32 {
 /// slot, ctx mismatch after a settings change) and means the next turn
 /// re-processes the history, exactly the pre-#85 cost.
 #[tauri::command]
-pub async fn kv_slot_action(port: u16, action: String) -> Result<serde_json::Value, String> {
+pub async fn kv_slot_action(
+    port: u16,
+    action: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
     if action != "save" && action != "restore" {
         return Err("action must be 'save' or 'restore'".to_string());
     }
+    // An engine with an image part refuses both with 501 (box runs d307-b and
+    // d307-c, H1), so neither is sent there. See `kv_handoff_possible`.
+    let multimodal = {
+        let guard = state.bundled_engine.lock().unwrap();
+        guard
+            .as_ref()
+            .filter(|e| e.port == port && !kv_handoff_possible(&e.args))
+            .map(|e| e.model_path.clone())
+    };
+    if let Some(model) = multimodal {
+        note_kv_handoff_skipped(&model);
+        return Ok(serde_json::json!({ "ok": false, "skipped": "multimodal", "body": {} }));
+    }
+    // The slots are the engine's memory of a conversation, so they sit behind
+    // its key. The key goes only to a port an LU engine holds (engine_key.rs).
+    let ports = super::engine_key::engine_ports(&state);
     let slot_id = if action == "save" {
         match reqwest::Client::builder()
             .timeout(Duration::from_secs(5))
             .build()
         {
-            Ok(probe) => match probe
-                .get(format!("http://127.0.0.1:{port}/slots"))
+            Ok(probe) => match super::engine_key::authorize(
+                probe.get(format!("http://127.0.0.1:{port}/slots")),
+                &format!("http://127.0.0.1:{port}/slots"),
+                &ports,
+            )
                 .send()
                 .await
             {
@@ -1837,8 +1933,7 @@ pub async fn kv_slot_action(port: u16, action: String) -> Result<serde_json::Val
         .timeout(Duration::from_secs(120))
         .build()
         .map_err(|e| os_error::english(&e))?;
-    let res = client
-        .post(&url)
+    let res = super::engine_key::authorize(client.post(&url), &url, &ports)
         .json(&serde_json::json!({ "filename": "lu-handoff.bin" }))
         .send()
         .await
@@ -1926,7 +2021,7 @@ fn engine_healthy(port: u16) -> bool {
         .timeout(Duration::from_millis(400))
         .build()
         .ok()
-        .and_then(|c| c.get(format!("http://127.0.0.1:{port}/health")).send().ok())
+        .and_then(|c| super::engine_key::authorize_blocking(c.get(format!("http://127.0.0.1:{port}/health"))).send().ok())
         .map(|r| r.status().is_success())
         .unwrap_or(false)
 }
@@ -3194,8 +3289,22 @@ fn start_after_stop(
     // too small costs speed while too large costs the start.
     let ctx_size = effective_ctx(tuning);
     let auto_layers = tuning.gpu_layers < 0;
-    let (auto_ngl, part_fits) = if auto_layers {
-        let card = crate::commands::gpu::engine_vram_reading();
+    let auto_card = if auto_layers { crate::commands::gpu::engine_vram_reading() } else { None };
+    let (auto_ngl, part_fits) = if auto_layers && engine_fits_layers(auto_card.as_ref(), cfg!(target_os = "macos")) {
+        // GH #156: the card was not measured free, so the engine measures it.
+        // The image part stays: if it does not fit, the engine says so and
+        // the retry below starts again without it.
+        tracing::info!(
+            target: "engine",
+            vram_mib = auto_card.as_ref().map(|c| (c.bytes / (1024 * 1024)).to_string()).unwrap_or_else(|| "unknown".into()),
+            vram_source = auto_card.as_ref().map(|c| c.source).unwrap_or("none"),
+            ctx = ctx_size,
+            ngl = "auto",
+            "the card's free graphics memory was not measured, only its total, so the engine measures it and picks the layer count itself"
+        );
+        (Some(ENGINE_DECIDES), true)
+    } else if auto_layers {
+        let card = auto_card;
         let header = crate::commands::gguf::read_header(model_path);
         let plan = plan_offload(&OffloadInputs {
             model_bytes: std::fs::metadata(model_path).map(|m| m.len()).unwrap_or(0),
@@ -3505,7 +3614,11 @@ fn serve_or_heal_garbled(
     let mut answer = started_answer(port, model_path, ctx);
     // Measured once, from what llama-server itself printed on its way up. A
     // restart does not change the card, so this is not asked again.
-    let no_matrix_cores = engine_sanity::device_without_matrix_cores(startup).unwrap_or(false);
+    // GH #156: the pinned Vulkan build never prints its device line, so on
+    // Windows and Linux silence counts as "may have none" (see
+    // `may_lack_matrix_cores`). The Mac runs Metal.
+    let no_matrix_cores = engine_sanity::may_lack_matrix_cores(startup, !cfg!(target_os = "macos"));
+    let matrix_cores = engine_sanity::matrix_cores_label(startup);
     // What the engine currently runs with. Both move as the ladder is climbed,
     // and both are read back out of the argv that was actually spawned.
     let mut serving = tuning.clone();
@@ -3545,9 +3658,10 @@ fn serve_or_heal_garbled(
             port,
             verdict = engine_sanity::verdict_label(probe.verdict, probe.still_thinking),
             ms = probe.took.as_millis() as u64,
-            ngl = facts.gpu_layers.map(|n| n.to_string()).unwrap_or_else(|| "none".into()),
+            ngl = facts.gpu_layers.map(ngl_arg).unwrap_or_else(|| "none".into()),
             flash_attention = facts.flash_attention_on,
-            matrix_cores = !no_matrix_cores,
+            matrix_cores,
+            flash_attention_rung = no_matrix_cores,
             answer = %probe.sample,
             "sanity probe on the LU Engine"
         );
@@ -3778,6 +3892,8 @@ fn spawn_engine_attempt(
         "starting the LU Engine llama-server"
     );
     let mut cmd = Command::new(binary);
+    // The key the engine answers to, in its environment (engine_key.rs).
+    super::engine_key::apply(&mut cmd);
     cmd.args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -4448,7 +4564,10 @@ pub(crate) fn scan_lmstudio_models(root: &Path) -> Vec<ImportCandidate> {
 
 /// Hard link src into dest_dir under the sanitized name. Deliberately no copy
 /// fallback: a copy would eat the disk twice for a 10 GB model, and the error
-/// tells the user the honest way out (same drive, or move the models folder).
+/// tells the user the honest way out. That way out only holds because the
+/// import links into the LU Engine folder set under Model Storage when there
+/// is one (see `import_dest_dir`): pointing that folder at the drive of the
+/// file is then what makes the next import work.
 pub(crate) fn import_model_file(src: &Path, dest_dir: &Path, name: &str) -> Result<PathBuf, String> {
     if !src.is_file() {
         return Err(format!("Source model not found: {}", src.display()));
@@ -4463,9 +4582,10 @@ pub(crate) fn import_model_file(src: &Path, dest_dir: &Path, name: &str) -> Resu
     std::fs::hard_link(src, &target).map_err(|e| {
         format!(
             "Could not link the model into the LU Engine folder ({e}). \
-             Linking needs source and destination on the same drive. \
-             Move the models folder (Settings, Model Storage) to that drive, \
-             or copy the file there yourself."
+             Linking needs the model file and the LU Engine folder on the same drive. \
+             Set the LU Engine folder (Settings, AI Backends, Model Storage) to a folder \
+             on the drive of the model file and import again, or copy the file into the \
+             LU Engine folder yourself."
         )
     })?;
     // A vision model without its projector loads and answers but cannot see, so
@@ -4484,9 +4604,11 @@ pub(crate) fn import_model_file(src: &Path, dest_dir: &Path, name: &str) -> Resu
 /// built-in engine. Candidates whose target file already exists are flagged
 /// instead of hidden so the UI can show them as done.
 #[tauri::command]
-pub async fn list_importable_models() -> Result<serde_json::Value, String> {
-    tokio::task::spawn_blocking(|| {
-        let dest = builtin_models_dir()?;
+pub async fn list_importable_models(dest_dir: Option<String>) -> Result<serde_json::Value, String> {
+    tokio::task::spawn_blocking(move || {
+        // Both folders count: a model imported before the LU Engine folder
+        // was set sits in LU's own folder and is still listed from there.
+        let dests = [import_dest_dir(dest_dir.as_deref())?, builtin_models_dir()?];
         let home = dirs::home_dir().ok_or("Cannot resolve home directory")?;
         let mut all = scan_ollama_models(&home.join(".ollama").join("models"));
         let lm_primary = home.join(".lmstudio").join("models");
@@ -4497,7 +4619,8 @@ pub async fn list_importable_models() -> Result<serde_json::Value, String> {
         };
         all.extend(scan_lmstudio_models(&lm));
         for c in &mut all {
-            c.already_imported = dest.join(sanitize_model_file_name(&c.name)).exists();
+            let file = sanitize_model_file_name(&c.name);
+            c.already_imported = dests.iter().any(|d| d.join(&file).exists());
         }
         Ok(serde_json::json!({ "candidates": all }))
     })
@@ -4505,12 +4628,47 @@ pub async fn list_importable_models() -> Result<serde_json::Value, String> {
     .map_err(|e| format!("list_importable_models task: {e}"))?
 }
 
-/// Link one candidate into the built-in models dir (zero copy hard link).
+/// Where an import lands: the LU Engine folder the user set under Model
+/// Storage, else the app's own models dir. The set folder is where downloads
+/// go and what the listing reads, and it is the one folder the user can move
+/// to another drive, which is what the cross drive error tells him to do.
+pub(crate) fn import_dest_dir(dest_dir: Option<&str>) -> Result<PathBuf, String> {
+    match dest_dir.map(str::trim).filter(|d| !d.is_empty()) {
+        Some(dir) => {
+            let dir = PathBuf::from(dir);
+            std::fs::create_dir_all(&dir).map_err(|e| {
+                format!("Create LU Engine folder {}: {}", dir.display(), os_error::english(&e))
+            })?;
+            Ok(dir)
+        }
+        None => builtin_models_dir(),
+    }
+}
+
+/// D17: the system open dialog for one GGUF anywhere on the drive. Returns
+/// the path, or None when the dialog was cancelled. The frontend hands the
+/// path to `import_local_model`, the same link as the Ollama and LM Studio
+/// import.
+#[tauri::command]
+pub async fn pick_gguf_file() -> Result<Option<String>, String> {
+    let picked = rfd::AsyncFileDialog::new()
+        .set_title("Choose a GGUF model")
+        .add_filter("GGUF model", &["gguf", "GGUF"])
+        .pick_file()
+        .await;
+    Ok(picked.map(|f| f.path().to_string_lossy().to_string()))
+}
+
+/// Link one candidate into the LU Engine folder (zero copy hard link).
 /// The next list_bundled_models picks it up like any downloaded GGUF.
 #[tauri::command]
-pub async fn import_local_model(path: String, name: String) -> Result<serde_json::Value, String> {
+pub async fn import_local_model(
+    path: String,
+    name: String,
+    dest_dir: Option<String>,
+) -> Result<serde_json::Value, String> {
     tokio::task::spawn_blocking(move || {
-        let dest = builtin_models_dir()?;
+        let dest = import_dest_dir(dest_dir.as_deref())?;
         let target = import_model_file(Path::new(&path), &dest, &name)?;
         Ok(serde_json::json!({ "path": target.to_string_lossy() }))
     })
@@ -4771,6 +4929,7 @@ fn start_bundled_embed_blocking(
         "starting the LU Engine embeddings server"
     );
     let mut cmd = Command::new(&binary);
+    super::engine_key::apply(&mut cmd);
     cmd.args(&embed_args)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -5690,6 +5849,62 @@ mod tests {
         // not a panic.
         let p = plan(THREE_B_Q4, Some(THREE_B_BLOCKS), Some(256 * 1024 * 1024), 8192);
         assert_eq!(p.layers, Some(0), "{}", p.why);
+    }
+
+    #[test]
+    fn gh156_auto_on_a_card_only_its_total_is_known_of_goes_to_the_engine() {
+        use crate::commands::gpu::VramReading;
+        // The RX 5700 of GH #156: Vulkan, no nvidia-smi, the card's total out
+        // of sysfs or the registry. The engine measures, LU does not guess.
+        let total = VramReading { bytes: 8176 * 1024 * 1024, free: false, source: "detect_gpus" };
+        assert!(engine_fits_layers(Some(&total), false), "an AMD or Intel card on Windows or Linux");
+        // A measured-free reading keeps the plan, and so does the Mac.
+        let measured = VramReading { bytes: 7000 * 1024 * 1024, free: true, source: "nvidia-smi" };
+        assert!(!engine_fits_layers(Some(&measured), false), "nvidia-smi measured it");
+        assert!(!engine_fits_layers(Some(&total), true), "the Mac keeps its plan");
+        // Nothing measured at all: every layer, as it always was.
+        assert!(!engine_fits_layers(None, false));
+
+        let auto = EngineTuning::default();
+        assert_eq!(auto.gpu_layers, -1);
+        let args = build_server_args("/m.gguf", &auto, 8127, None, None, Some(ENGINE_DECIDES));
+        let at = args.iter().position(|a| a == "-ngl").expect("-ngl in argv");
+        assert_eq!(args[at + 1], "auto", "llama-server gets its own word, not a number LU made up");
+        assert!(!args.iter().any(|a| a == "--fit"), "fit is on by default in the pinned engine");
+    }
+
+    #[test]
+    fn gh156_auto_by_the_engine_counts_as_layers_on_the_card_everywhere_after() {
+        let auto = EngineTuning::default();
+        let args = build_server_args("/m.gguf", &auto, 8127, None, None, Some(ENGINE_DECIDES));
+        // The died-on-start retry takes the card out: layers were on it.
+        assert!(gpu_layers_in(&args).is_some_and(|n| n > 0));
+        // The sanity ladder sees a card it can take away, not "nothing to give up".
+        let facts = crate::commands::engine_sanity::EngineFacts {
+            gpu_layers: gpu_layers_in(&args),
+            flash_attention_on: true,
+            every_device_without_matrix_cores: false,
+        };
+        assert_eq!(
+            crate::commands::engine_sanity::decide(crate::commands::engine_sanity::Sanity::Garbled(crate::commands::engine_sanity::Garble::Replacement), &facts),
+            crate::commands::engine_sanity::AfterProbe::RestartOnCpu
+        );
+        // A restart that keeps the layer count hands the same word on.
+        let again = build_server_args("/m.gguf", &auto, 8127, None, None, gpu_layers_in(&args));
+        assert_eq!(gpu_layers_in(&again), Some(ENGINE_DECIDES));
+        assert!(again.windows(2).any(|w| w[0] == "-ngl" && w[1] == "auto"));
+        // The processor rung is a typed 0 and beats it.
+        let cpu = on_the_processor(&auto);
+        assert_eq!(gpu_layers_in(&build_server_args("/m.gguf", &cpu, 8127, None, None, gpu_layers_in(&args))), Some(0));
+        // Nobody is shown the sentinel, and the idempotence check ignores it.
+        assert_eq!(gpu_layers_reported(&args), None);
+        assert_eq!(
+            argv_without_gpu_layers(&args),
+            argv_without_gpu_layers(&build_server_args("/m.gguf", &auto, 8127, None, None, None))
+        );
+        // A typed count still wins over the engine's word.
+        let typed = EngineTuning { gpu_layers: 20, ..Default::default() };
+        assert_eq!(gpu_layers_in(&build_server_args("/m.gguf", &typed, 8127, None, None, Some(ENGINE_DECIDES))), Some(20));
     }
 
     #[test]
@@ -9126,6 +9341,33 @@ srv    llama_server: exiting due to model loading error";
         let missing = import_model_file(&store.path().join("nope"), dest.path(), "x");
         assert!(missing.unwrap_err().contains("not found"));
     }
+
+    #[test]
+    fn import_lands_in_the_set_lu_engine_folder() {
+        let root = tempfile::tempdir().unwrap();
+        let set = root.path().join("on the other drive").join("models");
+        // The set folder wins and is created when it is not there yet.
+        assert_eq!(import_dest_dir(Some(set.to_str().unwrap())).unwrap(), set);
+        assert!(set.is_dir());
+        // Negative control: no folder set, or only blanks, is the app's own
+        // models dir, the folder the import always used before.
+        let own = builtin_models_dir().unwrap();
+        assert_eq!(import_dest_dir(None).unwrap(), own);
+        assert_eq!(import_dest_dir(Some("   ")).unwrap(), own);
+    }
+
+    #[test]
+    fn the_cross_drive_error_names_the_lu_engine_folder_setting() {
+        let dest = tempfile::tempdir().unwrap();
+        // A source that is a file but whose link cannot be made: the target
+        // folder does not exist, so hard_link fails and the error is shown.
+        let store = tempfile::tempdir().unwrap();
+        let src = store.path().join("m.gguf");
+        std::fs::write(&src, b"w").unwrap();
+        let err = import_model_file(&src, &dest.path().join("gone"), "m").unwrap_err();
+        assert!(err.contains("LU Engine folder (Settings, AI Backends, Model Storage)"), "{err}");
+        assert!(!err.contains("Move the models folder"), "{err}");
+    }
 }
 
 #[cfg(test)]
@@ -9235,7 +9477,45 @@ mod orphaned_sidecar_tests {
 
 #[cfg(test)]
 mod diag_tests {
-    use super::{pick_save_slot, tail_lines};
+    use super::{kv_handoff_possible, kv_skip_note_due, pick_save_slot, tail_lines};
+
+    #[test]
+    fn an_engine_with_an_image_part_gets_no_kv_handoff() {
+        let argv = |extra: &[&str]| -> Vec<String> {
+            ["-m", "/m/gemma.gguf", "--port", "8127", "--ctx-size", "8192"]
+                .iter()
+                .chain(extra.iter())
+                .map(|s| s.to_string())
+                .collect()
+        };
+        assert!(kv_handoff_possible(&argv(&[])));
+        assert!(!kv_handoff_possible(&argv(&["--mmproj", "/m/gemma.mmproj.gguf"])));
+        assert!(!kv_handoff_possible(&argv(&["-mm", "/m/gemma.mmproj.gguf"])));
+        assert!(!kv_handoff_possible(&argv(&["--mmproj=/m/gemma.mmproj.gguf"])));
+        assert!(!kv_handoff_possible(&argv(&["--mmproj-url", "https://example.invalid/p.gguf"])));
+        assert!(kv_handoff_possible(&argv(&["--no-mmproj"])));
+        assert!(kv_handoff_possible(&argv(&["--no-mmproj-offload"])));
+        // The argv LU itself builds for a model with an image part.
+        let ours = super::build_server_args(
+            "/m/gemma.gguf",
+            &super::EngineTuning::default(),
+            8127,
+            Some("/data/kv-slots"),
+            Some("/m/gemma.mmproj.gguf"),
+            None,
+        );
+        assert!(!kv_handoff_possible(&ours));
+        let text_only = super::build_server_args("/m/qwen.gguf", &super::EngineTuning::default(), 8127, Some("/data/kv-slots"), None, None);
+        assert!(kv_handoff_possible(&text_only));
+    }
+
+    #[test]
+    fn the_skip_is_said_once_per_model_not_once_per_render() {
+        assert!(kv_skip_note_due("/m/test-once-a.gguf"));
+        assert!(!kv_skip_note_due("/m/test-once-a.gguf"));
+        assert!(!kv_skip_note_due("/m/test-once-a.gguf"));
+        assert!(kv_skip_note_due("/m/test-once-b.gguf"));
+    }
 
     #[test]
     fn tail_keeps_the_last_lines_and_drops_blanks() {

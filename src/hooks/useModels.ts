@@ -30,7 +30,7 @@ import { useModelStore } from '../stores/modelStore'
 import { errorText } from '../types/json-guards'
 import { useProviderStore } from '../stores/providerStore'
 import { useSettingsStore } from '../stores/settingsStore'
-import { getEnabledProviders, prefixModelName, getProviderIdFromModel } from '../api/providers'
+import { getEnabledProviders, prefixModelName, getProviderIdFromModel, isOpenAISlotModel } from '../api/providers'
 import {
   listBundledModels, bundledToAIModels, activateBuiltinModel, isManagedBuiltinActive,
   bundledEngineStatus, bundledEmbedStatus, startBundledEmbed,
@@ -230,8 +230,10 @@ export function useModels() {
       // `list_bundled_models` command), NOT `/v1/models` (which reports only the
       // single loaded model). Skip the openai client's listModels for it.
       const managedBuiltin = isManagedBuiltinActive()
+      // Only the slot itself is the engine; an additional OpenAI-compatible
+      // entry (GitHub #173) lists its own models as usual.
       const providers = getEnabledProviders().filter(
-        (p) => !(managedBuiltin && p.id === 'openai'),
+        (p) => !(managedBuiltin && p.id === 'openai' && !p.entryId),
       )
       const providerResults = await Promise.allSettled(
         providers.map(async (provider) => {
@@ -381,11 +383,14 @@ export function useModels() {
         // LM Studio den Steckplatz haelt, verschwand `Qwen3-4B-Q4_K_M`, eine
         // echte installierte Datei des Kunden von 2,3 GB, aus dem Waehler und
         // von der Models-Seite, ohne ein Wort.
-        const eigeneBleiben = dropDuplicateLuEngineRows(bundled, allModels)
+        // GitHub #173: rows of an additional entry are a backend of their own
+        // next to the slot; they never fold our engine's rows away.
+        const slotRows = allModels.filter((m) => !('providerEntry' in m && m.providerEntry))
+        const eigeneBleiben = dropDuplicateLuEngineRows(bundled, slotRows)
         eingeklappt = zeileZumEinklappen(
           bundled.length - eigeneBleiben.length,
           LU_ENGINE_GROUP,
-          allModels.find(isLmStudioEntry)?.providerName ?? null,
+          slotRows.find(isLmStudioEntry)?.providerName ?? null,
         )
         allModels.push(...eigeneBleiben)
         // Die Chat-Engine wird hoechstens EINMAL je Sitzung von hier aus
@@ -702,7 +707,9 @@ export function useModels() {
     const vorherAktiv = useModelStore.getState().activeModel
     setActiveModel(name)
     const cfg = useProviderStore.getState().providers.openai
-    if (cfg.enabled && cfg.managed && getProviderIdFromModel(name) === 'openai') {
+    // isOpenAISlotModel: a model of an additional entry (GitHub #173) is
+    // never our engine's, even while the engine holds the slot.
+    if (cfg.enabled && cfg.managed && isOpenAISlotModel(name)) {
       // A14 third review: this used to be `.catch(() => {})`. A dead
       // llama-server then left the slot handed over, the Ollama model already
       // unloaded to make room, and one cheerful line on screen saying the chat

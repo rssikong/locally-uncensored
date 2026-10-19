@@ -8,7 +8,7 @@
 import { describe, it, expect } from 'vitest'
 import fs from 'node:fs'
 import path from 'node:path'
-import { baseDownloadRunning, baseDownloadPercent, TRAINER_BASE_FILES } from '../trainer'
+import { baseDownloadRunning, baseDownloadPercent, missingTrainerBases, missingBasesLine, aboutSize, TRAINER_BASE_FILES } from '../trainer'
 
 describe('baseDownloadRunning', () => {
   it('is true while any base file downloads or connects', () => {
@@ -59,7 +59,48 @@ describe('baseDownloadPercent', () => {
 
   it('feeds the note under the button', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', '..', 'components', 'create', 'experimental', 'SpecialIntentControls.tsx'), 'utf8')
-    expect(src).toContain('const pct = baseDownloadPercent(prog)')
-    expect(src).toContain('Downloading base files (${pct}% of about 19 GB)...')
+    expect(src).toContain('const pct = baseDownloadPercent(prog, fetching.length ? fetching.map((f) => f.filename) : undefined)')
+    expect(src).toContain('Downloading base files (${pct}% of ${size})...')
+    expect(src).not.toContain('about 19 GB')
+  })
+
+  it('counts only the files being fetched when told which', () => {
+    // Box run: qwen_3_4b and ae were already there, only z_image_bf16 loaded.
+    // A finished ae row from earlier must not pad the percent.
+    const pct = baseDownloadPercent({
+      [vae]: { status: 'complete', progress: 335, total: 335 },
+      [dit]: { status: 'downloading', progress: 1200, total: 12000 },
+    }, [dit])
+    expect(pct).toBe(10)
+  })
+})
+
+describe('missing base files are named and sized', () => {
+  const none = { dit: null, textEncoder: null, vae: null }
+  const all = { dit: '/m/z.safetensors', textEncoder: '/m/q.safetensors', vae: '/m/ae.safetensors' }
+
+  it('takes the backend list when it sends one', () => {
+    const only = missingTrainerBases({ ...all, dit: null, missingBases: [{ filename: 'z_image_bf16.safetensors', bytes: 12_309_866_400 }] })
+    expect(only.map((f) => f.filename)).toEqual(['z_image_bf16.safetensors'])
+    expect(missingTrainerBases({ ...all, missingBases: [] })).toEqual([])
+  })
+
+  it('falls back to the resolved paths for an older backend', () => {
+    expect(missingTrainerBases(none)).toHaveLength(3)
+    expect(missingTrainerBases({ ...all, dit: null }).map((f) => f.filename)).toEqual(['z_image_bf16.safetensors'])
+    expect(missingTrainerBases(all)).toEqual([])
+  })
+
+  it('says the size of what is missing, not always 19 GB', () => {
+    expect(missingBasesLine(TRAINER_BASE_FILES)).toBe('Z Image training base files are missing (about 19 GB, one time).')
+    expect(missingBasesLine(missingTrainerBases({ ...all, dit: null }))).toBe('Missing for Z Image training: Z Image base model (about 11 GB, one time).')
+    expect(missingBasesLine(missingTrainerBases({ ...all, textEncoder: null, vae: null }))).toBe('Missing for Z Image training: Text encoder, VAE (about 7.8 GB, one time).')
+    expect(missingBasesLine(missingTrainerBases({ ...all, vae: null }))).toBe('Missing for Z Image training: VAE (about 320 MB, one time).')
+  })
+
+  it('rounds sizes the way the rest of the app quotes them', () => {
+    expect(aboutSize(12_309_866_400)).toBe('about 11 GB')
+    expect(aboutSize(8_044_982_048)).toBe('about 7.5 GB')
+    expect(aboutSize(335_304_388)).toBe('about 320 MB')
   })
 })

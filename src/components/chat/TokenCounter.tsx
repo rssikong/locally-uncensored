@@ -3,7 +3,7 @@ import { computeContextFill } from '../../lib/token-usage'
 import { useActiveContextWindow } from '../../hooks/useActiveContextWindow'
 import { useSendSizeStore } from '../../stores/sendSizeStore'
 import { useSettingsStore } from '../../stores/settingsStore'
-import { shouldAutoCompact, autoCompactHint } from '../../lib/compact-trigger'
+import { shouldAutoCompact, autoCompactHint, resolveCompactThreshold } from '../../lib/compact-trigger'
 import { newestCompaction, isModelVisible } from '../../lib/run-compact-command'
 // Dieselbe Schreibweise wie die Klapplade darunter. Vorher stand hier
 // 8192/1000 und dort 8192/1024, also `8.2k` neben `8K` fuer eine einzige Zahl
@@ -14,6 +14,9 @@ import { formatContextWindow } from '../../lib/formatters'
 // eine geratene fuer eine Zusage gehalten.
 import { SOURCE_LABEL } from '../../lib/context-source'
 import { HINWEIS_TEXT, PUNKT_FARBE } from '../../lib/hinweis'
+import { useGenerationStore } from '../../stores/generationStore'
+import { groupCounterSpeaker } from '../../lib/group-counter'
+import { groupSpeakers } from '../../lib/group-chat'
 
 export function TokenCounter() {
   const activeConversationId = useChatStore((s) => s.activeConversationId)
@@ -26,7 +29,19 @@ export function TokenCounter() {
   // provider-aware and shared with the Context dropdown so the two never drift
   // (the owner: "muss immer stimmen"). Ollama = the num_ctx we send; LM Studio =
   // loaded_context_length (what it actually loaded), NOT the model's max.
-  const ctx = useActiveContextWindow()
+  // GH #167: in a group chat the counter belongs to one speaker, the one
+  // answering now or the one opening the next round, and says which. Its
+  // window, its own usage anchor, its name (lib/group-counter.ts).
+  const conversation = conversations.find((c) => c.id === activeConversationId)
+  const generating = useGenerationStore((s) => !!(activeConversationId && s.generating[activeConversationId]))
+  const personas = useSettingsStore((s) => s.personas)
+  const speaker = groupCounterSpeaker(
+    conversation?.messages ?? [],
+    conversation?.groupModels,
+    generating,
+    conversation?.groupModels ? groupSpeakers(conversation.groupModels, conversation.groupPersonas, personas) : undefined,
+  )
+  const ctx = useActiveContextWindow(0, speaker?.model)
   // MUSS vor dem fruehen `return null` weiter unten stehen. Als dieser Hook
   // dort unten bei seiner Verwendung stand, hatte die Komponente vier Hooks im
   // leeren Chat und fuenf im gefuellten — React 19 wirft dann beim Uebergang
@@ -34,9 +49,9 @@ export function TokenCounter() {
   // Absturz, kein Warnhinweis. Der Weg dorthin ist alltaeglich: neuer Chat mit
   // einem Cloud-Modell (ContextDropdown rendert die Kinder auch, wenn das
   // Fenster nicht verstellbar ist), erste Nachricht — fertig.
-  const autoSchwelle = useSettingsStore((s) => s.settings.autoCompactThreshold)
+  const autoAn = useSettingsStore((s) => s.settings.autoCompact)
+  const autoSchwelleEingestellt = useSettingsStore((s) => s.settings.autoCompactThreshold)
 
-  const conversation = conversations.find((c) => c.id === activeConversationId)
   const messages = conversation?.messages || []
 
   // Context fill = what the NEXT request will roughly send, anchored on the
@@ -53,9 +68,10 @@ export function TokenCounter() {
   // coding run, worst exactly where it is otherwise near zero.
   const fill = computeContextFill(
     messages,
-    sent
+    sent && !speaker
       ? { tokens: sent.tokens + sent.toolsTokens, atMessageCount: sent.atMessageCount }
       : undefined,
+    speaker ? { anchorModelId: speaker.model } : undefined,
   )
   const rawUsed = fill.used
 
@@ -131,7 +147,15 @@ export function TokenCounter() {
   // die spaeter auch entscheidet, ist der einzige Weg, bei dem Anzeige und
   // Verhalten nicht auseinanderlaufen koennen.
   const sichtbareAnzahl = messages.filter(isModelVisible).length
-  const autoUrteil = autoSchwelle
+  // Dieselbe Aufloesung wie im Ausloeser: aus, feste Zahl, oder passend zum
+  // Fenster (seit 3.0.7 der Normalfall).
+  const autoSchwelle = resolveCompactThreshold(
+    { autoCompact: autoAn, autoCompactThreshold: autoSchwelleEingestellt },
+    maxTokens,
+    // Die 32K-Regel gilt fuer das Modellfenster, nicht fuer das Sendefenster.
+    ctx.contextWindow > 0 ? ctx.contextWindow : maxTokens,
+  )
+  const autoUrteil = autoSchwelle !== null
     ? shouldAutoCompact({
         used: rawUsed,
         window: maxTokens,
@@ -147,13 +171,14 @@ export function TokenCounter() {
       })
     : null
   const autoHinweis = autoCompactHint(autoUrteil)
+  const speakerTitle = speaker ? `${speaker.label}, the speaker this counter follows. ${title}` : title
 
   // `span`, nicht `div`, und ohne eigenes Padding: seit D-S06 ist dieser
   // Fuellstand die Beschriftung INNERHALB des Kontextfenster-Knopfes
   // (`ContextDropdown`). Ein `div` im `<button>` ist kein gueltiges
   // Phrasing-Content, und das Padding kam sonst zweimal.
   return (
-    <span className={`inline-flex items-center gap-1.5 ${color}`} title={autoHinweis ? `${title}. ${autoHinweis}` : title}>
+    <span className={`inline-flex items-center gap-1.5 ${color}`} title={autoHinweis ? `${speakerTitle}. ${autoHinweis}` : speakerTitle}>
       <span className="relative block w-12 h-1 rounded-full bg-gray-200 dark:bg-white/10 overflow-hidden">
         <span
           className={`block h-full rounded-full transition-[width] duration-[var(--motion-slow)] ${barColor}`}
@@ -174,6 +199,9 @@ export function TokenCounter() {
       </span>
       {/* `font-mono tabular-nums` war dasselbe Rezept, nur an der Call-Site
           buchstabiert. `.lu-hud-num` ist die eine Stelle, an der es steht. */}
+      {speaker && (
+        <span data-testid="counter-speaker" className="text-[0.55rem] truncate max-w-[7rem]">{speaker.label}:</span>
+      )}
       <span className="text-[0.55rem] lu-hud-num">
         {formatContextWindow(usedTokens)}/{formatContextWindow(maxTokens)}
       </span>

@@ -231,12 +231,12 @@ describe.each(QWEN21_WEIGHTS)('buildDynamicWorkflow with the encoder without ref
     expect(withEncoder(free, OFFICIAL)).toEqual(official)
   })
 
-  it('the edit graph carries the source and all three references', async () => {
-    const { free } = await bothGraphs({ inputImage: 'scene.png', denoise: 0.7, referenceImages: ['a.png', 'b.png', 'c.png', 'd.png'] })
+  it('the edit graph carries the source and all nine references', async () => {
+    const { free } = await bothGraphs({ inputImage: 'scene.png', denoise: 0.7, referenceImages: 'abcdefghij'.split('').map((n) => `${n}.png`) })
     const enc = nodeOf(free, 'TextEncodeQwenImage21')![1]
     expect(enc.inputs['images.image_1']).toBeDefined()
-    expect(enc.inputs['images.image_4']).toBeDefined()
-    expect(enc.inputs['images.image_5']).toBeUndefined()
+    expect(enc.inputs['images.image_10']).toBeDefined()
+    expect(enc.inputs['images.image_11']).toBeUndefined()
   })
 
   it('both installed: the run loads the edition the user picked', async () => {
@@ -283,7 +283,7 @@ describe.each(QWEN21_WEIGHTS)('buildDynamicWorkflow with the encoder without ref
 describe.each(QWEN21_WEIGHTS)('what the family can do does not depend on the encoder, %s', (_weights, MODEL) => {
   it('reference slots, transparent background and the tier come from the image model', () => {
     const type = classifyModel(MODEL)
-    expect(extraReferenceSlots(type, MODEL)).toBe(3)
+    expect(extraReferenceSlots(type, MODEL)).toBe(9)
     expect(supportsTransparent(type)).toBe(true)
     expect(localTier({ name: MODEL, type })).toBe('best')
   })

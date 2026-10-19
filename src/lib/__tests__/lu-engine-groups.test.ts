@@ -135,7 +135,10 @@ describe('splitBackendSwitchRows, ein fremdes Backend HAELT den Platz', () => {
     const src = readFileSync(
       resolve(__dirname, '..', '..', 'components/models/ModelSelector.tsx'), 'utf8',
     )
-    expect(src).toContain('splitBackendSwitchRows(textModels, luEngineHoldsChat, standbyName, holderName)')
+    // GitHub #173: the rows of additional entries are split off first and
+    // never take part in the slot's switch logic.
+    expect(src).toContain('const { entryGroups, slotRows } = splitEntryRows(textModels)')
+    expect(src).toContain('splitBackendSwitchRows(slotRows, luEngineHoldsChat, standbyName, holderName)')
     expect(src).toContain('wechsel.holding.length > 0 && wechsel.holderLabel')
   })
 })

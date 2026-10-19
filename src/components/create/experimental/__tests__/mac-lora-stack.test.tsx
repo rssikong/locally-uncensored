@@ -7,7 +7,9 @@
  * nothing else. What these cases hold:
  *
  *   the stack stands for a model of the second engine, in Image and in Edit,
- *   it does not for a model of the first engine, for video or in the cloud,
+ *   it does not for a model of the first engine or in the cloud,
+ *   for video it stands for the models whose engine takes `--lora` (since
+ *   14.10.2026, see the last block),
  *   it is handled as on Windows: tick, strength, untick, Clear, Rescan,
  *   it names the Mac's folder and opens it, and never ComfyUI,
  *   and Windows shows what it showed before.
@@ -70,8 +72,14 @@ describe('where the Mac shows the LoRA stack', () => {
       expect(screen.getByText(/^LoRA stack/), `${pick.name} ${intent}`).toBeTruthy()
       expect(screen.getByRole('button', { name: /qwen\/detail/ })).toBeTruthy()
       // What the engine has no flag for stays away.
-      for (const label of ['Sampler', 'Scheduler', 'VAE', 'Skip CLIP layers', 'Denoise (raw)', 'Mask edge feather', 'Text encoder']) {
+      for (const label of ['Sampler', 'Scheduler', 'VAE', 'Skip CLIP layers', 'Denoise (raw)', 'Text encoder']) {
         expect(screen.queryByText(label), `${label} for ${pick.name} ${intent}`).toBeNull()
+      }
+      // Edit has two of its own: the strength and the soft edge of a mask
+      // (--strength, --mask-image). Image has neither.
+      for (const label of ['Edit strength', 'Mask edge feather']) {
+        if (intent === 'edit') expect(screen.getByText(label), `${label} for ${pick.name}`).toBeTruthy()
+        else expect(screen.queryByText(label), `${label} for ${pick.name} image`).toBeNull()
       }
       cleanup()
     }
@@ -285,5 +293,69 @@ describe('a file the run would refuse says so on its row', () => {
     expect(head.parentElement!.className).toBe('flex items-center justify-between')
     fireEvent.click(screen.getByRole('button', { name: /slider/ }))
     expect(stack().map((l) => l.name)).toEqual([SLIDER])
+  })
+})
+
+// M12 (14.10.2026): the Mac's video engines take LoRAs too. The quantized LTX
+// packs on the second engine and Wan on the first take `--lora` (`loras` of
+// their entry, `takes_loras` in video.rs), the first engine's LTX takes none.
+// The case "not for local video" above still holds where no such model is
+// installed.
+describe('the stack for the video models of the Mac', () => {
+  const clip = (loras: boolean) => ({ frames: 49, fps: 24, frameStep: 8, width: 768, height: 512, negativePrompt: false, loras })
+  const LTXQ = mlx('MLX LTX-2.3 Distilled 4-bit', 'ltx', { startImage: 'optional', mlxVideo: clip(true) })
+  const LTX_FIRST = mlx('MLX LTX-2.3 Distilled', 'ltx', { startImage: 'none', mlxVideo: clip(false) })
+  const WAN = mlx('MLX Wan 2.1 T2V 1.3B', 'wan', { startImage: 'none', mlxVideo: { ...clip(true), frames: 81, fps: 16, frameStep: 4, width: 832, height: 480 } })
+
+  function arrangeVideo(pick: ClassifiedModel, list: ClassifiedModel[]) {
+    arrange(QWEN)
+    useCreateStore.setState({ videoModelList: list } as never)
+    useCreateStore.getState().setIntent('video')
+    useCreateStore.getState().setVideoModel(pick.name)
+    useCreateStore.setState({ expertOpen: true } as never)
+  }
+
+  it('an LTX pack of the second engine and a Wan show it, with nothing else in Expert', () => {
+    for (const pick of [LTXQ, WAN]) {
+      arrangeVideo(pick, [LTXQ, LTX_FIRST, WAN])
+      render(<ParamGroups />)
+      expect(screen.getByText(/^LoRA stack/), pick.name).toBeTruthy()
+      expect(screen.getByRole('button', { name: /qwen\/detail/ })).toBeTruthy()
+      for (const label of ['Sampler', 'Scheduler', 'VAE', 'Skip CLIP layers', 'Edit strength']) {
+        expect(screen.queryByText(label), `${label} for ${pick.name}`).toBeNull()
+      }
+      cleanup()
+    }
+  })
+
+  it('COUNTER-CHECK: the first engine\'s LTX shows no stack and no Expert section', () => {
+    arrangeVideo(LTX_FIRST, [LTX_FIRST])
+    render(<ParamGroups />)
+    expect(screen.queryByText(/LoRA stack/)).toBeNull()
+    expect(screen.queryByText('Expert')).toBeNull()
+  })
+
+  it('LTX refuses a Kohya file on its row, Wan reads it', () => {
+    io.keys = { [DETAIL]: 'kohya' }
+    arrangeVideo(LTXQ, [LTXQ, WAN])
+    render(<ParamGroups />)
+    expect(screen.getByTestId('lora-stack-refused').textContent).toContain('Kohya format')
+    cleanup()
+
+    arrangeVideo(WAN, [LTXQ, WAN])
+    render(<ParamGroups />)
+    expect(screen.queryByTestId('lora-stack-refused')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /qwen\/detail/ }))
+    expect(stack().map((l) => l.name)).toEqual([DETAIL])
+  })
+
+  it('a file that is no plain LoRA is refused for both', () => {
+    io.keys = { [DETAIL]: 'other' }
+    for (const pick of [LTXQ, WAN]) {
+      arrangeVideo(pick, [LTXQ, WAN])
+      render(<ParamGroups />)
+      expect(screen.getByTestId('lora-stack-refused').textContent, pick.name).toContain('not a plain LoRA')
+      cleanup()
+    }
   })
 })

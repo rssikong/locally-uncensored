@@ -741,6 +741,7 @@ export class WorkflowEngine {
     const reasoningOptions = {
       thinking: canThinkStep ? false : undefined,
       reasoningEffort: settings.reasoningEffort,
+      localEffortChosen: settings.localEffortChosen,
       effortLevels,
       effortDefault,
       maxTokens: userSetMaxTokens ? sampling.maxTokens : DEFAULT_PROMPT_STEP_MAX_TOKENS,

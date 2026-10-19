@@ -1,5 +1,6 @@
 import type { GalleryItem } from '../../../stores/createStore'
 import { hasPromptPanel, ranPrompt } from '../../../lib/render/ran-prompt'
+import { ranNegativePrompt, runSettings, runSettingsText, type RunSettingsSource } from '../../../lib/render/run-settings'
 import { CopyText } from './CopyText'
 import { cn } from '../ui/cn'
 
@@ -7,6 +8,7 @@ import { cn } from '../ui/cn'
  *  result in the chat only the prompt of its run. */
 export type PromptSource = Pick<GalleryItem, 'prompt'>
   & Partial<Pick<GalleryItem, 'promptOriginal' | 'rewrittenBy' | 'improveFailed' | 'label' | 'intent' | 'type'>>
+  & RunSettingsSource
 
 /** One text with its copy button. A lone prompt needs no second heading, the
  *  fold already says "Prompt": the button then sits next to the text. */
@@ -36,6 +38,11 @@ function PromptText({ title, text, copyLabel }: { title?: string; text: string; 
 // to what actually ran, and who rewrote it. Shows nothing for a result that
 // has no prompt (a cutout, an entry that never saved one), never a made-up
 // text (lib/render/ran-prompt.ts).
+//
+// D9 (3.0.7): below the prompt stand the negative prompt and the settings of
+// the run (model, steps, CFG, sampler, seed, size), with one button that
+// copies all of it. The fold says "Prompt and settings" then, so the numbers
+// are found where the prompt already was.
 export function PromptDetails({ item, className, open = false }: {
   item: PromptSource
   className?: string
@@ -44,6 +51,9 @@ export function PromptDetails({ item, className, open = false }: {
 }) {
   const prompt = ranPrompt(item)
   if (!hasPromptPanel(item)) return null
+  const negative = ranNegativePrompt(item)
+  const settings = runSettings(item)
+  const withSettings = settings.length > 0 || !!negative
   return (
     <details
       open={open}
@@ -51,7 +61,9 @@ export function PromptDetails({ item, className, open = false }: {
       className={cn('w-full max-w-xl rounded-lg border border-white/[0.07] bg-black/20 px-3 py-2 text-left', className)}
       onClick={(e) => e.stopPropagation()}
     >
-      <summary className="t-control cursor-pointer select-none text-gray-400 hover:text-gray-200">Prompt</summary>
+      <summary className="t-control cursor-pointer select-none text-gray-400 hover:text-gray-200">
+        {withSettings ? 'Prompt and settings' : 'Prompt'}
+      </summary>
       <div className="mt-2 space-y-2">
         {item.promptOriginal ? (
           <>
@@ -71,6 +83,23 @@ export function PromptDetails({ item, className, open = false }: {
           <p className="t-body text-gray-400">
             Improve my prompt was on, but the rewrite did not work. This run used your own prompt.
           </p>
+        )}
+        {negative && <PromptText title="Negative prompt" text={negative} copyLabel="Copy negative prompt" />}
+        {settings.length > 0 && (
+          <div data-testid="run-settings">
+            <div className="mb-0.5 flex items-center justify-between gap-3">
+              <div className="t-label text-gray-500">Settings</div>
+              <CopyText text={runSettingsText(item)} label="Copy prompt and settings" />
+            </div>
+            <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
+              {settings.map((s) => (
+                <div key={s.label} className="contents">
+                  <dt className="t-label text-gray-500">{s.label}</dt>
+                  <dd className="t-mono min-w-0 select-text break-words text-gray-300">{s.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
         )}
       </div>
     </details>

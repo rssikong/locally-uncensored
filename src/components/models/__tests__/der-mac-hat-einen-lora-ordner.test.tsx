@@ -32,6 +32,9 @@ vi.mock('../../../api/discover', () => ({
   searchCivitaiModels: (...args: unknown[]) => io.search(...args),
   startCivitaiDownload: (...args: unknown[]) => io.civitai(...args),
   startModelDownloadToPath: (...args: unknown[]) => io.toPath(...args),
+  // Nothing of the search is on disk here; a-civitai-hit-on-disk-says-installed tests that.
+  checkCivitaiInstalled: async () => new Set<number>(),
+  civitaiInstalledInFolder: () => new Set<number>(),
 }))
 vi.mock('../../../api/backend', () => ({ openExternal: vi.fn(), isTauri: () => true, isMacOS: () => true, backendCall: vi.fn() }))
 vi.mock('../../../stores/downloadStore', () => {

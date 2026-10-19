@@ -3,11 +3,11 @@ import { tauriMockInit, DEFAULT_ASSISTANT_REPLY, DEFAULT_MODEL_NAME } from './su
 import { routeCloud, seedOnboardingDone, signInViaGate, cloudSwitch } from './support/cloud-mock'
 
 /**
- * "Save character from this video" (Discord): frames picked from a
- * generated video become a named character that is kept on this machine. The
- * frames are real: Chromium decodes a small clip and the canvas reads them.
- * The character survives a reload and starts a training set in Character
- * Studio with one click.
+ * "Use frames for a character" (Discord): frames taken evenly across a
+ * generated video, or picked by hand, start a training set in Character
+ * Studio or become a named character that is kept on this machine. The frames
+ * are real: Chromium decodes a small clip and the canvas reads them. The
+ * character survives a reload and starts a training set with one click.
  */
 
 // One second of a 64x64 test pattern, VP8 in WebM (about 3 KB).
@@ -50,43 +50,44 @@ async function showVideo(page: Page) {
   await page.locator('aside button:has(video)').click()
 }
 
-test('frames of a video become a saved character that survives a reload', async ({ page }) => {
+test('frames across a video become a saved character that survives a reload', async ({ page }) => {
   await boot(page)
   await intoCloudCreate(page)
 
   // The action sits on the video in the large view.
   await showVideo(page)
-  await page.getByTitle('Save character from this video').click({ force: true })
-  const dialog = page.getByRole('dialog', { name: 'Save character from this video' })
+  await page.getByTitle('Use frames of this video for a character').click({ force: true })
+  const dialog = page.getByRole('dialog', { name: 'Use frames for a character' })
   await expect(dialog).toBeVisible()
 
-  // Two frames from two moments of the clip.
-  const video = dialog.locator('video')
-  await expect.poll(() => video.evaluate((v: HTMLVideoElement) => v.readyState), { timeout: 20_000 }).toBeGreaterThanOrEqual(2)
-  await dialog.getByRole('button', { name: 'Add this frame' }).click()
-  await expect(dialog.getByTestId('character-frames').locator('img')).toHaveCount(1)
-  await video.evaluate((v: HTMLVideoElement) => new Promise<void>((resolve) => {
-    v.addEventListener('seeked', () => resolve(), { once: true })
-    v.currentTime = 0.6
-  }))
-  await dialog.getByRole('button', { name: 'Add this frame' }).click()
-  await expect(dialog.getByTestId('character-frames').locator('img')).toHaveCount(2)
-  // A picked frame is a real picture of the video's size.
-  const size = await dialog.getByTestId('character-frames').locator('img').first().evaluate(
+  // Eight frames across the clip, on their own, all ticked.
+  const frames = dialog.getByTestId('character-frames').locator('img')
+  await expect(frames).toHaveCount(8, { timeout: 20_000 })
+  await expect(dialog.getByTestId('frames-picked')).toContainText('8 of 8 frames ticked.')
+  // A frame is a real picture of the video's size.
+  const size = await frames.first().evaluate(
     (img: HTMLImageElement) => img.decode().then(() => [img.naturalWidth, img.naturalHeight]),
   )
   expect(size).toEqual([64, 64])
 
+  // Four instead, one of them left out, plus one added by hand.
+  await dialog.getByLabel('Frames across the clip').fill('4')
+  await dialog.getByRole('button', { name: 'Take 4 frames' }).click()
+  await expect(frames).toHaveCount(4, { timeout: 20_000 })
+  await dialog.getByRole('button', { name: 'Untick frame 3' }).click()
+  await dialog.getByRole('button', { name: 'Add this frame' }).click()
+  await expect(frames).toHaveCount(5)
+  await expect(dialog.getByTestId('frames-picked')).toContainText('4 of 5 frames ticked.')
+
   await dialog.getByLabel('Character name').fill('Sir Aldous')
   await dialog.getByRole('button', { name: 'Save character' }).click()
-  await expect(dialog.getByTestId('character-saved')).toContainText('Saved Sir Aldous with 2 photos. It is kept on this computer.')
-  await expect(dialog.getByText(/Training needs at least 4 photos/)).toBeVisible()
+  await expect(dialog.getByTestId('character-saved')).toContainText('Saved Sir Aldous with 4 photos. It is kept on this computer.')
 
   // Hand the photos to Character Studio: they start the training set.
   await dialog.getByRole('button', { name: 'Train in Character Studio' }).click()
   await expect(dialog).toHaveCount(0)
   await expect(page.getByRole('radio', { name: /Character Studio/i })).toBeChecked()
-  await expect(page.getByText(/^2\/30 photos\./)).toBeVisible()
+  await expect(page.getByText(/^4\/30 photos\./)).toBeVisible()
 
   // After a reload the character is still there (the boot script puts the app
   // back into local mode, and the character is local anyway). One click adds
@@ -95,18 +96,24 @@ test('frames of a video become a saved character that survives a reload', async 
   await expect(cloudSwitch(page)).toBeVisible({ timeout: 20_000 })
   await page.getByRole('button', { name: /^Create$/ }).click()
   await page.getByRole('radio', { name: 'Character Studio', exact: true }).click()
-  const chip = page.getByTitle('Add the 2 photos of Sir Aldous')
+  const chip = page.getByTitle('Add the 4 photos of Sir Aldous')
   await expect(chip).toBeVisible({ timeout: 15_000 })
-  await expect(page.getByText(/Drop 4 to 100 photos of your character here/)).toBeVisible()
   await chip.click()
-  await expect(page.getByText(/^2\/100 photos\./)).toBeVisible()
+  await expect(page.getByText(/^4\/100 photos\./)).toBeVisible()
 })
 
-test('the lightbox of a video offers the same action', async ({ page }) => {
+test('the lightbox of a video offers the same action, straight into a training set', async ({ page }) => {
   await boot(page)
   await intoCloudCreate(page)
   await showVideo(page)
   await page.getByTitle('Fullscreen').click({ force: true })
-  await page.getByRole('button', { name: 'Save character', exact: true }).click()
-  await expect(page.getByRole('dialog', { name: 'Save character from this video' })).toBeVisible()
+  await page.getByRole('button', { name: 'Use frames for a character', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Use frames for a character' })
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByTestId('character-frames').locator('img')).toHaveCount(8, { timeout: 20_000 })
+  await dialog.getByRole('button', { name: 'Untick frame 1' }).click()
+  await dialog.getByRole('button', { name: 'Train with 7 frames' }).click()
+  await expect(dialog).toHaveCount(0)
+  await expect(page.getByRole('radio', { name: /Character Studio/i })).toBeChecked()
+  await expect(page.getByText(/^7\/30 photos\./)).toBeVisible()
 })

@@ -21,12 +21,13 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { render, screen, cleanup, waitFor } from '@testing-library/react'
 
-const platform = vi.hoisted(() => ({ mac: true, tauri: true }))
+const platform = vi.hoisted(() => ({ mac: true, linux: false, tauri: true }))
 const backendCall = vi.hoisted(() => vi.fn())
 vi.mock('../../../api/backend', () => ({
   backendCall: (cmd: string, args?: unknown) => backendCall(cmd, args),
   isTauri: () => platform.tauri,
   isMacOS: () => platform.mac,
+  isLinux: () => platform.linux,
 }))
 
 import {
@@ -36,7 +37,7 @@ import {
   MAC_DATA_FOLDER_FALLBACK,
 } from '../DataFolderWhere'
 
-beforeEach(() => { platform.mac = true; platform.tauri = true })
+beforeEach(() => { platform.mac = true; platform.linux = false; platform.tauri = true })
 afterEach(() => { cleanup(); backendCall.mockReset() })
 
 describe('the data folder out of the log location', () => {
@@ -82,18 +83,51 @@ describe('on a Mac', () => {
   })
 })
 
-describe('WINDOWS CONTROL', () => {
-  it('the sentence is the old one, word for word, and the app is not asked', () => {
+// 3.0.7: the Windows sentence named %APPDATA%/Locally Uncensored, and the
+// data folder is `data_local_dir()` joined with lu-labs (os_paths::data_dir).
+// What does sit under %APPDATA%\Locally Uncensored is the chat backup and the
+// engine's chat models, so that folder is named after it, as the second one.
+describe('on Windows', () => {
+  it('names %LOCALAPPDATA%\\lu-labs, and the app is not asked', () => {
     platform.mac = false
     const { container } = render(<p><DataFolderWhere /></p>)
-    expect(container.textContent).toBe('%APPDATA%/Locally Uncensored on Windows (or the equivalent on Linux/macOS)')
+    expect(container.textContent).toBe('%LOCALAPPDATA%\\lu-labs on Windows')
+    expect(container.textContent).not.toMatch(/equivalent|%APPDATA%/)
     expect(backendCall).not.toHaveBeenCalled()
   })
 
-  it('and so is what follows it', () => {
+  it('names the second folder with the chat backup and the chat models', () => {
     platform.mac = false
     const { container } = render(<p><DataFolderAfterword /></p>)
-    expect(container.textContent).toBe('Back up the folder, move it between machines, or delete it. LU writes nothing else.')
+    expect(container.textContent).toBe('Back up the folder, move it between machines, or delete it. Downloaded chat models and the backup of your chats are kept in %APPDATA%\\Locally Uncensored.')
+    expect(container.textContent).not.toContain('LU writes nothing else')
+  })
+})
+
+describe('on Linux', () => {
+  it('names ~/.local/share/lu-labs and the chat models beside it', () => {
+    platform.mac = false
+    platform.linux = true
+    const where = render(<p><DataFolderWhere /></p>)
+    expect(where.container.textContent).toBe('~/.local/share/lu-labs on Linux')
+    cleanup()
+    const after = render(<p><DataFolderAfterword /></p>)
+    expect(after.container.textContent).toBe('Back up the folder, move it between machines, or delete it. Downloaded chat models are kept in ~/.local/share/Locally Uncensored/models.')
+  })
+})
+
+describe('the folders named are the ones the backend builds', () => {
+  const rust = (rel: string) => readFileSync(resolve(__dirname, '..', '..', '..', '..', 'src-tauri', 'src', rel), 'utf8')
+
+  it('data_dir is data_local_dir joined with the app dir lu-labs', () => {
+    expect(rust('os_paths.rs')).toMatch(/pub fn data_dir\(\) -> PathBuf \{\s*dirs::data_local_dir\(\)[\s\S]{0,120}\.join\(APP_DIR\)/)
+    expect(rust('app_identity.rs')).toContain('pub const APP_DIR: &str = "lu-labs";')
+  })
+
+  it('the Windows backup and the chat models sit under %APPDATA%\\Locally Uncensored', () => {
+    expect(rust('commands/system.rs')).toMatch(/std::env::var\("APPDATA"\)[\s\S]{0,200}join\(crate::app_identity::APP_DISPLAY_DIR\)/)
+    expect(rust('os_paths.rs')).toMatch(/pub fn builtin_models_dir\(\) -> PathBuf \{\s*dirs::data_dir\(\)[\s\S]{0,80}\.join\(APP_DISPLAY_DIR\)\s*\.join\("models"\)/)
+    expect(rust('app_identity.rs')).toContain('pub const APP_DISPLAY_DIR: &str = "Locally Uncensored";')
   })
 })
 

@@ -41,6 +41,8 @@ describe('the mask instruction', () => {
 
   it('lives in the mask editor now, and can be dismissed for good', () => {
     expect(MASK_EDITOR).toContain('Apply mask when you are done, then describe the edit below')
+    // Erase has no prompt field, so its hint ends at Create.
+    expect(MASK_EDITOR).toContain("'Apply mask when you are done, then hit Create.'")
     // Kein zweiter Aufguss der Fusszeile: die sagt schon dauerhaft, was Rot
     // bedeutet und wo gemalt wird.
     expect(MASK_EDITOR).toContain('Red = will be regenerated.')

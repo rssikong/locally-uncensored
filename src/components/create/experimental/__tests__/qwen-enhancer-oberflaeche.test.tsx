@@ -14,6 +14,8 @@ vi.mock('../../../../api/comfyui', () => ({
   isI2VModel: () => false,
   isT2VCapable: () => true,
   isVideoModelType: () => false,
+  isInstalledVideoType: () => false,
+  resolveLocalOpPick: (picked: string) => picked,
 }))
 vi.mock('../CreateContext', () => ({
   useCreateExp: () => ({

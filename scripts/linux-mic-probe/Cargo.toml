@@ -1,0 +1,16 @@
+# Headless proof for GitHub #162: does getUserMedia({ audio: true }) in a real
+# WebKitGTK view get a live microphone with LU's handler, and is it refused
+# without it? Runs src-tauri/src/linux_media.rs itself (pulled in by path),
+# under Xvfb with a PulseAudio sine source. Not part of the app; see run.sh.
+[package]
+name = "linux-mic-probe"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+# v2_38 as wry asks for it, so the probe sees the same API the app has.
+webkit2gtk = { version = "=2.0.2", features = ["v2_38"] }
+gtk = "0.18"
+
+[workspace]

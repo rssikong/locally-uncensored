@@ -73,5 +73,7 @@ export function pickQwenEncoder(textEncoders: readonly string[], choice: QwenEnc
   return files.find((f) => f.variant === choice) ?? files[0] ?? null
 }
 
+/** Discord report (3.0.7): next to Improve my prompt the row read like the
+ *  same job. It says what it is and what it is not. */
 export const QWEN_ENCODER_HELP =
-  'The model that reads your prompt for Qwen-Image 2.1. The No Filter edition has its refusal direction removed by the community (Heretic). The image model is the same.'
+  'Part of the image model: it reads your prompt for Qwen-Image 2.1 on every run. Improve my prompt is a separate step that rewrites the prompt before this. The No Filter edition has its refusal direction removed by the community (Heretic). The image model is the same.'

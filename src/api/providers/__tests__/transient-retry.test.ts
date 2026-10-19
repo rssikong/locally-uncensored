@@ -128,6 +128,19 @@ describe('sendWithTransientRetry', () => {
     expect(await out.text()).toContain('flash_timeout')
   })
 
+  it('issue 177: does not retry a first reply timeout, the window was already waited once', async () => {
+    const clock = recorder()
+    const send = vi.fn().mockResolvedValue(
+      res(504, JSON.stringify({ error: 'the backend accepted the request but sent nothing for 30 s.', code: 'first_reply_timeout' })),
+    )
+
+    const out = await sendWithTransientRetry(send, { wait: clock.wait })
+
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(clock.waited).toEqual([])
+    expect(await out.text()).toContain('sent nothing for 30 s')
+  })
+
   it('NEGATIVE CONTROL: a 504 without flash_timeout is still retried', async () => {
     const clock = recorder()
     const send = vi.fn().mockResolvedValue(res(504, 'bad gateway'))

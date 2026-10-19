@@ -13,7 +13,7 @@ import { isMacOS } from './backend'
 import { invokeMedia } from './mlx-invoke'
 import { siGbToBytes } from '../lib/formatters'
 import type { ClassifiedModel } from './comfyui'
-import { imageModelBringsItsEngine } from '../lib/image-engines'
+import { MFLUX_FAMILY, imageModelBringsItsEngine, isMlxEnhancer } from '../lib/image-engines'
 
 export interface MlxStatus {
   /** The engine can run: venv, the record of a finished pip run and the
@@ -71,6 +71,12 @@ export interface MlxImageModel {
   /** Whether a run takes the LoRA stack of Create. True for the packs of the
    *  second engine, false for the sidecar's models. */
   loras?: boolean
+  /** Set for a Qwen-Image 2.1 prompt enhancer (family 'enhancer'): what it
+   *  rewrites. It makes no images and is offered by "Improve my prompt". */
+  enhancer?: 't2i' | 'i2i'
+  /** It enhances pictures instead of making them (SeedVR2). Such a model is
+   *  for Enhance Image alone and is never offered to make a picture with. */
+  upscaler?: boolean
 }
 
 export interface MlxInstallStatus {
@@ -96,6 +102,11 @@ export interface MlxGenerateArgs {
   images?: string[]
   /** The side an edit scales its images to (qwenEditResolution). */
   resolution?: number
+  /** An edit's mask as a staged path, painted over the first image: white
+   *  is painted from the prompt, black stays. Grey keeps a share of both. */
+  mask?: string
+  /** How far an edit starts from noise, in (0, 1]. 1 or absent: from noise. */
+  strength?: number
   /** The name of this run. Cancel carries the same one and ends this run
    *  and no other. `generateMlxImageDataUrl` gives every run its own. */
   run?: string
@@ -141,6 +152,8 @@ export async function mlxGenerate(args: MlxGenerateArgs): Promise<MlxGenerateRes
   if (args.guidance != null) body.guidance = args.guidance
   if (args.images?.length) body.images = args.images
   if (args.resolution != null) body.resolution = args.resolution
+  if (args.mask) body.mask = args.mask
+  if (args.strength != null && args.strength < 1) body.strength = args.strength
   if (args.run) body.run = args.run
   if (args.loras?.length) body.loras = args.loras.map((l) => ({ name: l.name, strength: l.strength }))
   // A single long-blocking request (model load + diffusion) — in-process
@@ -168,7 +181,7 @@ export async function listMlxImageModels(): Promise<MlxImageModel[]> {
   // Bytes durch `formatBytes`. Danach nennt jede Karte, jede Zeile und jede
   // Leiste fuer dieselbe Datei denselben Text.
   mfluxPacks = new Map(
-    catalog.filter((m) => imageModelBringsItsEngine(m.family)).map((m) => [m.id, { userSampling: m.userSampling === true }]),
+    catalog.filter((m) => m.family === MFLUX_FAMILY).map((m) => [m.id, { userSampling: m.userSampling === true }]),
   )
   catalogueIds = new Set(catalog.map((m) => m.id))
   return catalog.map((m) => ({ ...m, sizeBytes: siGbToBytes(m.sizeGB) }))
@@ -279,6 +292,37 @@ export interface MlxImage {
   guidance?: number
 }
 
+/** The name the gallery gives the tool that cut out a picture on a Mac. */
+export const MAC_CUTOUT_TOOL = 'macOS Vision'
+
+/** Remove Background on a Mac: Vision finds the subject of the staged image
+ *  at `imagePath` and its mask becomes the alpha channel (commands/mlx_cutout.rs).
+ *  No model and no engine to set up: macOS brings it. Throws the sentence for
+ *  the user, such as when the picture holds no subject. */
+export async function cutOutOnMac(imagePath: string): Promise<MlxImage> {
+  const made = await invokeMedia<MlxGenerateResult>('mlx_cutout', { image: imagePath })
+  return {
+    dataUrl: `data:image/png;base64,${made.image_base64}`,
+    width: made.width,
+    height: made.height,
+    localPath: made.output,
+  }
+}
+
+/** Whether Enhance Image has a local lane on this Mac: an upscaler of the
+ *  catalogue is installed (commands/mlx.rs `upscaler`). */
+export function mlxUpscalerInstalled(catalog: readonly Pick<MlxImageModel, 'upscaler' | 'installed'>[]): boolean {
+  return catalog.some((m) => m.upscaler === true && m.installed)
+}
+
+/** The factors Enhance Image takes on a Mac (`UPSCALE_FACTORS` in
+ *  commands/image_mflux.rs). */
+export const MAC_UPSCALE_FACTORS = [2, 4] as const
+export type MacUpscaleFactor = (typeof MAC_UPSCALE_FACTORS)[number]
+
+/** The name the gallery gives the tool that enhanced a picture on a Mac. */
+export const MAC_UPSCALE_TOOL = 'SeedVR2 3B'
+
 /** How a caller follows and ends an image of the second engine. */
 export interface MlxGenerateWatch {
   /** Called about once a second with the step the engine has finished. */
@@ -317,6 +361,30 @@ async function watched<T>(run: string, job: () => Promise<T>, { onStep, signal }
 }
 
 /**
+ * Enhance Image on a Mac: SeedVR2 on the second engine makes the staged
+ * picture at `imagePath` larger by `scale` (commands/mlx.rs `mlx_upscale`).
+ * Progress and Cancel are those of an image of the second engine. Throws the
+ * sentence for the user, such as when no upscaler is installed.
+ */
+export async function upscaleOnMac(
+  imagePath: string,
+  opts: { scale: MacUpscaleFactor; seed?: number },
+  watch: MlxGenerateWatch = {},
+): Promise<MlxImage> {
+  const run = nameRun()
+  const body: Record<string, unknown> = { image: imagePath, scale: opts.scale, run }
+  if (opts.seed != null && opts.seed !== -1) body.seed = opts.seed
+  const made = await watched(run, () => invokeMedia<MlxGenerateResult>('mlx_upscale', body), watch)
+  return {
+    dataUrl: `data:image/png;base64,${made.image_base64}`,
+    width: made.width,
+    height: made.height,
+    localPath: made.output,
+    steps: made.steps,
+  }
+}
+
+/**
  * Ensure the MLX sidecar is up and warm, then generate and return a
  * ready-to-render PNG data URL. Throws on any failure so callers surface a
  * single error string. Retries once on a transient "unreachable" — the cold
@@ -350,7 +418,7 @@ export async function generateMlxImageDataUrl(
   // The sidecar makes images from text at the catalogue's guidance. An edit
   // never reaches it: Rust refuses one, and it is not sent a field it drops.
   // It has no place for a LoRA either, and Create offers it no stack.
-  const plain = { ...args, guidance: undefined, resolution: undefined, loras: undefined, run }
+  const plain = { ...args, guidance: undefined, resolution: undefined, mask: undefined, strength: undefined, loras: undefined, run }
   if (status.broken) {
     throw new Error('The image engine is incomplete. Set it up again in the Model Manager.')
   }
@@ -442,7 +510,9 @@ export function mlxPickerFamily(displayName: string): { label: string; type: str
 
 export function buildMlxImageModels(catalog: MlxImageModel[]): ClassifiedModel[] {
   return catalog
-    .filter((m) => m.installed)
+    // An enhancer and an upscaler make no picture from a prompt: no picker
+    // lists them (Enhance Image has its own, mlxUpscalerInstalled).
+    .filter((m) => m.installed && !isMlxEnhancer(m) && m.upscaler !== true)
     .map((m) => {
       mlxIdByDisplayName.set(mlxDisplayName(m), m.id)
       return {
@@ -450,6 +520,8 @@ export function buildMlxImageModels(catalog: MlxImageModel[]): ClassifiedModel[]
         // Every entry says whether it edits: that is what lets Edit list the
         // models that take an image and nothing else (lib/image-engines).
         editImages: m.editImages ?? 0,
+        // The weights an edit counts into its memory (lib/mac-edit-memory).
+        ...(m.sizeGB > 0 ? { packGb: m.sizeGB } : {}),
         ...(imageModelBringsItsEngine(m.family) && m.userSampling !== true ? { ownSampling: true } : {}),
         // Only what the backend says takes a stack gets one in Create.
         ...(m.loras === true ? { mlxLoras: true } : {}),

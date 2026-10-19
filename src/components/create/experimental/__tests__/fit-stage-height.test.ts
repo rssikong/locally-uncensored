@@ -47,10 +47,19 @@ describe('who uses it', () => {
     expect(stage).not.toContain('m-auto flex flex-col items-center p-6 max-w-full')
     expect(source('OutputView.tsx')).not.toMatch(/\bfooter\b/)
     // The result view takes the layout when it is handed a side.
-    expect(source('OutputView.tsx')).toContain('if (side) return <FitStage picture={media} under={facts} side={side} capVh={62} />')
+    expect(source('OutputView.tsx')).toContain('return <FitStage picture={media} under={facts} side={side} capVh={62} />')
   })
 
-  it('COUNTER-CHECK: a result with no source beside it keeps the share of the window it had', () => {
-    expect(source('OutputView.tsx').match(/!maxHeight && 'max-h-\[62vh\]'/g)).toHaveLength(2)
+  // How-to recording 12.10.2026, 1440 × 900: a 16:9 result with no source
+  // beside it kept 62 % of the window height on a stage of 451 px, so its
+  // lower edge and the prompt fold under it were cut off.
+  it('a result with no source beside it is fitted too, with what stands under it', () => {
+    const view = source('OutputView.tsx')
+    expect(view).not.toContain('if (side) return <FitStage')
+    expect(view).not.toContain('{media()}')
+    // 62 % of the window stays the cap, and the size until the stage is measured.
+    expect(view.match(/!maxHeight && 'max-h-\[62vh\]'/g)).toHaveLength(2)
+    // The facts and the folded prompt cost the picture their height.
+    expect(fitPictureHeight({ frame: 451, under: 76, side: 0, beside: false })).toBe(343)
   })
 })

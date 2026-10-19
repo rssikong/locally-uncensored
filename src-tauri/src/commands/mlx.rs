@@ -37,6 +37,14 @@ pub const MLX_PORT: u16 = 47712;
 #[path = "image_mflux.rs"]
 mod mflux;
 
+/// The Qwen-Image 2.1 prompt enhancer, which runs in the place of an image.
+#[path = "mlx_enhancer.rs"]
+mod enhancer;
+
+/// Character training on the second engine (`mflux-train`).
+#[path = "mlx_train.rs"]
+pub(crate) mod train;
+
 fn mlx_root() -> PathBuf {
     crate::os_paths::data_dir().join("mlx")
 }
@@ -163,6 +171,79 @@ fn memory_verdict(name: &str, min_ram_gb: u32, total_bytes: u64) -> Option<Strin
              Pick a model that fits {have} GB."
         )
     })
+}
+
+/// The memory one Enhance run of SeedVR2 3B takes, in GB, for a result of
+/// `megapixels`. Measured on an M5 Pro with the engine's low-ram mode
+/// (14.10.2026): 11.3 GB for 2048 x 2048, 22.1 GB for 4096 x 4096. The weights
+/// and the VAE are the fixed part, the tiles of the result the rest.
+fn upscale_peak_gb(megapixels: f64) -> f64 {
+    7.75 + 0.854 * megapixels
+}
+
+/// Why this Mac cannot enhance to `width` x `height`, or None when it can.
+///
+/// The model alone fits a 16 GB Mac, the result may not: at 4x a 1024 picture
+/// needs about 22 GB, and on a smaller Mac that pushes macOS into swap until
+/// the machine stops answering. The share is what macOS lets the graphics
+/// side of unified memory use, with some room for the rest of the system.
+fn upscale_memory_verdict(width: u32, height: u32, factor: u32, total_bytes: u64) -> Option<String> {
+    if total_bytes == 0 {
+        return None;
+    }
+    let have = total_bytes as f64 / 1_073_741_824.0;
+    let need = upscale_peak_gb(width as f64 * height as f64 / 1_000_000.0);
+    (need > have * 0.7).then(|| {
+        let instead = if factor > 2 { "Pick 2x, or enhance a smaller picture." } else { "Enhance a smaller picture." };
+        format!(
+            "Enhancing to {width}x{height} needs about {} GB of memory and this Mac has {} GB. \
+             It was not started, so the system does not freeze. {instead}",
+            need.ceil() as u32,
+            have.round() as u32
+        )
+    })
+}
+
+/// The memory an edit with `images` pictures takes, in GB. Measured with
+/// Qwen-Image 2.1 4-bit at a 1024 canvas on an M5 Pro (15.10.2026): 10.5 GB
+/// with the source alone, 17.2 GB with four pictures; ten pushed a 48 GB Mac
+/// below a third free before the first step. Every picture is read by the
+/// text encoder at the canvas, so it costs by the canvas's area, and a
+/// larger pack costs its extra weights.
+fn edit_peak_gb(images: usize, side: u32, pack_gb: f64) -> f64 {
+    const BASE_4BIT_GB: f64 = 8.25;
+    const PACK_4BIT_GB: f64 = 10.6;
+    const PER_IMAGE_GB: f64 = 2.23;
+    let area = (side as f64 / 1024.0).powi(2);
+    BASE_4BIT_GB + (pack_gb - PACK_4BIT_GB).max(0.0) + PER_IMAGE_GB * images as f64 * area
+}
+
+/// Why this Mac cannot edit with `images` pictures, with the number it can
+/// take, or None when it can. A smaller share than Enhance takes: the run
+/// with ten pictures left a 48 GB Mac a third free before its first step,
+/// and the steps that follow add to that.
+fn edit_memory_verdict(images: usize, side: u32, pack_gb: f64, total_bytes: u64) -> Option<String> {
+    if total_bytes == 0 || images < 2 {
+        return None;
+    }
+    let have = total_bytes as f64 / 1_073_741_824.0;
+    let budget = have * 0.6;
+    let need = edit_peak_gb(images, side, pack_gb);
+    if need <= budget {
+        return None;
+    }
+    let fits = (1..images).rev().find(|&n| edit_peak_gb(n, side, pack_gb) <= budget).unwrap_or(1);
+    let way_out = if fits > 1 {
+        format!("Use at most {fits} pictures, the one you edit included.")
+    } else {
+        "Edit the picture without references.".to_string()
+    };
+    Some(format!(
+        "An edit with {images} pictures needs about {} GB of memory and this Mac has {} GB. \
+         It was not started, so the system does not freeze. {way_out}",
+        need.ceil() as u32,
+        have.round() as u32
+    ))
 }
 
 // ── Is the engine really there ────────────────────────────────────────
@@ -610,7 +691,7 @@ fn hub_denied_message(status: u16, has_token: bool) -> Option<&'static str> {
     }
 }
 
-fn is_hub_denied(message: &str) -> bool {
+pub(crate) fn is_hub_denied(message: &str) -> bool {
     message == HF_TOKEN_NEEDED || message == HF_TOKEN_NO_ACCESS
 }
 
@@ -1267,7 +1348,7 @@ pub const IMAGE_CATALOG: &[ImageCatalogEntry] = &[
         default_size: 1024,
         unfiltered: false,
         retired: false,
-        description: "Z-Image Turbo, quantized to 4-bit for the MLX image engine. Nine steps, for Macs from 16 GB. Experimental: not yet tested in LU.",
+        description: "Z-Image Turbo, quantized to 4-bit for the MLX image engine. Nine steps, for Macs from 16 GB.",
         mflux: Some(&mflux::ZIMAGE_TURBO_4BIT),
         allow: allow![],
     },
@@ -1374,6 +1455,31 @@ pub const IMAGE_CATALOG: &[ImageCatalogEntry] = &[
         retired: false,
         description: "Qwen-Image 2512, the 20B model, quantized to 8-bit for the MLX image engine. For Macs from 48 GB. Experimental: not yet tested in LU.",
         mflux: Some(&mflux::QWEN_2512_8BIT),
+        allow: allow![],
+    },
+    // Enhance Image on a Mac (`mflux::upscale`): no picture from a prompt, so
+    // Generate refuses it and Create lists it for Enhance alone. The size is
+    // the two files the install fetches, 7.28 GB (hub, 14.10.2026). The
+    // memory floor is an estimate: the weights are 7.3 GB at fp16 and the
+    // engine states no requirement. The 7B model is left out: the engine
+    // names no reason to prefer it, and it is 17 GB.
+    ImageCatalogEntry {
+        id: "seedvr2-3b",
+        name: "SeedVR2 3B",
+        repo: "numz/SeedVR2_comfyUI",
+        size_gb: 7.3,
+        min_ram_gb: 16,
+        steps: 1,
+        guidance: 1.0,
+        cfg_param: "guidance_scale",
+        dtype: "float16",
+        fp16_variant: false,
+        disable_safety_checker: false,
+        default_size: 1024,
+        unfiltered: false,
+        retired: false,
+        description: "Enhance Image on a Mac: makes a picture two or four times larger and sharper in one step, without a prompt.",
+        mflux: Some(&mflux::SEEDVR2_3B),
         allow: allow![],
     },
     // Retired with 3.0.6. Listed only where already installed (see `retired`).
@@ -1700,7 +1806,7 @@ fn fetch_repo_revision(repo: &str) -> Result<String, String> {
 
 /// What the repo holds, straight from the hub: every file with its size and,
 /// for the LFS-backed weights, its sha256.
-fn fetch_repo_listing(
+pub(crate) fn fetch_repo_listing(
     repo: &str,
     revision: &str,
 ) -> Result<Vec<crate::commands::mlx_snapshot::RepoFile>, String> {
@@ -1832,8 +1938,15 @@ pub fn mlx_image_models(_state: &AppState, _args: &Value) -> CmdResult {
                 // Whether a run takes the LoRA stack of Create. The second
                 // engine does, the sidecar does not.
                 "loras": c.mflux.is_some_and(|pack| pack.takes_loras()),
+                // Whether it enhances pictures instead of making them. Such a
+                // model is for Enhance Image alone (`mlx_upscale`).
+                "upscaler": c.mflux.is_some_and(|pack| pack.upscales()),
             })
         })
+        // The prompt enhancers are installed in the same lane and listed in
+        // the same list, with a family of their own that keeps them out of
+        // every image picker.
+        .chain(enhancer::rows())
         .collect();
     Ok(Value::Array(out))
 }
@@ -1844,6 +1957,9 @@ pub fn mlx_image_install_model(state: &AppState, args: &Value) -> CmdResult {
         .get("id")
         .and_then(|v| v.as_str())
         .ok_or_else(|| crate::commands::bad_request("missing id"))?;
+    if let Some(e) = enhancer::lookup(id) {
+        return enhancer::install(state, e);
+    }
     let entry = image_catalog_lookup(id)
         .ok_or_else(|| crate::commands::bad_request(format!("unknown image model id: {id}")))?;
     // A pack of the second engine brings that engine along and does not need
@@ -2087,14 +2203,21 @@ pub fn mlx_image_delete_model(state: &AppState, args: &Value) -> CmdResult {
         .get("id")
         .and_then(|v| v.as_str())
         .ok_or_else(|| crate::commands::bad_request("missing id"))?;
-    let entry = image_catalog_lookup(id)
-        .ok_or_else(|| crate::commands::bad_request(format!("unknown image model id: {id}")))?;
+    // An image model, or else a prompt enhancer of the same lane.
+    let (entry, enhancer) = match (image_catalog_lookup(id), enhancer::lookup(id)) {
+        (None, None) => return Err(crate::commands::bad_request(format!("unknown image model id: {id}"))),
+        found => found,
+    };
     // The engine setup pulls the starter model through the same cache.
     if state.install_mlx_image_model().is_running() || state.install_mlx_diffusion().is_running() {
         return Err(crate::commands::bad_request(
             "An install is running. Wait for it to finish first.",
         ));
     }
+    let Some(entry) = entry else {
+        // Not an image model, so the enhancer it was found as.
+        return enhancer.map_or_else(|| Err(crate::commands::bad_request(format!("unknown image model id: {id}"))), enhancer::delete);
+    };
     if let Some(pack) = entry.mflux {
         return mflux::delete(entry, pack);
     }
@@ -2130,6 +2253,13 @@ struct GenerateArgs {
     /// The side an edit scales its images to. See `mflux::Request`.
     #[serde(default)]
     resolution: Option<u32>,
+    /// The mask of an edit as a path, painted over the first image. See
+    /// `mflux::Request`.
+    #[serde(default)]
+    mask: Option<String>,
+    /// How far an edit starts from noise, in (0, 1]. See `mflux::Request`.
+    #[serde(default)]
+    strength: Option<f32>,
     /// The name the caller gives this run. Cancel carries the same one, and
     /// then ends this run and no other.
     #[serde(default)]
@@ -2278,6 +2408,22 @@ pub async fn mlx_generate(_state: &AppState, args: &Value) -> CmdResult {
         .unwrap_or(&IMAGE_CATALOG[0]);
 
     ensure_image_engine_supported()?;
+    if entry.mflux.is_some_and(|pack| pack.upscales()) {
+        // Run as a model of its own it would be handed a prompt it has no
+        // flag for. It enhances the picture on the Stage (`mlx_upscale`).
+        return Err(crate::commands::bad_request(format!(
+            "{} enhances pictures and makes none from a prompt. Open Enhance Image to use it.",
+            entry.name
+        )));
+    }
+    // One model in the memory at a time: a track of the music lane holds its
+    // own until it is through.
+    if crate::commands::music::busy() {
+        return Err(crate::commands::bad_request("A track is being made on this Mac. Wait for it to finish, then make the image."));
+    }
+    if let Some(why) = train::refusal() {
+        return Err(crate::commands::bad_request(why));
+    }
     if let Some(too_big) = memory_verdict(entry.name, entry.min_ram_gb, total_memory_bytes()) {
         return Err(crate::commands::bad_request(too_big));
     }
@@ -2285,6 +2431,13 @@ pub async fn mlx_generate(_state: &AppState, args: &Value) -> CmdResult {
         // Before anything is unloaded: an edit this model cannot do, or
         // whose image is gone, is refused and never run without the image.
         let images = mflux::request_images(entry, pack, &req.images).map_err(crate::commands::bad_request)?;
+        // Every picture of an edit costs memory of its own (`edit_peak_gb`).
+        let side = req.resolution.unwrap_or(1024);
+        if let Some(too_big) = edit_memory_verdict(images.len(), side, f64::from(entry.size_gb), total_memory_bytes()) {
+            return Err(crate::commands::bad_request(too_big));
+        }
+        let mask = mflux::request_mask(&images, req.mask.as_deref()).map_err(crate::commands::bad_request)?;
+        let strength = mflux::request_strength(&images, req.strength);
         // The same for the LoRA stack: a file that is gone, is not in the
         // folder or is in a format this model cannot read is said now, and
         // not after minutes of loading.
@@ -2318,6 +2471,8 @@ pub async fn mlx_generate(_state: &AppState, args: &Value) -> CmdResult {
             height: req.height,
             images,
             resolution: req.resolution,
+            mask,
+            strength,
             loras,
         };
         return mflux::generate(entry, pack, request).await;
@@ -2410,6 +2565,14 @@ pub async fn mlx_generate(_state: &AppState, args: &Value) -> CmdResult {
         .await
         .map_err(|e| crate::commands::internal(e.to_string()))?;
     keep_sidecar_image(at_image.cancelled(), payload, entry.guidance, &images_root())
+}
+
+/// "Improve my prompt" with Qwen-Image 2.1 on a Mac: rewrite a prompt with an
+/// installed prompt enhancer (`enhancer::enhance`). It takes the place of an
+/// image, so Cancel in Create ends it through `mlx_generate_cancel` by the
+/// name of its run, and the quit path ends it with an image's.
+pub async fn mlx_enhance_prompt(state: &AppState, args: &Value) -> CmdResult {
+    enhancer::enhance(state, args).await
 }
 
 /// Where generated stills live. Sibling of the video lane's outputs root and
@@ -2520,6 +2683,12 @@ pub(crate) fn stop_sidecar() {
     sidecar().stop();
 }
 
+/// Whether an image is being made right now, by either engine. The music
+/// lane asks this before it loads its model into the same memory.
+pub(crate) fn image_engine_busy() -> bool {
+    mflux::busy() || sidecar_at_an_image()
+}
+
 /// End an image generation of the second engine. It runs as a process of its
 /// own that holds the whole model, and nothing else would end it at quit.
 pub(crate) fn stop_mflux() {
@@ -2563,6 +2732,91 @@ pub fn mlx_generate_cancel(_state: &AppState, args: &Value) -> CmdResult {
         let _ = sidecar_ask(MLX_PORT, "POST", "/cancel");
     }
     Ok(json!({ "ok": true, "stopped": engine || sidecar }))
+}
+
+#[derive(serde::Deserialize)]
+struct UpscaleArgs {
+    /// The staged picture, as a path in the folder Create stages images in.
+    image: String,
+    /// The factor, 2 or 4. Absent: 2.
+    #[serde(default)]
+    scale: Option<u32>,
+    #[serde(default)]
+    seed: Option<u64>,
+    /// The catalogue id of the upscaler. Absent: the first one installed.
+    #[serde(default)]
+    model: Option<String>,
+    /// The name of the run, as for `mlx_generate`: Cancel ends this one.
+    #[serde(default)]
+    run: Option<String>,
+}
+
+/// The upscaler a run takes: the one asked for, else the first installed.
+fn upscaler_for(asked: Option<&str>) -> Result<(&'static ImageCatalogEntry, &'static mflux::Pack), String> {
+    let upscalers = IMAGE_CATALOG.iter().filter_map(|c| c.mflux.filter(|p| p.upscales()).map(|p| (c, p)));
+    match asked {
+        Some(id) => upscalers
+            .into_iter()
+            .find(|(c, _)| c.id == id)
+            .ok_or_else(|| format!("{id} does not enhance images. Install SeedVR2 3B in the Model Manager.")),
+        None => {
+            let all: Vec<_> = upscalers.collect();
+            all.iter()
+                .find(|(c, _)| image_model_is_installed(c))
+                .or(all.first())
+                .copied()
+                .ok_or_else(|| "No model that enhances images is in the catalogue.".to_string())
+        }
+    }
+}
+
+/// Enhance Image on a Mac: `args.image` is the path of a staged picture,
+/// `args.scale` the factor (2 or 4). SeedVR2 on the second engine makes it
+/// larger. Answers like `mlx_generate`: `image_base64`, `width`, `height`,
+/// `steps`, `output`. Progress and Cancel are those of `mlx_generate`
+/// (`mlx_generate_progress`, `mlx_generate_cancel` with the same `run`).
+pub async fn mlx_upscale(_state: &AppState, args: &Value) -> CmdResult {
+    let req: UpscaleArgs = serde_json::from_value(args.clone()).map_err(|e| crate::commands::bad_request(e.to_string()))?;
+    let (entry, pack) = upscaler_for(req.model.as_deref()).map_err(crate::commands::bad_request)?;
+    ensure_image_engine_supported()?;
+    if let Some(why) = train::refusal() {
+        return Err(crate::commands::bad_request(why));
+    }
+    if let Some(too_big) = memory_verdict(entry.name, entry.min_ram_gb, total_memory_bytes()) {
+        return Err(crate::commands::bad_request(too_big));
+    }
+    // Before anything is unloaded: a model that is not there, a picture that
+    // is gone or a factor the run does not take is said now.
+    if !image_model_is_installed(entry) {
+        return Err(crate::commands::bad_request(format!(
+            "{} is not installed. Install it in the Model Manager first.",
+            entry.name
+        )));
+    }
+    let input = mflux::request_upscale_input(&req.image).map_err(crate::commands::bad_request)?;
+    let factor = req.scale.unwrap_or(mflux::UPSCALE_FACTORS[0]);
+    if !mflux::UPSCALE_FACTORS.contains(&factor) {
+        return Err(crate::commands::bad_request(format!("Enhance enlarges by 2x or 4x, not {factor}x.")));
+    }
+    // The size of the result decides the memory, so it is worked out here,
+    // before the sidecar's model is unloaded for nothing.
+    if let Ok((width, height)) = image::image_dimensions(&input) {
+        if let Ok((_, out_width, out_height)) = mflux::upscale_target(width, height, factor) {
+            if let Some(too_big) = upscale_memory_verdict(out_width, out_height, factor, total_memory_bytes()) {
+                return Err(crate::commands::bad_request(too_big));
+            }
+        }
+    }
+    // As for an image of the second engine: not beside an image in the
+    // sidecar, the place taken before the unload, and the sidecar's model
+    // out of memory before SeedVR2 is loaded into it.
+    if sidecar_at_an_image() {
+        return Err(crate::commands::bad_request("The previous image is still finishing. Try again in a moment."));
+    }
+    let _claim = mflux::claim_run(req.run.clone())
+        .ok_or_else(|| crate::commands::bad_request("An image is already being generated on this Mac. Wait for it to finish."))?;
+    let _ = mlx_unload(_state, &Value::Null).await;
+    mflux::upscale(entry, pack, input, factor, req.seed).await
 }
 
 fn read_log_from(log: &Path, from: u64) -> String {
@@ -3908,6 +4162,64 @@ mod tests {
         }
     }
 
+    /// An edit with many pictures on a small Mac. The two measured runs (one
+    /// and four pictures at 1024) bound the estimate.
+    #[test]
+    fn an_edit_with_more_pictures_than_the_memory_takes_is_refused() {
+        const GIB: u64 = 1_073_741_824;
+        assert!((edit_peak_gb(1, 1024, 10.6) - 10.48).abs() < 0.3, "one picture was measured at 10.5 GB");
+        assert!((edit_peak_gb(4, 1024, 10.6) - 17.18).abs() < 0.3, "four pictures were measured at 17.2 GB");
+        // 48 GB: nine pictures at 1024 run, ten (about 31 GB) are refused.
+        assert_eq!(edit_memory_verdict(9, 1024, 10.6, 48 * GIB), None);
+        assert_eq!(
+            edit_memory_verdict(10, 1024, 10.6, 48 * GIB).expect("31 GB are past the share of 48"),
+            "An edit with 10 pictures needs about 31 GB of memory and this Mac has 48 GB. It was not started, so the system does not freeze. Use at most 9 pictures, the one you edit included."
+        );
+        // 24 GB: two run, three are refused with the number that runs.
+        assert_eq!(edit_memory_verdict(2, 1024, 10.6, 24 * GIB), None);
+        assert!(edit_memory_verdict(3, 1024, 10.6, 24 * GIB).expect("three do not fit into 24").ends_with("Use at most 2 pictures, the one you edit included."));
+        // A smaller canvas takes more pictures.
+        assert_eq!(edit_memory_verdict(10, 768, 10.6, 48 * GIB), None);
+        // 16 GB: only the picture alone.
+        assert!(edit_memory_verdict(2, 1024, 10.6, 16 * GIB).expect("two do not fit into 16").ends_with("Edit the picture without references."));
+        // The 8-bit pack carries its larger weights.
+        assert!(edit_memory_verdict(9, 1024, 18.5, 48 * GIB).is_some());
+        // A picture alone is never refused here (the model's own floor does that).
+        assert_eq!(edit_memory_verdict(1, 1024, 10.6, 8 * GIB), None);
+        assert_eq!(edit_memory_verdict(10, 1024, 10.6, 0), None, "memory that could not be read never blocks");
+        // Checked before the sidecar's model is unloaded.
+        let body = production_source();
+        let command = &body[body.find("pub async fn mlx_generate").expect("mlx_generate")..];
+        let check = command.find("edit_memory_verdict(").expect("mlx_generate checks the memory of an edit");
+        assert!(check < command.find("mlx_unload(").expect("mlx_generate unloads"), "checked before the unload");
+    }
+
+    /// Enhance on a small Mac: the model fits, the result may not. The two
+    /// measured runs (2048 and 4096 on a side) bound the estimate.
+    #[test]
+    fn an_enhance_larger_than_the_macs_memory_is_refused() {
+        const GIB: u64 = 1_073_741_824;
+        assert!((upscale_peak_gb(4.194304) - 11.33).abs() < 0.3, "2048 x 2048 was measured at 11.3 GB");
+        assert!((upscale_peak_gb(16.777216) - 22.08).abs() < 0.3, "4096 x 4096 was measured at 22.1 GB");
+        // 48 GB: 4x of a 1024 picture runs.
+        assert_eq!(upscale_memory_verdict(4096, 4096, 4, 48 * GIB), None);
+        // 24 GB: 2x runs, 4x is refused with the way out.
+        assert_eq!(upscale_memory_verdict(2048, 2048, 2, 24 * GIB), None);
+        assert_eq!(
+            upscale_memory_verdict(4096, 4096, 4, 24 * GIB).expect("22 GB do not fit into 24"),
+            "Enhancing to 4096x4096 needs about 23 GB of memory and this Mac has 24 GB. It was not started, so the system does not freeze. Pick 2x, or enhance a smaller picture."
+        );
+        // 16 GB: 2x of a 1024 picture is refused, of a 768 one it runs.
+        assert!(upscale_memory_verdict(2048, 2048, 2, 16 * GIB).expect("11.3 GB do not fit into 16").ends_with("Enhance a smaller picture."));
+        assert_eq!(upscale_memory_verdict(1536, 1536, 2, 16 * GIB), None);
+        assert_eq!(upscale_memory_verdict(4096, 4096, 4, 0), None, "memory that could not be read never blocks");
+        // And the check runs before the sidecar's model is unloaded.
+        let body = production_source();
+        let command = &body[body.find("pub async fn mlx_upscale").expect("mlx_upscale")..];
+        let check = command.find("upscale_memory_verdict(").expect("mlx_upscale checks the memory of the result");
+        assert!(check < command.find("mlx_unload(").expect("mlx_upscale unloads"), "checked before the unload");
+    }
+
     /// Fund 12. A model that needs more memory than the Mac has is refused
     /// before the sidecar loads it.
     #[test]
@@ -3988,7 +4300,13 @@ mod tests {
         assert_eq!(ids.len(), IMAGE_CATALOG.len(), "duplicate catalog id");
         // The owner's floor for every category on the Mac (08.10.2026): at
         // least eight mainstream and eight unfiltered models on offer.
-        let offered: Vec<_> = IMAGE_CATALOG.iter().filter(|c| !c.retired).collect();
+        // The upscaler makes no picture of its own and counts for none of
+        // the floors: it is the one model of Enhance Image.
+        let upscalers: Vec<&str> =
+            IMAGE_CATALOG.iter().filter(|c| c.mflux.is_some_and(|p| p.upscales())).map(|c| c.id).collect();
+        assert_eq!(upscalers, ["seedvr2-3b"]);
+        let offered: Vec<_> =
+            IMAGE_CATALOG.iter().filter(|c| !c.retired && !c.mflux.is_some_and(|p| p.upscales())).collect();
         let unfiltered = offered.iter().filter(|c| c.unfiltered).count();
         assert!(offered.len() - unfiltered >= 8, "fewer than eight mainstream image models");
         assert!(unfiltered >= 8, "fewer than eight unfiltered image models");

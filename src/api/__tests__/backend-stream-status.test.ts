@@ -113,6 +113,20 @@ describe('localFetchStream in Tauri mode (loopback → proxy-first)', () => {
     expect(await res.text()).toContain('connection refused')
   })
 
+  it('issue 177: a first reply window that ran out is a 504 with its own code, not a retryable 503', async () => {
+    // Windows run d307-j: Chat Reply Timeout 30 s against a server that sent
+    // nothing. As a 503 the request went out three times and the error came
+    // after 98 s instead of 30.
+    tauriMode(true)
+    invokeMock.mockRejectedValueOnce('the backend accepted the request but sent nothing for 30 s. A very large model or a very long prompt can take this long; raise Chat Reply Timeout in Settings, General, or restart the backend if it is not working.')
+
+    const res = await localFetchStream('http://localhost:8000/v1/chat/completions', { method: 'POST', body: '{}' })
+    expect(res.status).toBe(504)
+    const body = JSON.parse(await res.text())
+    expect(body.code).toBe('first_reply_timeout')
+    expect(body.error).toContain('sent nothing for 30 s')
+  })
+
   it('delivers chunks that arrive AFTER the invoke promise resolved (WebView2 149 ordering)', async () => {
     tauriMode(true)
     let channel!: MockChannel<number[]>

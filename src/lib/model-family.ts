@@ -11,7 +11,7 @@
 function normalizeModelName(name: string): string {
   return (name || '')
     .toLowerCase()
-    .replace(/^[^:]+::/, '')    // strip openai:: / anthropic::
+    .replace(/^[^:]+(?::[a-z0-9-]+)?::/, '')    // strip openai:: / anthropic:: / openai:<entry>:: (#173)
     .replace(/^[^/]+\//, '')    // strip repo-author/ prefix
     .replace(/:.+$/, '')        // strip :tag suffix
 }

@@ -33,6 +33,7 @@ const voll: CompactSummary = {
   requests: '"mach den login fix aber ohne refactoring"',
   progress: 'auth.ts gelesen, den Nullwert in Zeile 40 gefunden.',
   decisions: 'Kein Refactoring, nur der Nullwert.',
+  files: 'src/auth.ts gelesen, Zeile 40 geaendert.',
   facts: 'src/auth.ts:40, Funktion verifyToken.',
   open: 'Der Test dafuer fehlt noch.',
   rest: '',

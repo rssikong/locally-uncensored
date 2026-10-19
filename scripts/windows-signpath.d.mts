@@ -31,3 +31,6 @@ export declare function mergeLatestJson(
   platforms: Record<string, UpdaterPlatform>,
   fallback: { version: string; notes: string; pubDate: string },
 ): LatestJson
+
+export declare const OTHER_PLATFORM_FILES: { platform: string; file: RegExp }[]
+export declare function missingOtherPlatforms(latest: { platforms?: Record<string, unknown> } | null, assetNames: string[]): string[]

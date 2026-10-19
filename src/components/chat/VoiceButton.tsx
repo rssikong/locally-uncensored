@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react"
+import { useEffect, useImperativeHandle, useRef, type Ref } from "react"
 import { Mic, MicOff, Loader2 } from "lucide-react"
 import { useVoice } from "../../hooks/useVoice"
 import { useVoiceStore } from "../../stores/voiceStore"
@@ -30,7 +30,15 @@ export function micUnavailableHint(cloudMode: boolean): string {
     : "Speech-to-text is not installed. Install faster-whisper in Settings → Voice & Remote."
 }
 
+/** What the composer can ask of the microphone. */
+export interface VoiceButtonHandle {
+  /** The message was sent while recording: end the take, keep nothing of it
+   *  back. The words already in the field went out with the message. */
+  endOnSend: () => void
+}
+
 interface Props {
+  ref?: Ref<VoiceButtonHandle>
   onTranscript: (text: string) => void
   /** Live interim transcript while recording (streaming dictation). */
   onInterim?: (text: string) => void
@@ -38,8 +46,8 @@ interface Props {
   disabled?: boolean
 }
 
-export function VoiceButton({ onTranscript, onInterim, onRecordingChange, disabled }: Props) {
-  const { isRecording, isTranscribing, sttSupported, sttError, clearSttError, startRecording, stopRecording, recheckStt, maxRecordingMs } = useVoice()
+export function VoiceButton({ ref, onTranscript, onInterim, onRecordingChange, disabled }: Props) {
+  const { isRecording, isTranscribing, sttSupported, sttError, clearSttError, startRecording, stopRecording, cancelRecording, recheckStt, maxRecordingMs } = useVoice()
   // Only for the greyed-out hint: cloud mode and local mode fail for different
   // reasons and have different ways out.
   const appMode = useSettingsStore((s) => s.settings.appMode)
@@ -87,6 +95,18 @@ export function VoiceButton({ onTranscript, onInterim, onRecordingChange, disabl
       onTranscript(transcript.trim())
     }
   }
+
+  // Sent while recording (David, 15.10.2026): the take went on after the
+  // send, and the button that ends it was greyed out with the answer
+  // running, so only a stop of the answer got the microphone back.
+  useImperativeHandle(ref, () => ({
+    endOnSend: () => {
+      if (autoStopRef.current) { clearTimeout(autoStopRef.current); autoStopRef.current = null }
+      if (!useVoiceStore.getState().isRecording) return
+      onRecordingChange?.(false)
+      void cancelRecording()
+    },
+  }))
 
   const handleClick = async () => {
     if (disabled || isTranscribing) return

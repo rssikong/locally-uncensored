@@ -15,7 +15,7 @@ import { prefixModelName } from '../api/providers/registry'
  */
 export function cloudModelRow(pm: ProviderModel): CloudModel {
   return {
-    name: prefixModelName(pm.provider, pm.id),
+    name: prefixModelName(pm.provider, pm.id, pm.entryId),
     model: pm.id,
     flash: pm.flash,
     unfiltered: pm.unfiltered,
@@ -24,6 +24,7 @@ export function cloudModelRow(pm: ProviderModel): CloudModel {
     type: 'text',
     provider: pm.provider,
     providerName: pm.providerName,
+    ...(pm.entryId ? { providerEntry: pm.entryId } : {}),
     contextLength: pm.contextLength,
     supportsTools: pm.supportsTools,
     supportsVision: pm.supportsVision,
@@ -32,6 +33,8 @@ export function cloudModelRow(pm: ProviderModel): CloudModel {
     thinkMode: pm.thinkMode,
     effortLevels: pm.effortLevels,
     effortDefault: pm.effortDefault,
+    effortNote: pm.effortNote,
+    effortLocal: pm.effortLocal,
     declaredContext: pm.declaredContext,
     creditRates: pm.creditRates,
     // Friendly server label (LU Cloud). Pickers prefer it over the raw id.

@@ -11,6 +11,8 @@
 import { log } from "../lib/logger";
 import { prop } from "../types/json-guards";
 import { shouldLogRepeat } from "../lib/probe-backoff";
+import { chatFirstReplyMs, FIRST_REPLY_TIMEOUT } from "../lib/chat-reply-timeout";
+import { useSettingsStore } from "../stores/settingsStore";
 
 // Hosts whose proxy failure has already been logged, host -> timestamp. Keeps
 // a dead local backend from filling the console with the same line forever.
@@ -224,7 +226,7 @@ export async function localFetch(
       log.warn('[localFetch] Proxy failed, trying direct fetch (repeats within the next minute are not logged)', { err: proxyErrMsg })
     }
 
-    // Fallback: try direct fetch (works when ComfyUI has --enable-cors-header *)
+    // Fallback: try direct fetch (works when ComfyUI names the app in --enable-cors-header)
     // Apply the same timeout to the fallback so a hanging probe doesn't sit
     // for minutes on this path either.
     let fallbackSignal = signal;
@@ -423,7 +425,11 @@ async function proxyStreamChunked(url: string, method: string, body?: string, he
       settleStreaming();
     };
 
-    void invoke("proxy_localhost_stream_chunked", { url, method, body: body || null, headers: headers ?? null, onChunk: channel, streamId })
+    // Issue 177: the wait for the first byte is the user's setting (0 = Off),
+    // read at the moment the request leaves so a change applies to the next
+    // message without a restart.
+    const firstChunkTimeoutMs = chatFirstReplyMs(useSettingsStore.getState().settings);
+    void invoke("proxy_localhost_stream_chunked", { url, method, body: body || null, headers: headers ?? null, onChunk: channel, streamId, firstChunkTimeoutMs })
       .then(() => {
         // Do NOT close here — the EOF marker does that (it may arrive after
         // this resolves; see above). Grace fallback so a lost EOF can't leak
@@ -438,9 +444,17 @@ async function proxyStreamChunked(url: string, method: string, body?: string, he
         // Backend answered non-2xx (rejected before any chunk): faithful status.
         // Transport failure (connection refused / validation): 503 so callers
         // treat it as retryable instead of a deterministic 4xx.
+        // Issue 177: the first reply window ran out. The wait the user set has
+        // already passed once, so this is no transport hiccup: a retry would
+        // only wait the same window again (Windows run d307-j: 30 s set, three
+        // attempts, the error after 98 s). Its own code keeps it out of both
+        // retry ladders (api/providers/retry.ts, lib/http-status.ts).
+        const firstReplyTimeout = !httpErr && /sent nothing for \d+ s/.test(msg);
         settle(httpErr
           ? new Response(httpErr.body, { status: httpErr.status })
-          : new Response(JSON.stringify({ error: msg }), { status: 503 }));
+          : firstReplyTimeout
+            ? new Response(JSON.stringify({ error: msg, code: FIRST_REPLY_TIMEOUT }), { status: 504 })
+            : new Response(JSON.stringify({ error: msg }), { status: 503 }));
         closed = true;
         detachAbort();
         // If a reader is already consuming (mid-stream death), surface there too.
@@ -505,6 +519,11 @@ export async function backendCall<T = unknown>(
     set_ollama_host: { path: "/local-api/set-ollama-host", method: "POST" },
     get_ollama_host: { path: "/local-api/get-ollama-host" },
     install_custom_node: { path: "/local-api/install-custom-node", method: "POST" },
+    // The node pack manager (Settings, ComfyUI node packs) lives in Rust; the
+    // plain vite server answers these three with the desktop-only 501.
+    list_custom_nodes: { path: "/local-api/list-custom-nodes" },
+    remove_custom_node: { path: "/local-api/remove-custom-node", method: "POST" },
+    custom_node_log: { path: "/local-api/custom-node-log" },
     whisper_status: { path: "/local-api/transcribe-status" },
     install_whisper: { path: "/local-api/install-whisper", method: "POST" },
     install_whisper_status: { path: "/local-api/install-whisper" },
@@ -530,10 +549,13 @@ export async function backendCall<T = unknown>(
     mlx_generate: { path: "/local-api/mlx-generate", method: "POST" },
     mlx_generate_progress: { path: "/local-api/mlx-generate-progress" },
     mlx_generate_cancel: { path: "/local-api/mlx-generate-cancel", method: "POST" },
+    mlx_enhance_prompt: { path: "/local-api/mlx-enhance-prompt", method: "POST" },
+    mlx_upscale: { path: "/local-api/mlx-upscale", method: "POST" },
     mlx_loras: { path: "/local-api/mlx-loras" },
     mlx_loras_open_folder: { path: "/local-api/mlx-loras-open-folder", method: "POST" },
     mlx_lora_delete: { path: "/local-api/mlx-lora-delete", method: "POST" },
     mlx_output_trash: { path: "/local-api/mlx-output-trash", method: "POST" },
+    mlx_cutout: { path: "/local-api/mlx-cutout", method: "POST" },
     mlx_image_models: { path: "/local-api/mlx-image-models" },
     mlx_image_install_model: { path: "/local-api/mlx-image-install-model", method: "POST" },
     mlx_image_install_status: { path: "/local-api/mlx-image-install-status" },
@@ -552,10 +574,28 @@ export async function backendCall<T = unknown>(
     video_cancel_model_install: { path: "/local-api/video-cancel-model-install", method: "POST" },
     video_delete_model: { path: "/local-api/video-delete-model", method: "POST" },
     video_stage_start_image: { path: "/local-api/video-stage-start-image", method: "POST" },
+    video_stage_motion_video: { path: "/local-api/video-stage-motion-video", method: "POST" },
+    video_stage_voice: { path: "/local-api/video-stage-voice", method: "POST" },
     video_generate: { path: "/local-api/video-generate", method: "POST" },
     video_progress: { path: "/local-api/video-progress" },
     video_cancel: { path: "/local-api/video-cancel", method: "POST" },
     read_media_file: { path: "/local-api/read-media-file", method: "POST" },
+    // The music engine of the Mac (commands/music.rs), desktop only like the
+    // MLX commands above: the dev server answers 501 (mlx-media-stubs.ts).
+    mlx_music_status: { path: "/local-api/mlx-music-status" },
+    mlx_music_install: { path: "/local-api/mlx-music-install", method: "POST" },
+    mlx_music_install_status: { path: "/local-api/mlx-music-install-status" },
+    mlx_music_cancel_install: { path: "/local-api/mlx-music-cancel-install", method: "POST" },
+    mlx_music_delete: { path: "/local-api/mlx-music-delete", method: "POST" },
+    mlx_music_generate: { path: "/local-api/mlx-music-generate", method: "POST" },
+    mlx_music_progress: { path: "/local-api/mlx-music-progress" },
+    mlx_music_cancel: { path: "/local-api/mlx-music-cancel", method: "POST" },
+    mlx_train_status: { path: "/local-api/mlx-train-status" },
+    mlx_train_stage: { path: "/local-api/mlx-train-stage", method: "POST" },
+    mlx_train_clear: { path: "/local-api/mlx-train-clear", method: "POST" },
+    mlx_train_start: { path: "/local-api/mlx-train-start", method: "POST" },
+    mlx_train_progress: { path: "/local-api/mlx-train-progress" },
+    mlx_train_cancel: { path: "/local-api/mlx-train-cancel", method: "POST" },
     // Astra voice loop: installed and run by the Rust process only. Mapped so
     // the browser dev surface gets the desktop-only answer from
     // dev-server/voice-loop-stubs.ts instead of "Unknown backend command".
@@ -564,6 +604,7 @@ export async function backendCall<T = unknown>(
     voice_loop_install_status: { path: "/local-api/voice-loop-install-status" },
     voice_loop_install_cancel: { path: "/local-api/voice-loop-install-cancel", method: "POST" },
     voice_loop_status: { path: "/local-api/voice-loop-status" },
+    engine_key_for: { path: "/local-api/engine-key-for", method: "POST" },
     voice_loop_start: { path: "/local-api/voice-loop-start", method: "POST" },
     voice_loop_set_voice: { path: "/local-api/voice-loop-set-voice", method: "POST" },
     voice_loop_stop: { path: "/local-api/voice-loop-stop", method: "POST" },
@@ -572,6 +613,10 @@ export async function backendCall<T = unknown>(
     fs_whole_computer: { path: "/local-api/fs-whole-computer", method: "POST" },
     fs_whole_computer_forget: { path: "/local-api/fs-whole-computer-forget", method: "POST" },
     voice_loop_uninstall: { path: "/local-api/voice-loop-uninstall", method: "POST" },
+    // REA, the reverse engineering plugin of the agents: the pinned package
+    // is fetched and checked by the Rust process only (commands/plugin_rea.rs).
+    plugin_rea_status: { path: "/local-api/plugin-rea-status" },
+    plugin_rea_fetch: { path: "/local-api/plugin-rea-fetch", method: "POST" },
     // Astra computer use: mouse, keyboard and screen belong to the Rust
     // process. Mapped for the same reason as the voice loop above; the
     // answers come from dev-server/computer-stubs.ts.
@@ -612,6 +657,18 @@ export async function backendCall<T = unknown>(
     detect_model_path: { path: "/local-api/detect-model-path", method: "POST" },
     check_model_sizes: { path: "/local-api/check-model-sizes", method: "POST" },
     delete_comfy_model: { path: "/local-api/delete-comfy-model", method: "POST" },
+    // Check files and Repair (GH #113): Rust only, the dev server answers
+    // 501 (dev-server/remote-stubs.ts).
+    verify_model_files: { path: "/local-api/verify-model-files", method: "POST" },
+    verify_model_files_status: { path: "/local-api/verify-model-files-status", method: "POST" },
+    verify_model_files_cancel: { path: "/local-api/verify-model-files-cancel", method: "POST" },
+    trash_model_file: { path: "/local-api/trash-model-file", method: "POST" },
+    // The training photos of a local character live in the Rust process; the
+    // dev server answers 501 (dev-server/remote-stubs.ts).
+    character_photos: { path: "/local-api/character-photos", method: "POST" },
+    // The GGUF file dialog of the Model Manager is native (D17); the dev
+    // server answers 501 (dev-server/remote-stubs.ts).
+    pick_gguf_file: { path: "/local-api/pick-gguf-file", method: "POST" },
     download_progress: { path: "/local-api/download-progress" },
     pause_download: { path: "/local-api/pause-download", method: "POST" },
     cancel_download: { path: "/local-api/cancel-download", method: "POST" },
@@ -631,6 +688,7 @@ export async function backendCall<T = unknown>(
     remote_qr_code: { path: "/local-api/remote-qr-code" },
     remote_connected_devices: { path: "/local-api/remote-connected-devices" },
     set_remote_permissions: { path: "/local-api/set-remote-permissions", method: "POST" },
+    set_remote_page_title: { path: "/local-api/set-remote-page-title", method: "POST" },
     start_tunnel: { path: "/local-api/start-tunnel", method: "POST" },
     stop_tunnel: { path: "/local-api/stop-tunnel", method: "POST" },
     tunnel_status: { path: "/local-api/tunnel-status" },

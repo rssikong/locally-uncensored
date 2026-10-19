@@ -456,6 +456,27 @@ export function useVoice() {
 
   const clearSttError = useCallback(() => store.setSttError(null), [store]);
 
+  /**
+   * End a take without transcribing it. The message it was dictated into has
+   * been sent with what the field showed, so a final transcript would only
+   * fill the emptied field again (and, in cloud mode, bill a transcription
+   * nobody reads). An interim answer still on its way is dropped by the
+   * `isRecording()` check in the stream tick.
+   */
+  const cancelRecording = useCallback(async (): Promise<void> => {
+    if (streamTimerRef.current) { clearInterval(streamTimerRef.current); streamTimerRef.current = null; }
+    interimBusyRef.current = false;
+    const recorder = recorderRef.current;
+    recorderRef.current = null;
+    store.setRecording(false);
+    if (!recorder) return;
+    try {
+      await recorder.stop();
+    } catch (err) {
+      log.error("Failed to stop a cancelled recording", { err });
+    }
+  }, [store]);
+
   return {
     isRecording: store.isRecording,
     isTranscribing: store.isTranscribing,
@@ -473,6 +494,7 @@ export function useVoice() {
     maxRecordingMs: cloudVoice ? CLOUD_DICTATION_LIMIT_MS : null,
     startRecording,
     stopRecording,
+    cancelRecording,
     recheckStt,
     recheckTts,
     speakText,

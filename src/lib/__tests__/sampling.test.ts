@@ -107,3 +107,37 @@ describe('clampSampling', () => {
     })
   })
 })
+
+/** GH #175: a persona carries sampling values of its own. */
+describe('buildSamplingRequest with a persona preset', () => {
+  it('the persona values reach the request', () => {
+    expect(buildSamplingRequest(SAMPLING_DEFAULTS, undefined, { temperature: 0.3, minP: 0.05, repeatPenalty: 1.1 }))
+      .toEqual({ temperature: 0.3, minP: 0.05, repeatPenalty: 1.1 })
+  })
+
+  it('the chat override still wins over the persona, field by field', () => {
+    expect(buildSamplingRequest(SAMPLING_DEFAULTS, { temperature: 1.2 }, { temperature: 0.3, topP: 0.5 }))
+      .toEqual({ temperature: 1.2, topP: 0.5 })
+  })
+
+  it('the persona wins over the Settings page', () => {
+    const settings = { ...SAMPLING_DEFAULTS, temperature: 1.9 }
+    expect(buildSamplingRequest(settings, undefined, { temperature: 0.4 })).toEqual({ temperature: 0.4 })
+  })
+
+  it('carries the extra samplers, top K included, only when someone set them', () => {
+    expect(buildSamplingRequest(SAMPLING_DEFAULTS, undefined, {
+      topK: 20, presencePenalty: 0.5, frequencyPenalty: -0.5, dryMultiplier: 0.8,
+    })).toEqual({ topK: 20, presencePenalty: 0.5, frequencyPenalty: -0.5, dryMultiplier: 0.8 })
+    expect(buildSamplingRequest(SAMPLING_DEFAULTS, undefined, {})).toEqual({})
+  })
+
+  it('effectiveSampling shows the persona value for an untouched field', () => {
+    expect(effectiveSampling(SAMPLING_DEFAULTS, undefined, { temperature: 0.3 }).temperature).toBe(0.3)
+  })
+
+  it('clampSampling holds the extra samplers in range', () => {
+    expect(clampSampling({ minP: 3, repeatPenalty: -1, presencePenalty: 9, frequencyPenalty: -9, dryMultiplier: -2, topK: -4 }))
+      .toEqual({ minP: 1, repeatPenalty: 0, presencePenalty: 2, frequencyPenalty: -2, dryMultiplier: 0, topK: 0 })
+  })
+})

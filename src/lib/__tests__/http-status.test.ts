@@ -114,6 +114,13 @@ describe('R5-53: flash_timeout is terminal like credits_exhausted', () => {
     ))).toBe(true)
   })
 
+  it('issue 177: a first reply timeout is terminal, another try waits the window again', () => {
+    expect(isTerminalModelError(new ProviderError(
+      'the backend accepted the request but sent nothing for 30 s.',
+      'openai', 'first_reply_timeout', 504,
+    ))).toBe(true)
+  })
+
   it('NEGATIVE CONTROL: a 504 WITHOUT that code is still retried', () => {
     expect(isTerminalModelError(new ProviderError('bad gateway', 'lu-cloud', undefined, 504))).toBe(false)
     expect(isTerminalModelError(Object.assign(new Error('gateway timeout'), { statusCode: 504 }))).toBe(false)

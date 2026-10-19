@@ -75,7 +75,7 @@ beforeEach(() => {
   useGenerationStore.setState({ generating: {}, aborters: {}, runs: {} })
   useModelStore.setState({ models: [], activeModel: LOCAL_MODEL })
   useSettingsStore.setState({
-    settings: { ...DEFAULT_SETTINGS, appMode: 'local', cavemanMode: 'off', chatToolsEnabled: false },
+    settings: { ...DEFAULT_SETTINGS, appMode: 'local', cavemanMode: 'off' },
   })
   useProviderStore.setState((s) => ({
     providers: {
@@ -179,7 +179,7 @@ describe('/compact bucht die lokale Spur', () => {
 
     useModelStore.setState({ models: [], activeModel: CLOUD_MODEL })
     useSettingsStore.setState({
-      settings: { ...DEFAULT_SETTINGS, appMode: 'cloud', cavemanMode: 'off', chatToolsEnabled: false },
+      settings: { ...DEFAULT_SETTINGS, appMode: 'cloud', cavemanMode: 'off' },
     })
     seed(CLOUD_MODEL)
     const { result } = renderHook(() => useChat())

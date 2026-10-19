@@ -14,10 +14,24 @@ import { MIN_TRAIN_IMAGES, maxTrainImages } from '../../../lib/train-image-cap'
 const INPUT_HINT_INTENTS: ReadonlySet<CreateIntent> =
   new Set(['character', 'lipsync', 'motion'] as CreateIntent[])
 
+/**
+ * Does the caption name inputs the lane waits for? Such a caption stands
+ * above the prompt window as a note, never inside it.
+ *
+ * Discord report (3.0.7), Motion Control: the caption sat inside the prompt
+ * window in the place and padding of the field, grey like a placeholder. It
+ * was taken for a field that would not take typing, and when both inputs
+ * were in it hid, so the "field" seemed to vanish. A note outside the window
+ * can go without the window changing.
+ */
+export function isInputHint(id: CreateIntent): boolean {
+  return INPUT_HINT_INTENTS.has(id)
+}
+
 /** Caption for prompt-less intents so each reads honestly (the old copy said
  *  "remove the background" for every one of them — misleading the eraser into
  *  a guaranteed "Paint a mask first" error). */
-export function noPromptHint(id: CreateIntent, backend: CreateBackend = 'local'): string {
+export function noPromptHint(id: CreateIntent, backend: CreateBackend = 'local', mac = false): string {
   switch (id) {
     case 'upscale':
       return 'No prompt needed. Just hit Create to enhance the image.'
@@ -26,9 +40,17 @@ export function noPromptHint(id: CreateIntent, backend: CreateBackend = 'local')
     case 'character':
       return `Add ${MIN_TRAIN_IMAGES} to ${maxTrainImages(backend)} photos of one person or character above, pick a trigger word, then hit Create to train.`
     case 'lipsync':
-      return 'Add the portrait (or clip) and a voice above, then hit Create to make it speak.'
+      // A Mac makes the clip from a portrait; it has no clip to resync.
+      return mac
+        ? 'Add a portrait and a voice recording above, then hit Create to make it speak.'
+        : 'Add the portrait (or clip) and a voice above, then hit Create to make it speak.'
     case 'motion':
-      return 'Add a character image and a driving dance/pose video above, then hit Create.'
+      // It stands above the prompt window (Discord report, 3.0.7: the caption
+      // was taken for the field). The local lanes read an optional prompt;
+      // the cloud model takes none.
+      return backend === 'local'
+        ? 'Add a character image and a driving dance/pose video above, then hit Create. The prompt is optional.'
+        : 'No prompt needed. Add a character image and a driving dance/pose video above, then hit Create.'
     default:
       return 'No prompt needed. Just hit Create to remove the background.'
   }

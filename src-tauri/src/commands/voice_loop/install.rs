@@ -735,7 +735,7 @@ fn ensure_python(
     }
 }
 
-fn venv_works(dirs: &VoiceDirs) -> bool {
+pub(crate) fn venv_works(dirs: &VoiceDirs) -> bool {
     dirs.venv().join("pyvenv.cfg").is_file() && interpreter_version(&dirs.venv_python()).is_some()
 }
 

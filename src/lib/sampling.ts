@@ -1,8 +1,9 @@
 import { DEFAULT_SETTINGS } from './constants'
-import type { Settings } from '../types/settings'
+import type { Settings, SamplerValues } from '../types/settings'
 
 /**
- * Sampling for one conversation: temperature, top_p and a max output cap.
+ * Sampling for one conversation: temperature, top_p and a max output cap,
+ * and since GH #175 the preset a persona carries.
  *
  * R5-10/R5-11 (3.0.1-Liste), the orchestrator's decision on 18.09.2026 (two
  * earlier bauers left this "braucht Entscheid", see bau/w2ui.md; F2, review-
@@ -20,31 +21,40 @@ import type { Settings } from '../types/settings'
  *    entirely, so the model answers at whatever the upstream considers
  *    normal for it instead of at a number LU picked for every model at once.
  *
- * 3. Top K is deliberately absent here (see SamplingControls.tsx): the
- *    OpenAI-compatible body never serialises it, so it stays a page-level
- *    setting for the providers that do read it (Ollama, Anthropic; F3 /
- *    R5-13). This module never touches it.
+ * 3. Top K stays a Settings page value for every chat (F3 / R5-13). A
+ *    persona may carry its own (GH #175), which then goes on the wire in its
+ *    place, together with the other extra samplers the persona set.
+ *
+ * 4. The order, highest first: this chat's own value, the persona preset of
+ *    the speaker (lib/chat-persona.ts), the Settings page, the app default.
  *
  * Mirrors the web app (the 3.0.0 VORBILD) field for field, minus
  * the web-only max-tokens warning copy this popup does not carry.
  */
 
-/** What one conversation overrides. A key that is absent was never touched
- *  BY THIS CHAT, though it may still differ from the app default via the
- *  Settings page, which effectiveSampling below accounts for. */
-export interface SamplingOverrides {
-  temperature?: number
-  topP?: number
-  maxTokens?: number
-}
+/** What one conversation overrides, or what a persona carries as its own
+ *  preset (GH #175). A key that is absent was never set at that level.
+ *
+ *  The first three are the ones the per chat popup sets. The others come from
+ *  a persona: top K, min P, the repetition, presence and frequency penalties
+ *  and the DRY multiplier. Each provider sends only the ones its backend reads
+ *  (api/providers/sampler-fields.ts). */
+export type SamplingOverrides = SamplerValues
 
-/** The three fields as they go into the request options object. */
+/** The fields as they go into the request options object. */
 export type SamplingRequest = SamplingOverrides
+
+/** The three fields every chat has a value for, from the app default up. */
+export type CoreSampling = Required<Pick<SamplingOverrides, 'temperature' | 'topP' | 'maxTokens'>>
+
+/** The samplers that only exist where a persona or a chat set them. */
+export const EXTRA_SAMPLERS = ['topK', 'minP', 'repeatPenalty', 'presencePenalty', 'frequencyPenalty', 'dryMultiplier'] as const
+export type ExtraSampler = (typeof EXTRA_SAMPLERS)[number]
 
 /** Where a field with nothing chosen anywhere sits. Same numbers as
  *  DEFAULT_SETTINGS, named here so the request rule reads as one idea rather
  *  than three lookups. */
-export const SAMPLING_DEFAULTS: Required<SamplingOverrides> = {
+export const SAMPLING_DEFAULTS: CoreSampling = {
   temperature: DEFAULT_SETTINGS.temperature,
   topP: DEFAULT_SETTINGS.topP,
   maxTokens: DEFAULT_SETTINGS.maxTokens,
@@ -56,6 +66,13 @@ const BOUNDS: Record<keyof SamplingOverrides, [number, number]> = {
   // A cap above any context window served is the same as no cap; the ceiling
   // here only stops a hand-edited store from putting nonsense on the wire.
   maxTokens: [0, 1_000_000],
+  topK: [0, 1000],
+  minP: [0, 1],
+  repeatPenalty: [0, 2],
+  // The range of the OpenAI spec, which Ollama and llama-server share.
+  presencePenalty: [-2, 2],
+  frequencyPenalty: [-2, 2],
+  dryMultiplier: [0, 5],
 }
 
 /** Hold a written value inside its field's range and drop anything that is
@@ -76,18 +93,30 @@ export function clampSampling(patch: SamplingOverrides): SamplingOverrides {
 
 /**
  * The value the control shows for each field: what this chat chose, else the
- * global setting, else the app default. Always three numbers, because a
- * slider needs a position even for a field nobody has touched.
+ * persona preset (GH #175), else the global setting, else the app default.
+ * Always three numbers, because a slider needs a position even for a field
+ * nobody has touched.
  */
 export function effectiveSampling(
   settings: Pick<Settings, 'temperature' | 'topP' | 'maxTokens'>,
   overrides?: SamplingOverrides,
-): Required<SamplingOverrides> {
+  preset?: SamplingOverrides,
+): CoreSampling {
   return {
-    temperature: overrides?.temperature ?? settings.temperature ?? SAMPLING_DEFAULTS.temperature,
-    topP: overrides?.topP ?? settings.topP ?? SAMPLING_DEFAULTS.topP,
-    maxTokens: overrides?.maxTokens ?? settings.maxTokens ?? SAMPLING_DEFAULTS.maxTokens,
+    temperature: overrides?.temperature ?? preset?.temperature ?? settings.temperature ?? SAMPLING_DEFAULTS.temperature,
+    topP: overrides?.topP ?? preset?.topP ?? settings.topP ?? SAMPLING_DEFAULTS.topP,
+    maxTokens: overrides?.maxTokens ?? preset?.maxTokens ?? settings.maxTokens ?? SAMPLING_DEFAULTS.maxTokens,
   }
+}
+
+/** The extra samplers in force: the chat's own value, else the persona's. */
+export function effectiveExtraSamplers(overrides?: SamplingOverrides, preset?: SamplingOverrides): SamplingOverrides {
+  const out: SamplingOverrides = {}
+  for (const key of EXTRA_SAMPLERS) {
+    const value = overrides?.[key] ?? preset?.[key]
+    if (value !== undefined) out[key] = value
+  }
+  return out
 }
 
 /**
@@ -95,20 +124,23 @@ export function effectiveSampling(
  *
  * A field whose effective value is still the app default is omitted, so the
  * provider never serialises it and the upstream applies its own default. A
- * field the user moved, in this chat or on the Settings page, is present with
- * that number. Max tokens counts 0 as "auto", which is both the app default
- * and the absence of a cap, so it is omitted the same way.
+ * field the user moved, in this chat, in the persona or on the Settings page,
+ * is present with that number. Max tokens counts 0 as "auto", which is both
+ * the app default and the absence of a cap, so it is omitted the same way.
+ * The extra samplers have no app default at all: they are present exactly
+ * when the chat or the persona set them.
  */
 export function buildSamplingRequest(
   settings: Pick<Settings, 'temperature' | 'topP' | 'maxTokens'>,
   overrides?: SamplingOverrides,
+  preset?: SamplingOverrides,
 ): SamplingRequest {
-  const value = effectiveSampling(settings, overrides)
+  const value = effectiveSampling(settings, overrides, preset)
   const request: SamplingRequest = {}
   if (value.temperature !== SAMPLING_DEFAULTS.temperature) request.temperature = value.temperature
   if (value.topP !== SAMPLING_DEFAULTS.topP) request.topP = value.topP
   if (value.maxTokens > 0) request.maxTokens = value.maxTokens
-  return request
+  return { ...request, ...effectiveExtraSamplers(overrides, preset) }
 }
 
 /**
@@ -125,8 +157,9 @@ export function buildSamplingRequest(
 export function samplingIsChanged(
   settings: Pick<Settings, 'temperature' | 'topP' | 'maxTokens'>,
   overrides?: SamplingOverrides,
+  preset?: SamplingOverrides,
 ): boolean {
-  return Object.keys(buildSamplingRequest(settings, overrides)).length > 0
+  return Object.keys(buildSamplingRequest(settings, overrides, preset)).length > 0
 }
 
 /**

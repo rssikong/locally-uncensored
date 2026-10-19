@@ -22,6 +22,7 @@ import { AgentWorkspaceBadge } from './AgentWorkspaceBadge'
 import { ErrorBoundary } from '../ui/ErrorBoundary'
 import { CHAT_BASE_SYSTEM_PROMPT } from '../../lib/system-prompt'
 import { useSettingsStore } from '../../stores/settingsStore'
+import { HowItWorks } from '../ui/HowItWorks'
 import { useDismissOnEscape } from '../../hooks/useDismissOnEscape'
 import { ChevronDown, Download, Wrench, Radio, RefreshCw, X } from 'lucide-react'
 import { PluginsDropdown } from './PluginsDropdown'
@@ -637,6 +638,8 @@ export function ChatView() {
                   <div className={`w-full ${COMPOSER_MAX_W} mx-auto px-3`}>
                     <div data-testid="chat-session-strip" data-computer-note-yields="" className="flex items-center gap-1.5 px-2 py-0.5">
                       <AgentModeToggle />
+                      {appMode === 'cloud' && <HowItWorks topic="agent" variant="mark" placement="above-start" markSize={10} />}
+                      {appMode !== 'cloud' && <HowItWorks topic="chats" variant="mark" placement="above-start" markSize={10} />}
                       {/* Was diese Runde kostet, direkt neben dem Agent-Schalter
                           (19.09.2026): kein Band mehr ueber der Eingabe,
                           das diese Leiste nach oben schob, sondern ein Etikett
@@ -684,7 +687,7 @@ export function ChatView() {
                                       .find(c => c.id === activeConversationId)
                                     setExportOpen(false)
                                     if (!conv) return
-                                    const result = await exportConversation(conv, fmt)
+                                    const result = await exportConversation(conv, fmt, useSettingsStore.getState().personas)
                                     if (result.status === 'error') {
                                       setExportToast(result.error ?? 'Could not export chat.')
                                     } else if (result.status === 'saved' && result.path) {
@@ -815,6 +818,9 @@ export function ChatView() {
             // Commands need the tool catalog to drive, which only Agent
             // mode has here. Plain chat leaves "/cmd" as ordinary text.
             slashCommands={isAgentActive ? 'agent' : 'chat'}
+            // Agent mode copies attached files into the working folder;
+            // plain chat hands the model a summary of them.
+            filesReachTools={isAgentActive}
             composerModel={
               /* What this chat's answers were written by rides on the
                  picker itself now, as a dot plus a tooltip, instead of a

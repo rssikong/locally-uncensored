@@ -1,6 +1,6 @@
 [package]
 name = "locally-uncensored"
-version = "3.0.6"
+version = "3.0.7"
 description = "Private, local AI chat & image/video generation"
 authors = ["purpledoubled"]
 edition = "2021"
@@ -62,7 +62,9 @@ jsonwebtoken = "9"
 qrcode = "0.14"
 # "jpeg" is for the screenshots of computer use (commands/computer): a JPEG of
 # a desktop is a fifth of the PNG. It adds zune-jpeg (MIT OR Apache-2.0 OR Zlib).
-image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+# "webp" is for Remove Background on a Mac, which reads the staged image as it
+# was picked (PNG, JPG or WebP). It adds image-webp (MIT OR Apache-2.0).
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 rand = "0.8"
 sha2 = "0.10"
 # Unpacking the private Python of the voice loop (commands/voice_loop). Both
@@ -106,6 +108,11 @@ enigo = { version = "0.6", default-features = false, features = ["x11rb"] }
 # on purpose: 2.4 asks for tauri 2.12 and would move the whole app with it.
 tauri-plugin-global-shortcut = ">=2.3, <2.4"
 
+# GH #183: reads the extra_model_paths.yaml files ComfyUI itself reads
+# (commands/comfy_user_paths.rs). Was a dev-dependency for the tests of
+# custom_models.rs; same locked version.
+serde_yaml = "0.9.34"
+
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_System_JobObjects", "Win32_System_Threading", "Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_UI_WindowsAndMessaging", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse", "Win32_Graphics_Gdi", "Win32_Graphics_Dwm"] }
 # The accessibility tree for computer use (Apache-2.0). "input" is the one
@@ -135,13 +142,26 @@ xcap = "0.9"
 # "randr" feature: monitors, capture and the window list of computer use.
 [target.'cfg(target_os = "linux")'.dependencies]
 x11rb = { version = "0.13", features = ["randr"] }
+# The web view on Linux, already in Cargo.lock through tauri and wry. Only for
+# answering its microphone requests (src/linux_media.rs, GitHub #162).
+webkit2gtk = "=2.0.2"
 
 # Which app a window belongs to, for computer use. All four are already in
 # Cargo.lock through tauri and xcap (MIT, and libc MIT OR Apache-2.0).
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2-app-kit = { version = "0.3", default-features = false, features = ["NSRunningApplication", "libc"] }
-objc2-foundation = { version = "0.3", default-features = false, features = ["NSString", "NSURL"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["NSString", "NSURL", "NSArray", "NSData", "NSDictionary", "NSError", "NSIndexSet"] }
 libc = "0.2"
+
+# Remove Background on a Mac (commands/mlx_cutout): the subject mask comes
+# from the Vision framework of macOS 14, so the cutout needs no model and no
+# Python. objc2 is in Cargo.lock already; objc2-vision is new and, like its
+# siblings, Zlib OR Apache-2.0 OR MIT. objc2-core-video reads the mask buffer
+# and is in Cargo.lock through xcap.
+objc2 = "0.6"
+objc2-vision = { version = "0.3", default-features = false, features = ["std", "VNRequestHandler", "VNRequest", "VNObservation", "VNGenerateForegroundInstanceMaskRequest", "objc2-core-video", "objc2-image-io"] }
+objc2-core-video = { version = "0.3", default-features = false, features = ["std", "CVBase", "CVBuffer", "CVImageBuffer", "CVPixelBuffer", "CVReturn"] }
+objc2-image-io = { version = "0.3", default-features = false, features = ["std", "CGImageProperties"] }
 
 [profile.release]
 panic = "abort"
@@ -149,6 +169,3 @@ codegen-units = 1
 lto = true
 opt-level = "s"
 strip = true
-
-[dev-dependencies]
-serde_yaml = "0.9.34"

@@ -599,7 +599,8 @@ fn set_whole_computer(chat_id: &str, on: bool, consented: bool) -> bool {
 ///   * The folder macOS starts programs from at login.
 ///   * LU's own folders. They hold the settings of the app and the private
 ///     Python the voice engine runs: a file written there is code the app
-///     executes, without the shell tool and its question.
+///     executes, without the shell tool and its question. Wherever the user
+///     put them (`runtime_root`).
 fn whole_computer_closed() -> Vec<PathBuf> {
     let mut out = forbidden_root_prefixes();
     if let Some(home) = dirs::home_dir() {
@@ -618,6 +619,10 @@ fn whole_computer_closed() -> Vec<PathBuf> {
         crate::os_paths::config_root(),
         crate::os_paths::app_config_dir(),
     ]);
+    // The same folders when they were moved to a folder of the user's choice
+    // (Settings, Model Storage): the voice engine, LU's own Python and the
+    // read-aloud voices.
+    out.extend(crate::runtime_root::owned_outside_defaults());
     out
 }
 
@@ -1022,7 +1027,7 @@ pub fn fs_write(path: String, content: String, chatId: Option<String>, workingDi
 /// The largest file a chat attachment may be. The WebView enforces the same
 /// number before it reads the file (src/lib/chat-files.ts); this is the side
 /// that cannot be talked out of it.
-const WRITE_BYTES_CAP: u64 = 64 * 1024 * 1024;
+const WRITE_BYTES_CAP: u64 = 256 * 1024 * 1024;
 
 /// The hidden sibling a binary upload grows in until its last chunk arrived.
 fn upload_part_path(target: &Path) -> Result<PathBuf, String> {

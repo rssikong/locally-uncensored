@@ -1,0 +1,397 @@
+name: SignPath stages (Windows release)
+
+# Stages 2 and 3 of a SignPath signed Windows release, and the watcher that
+# starts them. Stage 1 is the Windows leg of release.yml. The whole order and
+# the reason for it are in the header of .github/actions/windows-signpath/
+# action.yml; where the state between the stages lives is in the header of
+# scripts/signpath-stages.mjs.
+#
+#   watch       (every 15 minutes, and by hand) asks SignPath about the open
+#               requests of the last ten releases. A completed request starts
+#               the next stage with workflow_dispatch on the release tag. A
+#               waiting one is listed on the run page with its link. One that
+#               ended without a signature is listed with the command that
+#               submits it again; nothing restarts by itself.
+#   installers  stage 2: the signed app binary into the build of stage 1,
+#               NSIS and MSI around it, both submitted.
+#   publish     stage 3: the signed installers, their updater files, the
+#               llama.cpp provenance record, all attached to the release, and
+#               the Windows entries of latest.json.
+#   app         stage 1 again, after its request was denied, failed or
+#               canceled: the same unsigned binary from the run on the tag is
+#               submitted once more. Nothing is built.
+#
+# Every stage runs on a release tag only (refs/tags/vX.Y.Z), started with
+# `gh workflow run windows-signpath.yml --ref vX.Y.Z -f stage=<stage>`, and
+# that is the origin SignPath requires. A stage started twice does its work
+# once: `plan` finds the earlier request and stops (scripts/signpath-stages.mjs).
+#
+# GITHUB_TOKEN may start workflow_dispatch runs, unlike most events, which is
+# why the watcher needs no other token. It gets `actions: write` for that and
+# nothing else that writes. Only `publish` may write to the release.
+
+run-name: ${{ (github.event_name == 'schedule' || inputs.stage == 'watch') && 'SignPath watcher' || format('SignPath {0} {1}', inputs.stage, github.ref_name) }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: 'watch: look at every open request. installers, publish: the next stage of the release tag selected above. app: submit the app binary of that tag again after a denied request.'
+        type: choice
+        options: [watch, installers, publish, app]
+        default: watch
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+
+permissions: {}
+
+# One run per release tag at a time; a second one waits and then finds the
+# work done. The watcher has its own group.
+concurrency:
+  group: windows-signpath-${{ (github.event_name == 'schedule' || inputs.stage == 'watch') && 'watcher' || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    if: ${{ github.event_name == 'schedule' || inputs.stage == 'watch' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - name: Start the next stage of every release whose request is signed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+          SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+        run: node scripts/signpath-stages.mjs watch
+
+  app:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.stage == 'app' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: SignPath signs a release tag only
+        shell: bash
+        env:
+          RUN_REF: ${{ github.ref }}
+        run: |
+          if [[ ! "$RUN_REF" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::SignPath signs runs on a release tag (refs/tags/vX.Y.Z) only. This run is on $RUN_REF. Start it with --ref vX.Y.Z."
+            exit 1
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - name: Is the app binary waiting, signed, or to be submitted again
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+          SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+        run: node scripts/signpath-stages.mjs plan app "$GITHUB_REF_NAME" "$RUNNER_TEMP/signpath/chain"
+
+      - name: Fetch the unsigned app binary the run on the tag built
+        if: steps.plan.outputs.run == 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: windows-app-unsigned
+          run-id: ${{ steps.plan.outputs.build-run-id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/signpath/app-unsigned
+
+      - name: Upload it again for this signing request
+        id: upload-app
+        if: steps.plan.outputs.run == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: windows-app-unsigned
+          path: ${{ runner.temp }}/signpath/app-unsigned
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Submit the app binary to SignPath again
+        id: sign-app
+        if: steps.plan.outputs.run == 'true'
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3.0
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: windows-app
+          github-artifact-id: ${{ steps.upload-app.outputs.artifact-id }}
+          wait-for-completion: false
+          wait-for-completion-timeout-in-seconds: '900'
+          parameters: |
+            version: "${{ steps.plan.outputs.version }}"
+
+      # The build stays the one of the run on the tag, so stage 2 fetches its
+      # build output from there.
+      - name: Write the state of stage 1
+        id: state
+        if: steps.plan.outputs.run == 'true'
+        env:
+          REQUEST_ID: ${{ steps.sign-app.outputs.signing-request-id }}
+          REQUEST_URL: ${{ steps.sign-app.outputs.signing-request-web-url }}
+          VERSION: ${{ steps.plan.outputs.version }}
+          POLICY: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          BUILD_RUN_ID: ${{ steps.plan.outputs.build-run-id }}
+          ATTEMPT: ${{ steps.plan.outputs.app-attempt }}
+        run: |
+          set -euo pipefail
+          node scripts/signpath-stages.mjs write-state "$RUNNER_TEMP/signpath/state-app" "$GITHUB_REF_NAME" app \
+            "requestId=$REQUEST_ID" "requestUrl=$REQUEST_URL" "version=$VERSION" "policy=$POLICY" \
+            "buildRunId=$BUILD_RUN_ID" "attempt=$((ATTEMPT + 1))"
+          cp "$RUNNER_TEMP/signpath/chain/app/llama-cpp-provenance.json" "$RUNNER_TEMP/signpath/state-app/"
+
+      - name: Keep the state of stage 1
+        if: steps.plan.outputs.run == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ steps.state.outputs.name }}
+          path: ${{ steps.state.outputs.dir }}
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Say what waits for approval
+        if: steps.plan.outputs.run == 'true'
+        env:
+          REQUEST_URL: ${{ steps.sign-app.outputs.signing-request-web-url }}
+        run: |
+          {
+            echo "### SignPath: the app binary of $GITHUB_REF_NAME waits for approval again"
+            echo ""
+            echo "Signing request: $REQUEST_URL"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  installers:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.stage == 'installers' }}
+    runs-on: windows-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: SignPath signs a release tag only
+        shell: bash
+        env:
+          RUN_REF: ${{ github.ref }}
+        run: |
+          if [[ ! "$RUN_REF" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::SignPath signs runs on a release tag (refs/tags/vX.Y.Z) only. This run is on $RUN_REF. Start it with --ref vX.Y.Z."
+            exit 1
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - name: Is the app binary signed, and the installers not yet submitted
+        id: plan
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+          SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+        run: node scripts/signpath-stages.mjs plan installers "$GITHUB_REF_NAME"
+
+      # The bundler runs cargo metadata; nothing is compiled, so no cache.
+      - name: Install Rust stable
+        if: steps.plan.outputs.run == 'true'
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      - name: Install npm dependencies
+        if: steps.plan.outputs.run == 'true'
+        run: npm ci
+
+      - name: Pack the installers around the signed app binary and submit them
+        if: steps.plan.outputs.run == 'true'
+        uses: ./.github/actions/windows-signpath-installers
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          label: ${{ github.ref_name }}
+          app-request-id: ${{ steps.plan.outputs.app-request-id }}
+          build-run-id: ${{ steps.plan.outputs.build-run-id }}
+          version: ${{ steps.plan.outputs.version }}
+
+  publish:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.stage == 'publish' }}
+    runs-on: windows-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: SignPath signs a release tag only
+        shell: bash
+        env:
+          RUN_REF: ${{ github.ref }}
+        run: |
+          if [[ ! "$RUN_REF" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::SignPath signs runs on a release tag (refs/tags/vX.Y.Z) only. This run is on $RUN_REF. Start it with --ref vX.Y.Z."
+            exit 1
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - name: Are the installers signed, and not yet published
+        id: plan
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+          SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+        run: node scripts/signpath-stages.mjs plan publish "$GITHUB_REF_NAME" "$RUNNER_TEMP/signpath/chain"
+
+      - name: Install npm dependencies
+        if: steps.plan.outputs.run == 'true'
+        run: npm ci
+
+      # The publisher check refuses anything but the certificate of the
+      # SignPath Foundation, so a release can never go out under the
+      # self-signed test certificate: that one is for signpath-probe.yml.
+      - name: Fetch the signed installers and write their updater files
+        id: finish
+        if: steps.plan.outputs.run == 'true'
+        uses: ./.github/actions/windows-signpath-finish
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          installers-request-id: ${{ steps.plan.outputs.installers-request-id }}
+          expected-publisher: ${{ vars.SIGNPATH_EXPECTED_PUBLISHER || 'SignPath Foundation' }}
+          updater-private-key: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          updater-private-key-password: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      # What tauri-action does for the other lanes, for the files this lane
+      # signed after the build: attach them to the release and point the
+      # Windows entries of latest.json at them. The Linux and Mac legs write
+      # their entries into the same file with tauri-action, at times this job
+      # does not control, so the merge is read back and repeated if another
+      # job wrote in between. The llama.cpp provenance record goes along.
+      - name: Attach the signed Windows installers and update latest.json
+        if: steps.plan.outputs.run == 'true'
+        shell: bash
+        timeout-minutes: 20
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          DIST: ${{ steps.finish.outputs.dist }}
+        run: |
+          set -euo pipefail
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::there is no release $TAG to attach the signed installers to"
+            exit 1
+          fi
+          gh release upload "$TAG" "$RUNNER_TEMP/signpath/chain/installers/llama-cpp-provenance.json" --repo "$GITHUB_REPOSITORY" --clobber
+          cd "$DIST"
+          gh release upload "$TAG" ./* --repo "$GITHUB_REPOSITORY" --clobber
+          RELEASE_NOTES="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body)"
+          export RELEASE_NOTES
+          base="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG"
+          work="$(mktemp -d)"
+          # The Mac and Linux legs write their own entries. A merge here must
+          # never lose one whose update files already hang on the release
+          # (asked by the Mac lane, 14.10.2026).
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' > "$work/assets.txt"
+          for attempt in 1 2 3 4 5; do
+            rm -f "$work/latest.json"
+            gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern latest.json --dir "$work" 2>/dev/null \
+              || echo "no latest.json on the release yet, starting one"
+            node "$GITHUB_WORKSPACE/scripts/windows-signpath.mjs" merge-latest-json . "$work/latest.json" "$base"
+            cp "$work/latest.json" "$work/wanted.json"
+            gh release upload "$TAG" "$work/latest.json" --repo "$GITHUB_REPOSITORY" --clobber
+            sleep 45
+            rm -f "$work/latest.json"
+            gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern latest.json --dir "$work"
+            if node -e '
+              const [now, wanted] = process.argv.slice(1).map((f) => JSON.parse(require("fs").readFileSync(f, "utf8")).platforms)
+              const kept = Object.keys(wanted).filter((k) => k.startsWith("windows-")).every((k) => now[k] && now[k].signature === wanted[k].signature)
+              process.exit(kept ? 0 : 1)
+            ' "$work/latest.json" "$work/wanted.json"; then
+              if node "$GITHUB_WORKSPACE/scripts/windows-signpath.mjs" check-other-platforms "$work/latest.json" "$work/assets.txt"; then
+                echo "latest.json on $TAG names the signed Windows installers"
+                exit 0
+              fi
+              echo "an entry of another platform went missing, merging again (attempt $attempt)"
+              continue
+            fi
+            echo "latest.json was rewritten by another job, merging again (attempt $attempt)"
+          done
+          echo "::error::latest.json on $TAG does not keep the Windows entries of the signed installers, or lost the entry of another platform whose files hang on the release"
+          exit 1
+
+      - name: Write the state of stage 3
+        id: state
+        if: steps.plan.outputs.run == 'true'
+        shell: bash
+        env:
+          INSTALLERS_REQUEST_ID: ${{ steps.plan.outputs.installers-request-id }}
+          PUBLISHER: ${{ steps.finish.outputs.publisher }}
+          VERSION: ${{ steps.plan.outputs.version }}
+        run: |
+          node scripts/signpath-stages.mjs write-state "$RUNNER_TEMP/signpath/state-published" "$GITHUB_REF_NAME" published \
+            "installersRequestId=$INSTALLERS_REQUEST_ID" "publisher=$PUBLISHER" "version=$VERSION"
+
+      - name: Keep the state of stage 3
+        if: steps.plan.outputs.run == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ steps.state.outputs.name }}
+          path: ${{ steps.state.outputs.dir }}
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Say on the run page what was published
+        if: steps.plan.outputs.run == 'true'
+        shell: bash
+        env:
+          PUBLISHER: ${{ steps.finish.outputs.publisher }}
+          APP_REQUEST: ${{ steps.plan.outputs.app-request-url }}
+          INSTALLERS_REQUEST: ${{ steps.plan.outputs.installers-request-url }}
+        run: |
+          {
+            echo "### SignPath: the Windows installers of $GITHUB_REF_NAME are signed and attached"
+            echo ""
+            echo "Publisher \`$PUBLISHER\`. Signing requests: [app binary]($APP_REQUEST), [installers]($INSTALLERS_REQUEST)."
+            echo "latest.json carries the Windows entries, llama-cpp-provenance.json is attached. The release stays a prerelease until it is flipped by hand."
+          } >> "$GITHUB_STEP_SUMMARY"

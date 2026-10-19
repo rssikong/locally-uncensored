@@ -32,6 +32,11 @@ import {
 /** ComfyUI-RMBG's node class, the one node a cutout graph runs. */
 const CUTOUT_NODE = 'RMBG'
 
+/** Local Enhance Image (3.0.7): the core node that runs the upscale model
+ *  over the picture, part by part, and the loader in front of it. */
+const ENHANCE_NODE = 'ImageUpscaleWithModel'
+const ENHANCE_LOADER = 'UpscaleModelLoader'
+
 /** Which of the two Create lanes a render belongs to. */
 export type RenderMode = 'image' | 'video'
 
@@ -63,7 +68,10 @@ export function phaseForExecutingNode(
     // label of its own. It is the whole run of a cutout.
     return { phase: 'sampling', pct: 40, label: cutoutDownloadLine || 'Removing the background...' }
   }
-  if (LOADER_NODES.has(classType)) {
+  if (classType === ENHANCE_NODE) {
+    return { phase: 'sampling', pct: 40, label: 'Enhancing the image...' }
+  }
+  if (LOADER_NODES.has(classType) || classType === ENHANCE_LOADER) {
     return { phase: 'loading-model', pct: 15, label: 'Loading model...' }
   }
   if (CLIP_LOADER_NODES.has(classType)) {
@@ -105,9 +113,54 @@ export function phaseForProgressStep(
   value: number,
   max: number,
   current: ProgressPhase,
+  /** An Enhance run counts the parts of the picture it has done, not
+   *  sampler steps: it has no sampler. */
+  enhance = false,
 ): RenderPhaseStep | null {
   if (current === 'decoding') return null
   if (!Number.isFinite(value) || !Number.isFinite(max) || max <= 0) return null
   const pct = Math.round(35 + (value / max) * 55) // 35% to 90%
-  return { phase: 'sampling', pct, label: `Sampling step ${value}/${max}...` }
+  return { phase: 'sampling', pct, label: enhance ? `Enhancing part ${value} of ${max}...` : `Sampling step ${value}/${max}...` }
+}
+
+/** The nodes that write a finished result out. */
+const SAVE_NODES = new Set(['SaveImage', 'SaveAnimatedWEBP', 'SaveAnimatedPNG', 'SaveVideo', 'VHS_VideoCombine'])
+
+/** The nodes whose work IS the render. When ComfyUI reports one of them as
+ *  cached, the run only writes the old result out again. */
+function isHeavyNode(classType: string): boolean {
+  return classType === ENHANCE_NODE || classType === CUTOUT_NODE
+    || SAMPLER_NODES.has(classType) || DECODE_NODES.has(classType)
+}
+
+const SAVING: RenderPhaseStep = { phase: 'decoding', pct: 92, label: 'Saving...' }
+
+/**
+ * What to say once ComfyUI starts on the prompt (`execution_start`, and
+ * `execution_cached` right after it with the nodes it will not run again).
+ *
+ * The box, d307-c H2: a second 4x Enhance of the same picture with the same
+ * model came straight out of ComfyUI's cache. Only the save ran, and the line
+ * said "Queued... 0s" up to "10s" until the end, because the one node that
+ * did run has no label and nothing else ever arrived. A started prompt is not
+ * queued any more: it is starting, or, when the heavy work is cached, saving.
+ * Null once a real phase is on screen, so a late event never walks it back.
+ */
+export function phaseForExecutionStart(
+  current: ProgressPhase,
+  cachedClassTypes: readonly string[] = [],
+): RenderPhaseStep | null {
+  if (current !== 'queued') return null
+  if (cachedClassTypes.some(isHeavyNode)) return SAVING
+  return { phase: 'queued', pct: 12, label: 'Starting...' }
+}
+
+/**
+ * A save node entered while nothing else has been said yet: the run has
+ * nothing left but the save. Null otherwise, so a save after a real decode
+ * keeps "Decoding image..." and a save in the middle of a graph cannot
+ * freeze the label (the decoding phase ignores step reports).
+ */
+export function phaseForSaveNode(classType: string, current: ProgressPhase): RenderPhaseStep | null {
+  return current === 'queued' && SAVE_NODES.has(classType) ? SAVING : null
 }

@@ -78,7 +78,7 @@ beforeEach(() => {
   useGenerationStore.setState({ generating: {}, aborters: {}, runs: {} })
   useModelStore.setState({ models: [], activeModel: GROUP_MODEL_1 })
   useSettingsStore.setState({
-    settings: { ...DEFAULT_SETTINGS, appMode: 'local', cavemanMode: 'off', chatToolsEnabled: false },
+    settings: { ...DEFAULT_SETTINGS, appMode: 'local', cavemanMode: 'off' },
   })
   useProviderStore.setState((s) => ({
     providers: { ...s.providers, openai: { ...s.providers.openai, enabled: true } },

@@ -124,3 +124,17 @@ MAIL-ENTWURF*.md
 /.*.png
 /*-proof.png
 /*-beweis.png
+
+# Keys and credentials never belong in this repository, whatever tool wrote
+# them next to the sources.
+.env.*
+!.env.example
+*.pem
+*.key
+*.p8
+*.p12
+*.pfx
+*.keystore
+*.jks
+credentials*.json
+service-account*.json

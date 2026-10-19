@@ -36,14 +36,16 @@
 //! The steps are steered by variables so that one binary serves every run:
 //! `LU_REAL_MODEL`, `LU_REAL_PROMPT`, `LU_REAL_NEGATIVE`, `LU_REAL_LORAS` (`name:strength|...`), `LU_REAL_STEPS`,
 //! `LU_REAL_GUIDANCE`, `LU_REAL_SEED`, `LU_REAL_WIDTH`, `LU_REAL_HEIGHT`,
-//! `LU_REAL_IMAGES` (paths, separated by `|`), `LU_REAL_RESOLUTION` (the side
-//! an edit scales its images to), `LU_REAL_SECONDS`,
+//! `LU_REAL_IMAGES` (paths, separated by `|`), `LU_REAL_MOTION` (the motion
+//! video of a Motion Control run), `LU_REAL_RESOLUTION` (the side
+//! an edit scales its images to), `LU_REAL_SECONDS`, `LU_REAL_AUDIO` (the voice
+//! of a Talking Character run, which makes it the engine's `a2v`),
 //! `LU_REAL_CANCEL_AFTER` (seconds into an install or a video),
 //! `LU_REAL_CANCEL_AT_STEP` (an image), `LU_REAL_NAME` (the name the result is
 //! kept under), `LU_REAL_OUT` (the folder for results and the record) and
 //! `LU_REAL_ANY_POWER` (`1`: do not wait for mains).
 
-use super::{media_cmds, mlx, video, CmdResult};
+use super::{media_cmds, mlx, music, video, CmdResult};
 use crate::state::AppState;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
@@ -370,6 +372,17 @@ fn image_lane() -> Lane {
         status: mlx::mlx_image_install_status,
         cancel: mlx::mlx_image_cancel_install,
         weights: crate::media_store::active_root(crate::media_store::Store::Mflux),
+    }
+}
+
+/// The music lane installs its engine and its weights on one slot.
+fn music_lane() -> Lane {
+    Lane {
+        name: "music",
+        install: music::music_install,
+        status: music::music_install_status,
+        cancel: music::music_cancel_install,
+        weights: crate::os_paths::data_dir().join("acestep").join("checkpoints"),
     }
 }
 
@@ -851,9 +864,31 @@ fn video_run() {
     if let Some(negative) = var("LU_REAL_NEGATIVE") {
         args["negative_prompt"] = json!(negative);
     }
+    if let (Some(width), Some(height)) = (number::<u32>("LU_REAL_WIDTH"), number::<u32>("LU_REAL_HEIGHT")) {
+        args["width"] = json!(width);
+        args["height"] = json!(height);
+    }
     if let Some(image) = var("LU_REAL_IMAGES") {
         assert_eq!(model["acceptsImage"], true, "{id} takes no start image by the catalogue");
         args["init_image"] = json!(stage(&image));
+    }
+    // Talking Character: the voice is staged the way the interface stages it
+    // (`media_cmds::video_stage_voice`), and the clip is as long as it.
+    if let Some(audio) = var("LU_REAL_AUDIO") {
+        assert_eq!(model["talkingReady"], true, "{id} has no Talking Character part on disk");
+        let bytes = std::fs::read(&audio).expect("the voice");
+        let data = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes);
+        let staged = media_cmds::video_stage_voice(json!({ "data": data })).expect("stage the voice");
+        args["audio"] = staged["path"].clone();
+    }
+    // Motion Control: the clip goes to disk the way the interface stages it
+    // (`video_stage_motion_video`), and the run follows its motion.
+    if let Some(clip) = var("LU_REAL_MOTION") {
+        assert_eq!(model["motion"], true, "{id} cannot follow a motion video by the catalogue");
+        assert_eq!(status["motionInstalled"], true, "the Motion Control LoRA is not installed");
+        let bytes = std::fs::read(&clip).expect("read the motion video");
+        let staged = media_cmds::stage_motion_video_in(&video::outputs_root().join("motion-videos"), &bytes).expect("stage the motion video");
+        args["motion_video"] = json!(staged);
     }
     println!("video_generate {args}");
 
@@ -937,5 +972,225 @@ fn video_run() {
         assert!(!Path::new(&output).is_file(), "a cancelled run left a video behind");
     } else {
         assert_eq!(last["status"], "complete", "the video did not complete: {}", last["error"]);
+    }
+}
+
+// ── Music ─────────────────────────────────────────────────────────────
+
+/// The install of the music lane: the engine into its venv, then the
+/// weights. `LU_REAL_MODEL` is `acestep-v15-turbo`, the one entry.
+#[test]
+#[ignore = "the real run: needs LU_REAL_RUN=1"]
+fn install_music_model() {
+    if on() {
+        install_model(music_lane());
+    }
+}
+
+/// One track, as Create makes it: the argument object of `generateMusic` in
+/// `src/api/mlx-music.ts`, then the progress every two seconds until it is
+/// through. `LU_REAL_PROMPT` is the style, `LU_REAL_LYRICS` the lyrics
+/// (empty: an instrumental), `LU_REAL_SECONDS` the length,
+/// `LU_REAL_CANCEL_AFTER` stops it on the way.
+#[test]
+#[ignore = "the real run: needs LU_REAL_RUN=1"]
+fn music_run() {
+    if !on() {
+        return;
+    }
+    let state = state();
+    let none = json!({});
+    let name = var("LU_REAL_NAME").unwrap_or_else(|| "music-run".to_string());
+    wait_for_mains();
+    let status = music::music_status(state, &none).expect("mlx_music_status");
+    assert_eq!(status["installed"], true, "the music model is not installed: {status}");
+    let mut args = json!({
+        "prompt": var("LU_REAL_PROMPT").expect("LU_REAL_PROMPT"),
+        "seed": number::<i64>("LU_REAL_SEED").unwrap_or(42),
+        "seconds": number::<f64>("LU_REAL_SECONDS").unwrap_or(30.0),
+        "run": "real-run",
+    });
+    if let Some(lyrics) = var("LU_REAL_LYRICS") {
+        args["lyrics"] = json!(lyrics);
+    }
+    println!("mlx_music_generate {args}");
+    let available_before = available_memory_gb();
+    let started = Instant::now();
+    let answer = runtime().block_on(music::music_generate(state, &args));
+    let Ok(job) = answer else {
+        record(&format!("music {name}"), json!({ "args": args, "error": answer.unwrap_err() }));
+        panic!("mlx_music_generate refused");
+    };
+    let pid = job["pid"].as_u64().unwrap_or(0) as u32;
+    let sampler = sample_memory(move || Some(pid));
+    let cancel_after = number::<u64>("LU_REAL_CANCEL_AFTER");
+    let mut stop = Value::Null;
+    let mut printed = String::new();
+    let last = loop {
+        let p = music::music_progress(state, &none).expect("mlx_music_progress");
+        let line = format!("{} {}% {} {}/{}", p["phase"], p["percent"], p["detail"], p["step"], p["steps"]);
+        if line != printed {
+            println!("[{:>6.1}s] {line}", seconds(started));
+            printed = line;
+        }
+        if p["running"] != true {
+            break p;
+        }
+        if stop.is_null() && cancel_after.is_some_and(|after| started.elapsed() >= Duration::from_secs(after)) {
+            let at = Instant::now();
+            let answer = music::music_cancel(state, &json!({ "run": "real-run" })).unwrap_or_else(|e| json!({ "ERROR": e }));
+            let mut gone = None::<u64>;
+            while at.elapsed() < Duration::from_secs(30) && gone.is_none() {
+                if !alive(pid) {
+                    gone = Some(ms(at));
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            stop = json!({ "afterSeconds": cancel_after, "cancelAnswer": answer, "processGoneMs": gone });
+        }
+        std::thread::sleep(Duration::from_secs(2));
+    };
+    let memory = sampler.finish();
+    let output = job["output"].as_str().unwrap_or("").to_string();
+    let mut result = json!({
+        "args": args,
+        "job": job,
+        "seconds": seconds(started),
+        "progress": last,
+        "view": music::real_run_view(),
+        "memory": memory,
+        "availableBeforeGB": available_before,
+        "availableAfterGB": available_memory_gb(),
+        "stop": stop,
+        "outputBytes": std::fs::metadata(&output).map(|m| m.len()).ok(),
+    });
+    if Path::new(&output).is_file() {
+        let kept = out_dir().join(format!("{name}.wav"));
+        std::fs::copy(&output, &kept).expect("keep the track");
+        result["kept"] = json!(kept);
+    }
+    record(&format!("music {name}"), result);
+    if cancel_after.is_some() {
+        assert!(!Path::new(&output).is_file(), "a cancelled run left a track behind");
+    } else {
+        assert_eq!(last["status"], "complete", "the track did not complete: {}", last["error"]);
+    }
+}
+
+/// A character trained on this Mac, as Create trains it: the photos of
+/// `LU_REAL_IMAGES` (a folder) staged one by one with the caption Create
+/// writes, then `mlx_train_start` with the trigger word `LU_REAL_NAME` and
+/// `LU_REAL_STEPS` steps, then the progress every two seconds until it is
+/// through. `LU_REAL_CANCEL_AFTER` stops it on the way. The character is
+/// copied to the results folder.
+#[test]
+#[ignore = "the real run: needs LU_REAL_RUN=1"]
+fn train_run() {
+    if !on() {
+        return;
+    }
+    let state = state();
+    let none = json!({});
+    let trigger = var("LU_REAL_NAME").unwrap_or_else(|| "luxfox".to_string());
+    wait_for_mains();
+    let status = mlx::train::train_status(state, &none).expect("mlx_train_status");
+    println!("mlx_train_status {status}");
+    assert!(status["base"].is_string(), "no Z-Image Turbo pack: {status}");
+
+    let folder = var("LU_REAL_IMAGES").expect("LU_REAL_IMAGES names the folder of the photos");
+    let mut photos: Vec<PathBuf> = std::fs::read_dir(&folder)
+        .expect("the folder of the photos")
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "png" || x == "jpg"))
+        .collect();
+    photos.sort();
+    mlx::train::train_clear(state, &json!({ "set": trigger })).expect("mlx_train_clear");
+    // The caption Create writes (`buildTrainCaption` in src/lib/train-captions.ts):
+    // the plain line, and the description of the photo after it where a
+    // `<photo>.txt` lies next to it.
+    for photo in &photos {
+        use base64::Engine;
+        let data = base64::engine::general_purpose::STANDARD.encode(std::fs::read(photo).expect("a photo"));
+        let description = std::fs::read_to_string(photo.with_extension("txt")).unwrap_or_default();
+        let description = description.split_whitespace().collect::<Vec<_>>().join(" ");
+        let description = description.trim_end_matches([',', '.', ';', ' ']);
+        let caption = if description.is_empty() {
+            format!("{trigger}, a photo of {trigger}")
+        } else {
+            format!("{trigger}, a photo of {trigger}, {description}")
+        };
+        mlx::train::train_stage(state, &json!({ "set": trigger, "data": data, "caption": caption })).expect("mlx_train_stage");
+    }
+
+    let args = json!({ "set": trigger, "trigger": trigger, "steps": number::<u32>("LU_REAL_STEPS"), "run": "real-run" });
+    println!("mlx_train_start {args}");
+    let available_before = available_memory_gb();
+    let started = Instant::now();
+    let answer = runtime().block_on(mlx::train::train_start(state, &args));
+    let Ok(job) = answer else {
+        record(&format!("train {trigger}"), json!({ "args": args, "error": answer.unwrap_err() }));
+        panic!("mlx_train_start refused");
+    };
+    println!("{job}");
+    let pid = job["pid"].as_u64().unwrap_or(0) as u32;
+    let sampler = sample_memory(move || Some(pid));
+    let cancel_after = number::<u64>("LU_REAL_CANCEL_AFTER");
+    let mut stop = Value::Null;
+    let mut printed = String::new();
+    let mut phases: Vec<(f64, String)> = Vec::new();
+    let last = loop {
+        let p = mlx::train::train_progress(state, &none).expect("mlx_train_progress");
+        let phase = p["phase"].as_str().unwrap_or("").to_string();
+        if phases.last().is_none_or(|(_, last)| *last != phase) {
+            phases.push((seconds(started), phase));
+        }
+        let line = format!("{} {}% {}/{}", p["phase"], p["percent"], p["step"], p["steps"]);
+        if line != printed {
+            println!("[{:>6.1}s] {line}", seconds(started));
+            printed = line;
+        }
+        if p["running"] != true {
+            break p;
+        }
+        if stop.is_null() && cancel_after.is_some_and(|after| started.elapsed() >= Duration::from_secs(after)) {
+            let at = Instant::now();
+            let answer = mlx::train::train_cancel(state, &json!({ "run": "real-run" })).unwrap_or_else(|e| json!({ "ERROR": e }));
+            let mut gone = None::<u64>;
+            while at.elapsed() < Duration::from_secs(30) && gone.is_none() {
+                if !alive(pid) {
+                    gone = Some(ms(at));
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            stop = json!({ "afterSeconds": cancel_after, "cancelAnswer": answer, "processGoneMs": gone });
+        }
+        std::thread::sleep(Duration::from_secs(2));
+    };
+    let memory = sampler.finish();
+    let output = job["output"].as_str().unwrap_or("").to_string();
+    let mut result = json!({
+        "args": args,
+        "job": job,
+        "seconds": seconds(started),
+        "phases": phases,
+        "progress": last,
+        "view": mlx::train::real_run_view(),
+        "memory": memory,
+        "availableBeforeGB": available_before,
+        "availableAfterGB": available_memory_gb(),
+        "stop": stop,
+        "outputBytes": std::fs::metadata(&output).map(|m| m.len()).ok(),
+    });
+    if cancel_after.is_none() && Path::new(&output).is_file() {
+        let kept = out_dir().join(format!("{trigger}.safetensors"));
+        std::fs::copy(&output, &kept).expect("keep the character");
+        result["kept"] = json!(kept);
+    }
+    record(&format!("train {trigger}"), result);
+    if cancel_after.is_some() {
+        assert_eq!(last["status"], "cancelled", "the run was not cancelled: {last}");
+    } else {
+        assert_eq!(last["status"], "complete", "the training did not complete: {}", last["error"]);
     }
 }

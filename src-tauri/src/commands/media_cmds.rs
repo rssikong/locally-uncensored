@@ -65,6 +65,7 @@ async fn off_main(
 /// status poll do not take it, so both are heard while a Remove deletes.
 static IMAGE_LANE: std::sync::Mutex<()> = std::sync::Mutex::new(());
 static VIDEO_LANE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+static MUSIC_LANE: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// Run `work` when no other command holds `lane`.
 fn in_turn<T>(lane: &std::sync::Mutex<()>, work: impl FnOnce() -> T) -> T {
@@ -120,6 +121,21 @@ pub async fn mlx_generate(state: State<'_, AppState>, args: Value) -> Result<Val
     crate::commands::mlx::mlx_generate(state.inner(), &args).await
 }
 
+/// Rewrite a prompt with the Qwen-Image 2.1 prompt enhancer. Long like an
+/// image, and like `mlx_generate` it waits on an async worker.
+#[tauri::command]
+pub async fn mlx_enhance_prompt(state: State<'_, AppState>, args: Value) -> Result<Value, String> {
+    crate::commands::mlx::mlx_enhance_prompt(state.inner(), &args).await
+}
+
+// Enhance Image on a Mac: SeedVR2 on the second engine
+// (`commands::mlx::mlx_upscale`). Async like `mlx_generate`: it waits for
+// the engine's process and never holds the main thread.
+#[tauri::command]
+pub async fn mlx_upscale(state: State<'_, AppState>, args: Value) -> Result<Value, String> {
+    crate::commands::mlx::mlx_upscale(state.inner(), &args).await
+}
+
 #[tauri::command]
 pub async fn mlx_generate_progress(app: AppHandle, args: Value) -> Result<Value, String> {
     off_main(app, args, crate::commands::mlx::mlx_generate_progress).await
@@ -153,6 +169,13 @@ pub async fn mlx_lora_delete(app: AppHandle, args: Value) -> Result<Value, Strin
 #[tauri::command]
 pub async fn mlx_output_trash(app: AppHandle, args: Value) -> Result<Value, String> {
     off_main(app, args, crate::commands::mlx_outputs::mlx_output_trash).await
+}
+
+// Remove Background on a Mac, through Vision (`commands::mlx_cutout`).
+
+#[tauri::command]
+pub async fn mlx_cutout(app: AppHandle, args: Value) -> Result<Value, String> {
+    off_main(app, args, crate::commands::mlx_cutout::mlx_cutout).await
 }
 
 #[tauri::command]
@@ -264,6 +287,85 @@ pub async fn video_cancel(app: AppHandle, args: Value) -> Result<Value, String> 
     off_main(app, args, crate::commands::video::video_cancel).await
 }
 
+// ── Music on the Mac (ACE-Step 1.5) ──────────────────────────────────────
+
+#[tauri::command]
+pub async fn mlx_music_status(app: AppHandle, args: Value) -> Result<Value, String> {
+    off_main(app, args, crate::commands::music::music_status).await
+}
+
+#[tauri::command]
+pub async fn mlx_music_install(app: AppHandle, args: Value) -> Result<Value, String> {
+    off_main_in_turn(app, args, &MUSIC_LANE, crate::commands::music::music_install).await
+}
+
+#[tauri::command]
+pub async fn mlx_music_install_status(app: AppHandle, args: Value) -> Result<Value, String> {
+    off_main(app, args, crate::commands::music::music_install_status).await
+}
+
+#[tauri::command]
+pub async fn mlx_music_cancel_install(app: AppHandle, args: Value) -> Result<Value, String> {
+    off_main(app, args, crate::commands::music::music_cancel_install).await
+}
+
+#[tauri::command]
+pub async fn mlx_music_delete(app: AppHandle, args: Value) -> Result<Value, String> {
+    off_main_in_turn(app, args, &MUSIC_LANE, crate::commands::music::music_delete).await
+}
+
+/// Async like `mlx_generate`: it waits for the image engine to let go of its
+/// model before the track starts. Its claim on the one run is taken before
+/// that wait, so two clicks cannot both get through.
+#[tauri::command]
+pub async fn mlx_music_generate(state: State<'_, AppState>, args: Value) -> Result<Value, String> {
+    crate::commands::music::music_generate(state.inner(), &args).await
+}
+
+#[tauri::command]
+pub async fn mlx_music_progress(app: AppHandle, args: Value) -> Result<Value, String> {
+    off_main(app, args, crate::commands::music::music_progress).await
+}
+
+#[tauri::command]
+pub async fn mlx_music_cancel(app: AppHandle, args: Value) -> Result<Value, String> {
+    off_main(app, args, crate::commands::music::music_cancel).await
+}
+
+// ── Character training on the Mac (mflux-train) ─────────────────────────
+
+#[tauri::command]
+pub async fn mlx_train_status(app: AppHandle, args: Value) -> Result<Value, String> {
+    off_main(app, args, crate::commands::mlx::train::train_status).await
+}
+
+#[tauri::command]
+pub async fn mlx_train_stage(app: AppHandle, args: Value) -> Result<Value, String> {
+    off_main(app, args, crate::commands::mlx::train::train_stage).await
+}
+
+#[tauri::command]
+pub async fn mlx_train_clear(app: AppHandle, args: Value) -> Result<Value, String> {
+    off_main(app, args, crate::commands::mlx::train::train_clear).await
+}
+
+/// Async like `mlx_music_generate`: it waits for the image engine to let go
+/// of its model before the run starts, with its claim taken before that.
+#[tauri::command]
+pub async fn mlx_train_start(state: State<'_, AppState>, args: Value) -> Result<Value, String> {
+    crate::commands::mlx::train::train_start(state.inner(), &args).await
+}
+
+#[tauri::command]
+pub async fn mlx_train_progress(app: AppHandle, args: Value) -> Result<Value, String> {
+    off_main(app, args, crate::commands::mlx::train::train_progress).await
+}
+
+#[tauri::command]
+pub async fn mlx_train_cancel(app: AppHandle, args: Value) -> Result<Value, String> {
+    off_main(app, args, crate::commands::mlx::train::train_cancel).await
+}
+
 // ── Media playback (video → blob URL) ───────────────────────────────────
 //
 // MLX video never touches the sidecar HTTP surface the image path uses
@@ -288,6 +390,8 @@ fn allowed_media_roots() -> Vec<PathBuf> {
         // partialize strips it), and without a file there was nothing left to
         // re-read.
         crate::commands::mlx::images_root(),
+        // Tracks of the music lane (commands/music.rs).
+        crate::commands::music::outputs_root(),
     ]
 }
 
@@ -355,7 +459,6 @@ fn start_image_ext(bytes: &[u8]) -> Option<&'static str> {
 /// hash of the content, so the same picture is one file however often it is
 /// picked, and a file that is already there is left alone.
 fn stage_start_image_in(dir: &std::path::Path, bytes: &[u8]) -> Result<PathBuf, String> {
-    use sha2::{Digest, Sha256};
     if bytes.is_empty() {
         return Err("The start image is empty.".to_string());
     }
@@ -363,20 +466,74 @@ fn stage_start_image_in(dir: &std::path::Path, bytes: &[u8]) -> Result<PathBuf, 
         return Err("The start image is larger than 40 MB.".to_string());
     }
     let ext = start_image_ext(bytes).ok_or("The start image is not a PNG, JPG or WebP file.")?;
+    stage_by_content(dir, bytes, ext, "start image")
+}
+
+/// Write `bytes` into `dir` under the hash of their content, once.
+fn stage_by_content(dir: &std::path::Path, bytes: &[u8], ext: &str, what: &str) -> Result<PathBuf, String> {
+    use sha2::{Digest, Sha256};
     let hash: String = Sha256::digest(bytes).iter().take(16).map(|b| format!("{b:02x}")).collect();
     let path = dir.join(format!("{hash}.{ext}"));
     if path.is_file() {
         return Ok(path);
     }
     std::fs::create_dir_all(dir)
-        .map_err(|e| format!("Could not create the folder for start images: {}", os_error::english(&e)))?;
+        .map_err(|e| format!("Could not create the folder for the {what}: {}", os_error::english(&e)))?;
     let mut tmp = tempfile::NamedTempFile::new_in(dir)
-        .map_err(|e| format!("Could not write the start image: {}", os_error::english(&e)))?;
+        .map_err(|e| format!("Could not write the {what}: {}", os_error::english(&e)))?;
     std::io::Write::write_all(&mut tmp, bytes)
-        .map_err(|e| format!("Could not write the start image: {}", os_error::english(&e)))?;
+        .map_err(|e| format!("Could not write the {what}: {}", os_error::english(&e)))?;
     tmp.persist(&path)
-        .map_err(|e| format!("Could not write the start image: {}", os_error::english(&e.error)))?;
+        .map_err(|e| format!("Could not write the {what}: {}", os_error::english(&e.error)))?;
     Ok(path)
+}
+
+// ── motion videos for Motion Control on the Mac ─────────────────────────
+//
+// The same way as a start image: the clip whose motion a run follows is
+// bytes in the WebView, and `video_generate` reads a file.
+
+/// The largest motion video this takes. A run uses five seconds of it at
+/// most, so more would only be a longer wait.
+const MOTION_VIDEO_MAX_BYTES: usize = 200 * 1024 * 1024;
+
+/// What the clip is, read from its first bytes: MP4 and MOV carry `ftyp`
+/// after their first box size, WebM starts with the EBML magic.
+fn motion_video_ext(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.len() >= 12 && &bytes[4..8] == b"ftyp" {
+        Some(if &bytes[8..10] == b"qt" { "mov" } else { "mp4" })
+    } else if bytes.starts_with(&[0x1A, 0x45, 0xDF, 0xA3]) {
+        Some("webm")
+    } else {
+        None
+    }
+}
+
+pub(crate) fn stage_motion_video_in(dir: &std::path::Path, bytes: &[u8]) -> Result<PathBuf, String> {
+    if bytes.is_empty() {
+        return Err("The motion video is empty.".to_string());
+    }
+    if bytes.len() > MOTION_VIDEO_MAX_BYTES {
+        return Err("The motion video is larger than 200 MB. Trim it to a few seconds.".to_string());
+    }
+    let ext = motion_video_ext(bytes).ok_or("The motion video is not an MP4, MOV or WebM file.")?;
+    stage_by_content(dir, bytes, ext, "motion video")
+}
+
+/// Stage the motion video of a Motion Control run and answer with its path.
+/// `args.data` is the clip as base64, without a `data:` prefix.
+#[tauri::command]
+pub async fn video_stage_motion_video(app: AppHandle, args: Value) -> Result<Value, String> {
+    off_main(app, args, |_state, args| {
+        let data = args.get("data").and_then(Value::as_str).ok_or("video_stage_motion_video: data is missing")?;
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(data)
+            .map_err(|_| "The motion video could not be read.".to_string())?;
+        let dir = crate::commands::video::outputs_root().join("motion-videos");
+        let path = stage_motion_video_in(&dir, &bytes)?;
+        Ok(serde_json::json!({ "path": path.to_string_lossy() }))
+    })
+    .await
 }
 
 /// Stage a start image for `video_generate` and answer with its path.
@@ -390,6 +547,116 @@ pub fn video_stage_start_image(args: Value) -> Result<Value, String> {
     let dir = crate::commands::video::outputs_root().join("start-images");
     let path = stage_start_image_in(&dir, &bytes)?;
     Ok(serde_json::json!({ "path": path.to_string_lossy() }))
+}
+
+// ── The voice of a Talking Character ─────────────────────────────────
+//
+// The speech `video_generate` turns into a talking clip (`audio`) is a file
+// for the engine as well, and a voice picked in the WebView is bytes in
+// memory just as a start image is. It is written beside the videos the same
+// way, under the hash of its content.
+
+/// The largest voice this takes: about four minutes of WAV, far more than the
+/// ten seconds a clip uses.
+const VOICE_MAX_BYTES: usize = 50 * 1024 * 1024;
+
+/// What the audio is, read from its first bytes. The engine opens it with
+/// ffmpeg, which goes by content too.
+fn voice_ext(bytes: &[u8]) -> Option<&'static str> {
+    let tag = |at: usize, what: &[u8]| bytes.len() >= at + what.len() && &bytes[at..at + what.len()] == what;
+    if tag(0, b"RIFF") && tag(8, b"WAVE") {
+        Some("wav")
+    } else if tag(0, b"FORM") && (tag(8, b"AIFF") || tag(8, b"AIFC")) {
+        Some("aiff")
+    } else if tag(0, b"ID3") || (bytes.len() >= 2 && bytes[0] == 0xFF && bytes[1] & 0xE0 == 0xE0) {
+        Some("mp3")
+    } else if tag(4, b"ftyp") {
+        Some("m4a")
+    } else if tag(0, b"fLaC") {
+        Some("flac")
+    } else if tag(0, b"OggS") {
+        Some("ogg")
+    } else {
+        None
+    }
+}
+
+/// Write a voice into `dir` and return where it is, as `stage_start_image_in`
+/// does for a picture.
+fn stage_voice_in(dir: &std::path::Path, bytes: &[u8]) -> Result<PathBuf, String> {
+    use sha2::{Digest, Sha256};
+    if bytes.is_empty() {
+        return Err("The voice file is empty.".to_string());
+    }
+    if bytes.len() > VOICE_MAX_BYTES {
+        return Err("The voice file is larger than 50 MB. Use a shorter clip of speech.".to_string());
+    }
+    let ext = voice_ext(bytes).ok_or("The voice is not a WAV, MP3, M4A, AIFF, FLAC or OGG file.")?;
+    let hash: String = Sha256::digest(bytes).iter().take(16).map(|b| format!("{b:02x}")).collect();
+    let path = dir.join(format!("{hash}.{ext}"));
+    if path.is_file() {
+        return Ok(path);
+    }
+    std::fs::create_dir_all(dir).map_err(|e| format!("Could not create the folder for voices: {}", os_error::english(&e)))?;
+    let mut tmp = tempfile::NamedTempFile::new_in(dir).map_err(|e| format!("Could not write the voice: {}", os_error::english(&e)))?;
+    std::io::Write::write_all(&mut tmp, bytes).map_err(|e| format!("Could not write the voice: {}", os_error::english(&e)))?;
+    tmp.persist(&path).map_err(|e| format!("Could not write the voice: {}", os_error::english(&e.error)))?;
+    Ok(path)
+}
+
+/// Stage the voice of a Talking Character run and answer with its path.
+/// `args.data` is the audio as base64, without a `data:` prefix.
+#[tauri::command]
+pub fn video_stage_voice(args: Value) -> Result<Value, String> {
+    let data = args.get("data").and_then(Value::as_str).ok_or("video_stage_voice: data is missing")?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data)
+        .map_err(|_| "The voice could not be read.".to_string())?;
+    let dir = crate::commands::video::outputs_root().join("voices");
+    let path = stage_voice_in(&dir, &bytes)?;
+    Ok(serde_json::json!({ "path": path.to_string_lossy() }))
+}
+
+#[cfg(test)]
+mod voice_tests {
+    use super::*;
+
+    #[test]
+    fn a_voice_lands_on_disk_once_under_the_name_of_its_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let wav = b"RIFF\x24\0\0\0WAVEfmt rest of the speech";
+        let first = stage_voice_in(dir.path(), wav).unwrap();
+        assert_eq!(first.extension().unwrap(), "wav");
+        assert_eq!(std::fs::read(&first).unwrap(), wav);
+        assert_eq!(stage_voice_in(dir.path(), wav).unwrap(), first);
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn the_kind_of_a_voice_is_read_from_its_first_bytes() {
+        assert_eq!(voice_ext(b"RIFF\0\0\0\0WAVEfmt "), Some("wav"));
+        assert_eq!(voice_ext(b"FORM\0\0\0\0AIFFCOMM"), Some("aiff"));
+        assert_eq!(voice_ext(b"FORM\0\0\0\0AIFCFVER"), Some("aiff"));
+        assert_eq!(voice_ext(b"ID3\x04\0\0"), Some("mp3"));
+        assert_eq!(voice_ext(&[0xFF, 0xFB, 0x90, 0x00]), Some("mp3"));
+        assert_eq!(voice_ext(b"\0\0\0\x20ftypM4A "), Some("m4a"));
+        assert_eq!(voice_ext(b"fLaC\0\0\0\x22"), Some("flac"));
+        assert_eq!(voice_ext(b"OggS\0\x02"), Some("ogg"));
+        // A RIFF that is no wave, a picture, a script.
+        assert_eq!(voice_ext(b"RIFF\0\0\0\0WEBPVP8 "), None);
+        assert_eq!(voice_ext(b"\x89PNG\r\n\x1a\n"), None);
+        assert_eq!(voice_ext(b"#!/bin/sh\n"), None);
+    }
+
+    #[test]
+    fn what_is_not_a_voice_is_turned_away_before_anything_is_written() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("voices");
+        assert!(stage_voice_in(&target, b"").unwrap_err().contains("empty"));
+        assert!(stage_voice_in(&target, b"#!/bin/sh\nrm -rf ~").unwrap_err().contains("WAV, MP3"));
+        assert!(stage_voice_in(&target, &vec![0u8; VOICE_MAX_BYTES + 1]).unwrap_err().contains("50 MB"));
+        assert!(!target.exists());
+    }
 }
 
 #[cfg(test)]
@@ -416,6 +683,22 @@ mod start_image_tests {
     }
 
     #[test]
+    fn a_motion_video_is_staged_by_its_content_and_anything_else_is_turned_away() {
+        let dir = tempfile::tempdir().unwrap();
+        let mp4 = b"\0\0\0\x18ftypisom\0\0\0\0rest of a clip";
+        let first = stage_motion_video_in(dir.path(), mp4).unwrap();
+        assert_eq!(first.extension().unwrap(), "mp4");
+        assert_eq!(stage_motion_video_in(dir.path(), mp4).unwrap(), first);
+        assert_eq!(motion_video_ext(b"\0\0\0\x14ftypqt  \0\0"), Some("mov"));
+        assert_eq!(motion_video_ext(&[0x1A, 0x45, 0xDF, 0xA3, 1, 2]), Some("webm"));
+        let target = dir.path().join("motion-videos");
+        assert!(stage_motion_video_in(&target, b"").unwrap_err().contains("empty"));
+        assert!(stage_motion_video_in(&target, PNG).unwrap_err().contains("MP4, MOV or WebM"));
+        assert!(stage_motion_video_in(&target, &vec![0u8; MOTION_VIDEO_MAX_BYTES + 1]).unwrap_err().contains("200 MB"));
+        assert!(!target.exists());
+    }
+
+    #[test]
     fn what_is_not_an_image_is_turned_away_before_anything_is_written() {
         let dir = tempfile::tempdir().unwrap();
         let target = dir.path().join("start-images");
@@ -436,6 +719,7 @@ mod off_main_tests {
         ("video_generate", "its check and its claim must not be interleaved"),
         ("read_media_file", "playback, with a path for an argument and not this file's one shape"),
         ("video_stage_start_image", "is handed the bytes and writes one file"),
+        ("video_stage_voice", "is handed the bytes and writes one file"),
     ];
 
     #[test]
@@ -460,7 +744,7 @@ mod off_main_tests {
         for polled in ["video_status", "video_list_models", "mlx_image_models", "mlx_image_install_status",
             "install_mlx_diffusion_status", "video_install_mlx_status", "video_install_model_status", "video_progress",
             "mlx_generate_progress", "mlx_image_cancel_install", "video_cancel_model_install",
-            "mlx_loras", "mlx_loras_open_folder", "mlx_lora_delete", "mlx_output_trash"] {
+            "mlx_loras", "mlx_loras_open_folder", "mlx_lora_delete", "mlx_output_trash", "mlx_cutout"] {
             assert!(
                 production.contains(&format!("pub async fn {polled}(app: AppHandle, args: Value) -> Result<Value, String> {{\n    off_main(app, args, ")),
                 "{polled} no longer goes through off_main"

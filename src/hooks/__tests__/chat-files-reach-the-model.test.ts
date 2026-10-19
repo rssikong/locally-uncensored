@@ -75,7 +75,7 @@ beforeEach(() => {
   useGenerationStore.setState({ generating: {}, aborters: {}, runs: {} })
   useModelStore.setState({ models: [], activeModel: MODEL })
   useSettingsStore.setState({
-    settings: { ...DEFAULT_SETTINGS, appMode: 'local', cavemanMode: 'off', chatToolsEnabled: false },
+    settings: { ...DEFAULT_SETTINGS, appMode: 'local', cavemanMode: 'off' },
   })
   useProviderStore.setState((s) => ({
     providers: { ...s.providers, openai: { ...s.providers.openai, enabled: true } },
@@ -127,7 +127,7 @@ describe('a file attached in plain chat', () => {
     const stored = conversation(convId).messages.find((m) => m.role === 'user')!
     expect(stored.displayContent).toBe('what game is this?')
     expect(stored.files).toHaveLength(1)
-    expect(Object.keys(stored.files![0]).sort()).toEqual(['kind', 'name', 'sha256', 'size', 'summary'])
+    expect(Object.keys(stored.files![0]).sort()).toEqual(['binary', 'kind', 'name', 'sha256', 'size', 'summary'])
     // The whole stored message stays a few kilobytes for a file of any size.
     expect(JSON.stringify(stored).length).toBeLessThan(12_000)
     // And the chat is named after the question, not after a hex dump.

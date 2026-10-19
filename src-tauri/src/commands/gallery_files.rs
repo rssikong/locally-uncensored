@@ -58,7 +58,11 @@ pub async fn trash_comfy_output(filename: String, subfolder: String, state: Stat
     let Some(base) = comfy_path else {
         return Ok(TrashResult { trashed: false, missing: true });
     };
-    let path = output_file(&PathBuf::from(base).join("output"), &filename, &subfolder)
+    // GH #183: the output folder the user set for ComfyUI (start script or
+    // ComfyUI Desktop), which is where a ComfyUI LU starts writes now too.
+    let output_dir = crate::commands::comfy_user_paths::UserComfyPaths::discover(Path::new(&base))
+        .output_dir_or(&PathBuf::from(&base));
+    let path = output_file(&output_dir, &filename, &subfolder)
         .ok_or_else(|| "That gallery entry does not name a file in the ComfyUI output folder.".to_string())?;
     if !path.is_file() {
         return Ok(TrashResult { trashed: false, missing: true });

@@ -74,7 +74,14 @@ export function CodexConfirmDialog() {
           )}
           <button
             onClick={stopAsking}
-            title="Run this and every later command in this session without asking"
+            // What the click does, not more: it allows this command and
+            // clears a switch in Settings, which is kept and is not bound to
+            // a session. The run that is going resolved its gate when it
+            // started (useCodex, codexModeKnobs) and Ask mode asks whatever
+            // the switch says, so neither stops asking with this click.
+            title={pending.cloudReason
+              ? 'Runs this command and switches off the confirm for LU Cloud models in Settings, for Code and Agent, until you switch it back on. The run that is going keeps asking.'
+              : 'Runs this command and switches off "Confirm shell & code commands" in Settings for every chat, until you switch it back on. The run that is going keeps asking, and so does Ask mode.'}
             className="t-micro text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
           >
             Accept without asking

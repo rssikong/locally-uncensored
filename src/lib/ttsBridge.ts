@@ -7,12 +7,26 @@
 // VoiceButton keeps it refreshed on every voice-state change, so `current`
 // tracks the live voice settings. Callers gate on `ttsEnabled && autoReadAloud`
 // (read via getState(), non-reactive) before invoking.
+import { useAgentModeStore } from '../stores/agentModeStore'
+import { useChatStore } from '../stores/chatStore'
+import { shownAnswer } from './shown-answer'
+
 let current: ((text: string) => void) | null = null
 
 export function registerAutoSpeak(fn: (text: string) => void): void {
   current = fn
 }
 
-export function autoSpeak(text: string): void {
-  current?.(text)
+// Reads the finished turn as its bubble shows it (lib/shown-answer.ts), never
+// the text the run holds: that one still carries what the display takes out.
+export function autoSpeak(conversationId: string, messageId: string): void {
+  const message = useChatStore
+    .getState()
+    .conversations.find((c) => c.id === conversationId)
+    ?.messages.find((m) => m.id === messageId)
+  if (!message) return
+  const toolLoopDriven =
+    (useAgentModeStore.getState().agentModeActive[conversationId] ?? false) || !!message.agentBlocks?.length
+  const text = shownAnswer(message, toolLoopDriven).spoken
+  if (text) current?.(text)
 }

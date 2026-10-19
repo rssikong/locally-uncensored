@@ -157,11 +157,19 @@ test.describe('WINDOWS CONTROL: the same screens read what they always did', () 
     await expect(body.locator('input[name="gpu-vendor"]')).toHaveCount(4)
   })
 
-  test('Privacy names %APPDATA%', async ({ page }) => {
+  // Until 3.0.7 this sentence named %APPDATA%/Locally Uncensored as the one
+  // folder and said "LU writes nothing else". Neither held: os_paths::data_dir()
+  // is data_local_dir() joined with lu-labs, and only the chat backup
+  // (system::persistent_dir) and the engine's chat models
+  // (os_paths::builtin_models_dir) sit under %APPDATA%\Locally Uncensored.
+  test('Privacy names the Windows folders', async ({ page }) => {
     await openApp(page, 'windows')
     await openSettings(page)
     const body = await openSection(page, 'Privacy')
-    await expect(body).toContainText('Conversations, memories, and generated media live in %APPDATA%/Locally Uncensored on Windows (or the equivalent on Linux/macOS). Back up the folder, move it between machines, or delete it. LU writes nothing else.')
+    await expect(body).toContainText('Conversations, memories, and generated media live in %LOCALAPPDATA%\\lu-labs on Windows. Back up the folder, move it between machines, or delete it.')
+    await expect(body.getByTestId('data-folder-path')).toHaveText('%LOCALAPPDATA%\\lu-labs')
+    await expect(body.getByTestId('data-folder-models')).toHaveText('%APPDATA%\\Locally Uncensored')
+    await expect(body).not.toContainText('LU writes nothing else')
     await expect(body).not.toContainText('Application Support')
   })
 

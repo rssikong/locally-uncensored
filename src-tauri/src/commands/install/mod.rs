@@ -55,6 +55,7 @@ pub(crate) const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 
 mod children;
+mod base_python;
 pub(crate) mod pip;
 mod torch;
 mod venv;
@@ -70,8 +71,10 @@ mod lmstudio_install;
 mod python;
 mod voice;
 mod custom_nodes;
+mod custom_node_packs;
 
 pub(crate) use self::{
+    base_python::*,
     children::*,
     torch::*,
     venv::*,
@@ -85,6 +88,7 @@ pub(crate) use self::{
     python::*,
     voice::*,
     custom_nodes::*,
+    custom_node_packs::*,
 };
 // The voice loop setup verifies its downloads with the same digest code the
 // installer downloads use.
@@ -97,10 +101,12 @@ mod tests {
     /// die daneben liegen. Wer ein Modul hinzufügt, trägt es hier ein; der
     /// Test darunter merkt es, wenn nicht.
     const BAUM: &[(&str, &str)] = &[
+        ("base_python.rs", include_str!("base_python.rs")),
         ("children.rs", include_str!("children.rs")),
         ("comfy_install.rs", include_str!("comfy_install.rs")),
         ("comfy_job.rs", include_str!("comfy_job.rs")),
         ("comfy_repair.rs", include_str!("comfy_repair.rs")),
+        ("custom_node_packs.rs", include_str!("custom_node_packs.rs")),
         ("custom_nodes.rs", include_str!("custom_nodes.rs")),
         ("download.rs", include_str!("download.rs")),
         ("env_check.rs", include_str!("env_check.rs")),

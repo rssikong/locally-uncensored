@@ -2,8 +2,9 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { safeJSONStorage } from '../lib/storage-quota'
 import { v4 as uuid } from 'uuid'
-import { isVideoModelType, type ModelType, } from '../api/comfyui'
+import { isInstalledVideoType, type ModelType, } from '../api/comfyui'
 import type { WorkflowTag, WorkflowTemplate } from '../types/workflows'
+import type { ParamValue, WorkflowParamOverrides } from '../api/workflow-params'
 import { secretGet, secretSet, secretDelete } from '../api/backend'
 
 // ── The CivitAI API key lives in the OS vault ──────────────────────────────
@@ -128,6 +129,13 @@ interface WorkflowState {
   civitaiApiKey: string
   civitaiHost: string
 
+  /** Values changed under "Workflow parameters" in Create, per workflow id.
+   *  Only what differs from the file is kept; Reset drops the entry. */
+  paramOverrides: Record<string, WorkflowParamOverrides>
+  /** `undefined` goes back to the value of the file. */
+  setParamOverride: (workflowId: string, nodeId: string, inputKey: string, value: ParamValue | undefined) => void
+  resetParamOverrides: (workflowId: string) => void
+
   /** One-time "new" dot on the Composer's workflow button. */
   managerNoticeSeen: boolean
   setManagerNoticeSeen: (v: boolean) => void
@@ -185,6 +193,28 @@ export const useWorkflowStore = create<WorkflowState>()(
       civitaiApiKey: '',
       civitaiHost: 'civitai.com',
 
+      paramOverrides: {},
+
+      setParamOverride: (workflowId, nodeId, inputKey, value) => set((state) => {
+        const workflow = { ...(state.paramOverrides[workflowId] ?? {}) }
+        const node = { ...(workflow[nodeId] ?? {}) }
+        if (value === undefined) delete node[inputKey]
+        else node[inputKey] = value
+        if (Object.keys(node).length > 0) workflow[nodeId] = node
+        else delete workflow[nodeId]
+        const all = { ...state.paramOverrides }
+        if (Object.keys(workflow).length > 0) all[workflowId] = workflow
+        else delete all[workflowId]
+        return { paramOverrides: all }
+      }),
+
+      resetParamOverrides: (workflowId) => set((state) => {
+        if (!(workflowId in state.paramOverrides)) return state
+        const all = { ...state.paramOverrides }
+        delete all[workflowId]
+        return { paramOverrides: all }
+      }),
+
       managerNoticeSeen: false,
       setManagerNoticeSeen: (v) => set({ managerNoticeSeen: v }),
 
@@ -216,7 +246,11 @@ export const useWorkflowStore = create<WorkflowState>()(
 
         delete workflowTags[id]
 
+        const paramOverrides = { ...state.paramOverrides }
+        delete paramOverrides[id]
+
         return {
+          paramOverrides,
           installedWorkflows: state.installedWorkflows.filter(
             (workflow) => workflow.id !== id,
           ),
@@ -444,7 +478,7 @@ export const useWorkflowStore = create<WorkflowState>()(
         const state = get()
 
         const mode: WorkflowTagMode =
-          isVideoModelType(modelType)
+          isInstalledVideoType(modelType)
             ? 'video'
             : 'image'
 

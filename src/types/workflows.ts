@@ -34,6 +34,9 @@ export interface ParameterMap {
   // I2I / I2V source image
   inputImage?: ParameterMapping
 
+  // Motion Control: the driving clip (LoadVideo or VHS_LoadVideo)
+  inputVideo?: ParameterMapping
+
   // Video-specific
   frames?: ParameterMapping
   fps?: ParameterMapping

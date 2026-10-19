@@ -10,8 +10,8 @@
 //! itself requests them: a missing one comes back as an error that names it,
 //! and the interface then offers the way to grant it (`request_permission`).
 //! Without that request a fresh LU never shows up in the two lists of System
-//! Settings, and an entry of an older build does not count for this one
-//! (`forget_permission`). The owner's test of 07.10.2026 ended with a sentence
+//! Settings, and an entry of a copy with another signature does not count
+//! for this one (`forget_permission`). The owner's test of 07.10.2026 ended with a sentence
 //! about permissions and no way to act on it.
 
 use super::super::adapter::{Desktop, InputOp};
@@ -119,13 +119,15 @@ fn forget_arguments(permission: Permission, bundle_id: &str) -> Option<[String; 
 
 /// Make macOS forget what it stored about LU for one permission.
 ///
-/// macOS ties a grant to the signature of the app. A build without a fixed
-/// signature is identified by the hash of its code, so every new build is a
-/// stranger: the list in System Settings still shows LU, even switched on,
-/// and the system answers "not granted" all the same (the state of the owner's
-/// Mac on 07.10.2026: an Accessibility entry and a Screen Recording entry of
-/// two builds from August). Dropping the entry lets the next request create
-/// one for the build that is running.
+/// macOS ties a grant to the signature of the app. The released LU is signed
+/// with one fixed identity, so its grant carries over to every update. A test
+/// build without that signature is identified by the hash of its code, and an
+/// entry it left behind makes the released app a stranger: the list in System
+/// Settings still shows LU, even switched on, and the system answers "not
+/// granted" all the same (the owner's Mac on 07.10.2026: an Accessibility
+/// entry and a Screen Recording entry of two builds from August; on
+/// 12.10.2026 a Screen Recording entry of a test build). Dropping the entry
+/// lets the next request create one for the copy that is running.
 pub fn forget_permission(permission: Permission, bundle_id: &str) -> PlatformResult<()> {
     let failed = || PlatformError::failed("macOS did not remove the old entry of LU. Remove LU from the list in System Settings with the minus button, then try again.");
     let arguments = forget_arguments(permission, bundle_id).ok_or_else(failed)?;

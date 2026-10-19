@@ -136,11 +136,16 @@ export const SHORTCUT_ACTIONS: Readonly<Record<ShortcutId, () => void>> = {
 
   'new-conversation': () => {
     const model = useModelStore.getState().activeModel
-    const persona = useSettingsStore.getState().getActivePersona()
+    const { getActivePersona, settings } = useSettingsStore.getState()
+    const persona = getActivePersona()
     if (model) {
       // Same field mix-up as useABCompare had: `Persona.systemPrompt`.
       // Ctrl+N used to open every chat with an empty system prompt.
-      useChatStore.getState().createConversation(model, persona?.systemPrompt || '')
+      // A character card persona only opens a role play chat while personas
+      // are on, the same rule as the sidebar's New Chat.
+      useChatStore.getState().createConversation(model, persona?.systemPrompt || '', undefined, {
+        persona: settings.personasEnabled ? persona : null,
+      })
     }
     useUIStore.getState().setView('chat')
   },
@@ -153,7 +158,7 @@ export const SHORTCUT_ACTIONS: Readonly<Record<ShortcutId, () => void>> = {
   'export-chat': () => {
     const state = useChatStore.getState()
     const conv = state.conversations.find(c => c.id === state.activeConversationId)
-    if (conv) void exportConversation(conv, 'markdown')
+    if (conv) void exportConversation(conv, 'markdown', useSettingsStore.getState().personas)
   },
 
   'toggle-theme': () => {

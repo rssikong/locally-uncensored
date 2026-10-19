@@ -14,7 +14,7 @@ import { MOTION_S } from '../ui/motion'
 import { useVoiceSessionStore } from '../../stores/voiceSessionStore'
 import { useModelStore } from '../../stores/modelStore'
 import { displayModelName } from '../../api/providers/model-name'
-import { isMacOS, isWindows } from '../../api/backend'
+import { isLinux, isMacOS, isWindows } from '../../api/backend'
 import {
   answerVoiceApproval,
   setVoiceMuted,
@@ -39,6 +39,10 @@ function errorHelp(error: VoiceError): string | null {
     case 'microphone-denied':
       if (isMacOS()) return 'Open System Settings, Privacy & Security, Microphone, and switch it on for LU. Then start again.'
       if (isWindows()) return 'Open Settings, Privacy & security, Microphone, and let desktop apps use the microphone. Then start again.'
+      // GitHub #162: Linux has no microphone switch per app, and pointing at
+      // one sent the reporter looking for a setting that does not exist. LU
+      // answers the web view's question itself (src-tauri/src/linux_media.rs).
+      if (isLinux()) return 'Check that a microphone is connected and chosen as the input in the sound settings of your system. Then start again.'
       return 'Allow this app to use the microphone in the privacy or sound settings of your system. Then start again.'
     case 'no-model':
     case 'unsupported-model':

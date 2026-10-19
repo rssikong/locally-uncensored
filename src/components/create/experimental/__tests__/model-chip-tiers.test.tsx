@@ -240,3 +240,15 @@ describe('im und ueber dem Prompt-Feld steht nichts davon', () => {
     for (const rel of treffer) expect(lese(rel), rel).toMatch(/tierMarks/)
   })
 })
+
+// How-to recording 12.10.2026: on "Use character" the chip said "Select..."
+// while no character was picked, and there was no model to select.
+describe('the chip on "Use character" before a character is picked', () => {
+  it('names the step that is missing', () => {
+    useCreateStore.getState().setIntent('character')
+    useCreateStore.setState({ characterTab: 'use', selectedCharacter: null })
+    render(<ModelChip />)
+    expect(screen.getByRole('button').textContent).toContain('Pick a character first')
+    expect(screen.getByRole('button').textContent).not.toContain('Select...')
+  })
+})

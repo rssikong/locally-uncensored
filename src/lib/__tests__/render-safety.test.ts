@@ -143,7 +143,9 @@ describe('both render paths gate the same fields', () => {
   }
 
   it('the gated prompt is the store prompt of a view that shows the field, on both paths', () => {
-    expect(local).toMatch(/const typedPrompt = intentTakesPrompt\([^\n]+\)\n\s+\? state\.prompt\n\s+: ''/)
+    // The local path also counts Motion Control's optional field (intents.ts
+    // intentTakesOptionalPrompt), which shows on the local lanes only.
+    expect(local).toMatch(/const typedPrompt = intentTakesPrompt\([^\n]+\)\n\s+\|\| intentTakesOptionalPrompt\(state\.intent\(\), 'local'\)\n\s+\? state\.prompt\n\s+: ''/)
     expect(cloud).toMatch(/const prompt = intentTakesPrompt\(intent, characterUse\) \? s\.prompt : ''/)
   })
 

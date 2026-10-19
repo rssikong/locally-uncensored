@@ -17,7 +17,7 @@
 use std::process::Stdio;
 
 
-use tauri::{Manager, State};
+use tauri::State;
 use tracing::{error, info};
 
 use crate::state::AppState;
@@ -205,11 +205,7 @@ pub fn install_tts(
         return Err("no_python: Python must be installed before Piper TTS.".to_string());
     }
 
-    let voices_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("no app data dir: {}", os_error::english(&e)))?
-        .join("piper_voices");
+    let voices_dir = crate::commands::tts::piper_voices_dir(&app)?;
 
     let install_state = state.tts_install.clone();
 

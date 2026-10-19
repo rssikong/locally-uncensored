@@ -19,7 +19,7 @@ import { IMAGE_PART } from './image-parts'
 import { imagePartFileName, isUpstreamImagePart, pickUpstreamImagePart } from '../lib/image-part'
 import {
   CUSTOM_NODE_REGISTRY,
-  getImageBundles, getVideoBundles, getAudioBundles, getLipsyncBundles, getMotionBundles,
+  getImageBundles, getVideoBundles, getAudioBundles, getLipsyncBundles, getMotionBundles, getUpscaleBundles,
 } from "./model-bundles"
 
 // Katalog + Formen liegen in model-bundles.ts (siehe dort). Re-Export, damit
@@ -28,7 +28,7 @@ export type { DiscoverModel, ModelBundle, CustomNodeDef } from './model-bundles'
 export {
   CUSTOM_NODE_REGISTRY,
   getImageBundles, getImageModelsDiscover, getVideoBundles,
-  getAudioBundles, getLipsyncBundles, getMotionBundles,
+  getAudioBundles, getLipsyncBundles, getMotionBundles, getUpscaleBundles,
 } from './model-bundles'
 
 // Welche Ordner der Katalog beschreibt und wer sie zurueckliest, steht als EINE
@@ -1867,7 +1867,7 @@ export interface FileMeta {
  *  and text models alike. One walk, so the lookups below cannot drift apart. */
 function catalogEntries(): DiscoverModel[] {
   const out: DiscoverModel[] = []
-  for (const bundle of [...getImageBundles(), ...getVideoBundles(), ...getAudioBundles(), ...getLipsyncBundles(), ...getMotionBundles()]) {
+  for (const bundle of [...getImageBundles(), ...getVideoBundles(), ...getAudioBundles(), ...getLipsyncBundles(), ...getMotionBundles(), ...getUpscaleBundles()]) {
     out.push(...bundle.files)
   }
   out.push(...getUncensoredTextModels(), ...getMainstreamTextModels())
@@ -2025,6 +2025,9 @@ export interface CivitAIModelResult {
   filename?: string
   subfolder?: string
   sizeGB?: number
+  /** The file's byte count as CivitAI states it (sizeKB times 1024), for the
+   *  Installed check. `sizeGB` is rounded to a tenth and says nothing exact. */
+  sizeBytes?: number
   stats?: { downloads: number; likes: number }
   creator?: string
   sourceUrl: string
@@ -2097,6 +2100,62 @@ export async function startCivitaiDownload(model: { downloadUrl?: string; filena
   if (nodes && 'UnetLoaderGGUF' in nodes) return
   void installCustomNodes(['gguf'], { keepGoing: true, restart: true })
     .catch((err) => log.warn('[discover] ComfyUI-GGUF install for a CivitAI GGUF failed', { err }))
+}
+
+/** How far a file on disk may be off CivitAI's sizeKB and still be that file.
+ *  sizeKB is a fraction of a KiB, so the byte count it gives is exact up to a
+ *  rounding of the last digits; another version is megabytes apart. */
+const CIVITAI_SIZE_SLACK = 1024
+
+/** Is this file on disk the CivitAI hit? The same name in the folder the
+ *  download writes to (that much is the caller's question) and, where CivitAI
+ *  states a size, that size. A file of the same name and another size is
+ *  another version or another upload, so Download stays offered for it. */
+function civitaiFileMatches(model: { sizeBytes?: number }, actualBytes: number): boolean {
+  if (actualBytes <= 0) return false
+  return model.sizeBytes == null || Math.abs(actualBytes - model.sizeBytes) <= CIVITAI_SIZE_SLACK
+}
+
+/** The CivitAI hits whose file is already in its ComfyUI folder, by id
+ *  (Discord #feature-requests, 3.0.7: an installed model offered Download).
+ *  One question to `check_model_sizes`, the per-file check the bundle cards
+ *  use, which looks in exactly the folder `download_model` writes into: a file
+ *  of that name in another folder does not count. When the check cannot run,
+ *  nothing counts as installed and every hit keeps its button. */
+export async function checkCivitaiInstalled(models: readonly CivitAIModelResult[]): Promise<Set<number>> {
+  const installed = new Set<number>()
+  const asked = models.filter((m) => m.filename && m.subfolder)
+  if (asked.length === 0) return installed
+  try {
+    const results: Array<{ filename: string; exists: boolean; actualBytes: number }> = await backendCall('check_model_sizes', {
+      files: asked.map((m) => ({ subfolder: m.subfolder!, filename: m.filename!, expectedBytes: m.sizeBytes ?? 0 })),
+    })
+    // One answer per file and in order: two hits may share a file name and
+    // differ only in their folder, so the name alone cannot pair them up.
+    asked.forEach((m, i) => {
+      const r = results[i]
+      if (r && r.filename === m.filename && r.exists && civitaiFileMatches(m, r.actualBytes)) installed.add(m.id)
+    })
+  } catch (err) {
+    log.warn('[discover] CivitAI installed check failed', { err })
+  }
+  return installed
+}
+
+/** The same question for a folder the caller has listed already, the Mac's
+ *  LoRA folder (`useMlxLoras`). A download lands at the top of that folder, so
+ *  a file of that name in a subfolder of it is not the hit. */
+export function civitaiInstalledInFolder(
+  models: readonly CivitAIModelResult[],
+  files: readonly { name: string; sizeBytes: number }[],
+): Set<number> {
+  const byName = new Map(files.map((f) => [f.name.toLowerCase(), f.sizeBytes]))
+  const installed = new Set<number>()
+  for (const m of models) {
+    const bytes = m.filename ? byName.get(m.filename.toLowerCase()) : undefined
+    if (bytes != null && civitaiFileMatches(m, bytes)) installed.add(m.id)
+  }
+  return installed
 }
 
 export async function searchCivitaiModels(
@@ -2201,6 +2260,7 @@ export async function searchCivitaiModels(
         filename,
         subfolder,
         sizeGB: sizeKB > 0 ? Math.round(sizeKB / 1024 / 1024 * 10) / 10 : undefined,
+        sizeBytes: sizeKB > 0 ? Math.round(sizeKB * 1024) : undefined,
         stats: isRecord(stats)
           ? { downloads: downloadCount ?? 0, likes: asNumber(prop(stats, 'thumbsUpCount')) ?? 0 }
           : undefined,

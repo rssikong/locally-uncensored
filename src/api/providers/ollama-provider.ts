@@ -1,4 +1,5 @@
 import { chatBackendsBack } from '../../lib/chat-backends-gate'
+import { ollamaSamplerOptions } from './sampler-fields'
 import { resolveMessageAttachments } from '../../lib/chat-attachments'
 /**
  * Ollama Provider, wraps existing ollama.ts into the ProviderClient interface.
@@ -14,12 +15,17 @@ import type {
 import { ProviderError } from './types'
 import { localFetch, localFetchStream, ollamaUrl } from '../backend'
 import { ollamaWindowOption } from '../ollama'
+import { parseOllamaShowContext } from './context-probe'
+import { oneEntryPerName } from '../../lib/one-entry-per-name'
 import { isLocalTransportFailure, localBackendUnreachableMessage } from '../../lib/local-backend-transport'
 import { parseNDJSONStream } from '../stream'
+import { chatFirstReplyMs } from '../../lib/chat-reply-timeout'
+import { useSettingsStore } from '../../stores/settingsStore'
 import { idleAbortGuard, isStreamIdleTimeout, STREAM_IDLE_TIMEOUT_MS } from '../stream-idle'
 import { repairToolCallArgs, extractToolCallsFromContent } from '../../lib/tool-call-repair'
 import { applyTemplateContract } from './normalize-system'
 import { parseOllamaChatChunk, isRecord, prop, asString, asNumber, asRecordArray } from './wire'
+import { FIRST_REPLY_TIMEOUT } from '../../lib/chat-reply-timeout'
 
 // ── Ollama-specific types ──────────────────────────────────────
 
@@ -34,6 +40,11 @@ export interface OllamaRequestOptions {
   top_k?: number
   num_predict?: number
   num_ctx?: number
+  /** GH #175, see sampler-fields.ts. */
+  min_p?: number
+  repeat_penalty?: number
+  presence_penalty?: number
+  frequency_penalty?: number
 }
 
 export interface OllamaRequestMessage {
@@ -156,6 +167,7 @@ export class OllamaProvider implements ProviderClient {
     if (options?.topP !== undefined) ollamaOptions.top_p = options.topP
     if (options?.topK !== undefined) ollamaOptions.top_k = options.topK
     if (options?.maxTokens && options.maxTokens > 0) ollamaOptions.num_predict = options.maxTokens
+    if (options) Object.assign(ollamaOptions, ollamaSamplerOptions(options))
     // The window: resolved in ONE place for every request to Ollama, so the
     // model is never loaded again by a call that sends another one. Without
     // any, Ollama runs at its own small default and cuts real chats short.
@@ -212,6 +224,9 @@ export class OllamaProvider implements ProviderClient {
       try {
         for await (const raw of parseNDJSONStream<unknown>(res, {
           idleMs: STREAM_IDLE_TIMEOUT_MS,
+          // Issue 177: Ollama answers the headers at once and then reads the
+          // prompt in silence; that wait follows the setting (0 = Off).
+          firstChunkMs: chatFirstReplyMs(useSettingsStore.getState().settings),
           onIdle: guard.abort,
         })) {
           if (options?.signal?.aborted) break
@@ -316,6 +331,7 @@ export class OllamaProvider implements ProviderClient {
     if (options?.topP !== undefined) ollamaOptions.top_p = options.topP
     if (options?.topK !== undefined) ollamaOptions.top_k = options.topK
     if (options?.maxTokens && options.maxTokens > 0) ollamaOptions.num_predict = options.maxTokens
+    if (options) Object.assign(ollamaOptions, ollamaSamplerOptions(options))
     // The window, see chatStream().
     Object.assign(ollamaOptions, await ollamaWindowOption(model, options?.window))
     body.options = ollamaOptions
@@ -388,7 +404,7 @@ export class OllamaProvider implements ProviderClient {
     }
 
     const data = await res.json()
-    return (data.models || []).map((m: OllamaModelEntry) => ({
+    return oneEntryPerName<OllamaModelEntry>(data.models || []).map((m) => ({
       id: m.name,
       name: m.name,
       provider: 'ollama' as const,
@@ -450,28 +466,10 @@ export class OllamaProvider implements ProviderClient {
       if (!res.ok) return 4096
       const info = await res.json()
 
-      // 1. model_info: prefer `general.context_length`, then architecture-specific
-      //    `.context_length` keys (gemma2.context_length, qwen2.context_length, etc.)
-      const modelInfo = info?.model_info || {}
-      const contextFromInfo =
-        modelInfo['general.context_length'] ||
-        Object.entries(modelInfo).find(([k]) => k.endsWith('.context_length'))?.[1]
-      if (contextFromInfo && Number(contextFromInfo) > 0) {
-        return Number(contextFromInfo)
-      }
-
-      // 2. parameters: can be an object with `num_ctx`, or a Modelfile-style string
-      //    like "num_ctx 8192\nstop ..."
-      const params = info?.parameters
-      if (params) {
-        if (typeof params === 'object' && params.num_ctx) {
-          return Number(params.num_ctx)
-        }
-        if (typeof params === 'string') {
-          const match = params.match(/num_ctx\s+(\d+)/)
-          if (match) return Number(match[1])
-        }
-      }
+      // The same reading as api/ollama.ts (`parseOllamaShowContext`), so the
+      // two paths cannot drift apart again.
+      const fromShow = parseOllamaShowContext(info)
+      if (fromShow) return fromShow
 
       return 4096
     } catch {
@@ -523,6 +521,9 @@ export class OllamaProvider implements ProviderClient {
       let code = 'network'
       if (parsed.kind === 'missing-blob') code = 'ollama_missing_blob'
       else if (parsed.kind === 'stale-manifest') code = 'ollama_stale_manifest'
+      // Issue 177: Chat Reply Timeout ran out (api/backend.ts). Terminal for
+      // the agent's retry ladder, which would only wait the window again.
+      else if (/sent nothing for \d+ s/.test(parsed.raw ?? message)) code = FIRST_REPLY_TIMEOUT
       // Prefer the parsed model name (e.g. from a stale-manifest string that
       // carries it) and fall back to the request's model arg.
       return new ProviderError(message, 'ollama', code, status, parsed.model || model)

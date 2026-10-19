@@ -45,9 +45,9 @@ Take the latest build from [Releases](https://github.com/PurpleDoubleD/locally-u
 
 | Platform | File | Status |
 |----------|------|--------|
-| Windows 10 and 11 | [`Locally.Uncensored_3.0.6_x64-setup.exe`](https://github.com/PurpleDoubleD/locally-uncensored/releases/latest/download/Locally.Uncensored_3.0.6_x64-setup.exe) (NSIS, recommended) or [`Locally.Uncensored_3.0.6_x64_en-US.msi`](https://github.com/PurpleDoubleD/locally-uncensored/releases/latest/download/Locally.Uncensored_3.0.6_x64_en-US.msi) | Tested every release, signed auto update channel |
-| Linux | [`Locally.Uncensored_3.0.6_amd64.AppImage`](https://github.com/PurpleDoubleD/locally-uncensored/releases/latest/download/Locally.Uncensored_3.0.6_amd64.AppImage), [`Locally.Uncensored_3.0.6_amd64.deb`](https://github.com/PurpleDoubleD/locally-uncensored/releases/latest/download/Locally.Uncensored_3.0.6_amd64.deb) or [`Locally.Uncensored-3.0.6-1.x86_64.rpm`](https://github.com/PurpleDoubleD/locally-uncensored/releases/latest/download/Locally.Uncensored-3.0.6-1.x86_64.rpm) | Built on every release |
-| macOS 14 or newer, Apple Silicon (Beta) | [`LU_3.0.6_aarch64.dmg`](https://github.com/PurpleDoubleD/locally-uncensored/releases/latest/download/LU_3.0.6_aarch64.dmg) | Signed with an Apple Developer ID and notarized by Apple. Intel Macs are not supported. We tested it on an M5 Pro with 48 GB. Tell us how it runs on yours. Voice has been tried by hand in the app on a Mac and works. Computer control is in the Mac app but not fully tested yet on macOS. Remote Access and the automatic update are not confirmed on macOS |
+| Windows 10 and 11 | [`Locally.Uncensored_3.0.7_x64-setup.exe`](https://github.com/PurpleDoubleD/locally-uncensored/releases/latest/download/Locally.Uncensored_3.0.7_x64-setup.exe) (NSIS, recommended) or [`Locally.Uncensored_3.0.7_x64_en-US.msi`](https://github.com/PurpleDoubleD/locally-uncensored/releases/latest/download/Locally.Uncensored_3.0.7_x64_en-US.msi) | Tested every release, signed auto update channel |
+| Linux | [`Locally.Uncensored_3.0.7_amd64.AppImage`](https://github.com/PurpleDoubleD/locally-uncensored/releases/latest/download/Locally.Uncensored_3.0.7_amd64.AppImage), [`Locally.Uncensored_3.0.7_amd64.deb`](https://github.com/PurpleDoubleD/locally-uncensored/releases/latest/download/Locally.Uncensored_3.0.7_amd64.deb) or [`Locally.Uncensored-3.0.7-1.x86_64.rpm`](https://github.com/PurpleDoubleD/locally-uncensored/releases/latest/download/Locally.Uncensored-3.0.7-1.x86_64.rpm) | Built on every release |
+| macOS 14 or newer, Apple Silicon (Beta) | [`LU_3.0.7_aarch64.dmg`](https://github.com/PurpleDoubleD/locally-uncensored/releases/latest/download/LU_3.0.7_aarch64.dmg) | Signed with an Apple Developer ID and notarized by Apple. Intel Macs are not supported. The app has run on one Mac so far. Voice has been tried by hand in the app on a Mac and works. Computer control is in the Mac app but not fully tested yet on macOS. Remote Access and the automatic update are not confirmed on macOS |
 
 <!-- MAC: the macOS row above is the one place in this file that says whether there is a Mac build. This is the Mac version of the row. It is true only for the .dmg that the release run built, signed and notarized, so it goes out after that run is green. -->
 
@@ -55,7 +55,27 @@ Some antivirus engines flag unsigned NSIS installers that download other binarie
 
 Code signing for the Windows installers: free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org). SignPath Foundation has accepted the project. The production certificate is not in place yet, and until it is the installers ship unsigned.
 
-Current release: **v3.0.6** (October 2026). It adds Voice and computer control, both in beta, and is the first release with a Mac build. What changed in 3.0.5 and every release before it is in [CHANGELOG.md](CHANGELOG.md).
+Current release: **v3.0.7** (October 2026). Every change since 1.0.0 is in [CHANGELOG.md](CHANGELOG.md).
+
+3.0.7 lets a character you trained work in every part of Create and in chat, and on a Mac you can now train one too. ComfyUI workflows import the way ComfyUI saves them, with the node packs they need, Edit takes up to ten images, and a chat can be duplicated or branched from any message, with fixes for group chats and personas. On a Mac, Talking Character and Motion Control run on your own machine. Some of it has only been checked in tests so far; the [CHANGELOG](CHANGELOG.md) says which.
+
+3.0.5 was about Create: LTX 2.5, FastH3 and YuE2 run on your own machine, Qwen-Image 2.1 gets a transparent background and its prompt enhancer, Edit, Remove Background and Enhance Image take up to 50 images in one go, and LU Cloud adds Qwen Image 2.1, LTX 2.5, MiniMax H3 and Wan 3.0 Reference. Chat takes any file, each model in a group chat can have its own persona, dropdowns stay inside the window (issue 149), and the speech install works again on Ubuntu 24.04.
+
+3.0.4 fixed the Code agent and the agent in chat on LU Cloud: writing a long file no longer ends the run, "continue" picks up where a run stopped instead of starting over, the agent keeps a plan only when you ask for one, and cloud context is 32K by default and can be set per model. It also fixed the bugs reported on GitHub and Discord since 3.0.3 (issues 144 to 147): MiniMax H3 runs as a video model with sound, Edit takes up to three extra images with Qwen-Image 2.1, a missing encoder or VAE is named and offered as a download instead of ending in "Value not in list", the LoRA stack follows the loras folder, and group chat works with every LU Engine model.
+
+3.0.3 was a hotfix: chats with many images no longer run the app out of memory, Create reads a model's family from the file instead of its name, and the five bugs reported on GitHub since 3.0.2 are fixed (issues 139 to 143).
+
+3.0.2 was a hotfix: the Code tab lost its scrollbar and its input box once a conversation grew taller than the window (issue 138, a regression in 3.0.1) and is held to the window height again, and the count of open cloud models now takes the Create Studio endpoints in, which makes it fourteen video models and seven image models.
+
+### What is new in 3.0.1
+
+- **Qwen-Image 2.1 runs locally on Windows and Linux.** One model generates a picture from a prompt and edits one from a reference image, with no mask to paint. About 16 GB of files, ComfyUI 0.37.0 or newer, and a research license that does not allow commercial use.
+- **Models has a LoRAs tab of its own.** Search CivitAI, download into ComfyUI's `models/loras` folder, see what is installed with its size and trigger word, and delete what you no longer want.
+- **A GPU whose free memory could not be measured is planned more carefully**, and the log now says total capacity instead of calling it free.
+- **The Linux AppImage stops handing its own runtime to every program LU starts**, so a healthy system Python, pip, git or ffmpeg keeps working, and a distribution that blocks pip in the system Python keeps the isolated environment LU built.
+- **The local model runs one conversation at a time and says so**, with a line showing how many chats are ahead. Stop works while a chat is still waiting.
+- **Temperature, Top P and Max tokens belong to the conversation you moved them in**, instead of every open chat sharing one value.
+- **Cloud video renders offer the clip lengths the picked model really supports**, read from the live catalog.
 
 ## Three steps
 
@@ -97,9 +117,9 @@ npm run tauri build  # desktop binary
 **Everywhere.** Reach the app from your phone over your LAN or through a Cloudflare tunnel, paired by QR code and a passcode, off until you turn it on, with connected devices listed. Compare two models side by side, benchmark them on your own hardware for speed, cost and correctness, and take updates over a signed channel. [Phone details](https://locallyuncensored.com/blog/local-ai-on-your-phone.html).
 
 
-## Optional: LU Cloud
+## Optional: LU Labs Cloud
 
-Some models are larger than any desktop card, like Kimi K3 and Qwen 3.8 Max. Flip the Cloud switch in the same app and those run on our GPUs instead, with the heavy Create lanes alongside them. LU Cloud runs on [lu-labs.ai](https://lu-labs.ai), our hosted service, and the same account works there in a browser, also on a phone. Credit packs start at 15 EUR and never expire, plans start at 19 EUR a month, and every model is on every plan and every pack. The local app stays free either way, and switching back to local costs nothing: [plans and prices](https://lu-labs.ai/pricing). With Create in chat (Beta), a cloud chat model can put together an order for images, video, music or voice, and nothing runs until you approve it.
+Some models are larger than any desktop card. Flip the Cloud switch in the same app and those run on hosted GPUs instead, with the heavy Create lanes alongside them. The same account works in the browser at [lu-labs.ai](https://lu-labs.ai), on a plan or on credit packs that do not expire. The local app stays free either way, and switching back to local costs nothing: [plans and prices](https://lu-labs.ai/pricing). With Create in chat (Beta), a cloud chat model can put together an order for images, video, music or voice, and nothing runs until you approve it.
 
 Since 3.0.0 the catalogue says what it can back up. Every cloud chat model was asked the same two questions twice and judged on the answer, and a longer three-round test on 2026-10-05 took the mark from five more: 19 of the 46 we measured answer in full, and only those carry the No Filter mark in the picker. Across all measured answers, 5% were refusals. Ten more chat models that their makers release to answer without refusing are listed as a group of their own, marked Uncensored (Beta). They were not part of the measurement above. On an active plan, 11 models on Hosted and 12 on Pro and Max cost no credits in chat, up to a daily limit. For images and video, 14 video and 7 image models run without a built-in content restriction, most of them with Uncensored in the name, and your account decides what they may produce.
 

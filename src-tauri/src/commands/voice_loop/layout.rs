@@ -2,8 +2,9 @@
 //!
 //! Two roots. The sidecar directory is read-only and ships with the app
 //! (`lu_voice_loop/`, `requirements.txt`, `models.json`, `python.json`). The
-//! data root is `data_dir()/voice` and holds everything the setup downloads:
-//! the private Python, the venv, the models and the install marker.
+//! data root is `data_dir()/voice`, or `voice` in the folder chosen for it
+//! (`crate::runtime_root`), and holds everything the setup downloads: the
+//! private Python, the venv, the models and the install marker.
 //!
 //! Nothing here needs a `tauri::AppHandle`. The commands resolve the two roots
 //! once and pass them down, so the same code runs against a temporary folder
@@ -36,8 +37,13 @@ pub struct VoiceDirs {
 }
 
 impl VoiceDirs {
-    pub fn in_data_dir() -> Self {
-        Self { root: crate::os_paths::data_dir().join("voice") }
+    /// The voice engine in use: an install wherever it is found (the chosen
+    /// folder, an earlier one, the app data folder), else the chosen folder,
+    /// where a new setup goes.
+    pub fn current() -> Self {
+        let root = crate::runtime_root::current_here(crate::runtime_root::Kind::Voice, None)
+            .unwrap_or_else(|| crate::os_paths::data_dir().join("voice"));
+        Self { root }
     }
 
     /// A root of the test's choosing.

@@ -47,7 +47,7 @@ describe('a group round is budgeted per model', () => {
       chat.indexOf('export function useChat'),
     )
     expect(groupTurn).toMatch(/applyChatSendBudget\(/)
-    expect(groupTurn).toMatch(/await getModelMaxTokens\(model\)/)
+    expect(groupTurn).toMatch(/await getChatWindowTokens\(model\)/)
     expect(groupTurn).toMatch(/capMessageCount\(\[/)
     expect(groupTurn).toMatch(/contextDecay: settings\.contextDecay/)
   })

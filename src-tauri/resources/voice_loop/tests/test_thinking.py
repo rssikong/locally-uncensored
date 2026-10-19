@@ -99,6 +99,26 @@ def test_the_tag_families_the_chat_knows(text, thought):
     assert split(text) == [(THINK, thought), (SAY, "Yes.")]
 
 
+def test_a_gemma_thought_cut_anywhere_is_still_a_thought():
+    # Gemma 4 sends the channel marker and the word behind it as tokens of
+    # their own. The marker alone is a finished tag, so it used to be spoken
+    # before the word arrived, and the whole thought after it.
+    whole = "<|channel>thought\nLet me see.<channel|>Paris."
+    assert split("<|channel>", "thought", "\n", "Let me see.", "<channel|>", "Paris.") == [
+        (THINK, "\nLet me see."),
+        (SAY, "Paris."),
+    ]
+    for cut in range(1, len(whole)):
+        assert split(whole[:cut], whole[cut:]) == [(THINK, "\nLet me see."), (SAY, "Paris.")], cut
+    assert split(*whole) == [(THINK, "\nLet me see."), (SAY, "Paris.")]
+
+
+def test_a_channel_marker_is_never_spoken():
+    assert split("<|channel>", "final", "\n", "Paris.") == [(SAY, "final\nParis.")]
+    assert split("Paris.", "<channel|>") == [(SAY, "Paris.")]
+    assert split("the", " thoughtful", " answer") == [(SAY, "the thoughtful answer")]
+
+
 def test_a_closer_without_its_opener_is_not_spoken():
     assert split("So the answer is Paris.</think>Paris.") == [(SAY, "So the answer is Paris.Paris.")]
 

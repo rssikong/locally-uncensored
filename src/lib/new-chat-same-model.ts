@@ -23,5 +23,5 @@ export function newChatWithSameModel(): void {
   }
   const { settings, getActivePersona } = useSettingsStore.getState()
   const persona = settings.personasEnabled ? getActivePersona() : null
-  chat.createConversation(model, persona?.systemPrompt || '')
+  chat.createConversation(model, persona?.systemPrompt || '', undefined, { persona })
 }

@@ -60,8 +60,9 @@ describe('COUNTER-CHECK: Windows and Linux read every sentence as before', () =>
   it('letter for letter', () => {
     expect(computerOffLimitsLine(false)).toBe('Always off limits, and not a setting: LU itself, terminals and shells, password managers, sign-in and permission dialogs, the Run dialog and system launchers, security settings and windows with administrator rights.')
     expect(gpuLayersLabel(false)).toBe('GPU layers')
-    expect(gpuLayersTitle(false)).toBe("-1 = offload every layer to the GPU (default). 0 = CPU only. N = offload the first N layers \u2014 use when the model + KV cache doesn't fit your VRAM.")
-    expect(gpuLayersHint(false)).toBe('-1 = all layers on GPU · 0 = CPU only · N = partial offload for models bigger than your VRAM.')
+    // GH #156: -1 is auto on a PC, as many layers as fit, and says so.
+    expect(gpuLayersTitle(false)).toBe('-1 = as many layers on the GPU as fit (default). 0 = CPU only. N = offload the first N layers, for when the model and its KV cache do not fit your VRAM.')
+    expect(gpuLayersHint(false)).toBe('-1 = as many layers on GPU as fit · 0 = CPU only · N = partial offload for models bigger than your VRAM.')
     expect(cloudPickerLine(false)).toBe('Frontier chat models, no GPU needed')
     expect(cloudGateHeadline(false)).toBe('Run uncensored models in the cloud, no GPU needed.')
     expect(engineOffloadWords('GPU layers: 0, the GPU start failed', false)).toBe('GPU layers: 0, the GPU start failed')

@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { useChatStore } from '../../stores/chatStore'
 import { useSettingsStore } from '../../stores/settingsStore'
-import { groupSpeakers } from '../../lib/group-chat'
+import { availableGroupMembers, groupSpeakers, groupTurnAuthor } from '../../lib/group-chat'
+import { useModelStore } from '../../stores/modelStore'
 import { useAutoScroll } from '../../hooks/useAutoScroll'
 import { MessageBubble } from './MessageBubble'
 import { WorkingAnchor } from './WorkingAnchor'
@@ -13,6 +14,8 @@ import { Hinweis } from '../ui/Hinweis'
 import { TRANSCRIPT_MAX_PX } from './composer-width'
 import { useAgentModeStore } from '../../stores/agentModeStore'
 import { latestRefusalId, refusalNoticeApplies } from '../../lib/refusal-detect'
+import { GreetingSwitcher } from './GreetingSwitcher'
+import { forkMarks } from '../../lib/chat-forks'
 
 /**
  * Above this many visible messages the transcript stops paying full layout +
@@ -62,7 +65,8 @@ interface Props {
   isThisChatGenerating?: boolean
   isLoadingModel?: boolean
   onRegenerate?: (conversationId: string, assistantMessageId: string) => void
-  onEdit?: (conversationId: string, messageId: string, newContent: string) => void
+  /** Save & resend. False when nothing could be sent. */
+  onEdit?: (conversationId: string, messageId: string, newContent: string) => boolean | void
   /** Tool-call id awaiting user approval — when set, the matching tool
    *  block renders Approve/Reject inline (replaces the old popup). */
   pendingApprovalId?: string | null
@@ -84,10 +88,16 @@ export function MessageList({ isGenerating, isThisChatGenerating, isLoadingModel
   const personas = useSettingsStore((s) => s.personas)
   const groupModels = conversation?.groupModels
   const groupPersonas = conversation?.groupPersonas
+  const listedModels = useModelStore((s) => s.models)
+  const inventoryLoaded = useModelStore((s) => s.inventoryLoaded)
+  // The same line-up a round uses: a member whose model left the list sits
+  // out (GH #165), and the persona decides who wrote a turn (GH #169), so the
+  // label on a bubble and the tag the other models read always agree.
   const speakers = useMemo(
-    () => groupSpeakers(groupModels ?? [], groupPersonas, personas),
-    [groupModels, groupPersonas, personas],
+    () => groupSpeakers(availableGroupMembers(groupModels ?? [], listedModels, inventoryLoaded), groupPersonas, personas),
+    [groupModels, groupPersonas, personas, listedModels, inventoryLoaded],
   )
+  const authors = useMemo(() => ({ groupPersonas, personas }), [groupPersonas, personas])
 
   // Agent mode of THIS chat: a short "I can't ..." there is usually about a
   // file or a command, so the refusal notice stays out (lib/refusal-detect).
@@ -125,10 +135,28 @@ export function MessageList({ isGenerating, isThisChatGenerating, isLoadingModel
     if (c && cb) cb(c.id, messageId)
   }, [])
 
-  const handleEdit = useCallback((messageId: string, content: string) => {
+  const handleEdit = useCallback((messageId: string, content: string): boolean => {
     const { conversation: c, onEdit: cb } = bind.current
-    if (c && cb) cb(c.id, messageId, content)
+    return !!c && !!cb && cb(c.id, messageId, content) !== false
   }, [])
+
+  // GH #172, #174: "< 1/2 >" and "Branch from here" act on the open chat.
+  const handleSwitchFork = useCallback((key: string, index: number) => {
+    const c = bind.current.conversation
+    if (c) useChatStore.getState().switchFork(c.id, key, index)
+  }, [])
+
+  const handleBranch = useCallback((messageId: string) => {
+    const c = bind.current.conversation
+    if (c) useChatStore.getState().duplicateConversation(c.id, { endAt: messageId })
+  }, [])
+
+  // Which message carries the switch of which kept version. Recomputed only
+  // when the thread or its versions change, not on every streaming frame of
+  // another chat.
+  const messages = conversation?.messages
+  const forks = conversation?.forks
+  const marks = useMemo(() => forkMarks({ messages: messages ?? [], forks }), [messages, forks])
 
   // Decided once per visited conversation, see CONTENT_VISIBILITY_THRESHOLD.
   // React's documented "adjust state when a prop changes" shape: the branch
@@ -225,7 +253,7 @@ export function MessageList({ isGenerating, isThisChatGenerating, isLoadingModel
                 // The live generating flag, not `message.usage`: a backend that
                 // never reports usage would lose the action bar for good.
                 isStreaming={showTyping && message.id === lastVisibleId && message.role === 'assistant'}
-                onRegenerate={message.role === 'assistant' && onRegenerate && !isGenerating
+                onRegenerate={message.role === 'assistant' && onRegenerate && !isGenerating && !message.greetings
                   ? handleRegenerate
                   : undefined}
                 onEdit={message.role === 'user' && onEdit && !isGenerating
@@ -234,11 +262,19 @@ export function MessageList({ isGenerating, isThisChatGenerating, isLoadingModel
                 pendingApprovalId={pendingApprovalId}
                 onApprove={onApprove}
                 onReject={onReject}
+                forkKey={marks.get(message.id)?.key}
+                forkIndex={marks.get(message.id)?.index}
+                forkTotal={marks.get(message.id)?.total}
+                // Switching while a turn streams would move the bubble the
+                // stream writes into out of the thread.
+                onSwitchFork={isGenerating ? undefined : handleSwitchFork}
+                onBranch={handleBranch}
                 declined={message.id === declinedId}
-                speakerName={message.modelId && speakers[message.modelId]?.personaPrompt !== undefined
-                  ? speakers[message.modelId].name
-                  : undefined}
+                speakerName={speakerNameOf(message, speakers, authors)}
               />
+              )}
+              {message.greetings && message.greetings.length > 1 && message.id === lastVisibleId && !isGenerating && (
+                <GreetingSwitcher conversationId={conversation.id} message={message} />
               )}
               {compactAt.get(message.id)?.map((record) => (
                 <CompactBlock key={record.id} record={record} />
@@ -264,4 +300,15 @@ export function MessageList({ isGenerating, isThisChatGenerating, isLoadingModel
       </div>
     </div>
   )
+}
+
+/** The persona a group turn was written as, for the bubble's label. Nothing
+ *  when the turn's author is its model, which the label names anyway. */
+function speakerNameOf(
+  message: Parameters<typeof groupTurnAuthor>[0],
+  speakers: Parameters<typeof groupTurnAuthor>[1],
+  authors: Parameters<typeof groupTurnAuthor>[2],
+): string | undefined {
+  const author = message.modelId ? groupTurnAuthor(message, speakers, authors) : null
+  return author && author.name !== message.modelId ? author.name : undefined
 }

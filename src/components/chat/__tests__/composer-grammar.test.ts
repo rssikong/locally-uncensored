@@ -290,8 +290,8 @@ describe('die Abschnitte, die dieser Test liest, existieren ueberhaupt', () => {
     }
   })
 
-  it('findet zusammen genau die dreizehn Controls der Leiste', () => {
-    // Paperclip · Think · Effort · Stop · Send (ChatInput) · Mikrofon nicht
+  it('findet zusammen genau die vierzehn Controls der Leiste', () => {
+    // Paperclip · Think · Effort · Effort ausgegraut (issue 176) · Stop · Send (ChatInput) · Mikrofon nicht
     // verfuegbar · Mikrofon transkribiert · Mikrofon bereit/aufnehmend
     // (VoiceButton) · Docs (DocsButton) · Tools (ChatView) · Plugins-Icon ·
     // Plugins-Label (PluginsDropdown) · Modellwaehler (ModelSelector).
@@ -299,7 +299,7 @@ describe('die Abschnitte, die dieser Test liest, existieren ueberhaupt', () => {
     // composerActions. Aendert sich die Zahl, ist ein Control
     // dazugekommen oder verschwunden — beides gehoert angesehen.
     const all = REGIONS.flatMap(([, region]) => controlClassNames(region))
-    expect(all).toHaveLength(13)
+    expect(all).toHaveLength(14)
   })
 
   it('das Mikrofon steckt wirklich in dieser Leiste, nicht irgendwo sonst', () => {
@@ -337,11 +337,7 @@ describe('jedes Control der Leiste traegt eins der zwei Rezepte', () => {
       c.includes('lu-primary'),
     )
     expect(emphasised).toHaveLength(1)
-    // Fork note: the label is translated now, so the attribute may be written
-    // either way. What the rule asserts — the Send control carries the primary
-    // recipe — is unchanged.
-    const sendAt = INPUT.search(/aria-label=(?:"Send message"|\{t\('Send message'\)\})/)
-    const send = INPUT.slice(sendAt - 400, sendAt)
+    const send = INPUT.slice(INPUT.indexOf('aria-label="Send message"') - 400, INPUT.indexOf('aria-label="Send message"'))
     expect(send).toContain('lu-primary')
   })
 
@@ -349,8 +345,7 @@ describe('jedes Control der Leiste traegt eins der zwei Rezepte', () => {
     // Der Grund steht in index.css und im Audit: Stop ist der
     // Normalabschluss, kein destruktiver Bestaetigungsknopf, und Rot heisst
     // in dieser App an 94 Stellen „kaputt oder wird geloescht".
-    // Fork note: `t('…')` wrapper accepted, same reason as the Send assertion.
-    const at = INPUT.search(/aria-label=(?:"Stop generation"|\{t\('Stop generation'\)\})/)
+    const at = INPUT.indexOf('aria-label="Stop generation"')
     expect(at).toBeGreaterThan(-1)
     const stop = INPUT.slice(at - 500, at)
     expect(stop).toContain('lu-control')
@@ -583,12 +578,9 @@ describe('der Zustand kommt aus ARIA, nicht aus einer zweiten Klassenkette', () 
     // `max` und saehe an beiden Enden gleich aus. Die Stufe steht deshalb im
     // zugaenglichen Namen und sichtbar im Knopf; sichtbar ist er ohnehin nur,
     // solange Denken an ist, und das meldet der Think-Knopf daneben.
-    // Fork note: the fixed sentence now comes through `t('Reasoning effort')`.
-    // What this asserts is that the current LEVEL is inside the accessible
-    // name, not how the sentence around it is spelled.
-    expect(EFFORT).toMatch(/aria-label=\{`[^`]*\$\{effortLabel\(effortNow\)\}[^`]*`\}/)
+    expect(EFFORT).toMatch(/aria-label=\{`Reasoning effort: \$\{effortText\}`\}/)
     expect(EFFORT).not.toContain('aria-pressed')
-    expect(INPUT).toContain('<span>{effortLabel(effortNow)}</span>')
+    expect(INPUT).toContain('<span>{effortText}</span>')
     // Das blaue Pill der Release-Linie ist weg. Es war dieselbe Farbe wie der
     // Fokusring, direkt neben dem Knopf, an dem sie schon abgebaut war.
     // Geprueft wird der KNOPF, nicht die Datei: das Blau der Ablegeflaeche

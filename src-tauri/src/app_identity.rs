@@ -75,6 +75,15 @@ pub const AGENT_WORKSPACE_DIR: &str = "agent-workspace";
 #[cfg_attr(not(any(target_os = "windows", target_os = "macos")), allow(dead_code))]
 pub const KEYCHAIN_SERVICE: &str = "com.locallyuncensored.providerkeys";
 
+/// The version of this build, for every log line, diagnostic and request the
+/// Rust side writes. The one place that reads it: a Discord report (3.0.7) had
+/// a 3.0.6 user reading "3.0.5" in the logs, and the version was asked for in
+/// seven places from two sources (Cargo.toml and, through `package_info`,
+/// tauri.conf.json). Both files are held equal to package.json by
+/// `src/lib/__tests__/eine-versionsquelle.test.ts`, which also refuses any
+/// second reader here.
+pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -93,3 +93,21 @@ export function nodePackLoadError(packName: string, nodeClass: string, lines?: s
   return `Installed ${packName} and restarted ComfyUI, but it still isn't listing the ${nodeClass} node, ` +
     'and ComfyUI printed no import error for it. Restart ComfyUI under Settings, AI Backends, then try again.'
 }
+
+/** Die Zeile "Device: ..." aus der Startausgabe von ComfyUI, leer wenn keine
+ *  da ist.
+ *
+ *  3.0.7: Nach einem Wechsel des GPU-Modus wusste niemand, ob ComfyUI jetzt
+ *  auf der Karte laeuft. ComfyUI sagt es selbst, in genau einer Zeile beim
+ *  Start ("Device: cuda:0 ...", "Device: xpu:0 ...", "Device: cpu"), und die
+ *  steht im Ringpuffer, den `comfyui_last_output` liefert. Die letzte gewinnt,
+ *  weil der Puffer erst beim naechsten Start geleert wird. */
+export function comfyDeviceLine(lines?: string[] | null): string {
+  for (const raw of [...(lines ?? [])].reverse()) {
+    const at = raw.indexOf('Device: ')
+    if (at < 0) continue
+    const line = raw.slice(at).trim()
+    if (line.length > 'Device: '.length) return line
+  }
+  return ''
+}

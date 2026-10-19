@@ -10,7 +10,7 @@
 //!
 //! The file goes to the Trash, not into oblivion: a misclick in the gallery
 //! must stay recoverable. Exactly one file per call, and only a media file
-//! that lies directly in one of the two output folders. The path comes from
+//! that lies directly in one of the output folders. The path comes from
 //! the interface, so it is taken apart here (`resolve`) and nowhere else.
 
 use std::path::{Component, Path, PathBuf};
@@ -20,16 +20,16 @@ use serde_json::{json, Value};
 use crate::commands::CmdResult;
 use crate::state::AppState;
 
-/// What the Mac's engines write: PNG stills (`mlx.rs`, `image_mflux.rs`) and
-/// MP4 clips (`video.rs`). The other endings are what a later engine may
-/// write. Nothing else in these folders is a render.
-const MEDIA_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "webp", "mp4", "mov", "webm"];
+/// What the Mac's engines write: PNG stills (`mlx.rs`, `image_mflux.rs`),
+/// MP4 clips (`video.rs`) and WAV tracks (`music.rs`). The other endings are
+/// what a later engine may write. Nothing else in these folders is a render.
+const MEDIA_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "webp", "mp4", "mov", "webm", "wav"];
 
 const NOT_OURS: &str = "That gallery entry does not name a file in LU's output folders.";
 
 /// The folders a gallery entry of the Mac may name a file in.
 pub(crate) fn output_roots() -> Vec<PathBuf> {
-    vec![crate::commands::mlx::images_root(), crate::commands::video::outputs_root()]
+    vec![crate::commands::mlx::images_root(), crate::commands::video::outputs_root(), crate::commands::music::outputs_root()]
 }
 
 /// The file behind a path the interface sent.
@@ -149,15 +149,31 @@ mod tests {
 
     #[test]
     fn the_folders_are_the_ones_the_engines_write_to_and_playback_reads_from() {
-        assert_eq!(output_roots(), vec![crate::commands::mlx::images_root(), crate::commands::video::outputs_root()]);
-        // The same two folders `read_media_file` serves: what the gallery can
-        // show is what it can delete.
+        assert_eq!(
+            output_roots(),
+            vec![crate::commands::mlx::images_root(), crate::commands::video::outputs_root(), crate::commands::music::outputs_root()]
+        );
+        // The same three folders `read_media_file` serves: what the gallery
+        // can show is what it can delete.
         let media = include_str!("media_cmds.rs");
         let allowed = &media[media.find("fn allowed_media_roots()").unwrap()..];
         let allowed = &allowed[..allowed.find("\n}\n").unwrap()];
         assert!(allowed.contains("crate::commands::video::outputs_root()"));
         assert!(allowed.contains("crate::commands::mlx::images_root()"));
-        assert_eq!(allowed.matches("crate::commands::").count(), 2, "read_media_file serves a folder that Delete does not know");
+        assert!(allowed.contains("crate::commands::music::outputs_root()"));
+        assert_eq!(allowed.matches("crate::commands::").count(), 3, "read_media_file serves a folder that Delete does not know");
+    }
+
+    #[test]
+    fn a_track_of_the_music_engine_resolves_like_a_clip() {
+        let tmp = tempfile::tempdir().unwrap();
+        let music = tmp.path().join("music");
+        std::fs::create_dir_all(&music).unwrap();
+        std::fs::write(music.join("music-j1.wav"), b"RIFF").unwrap();
+        std::fs::write(music.join("job.json"), b"{}").unwrap();
+        let roots = vec![music.clone()];
+        assert_eq!(resolve(&roots, &s(&music.join("music-j1.wav"))).unwrap(), Some(music.canonicalize().unwrap().join("music-j1.wav")));
+        assert!(resolve(&roots, &s(&music.join("job.json"))).is_err(), "not a render");
     }
 
     #[test]

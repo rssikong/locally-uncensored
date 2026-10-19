@@ -19,9 +19,31 @@ import { usePermissionStore } from './permissionStore'
 import { useStagedChangesStore } from './stagedChangesStore'
 import { useCodexStore } from './codexStore'
 import { useAgentTaskStore } from './agentTaskStore'
+import { useAgentModeStore } from './agentModeStore'
 import { log } from '../lib/logger'
 import { isRecord, prop } from '../types/json-guards'
 import { activeConversationAtStart } from '../lib/conversation-mode'
+import { cardChatStart } from '../lib/character-card'
+import { personaPromptOf } from '../lib/chat-persona'
+import type { Persona } from '../types/settings'
+import { copyConversation, forgetForkKey, forkFrom, forkKeyAt, restoreEmptyFork, switchFork } from '../lib/chat-forks'
+import { savedUserEdit } from '../lib/message-edit'
+
+/** GH #169: give each group turn of these models that carries no persona yet
+ *  the persona its model played (model name to persona id). A turn that
+ *  already names its persona keeps it. Returns the same array when nothing
+ *  changes. */
+function stampGroupPersonas(messages: Message[], played: Record<string, string>): Message[] {
+  let changed = false
+  const out = messages.map((m) => {
+    if (m.role !== 'assistant' || !m.modelId || m.groupPersonaId || m.noGroupPersona) return m
+    const personaId = played[m.modelId]
+    if (!personaId) return m
+    changed = true
+    return { ...m, groupPersonaId: personaId }
+  })
+  return changed ? out : messages
+}
 
 /**
  * Rehydration migration for Phase 1 (v2.4.0) — wraps legacy
@@ -119,10 +141,70 @@ export function dropConversationSideState(id: string): void {
   }
 }
 
+/**
+ * The settings of a chat that live OUTSIDE this store, carried over to a
+ * duplicate or a branch (GH #174): Agent on or off and its working folder,
+ * the Code mode, the tool permissions, the attached documents. A full
+ * duplicate also takes the task list; a branch ends earlier, where that list
+ * would describe work that is not in it.
+ *
+ * Not copied on purpose: Create orders (they are bookings, and a copy would
+ * count their cost twice), the staged changes of a running agent and its
+ * background tasks (they belong to a run, not to the chat).
+ *
+ * One try per store, like dropConversationSideState: a failure in one of
+ * them must not stop the others or the copy.
+ */
+export function copyConversationSideState(fromId: string, toId: string, opts: { withTodos: boolean }): void {
+  const steps: [string, () => void][] = [
+    ['agent-mode', () => {
+      const agent = useAgentModeStore.getState()
+      if (agent.agentModeActive[fromId] !== undefined) agent.setAgentModeActive(toId, agent.agentModeActive[fromId])
+      const workspace = agent.workspaces[fromId]
+      if (workspace) agent.setWorkspace(toId, structuredClone(workspace))
+    }],
+    ['codex', () => {
+      const mode = useCodexStore.getState().modeByConversation[fromId]
+      if (mode) useCodexStore.setState((s) => ({ modeByConversation: { ...s.modeByConversation, [toId]: mode } }))
+    }],
+    ['permissions', () => {
+      const overrides = usePermissionStore.getState().conversationOverrides[fromId]
+      if (overrides) usePermissionStore.setState((s) => ({ conversationOverrides: { ...s.conversationOverrides, [toId]: { ...overrides } } }))
+    }],
+    ['todos', () => {
+      if (!opts.withTodos) return
+      const todos = useTodoStore.getState().byConversation[fromId]
+      if (todos?.length) useTodoStore.getState().setTodos(toId, structuredClone(todos))
+    }],
+    ['rag', () => {
+      void useRAGStore.getState().copyConversation(fromId, toId).catch((err) => {
+        log.warn('[chatStore] could not copy the documents of a chat', { err: String(err) })
+      })
+    }],
+  ]
+  for (const [what, run] of steps) {
+    try { run() } catch (err) {
+      log.warn('[chatStore] could not copy side state for a chat copy', { store: what, err: String(err) })
+    }
+  }
+}
+
 interface ChatState {
   conversations: Conversation[]
   activeConversationId: string | null
-  createConversation: (model: string, systemPrompt: string, mode?: 'lu' | 'codex' | 'openclaw' | 'remote') => string
+  /** `opts.persona`: the persona the chat starts with, passed by the plain
+   *  chat entry points only. A character card persona turns the chat into a
+   *  role play chat: its prompt with the macros filled in, the persona
+   *  switched on for this chat, and the card's greeting as the first answer. */
+  createConversation: (
+    model: string,
+    systemPrompt: string,
+    mode?: 'lu' | 'codex' | 'openclaw' | 'remote',
+    opts?: { persona?: Persona | null },
+  ) => string
+  /** Show another of the opening greetings of a character card chat. Does
+   *  nothing once the user has written. */
+  selectGreeting: (conversationId: string, messageId: string, index: number) => void
   deleteConversation: (id: string) => void
   renameConversation: (id: string, title: string) => void
   setActiveConversation: (id: string | null) => void
@@ -132,6 +214,9 @@ interface ChatState {
    *  persona's systemPrompt without changing the global Settings
    *  selection. */
   setConversationPersonaEnabled: (id: string, enabled: boolean) => void
+  /** GH #170: the persona THIS chat speaks as, picked in its Plugins menu.
+   *  Records the id and refreshes the kept copy of the prompt. */
+  setConversationPersona: (id: string, persona: Persona) => void
   /** R5-10/R5-11 (3.0.1-Liste): merge sampling values into ONE chat. Only the
    *  keys in the patch move, the rest keep whatever the chat already had,
    *  which is how "send only what THIS chat changed" survives a second visit
@@ -175,6 +260,21 @@ interface ChatState {
   updateMessageAgentBlocks: (conversationId: string, messageId: string, blocks: AgentBlock[]) => void
   updateMessageArtifacts: (conversationId: string, messageId: string, artifacts: ChatArtifact[]) => void
   deleteMessagesAfter: (conversationId: string, messageId: string) => void
+  /** Resend and regenerate (GH #172, #174): take `messageId` and everything
+   *  after it out of the shown thread and keep it as a version, instead of
+   *  deleting it. Returns the key of the fork, or null when the message is
+   *  not in the chat. */
+  forkFrom: (conversationId: string, messageId: string) => string | null
+  /** Show another kept version ("< 1/2 >"). */
+  switchFork: (conversationId: string, key: string, index: number) => void
+  /** A resend that wrote nothing goes back to what was shown before. */
+  restoreEmptyFork: (conversationId: string, key: string) => void
+  /** "Save" on an edited user message (GH #172): new text, nothing sent,
+   *  every later turn stays. */
+  saveUserEdit: (conversationId: string, messageId: string, typed: string) => void
+  /** GH #174: a full, independent copy of a chat, or with `endAt` a
+   *  new chat that ends with that message. Opens it and returns its id. */
+  duplicateConversation: (id: string, opts?: { endAt?: string }) => string | null
   /** Remove a single message by id (D#81). Leaves the rest of the thread intact,
    *  so the user can prune one line from the model's context without nuking the
    *  whole chat or truncating everything after it. */
@@ -322,8 +422,11 @@ export const useChatStore = create<ChatState>()(
       conversations: [],
       activeConversationId: null,
 
-      createConversation: (model, systemPrompt, mode) => {
+      createConversation: (model, systemPrompt, mode, opts) => {
         const id = uuid()
+        // Character card chats: plain chats only, never Code, Remote or the
+        // agent entry points (they do not pass a persona).
+        const rp = (mode ?? 'lu') === 'lu' && opts?.persona ? cardChatStart(opts.persona) : null
         // Auto-number remote chats so users can distinguish sessions in the sidebar
         let title: string
         // 'codex' is the internal back-compat mode id; the user-facing
@@ -337,9 +440,20 @@ export const useChatStore = create<ChatState>()(
         const conversation: Conversation = {
           id,
           title,
-          messages: [],
+          messages: rp && rp.greetings.length
+            ? [{
+                id: uuid(),
+                role: 'assistant',
+                content: rp.greetings[0],
+                timestamp: Date.now(),
+                // Also with one greeting: the field marks the opening
+                // message, which has no user turn to regenerate from.
+                greetings: rp.greetings,
+                greetingIndex: 0,
+              }]
+            : [],
           model,
-          systemPrompt,
+          systemPrompt: rp ? rp.systemPrompt : systemPrompt,
           mode: mode || 'lu',
           createdAt: Date.now(),
           updatedAt: Date.now(),
@@ -349,7 +463,13 @@ export const useChatStore = create<ChatState>()(
           // selected persona (e.g. "Devil's Advocate") would silently
           // hijack every new chat — including agent / codex tasks where
           // the persona conflicts with the autonomy contract.
-          personaEnabled: false,
+          // A character card chat is the exception: the user picked a
+          // character to talk to, and its greeting would make no sense
+          // without its prompt.
+          personaEnabled: !!rp,
+          // GH #170: the chat remembers WHICH persona it started with, so a
+          // later pick in the Plugins menu of this chat can replace it.
+          ...(opts?.persona ? { personaId: opts.persona.id } : {}),
         }
         set((state) => ({
           conversations: [conversation, ...state.conversations],
@@ -401,10 +521,35 @@ export const useChatStore = create<ChatState>()(
         }))
       },
 
+      selectGreeting: (conversationId, messageId, index) =>
+        set((state) => ({
+          conversations: state.conversations.map((c) => {
+            if (c.id !== conversationId) return c
+            const at = c.messages.findIndex((m) => m.id === messageId)
+            const msg = c.messages[at]
+            if (!msg?.greetings || index < 0 || index >= msg.greetings.length) return c
+            // Only while the greeting is still the last word: after the user
+            // answered, swapping it would rewrite what they answered to.
+            if (c.messages.slice(at + 1).some((m) => !m.hidden && m.role !== 'system')) return c
+            const messages = c.messages.slice()
+            messages[at] = { ...msg, content: msg.greetings[index], greetingIndex: index }
+            return { ...c, messages }
+          }),
+        })),
+
       setConversationPersonaEnabled: (id, enabled) =>
         set((state) => ({
           conversations: state.conversations.map((c) =>
             c.id === id ? { ...c, personaEnabled: enabled } : c
+          ),
+        })),
+
+      setConversationPersona: (id, persona) =>
+        set((state) => ({
+          conversations: state.conversations.map((c) =>
+            c.id === id
+              ? { ...c, personaId: persona.id, systemPrompt: personaPromptOf(persona), updatedAt: Date.now() }
+              : c
           ),
         })),
 
@@ -439,6 +584,10 @@ export const useChatStore = create<ChatState>()(
             const kept = Object.entries(c.groupPersonas ?? {}).filter(([model]) => groupModels.includes(model))
             if (kept.length > 0) next.groupPersonas = Object.fromEntries(kept)
             else delete next.groupPersonas
+            // GH #169: the turns it wrote keep the persona it played, so that
+            // persona stays their author once another model takes it over.
+            const leaving = Object.entries(c.groupPersonas ?? {}).filter(([model]) => !groupModels.includes(model))
+            if (leaving.length > 0) next.messages = stampGroupPersonas(c.messages, Object.fromEntries(leaving))
             return next
           }),
         })),
@@ -448,9 +597,15 @@ export const useChatStore = create<ChatState>()(
           conversations: state.conversations.map((c) => {
             if (c.id !== id) return c
             const personas = { ...(c.groupPersonas ?? {}) }
+            const before = personas[model]
             if (personaId) personas[model] = personaId
             else delete personas[model]
             const next = { ...c, updatedAt: Date.now() }
+            // GH #169: what this model wrote as its previous persona stays that
+            // persona's. A model that had none hands its older turns to the new
+            // one, which is the only way to give turns from before personas
+            // existed an author.
+            if (before && before !== personaId) next.messages = stampGroupPersonas(c.messages, { [model]: before })
             // No pick left: the field goes, so the chat is stored exactly as a
             // group from before this feature.
             if (Object.keys(personas).length > 0) next.groupPersonas = personas
@@ -633,16 +788,85 @@ export const useChatStore = create<ChatState>()(
 
       deleteMessage: (conversationId, messageId) =>
         set((state) => ({
+          conversations: state.conversations.map((c) => {
+            if (c.id !== conversationId) return c
+            // A fork keyed by this message moves to the one before it first,
+            // or its kept versions would hang off a message that is gone.
+            const kept = forgetForkKey(c, messageId)
+            return {
+              ...kept,
+              messages: kept.messages.filter((m) => m.id !== messageId),
+              updatedAt: Date.now(),
+            }
+          }),
+        })),
+
+      forkFrom: (conversationId, messageId) => {
+        const conv = get().conversations.find((c) => c.id === conversationId)
+        const at = conv ? conv.messages.findIndex((m) => m.id === messageId) : -1
+        if (!conv || at < 0) return null
+        const key = forkKeyAt(conv.messages, at)
+        set((state) => ({
           conversations: state.conversations.map((c) =>
-            c.id === conversationId
-              ? {
-                ...c,
-                messages: c.messages.filter((m) => m.id !== messageId),
-                updatedAt: Date.now(),
-              }
-              : c
+            c.id === conversationId ? { ...forkFrom(c, messageId), updatedAt: Date.now() } : c
+          ),
+        }))
+        return key
+      },
+
+      // No updatedAt bump: looking at another version is not activity, and
+      // the bump would move the chat to the top of the sidebar.
+      switchFork: (conversationId, key, index) =>
+        set((state) => ({
+          conversations: state.conversations.map((c) =>
+            c.id === conversationId ? switchFork(c, key, index) : c
           ),
         })),
+
+      restoreEmptyFork: (conversationId, key) =>
+        set((state) => ({
+          conversations: state.conversations.map((c) =>
+            c.id === conversationId ? restoreEmptyFork(c, key) : c
+          ),
+        })),
+
+      saveUserEdit: (conversationId, messageId, typed) =>
+        set((state) => ({
+          conversations: state.conversations.map((c) => {
+            if (c.id !== conversationId) return c
+            return {
+              ...c,
+              messages: c.messages.map((m) => {
+                if (m.id !== messageId || m.role !== 'user') return m
+                const fields = savedUserEdit(m, typed)
+                const next: Message = { ...m, content: fields.content }
+                if (fields.displayContent === undefined) delete next.displayContent
+                else next.displayContent = fields.displayContent
+                return next
+              }),
+              updatedAt: Date.now(),
+            }
+          }),
+        })),
+
+      duplicateConversation: (id, opts) => {
+        const conv = get().conversations.find((c) => c.id === id)
+        if (!conv) return null
+        const copy = copyConversation(conv, uuid(), {
+          endAt: opts?.endAt,
+          title: `${conv.title} (${opts?.endAt ? 'branch' : 'copy'})`,
+          now: Date.now(),
+        })
+        if (!copy) return null
+        // Side state first, so the chat opens with its Agent switch and its
+        // documents already in place.
+        copyConversationSideState(id, copy.id, { withTodos: !opts?.endAt })
+        set((state) => ({
+          conversations: [copy, ...state.conversations],
+          activeConversationId: copy.id,
+        }))
+        return copy.id
+      },
 
       getActiveConversation: () => {
         const { conversations, activeConversationId } = get()

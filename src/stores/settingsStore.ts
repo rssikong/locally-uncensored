@@ -4,6 +4,7 @@ import { safeJSONStorage } from '../lib/storage-quota'
 import type { Settings, Persona } from '../types/settings'
 import { DEFAULT_SETTINGS, BUILT_IN_PERSONAS } from '../lib/constants'
 import { isEffortLevel } from '../lib/effort'
+import { normalizeThinkBudget } from '../lib/think-budget'
 import { isRecord, asString } from '../types/json-guards'
 import { RETIRED_SEND_WINDOW_DEFAULT } from '../lib/send-window'
 
@@ -96,7 +97,13 @@ import { RETIRED_SEND_WINDOW_DEFAULT } from '../lib/send-window'
 // survives, and there is NO one-shot reset. The default equals what the client
 // already sent for thinking ON, so a profile that rides this migration sends
 // byte-for-byte the same request it sent before.
-const STORE_VERSION = 22
+// v23 (3.0.7): added settings.localEffortChosen (default false). Local
+// servers take a rung since issue 176, and without this key the global 'high'
+// would have gone to every local model nobody had touched. STRICTLY ADDITIVE
+// and IDEMPOTENT like v20 to v22: the merge below fills false in for a profile
+// that never had the key, and a true the user set survives every rerun of
+// this migration after an A/B switch, because the merge keeps stored values.
+const STORE_VERSION = 23
 
 interface SettingsState {
   settings: Settings
@@ -182,6 +189,26 @@ export const useSettingsStore = create<SettingsState>()(
         if (!isEffortLevel(String(state.settings.reasoningEffort))) {
           state.settings.reasoningEffort = DEFAULT_SETTINGS.reasoningEffort
         }
+        // Think budget (D12): a whole, non-negative count or 0. No version
+        // bump, a profile without the key simply reads as auto.
+        state.settings.thinkingBudget = normalizeThinkBudget(state.settings.thinkingBudget)
+        // Local effort pick (v23): only a real true counts. A blob that is
+        // already at this version but lacks the key reads as not picked.
+        state.settings.localEffortChosen = state.settings.localEffortChosen === true
+        // Emoticons to emojis (3.0.7): on unless switched off, so a profile
+        // without the key gets the default.
+        state.settings.emojiAutoReplace = state.settings.emojiAutoReplace !== false
+        // Auto-compact is on by default since 3.0.7. Before, a 0 threshold was
+        // the only way to be off and it was also what every profile that never
+        // touched the setting held, so the stored 0 means "never chosen" and a
+        // profile without the key is on. Only an explicit false stays off.
+        state.settings.autoCompact = state.settings.autoCompact !== false
+        // Chat Tools are always on since 3.0.7 (lib/chat-tools-reach.ts). The
+        // old switch is gone, and so is what a profile kept of it, an "off"
+        // included: nothing reads it, and it would only travel on unseen.
+        delete (state.settings as unknown as Record<string, unknown>).chatToolsEnabled
+        // REA plugin (3.0.7): only a real true starts a process.
+        state.settings.reaPluginEnabled = state.settings.reaPluginEnabled === true
         // 3.0.4 halved the paid-provider send window. A stored 64000 is the old
         // default (no UI writes this key), so it follows the new one. Here and
         // not in migrate for the same reason as above: no version bump, and a

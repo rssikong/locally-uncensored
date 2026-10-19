@@ -283,7 +283,7 @@ where
 pub async fn voice_loop_requirements(app: AppHandle) -> Result<Requirements, String> {
     let sidecar_dir = sidecar_dir(&app)?;
     blocking(move || {
-        let dirs = VoiceDirs::in_data_dir();
+        let dirs = VoiceDirs::current();
         install::requirements(&dirs, &sidecar_dir, layout::this_platform(), install::free_space(&dirs))
     })
     .await
@@ -306,7 +306,7 @@ pub async fn voice_loop_install(
         stop_dictation(&state);
     }
     blocking(move || {
-        let status = begin_install(&VoiceDirs::in_data_dir(), &sidecar_dir, &handle, force);
+        let status = begin_install(&VoiceDirs::current(), &sidecar_dir, &handle, force);
         Ok(serde_json::json!({ "status": status }))
     })
     .await
@@ -328,7 +328,7 @@ pub fn voice_loop_install_cancel(state: State<'_, AppState>) {
 pub async fn voice_loop_status(app: AppHandle, state: State<'_, AppState>) -> Result<StatusReport, String> {
     let handle = state.voice_loop.clone();
     let sidecar_dir = sidecar_dir(&app)?;
-    blocking(move || Ok(status_report(&VoiceDirs::in_data_dir(), &sidecar_dir, layout::this_platform(), &handle))).await
+    blocking(move || Ok(status_report(&VoiceDirs::current(), &sidecar_dir, layout::this_platform(), &handle))).await
 }
 
 /// Start the sidecar and wait until it is ready. The port and the launch token
@@ -339,13 +339,13 @@ pub async fn voice_loop_start(app: AppHandle, state: State<'_, AppState>) -> Res
     let sidecar_dir = sidecar_dir(&app)?;
     let origins = dev_origins(&app);
     blocking(move || {
-        let session = start_loop(&VoiceDirs::in_data_dir(), &sidecar_dir, layout::this_platform(), &handle, origins)?;
+        let session = start_loop(&VoiceDirs::current(), &sidecar_dir, layout::this_platform(), &handle, origins)?;
         Ok(serde_json::json!({
             "port": session.port,
             "token": session.token,
             "baseUrl": format!("http://127.0.0.1:{}", session.port),
             // The voice the next session asks the sidecar for.
-            "voice": install::chosen_voice(&VoiceDirs::in_data_dir(), &sidecar_dir),
+            "voice": install::chosen_voice(&VoiceDirs::current(), &sidecar_dir),
         }))
     })
     .await
@@ -357,7 +357,7 @@ pub async fn voice_loop_start(app: AppHandle, state: State<'_, AppState>) -> Res
 pub async fn voice_loop_set_voice(app: AppHandle, state: State<'_, AppState>, voice: String) -> Result<(), String> {
     let handle = state.voice_loop.clone();
     let sidecar_dir = sidecar_dir(&app)?;
-    blocking(move || set_voice(&VoiceDirs::in_data_dir(), &sidecar_dir, &handle, &voice)).await
+    blocking(move || set_voice(&VoiceDirs::current(), &sidecar_dir, &handle, &voice)).await
 }
 
 /// Stop the sidecar. Returns when the process is gone.
@@ -376,7 +376,7 @@ pub async fn voice_loop_stop(state: State<'_, AppState>) -> Result<(), String> {
 pub async fn voice_loop_uninstall(state: State<'_, AppState>) -> Result<(), String> {
     let handle = state.voice_loop.clone();
     stop_dictation(&state);
-    blocking(move || remove_installation(&VoiceDirs::in_data_dir(), &handle)).await
+    blocking(move || remove_installation(&VoiceDirs::current(), &handle)).await
 }
 
 #[cfg(test)]

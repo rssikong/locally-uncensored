@@ -12,6 +12,8 @@ import {
 import { splitTileNotes } from './macTileNotes'
 import { fitsMacMemory, memoryNeedGb } from '../../lib/mac-memory-fit'
 import { macGetBytes } from '../../lib/mac-setup-sizes'
+import { CloudOfferLine } from '../cloud/CloudOffer'
+import type { CloudOfferTask } from '../../lib/cloud-offer'
 
 // ─── Mac media tile ─────────────────────────────────────────────────
 
@@ -50,9 +52,12 @@ export interface MacMediaTileProps {
   onCancel: () => void
   onRemove: () => void
   onOpenUrl: (url: string) => void
+  /** The Create tab this model serves, for the LU Cloud line on a model
+   *  this Mac has no room for (lib/cloud-offer.ts). Absent: no line. */
+  cloudTask?: CloudOfferTask
 }
 
-export function MacMediaTile({ model, memoryGb, state, onGet, onCancel, onRemove, onOpenUrl }: MacMediaTileProps) {
+export function MacMediaTile({ model, memoryGb, state, onGet, onCancel, onRemove, onOpenUrl, cloudTask }: MacMediaTileProps) {
   // The memory the catalogue recommends. For the small Wan entries that is
   // more than the least a run is let through with: such a tile says so and
   // keeps its Get, as every tile above this Mac's memory does.
@@ -98,6 +103,11 @@ export function MacMediaTile({ model, memoryGb, state, onGet, onCancel, onRemove
               <span className={`w-1.5 h-1.5 shrink-0 rounded-full ${FIT_META[fit].dot}`} />
               <span>{memoryFitLine(needGb, memoryGb)}</span>
             </p>
+          )}
+          {/* No room for it on this Mac, and not here or on its way: the
+              one place this tile names LU Cloud. */}
+          {fit === 'big' && cloudTask && (state.kind === 'idle' || state.kind === 'blocked') && (
+            <CloudOfferLine task={cloudTask} sharedMemory />
           )}
           {notes.length > 0 && (
             <p className="flex flex-wrap items-center gap-1 mt-2" data-tile-notes>

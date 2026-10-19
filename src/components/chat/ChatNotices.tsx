@@ -11,7 +11,7 @@
  * fuer Anmerkungen und Fehler vorschreibt: eine Zeile, kein Kasten, ruhiges
  * Grau oder Rot, und ein x, das sie wegnimmt.
  */
-import { Bot, Download, FileText, FolderOpen, ImageOff, Images, Paperclip } from 'lucide-react'
+import { Binary, Bot, Download, FileText, FolderOpen, ImageOff, Images, Paperclip, Scissors } from 'lucide-react'
 import { Hinweis } from '../ui/Hinweis'
 import { useChatNoticeStore, CONVERSATION_BOUND, type ChatNoticeId } from '../../stores/chatNoticeStore'
 import { COMPOSER_MAX_W } from './composer-width'
@@ -27,6 +27,8 @@ const ICON: Record<ChatNoticeId, typeof Paperclip> = {
   'model-cannot-see-images': ImageOff,
   'image-attach': Images,
   'file-attach': Paperclip,
+  'binary-summary-only': Binary,
+  'file-cut': Scissors,
   'agent-outside-workspace': FolderOpen,
   'agent-for-local-files': Bot,
   'create-save': Download,

@@ -14,11 +14,13 @@ import type {
   ChatStreamChunk, ToolCall, ToolDefinition,
 } from './types'
 import { ProviderError } from './types'
+import { userTurnFirst } from './normalize-system'
 import { parseSSEWithEvents } from '../sse'
 import { idleAbortGuard, isStreamIdleTimeout } from '../stream-idle'
 import { sendWithTransientRetry } from './retry'
 import { parseRetryAfter } from '../../lib/http-status'
 import { requestLimitMessage } from '../../lib/request-limit'
+import { thinkBudgetForRequest, ANTHROPIC_MIN_THINK_BUDGET } from '../../lib/think-budget'
 import {
   localFetch, localFetchStream, isPrivateOrLanHost, isDirectFetchAllowed,
   hostnameOf, ensureProxyAllowsHost,
@@ -293,7 +295,12 @@ export class AnthropicProvider implements ProviderClient {
     if (options?.thinking !== true) return
 
     const ceiling = body.max_tokens
-    const budget = Math.max(1024, Math.min(DEFAULT_THINKING_BUDGET, Math.floor(ceiling / 2)))
+    // Think budget (D12): the user's own count wins over the automatic one,
+    // raised to the API minimum. Auto (0) keeps the rule above unchanged.
+    const wish = thinkBudgetForRequest(options.thinking, options.thinkingBudget)
+    const budget = wish !== undefined
+      ? Math.max(ANTHROPIC_MIN_THINK_BUDGET, wish)
+      : Math.max(ANTHROPIC_MIN_THINK_BUDGET, Math.min(DEFAULT_THINKING_BUDGET, Math.floor(ceiling / 2)))
     body.thinking = { type: 'enabled', budget_tokens: budget }
     // max_tokens covers thinking AND the answer, so it must have room for both.
     body.max_tokens = Math.max(ceiling, budget + MIN_ANSWER_TOKENS)
@@ -632,7 +639,9 @@ export class AnthropicProvider implements ProviderClient {
     let system = ''
     const anthropicMessages: AnthropicRequestMessage[] = []
 
-    for (const msg of messages) {
+    // The API wants a user turn first; a character card chat opens on the
+    // greeting (see userTurnFirst).
+    for (const msg of userTurnFirst(messages)) {
       if (msg.role === 'system') {
         // Anthropic: system goes in a separate parameter
         system += (system ? '\n\n' : '') + msg.content

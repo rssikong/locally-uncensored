@@ -67,11 +67,11 @@ async function send(page: Page, text: string) {
   // That is necessary and NOT sufficient, which is what the flat 1.5 s sleep
   // this replaces was covering by accident. ChatInput also holds a 700 ms
   // double-fire lock (SEND_LOCK_MS, chat/ChatInput.tsx) measured from the last
-  // ACCEPTED send, not from the end of the turn. A message that lands inside
-  // that window is dropped in silence: no bubble, no error, the text simply
-  // stays in the composer. Measured here on 2026-09-01: with a 24-frame reply
-  // the turn is over ~300 ms after the send, so the second send landed at
-  // ~500 ms — inside the lock — and this spec failed 3 runs out of 4.
+  // ACCEPTED send, not from the end of the turn. Until 3.0.7 it held for ANY
+  // message, so a second send ~500 ms after the first (a 24-frame reply is
+  // over in ~300 ms) was dropped in silence and this spec failed 3 runs out
+  // of 4 (measured 2026-09-01). It now holds only for the same message; the
+  // retry below stays as a margin.
   //
   // So the send verifies its own effect and, when it was swallowed, does what
   // a person does: press again. The retry is guarded by the bubble itself, so

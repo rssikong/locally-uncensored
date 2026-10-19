@@ -100,9 +100,13 @@ describe('endpointMap covers every backendCall/invokeMedia site the frontend can
       'install_mlx_diffusion', 'install_mlx_diffusion_status', 'set_hf_token', 'hf_token_present',
       'video_status', 'video_list_models', 'video_install_mlx', 'video_install_mlx_status',
       'video_install_model', 'video_install_model_status', 'video_cancel_model_install', 'video_delete_model',
-      'video_generate', 'video_stage_start_image', 'video_progress', 'video_cancel', 'read_media_file',
+      'video_generate', 'video_stage_start_image', 'video_stage_motion_video', 'video_progress', 'video_cancel', 'read_media_file',
       // Delete in the gallery of a Mac (commands/mlx_outputs.rs).
       'mlx_output_trash',
+      // Remove Background on a Mac (commands/mlx_cutout.rs).
+      'mlx_cutout',
+      // Enhance Image on a Mac (commands/mlx.rs mlx_upscale).
+      'mlx_upscale',
     ]
     for (const cmd of mlxCommands) {
       expect(rust.has(cmd), `${cmd} should still be a registered Tauri command`).toBe(true)
@@ -173,6 +177,11 @@ describe('endpointMap covers every backendCall/invokeMedia site the frontend can
     // has no dev route (it is in the list below), so there is nothing a dev
     // route for its cancel could end.
     'lmstudio_cancel_load',
+    // The folder of the voice engine and LU's own Python (Discord D2,
+    // components/settings/RuntimeFolderSetting.tsx). The row only renders
+    // behind isTauri(): the browser build has no voice engine and no Python
+    // of its own to place, so there is no dev route to add.
+    'move_runtime_folder', 'runtime_folder_status', 'set_runtime_folder',
     'exit_app', 'file_read', 'find_orphan_downloads', 'fix_comfyui_cors', 'funnel_ping',
     'get_comfy_gpu_status', 'get_current_time', 'import_local_model', 'install_character_trainer',
     'install_lmstudio', 'install_lmstudio_status', 'install_method', 'install_python',

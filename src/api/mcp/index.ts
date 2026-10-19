@@ -21,3 +21,19 @@ syncComputerUseTool(toolRegistry, useComputerStore.getState().enabled)
 useComputerStore.subscribe((state, before) => {
   if (state.enabled !== before.enabled) syncComputerUseTool(toolRegistry, state.enabled)
 })
+
+// REA (lib/plugins/rea.ts): its server runs while its switch under Plugins is
+// on, from the start of the app and on every change of the switch.
+// Loaded in the desktop app only, where there is a process to start.
+import { useSettingsStore } from '../../stores/settingsStore'
+import { isTauri } from '../backend'
+
+const syncRea = (on: boolean) =>
+  void import('../../lib/plugins/rea-runtime').then((m) => m.syncReaPlugin(on))
+if (isTauri()) {
+  if (useSettingsStore.getState().settings.reaPluginEnabled) syncRea(true)
+  useSettingsStore.subscribe((state, before) => {
+    const on = state.settings.reaPluginEnabled === true
+    if (on !== (before.settings.reaPluginEnabled === true)) syncRea(on)
+  })
+}

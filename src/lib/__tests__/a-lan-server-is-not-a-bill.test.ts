@@ -72,9 +72,9 @@ describe('the one classification', () => {
   // openai slot does not make a send to LU Cloud free.
   it('never lets a LAN openai slot speak for another provider', () => {
     slotPointsAt('http://127.0.0.1:8080/v1', true)
-    expect(sendsToALanBackend('openai')).toBe(true)
-    expect(sendsToALanBackend('lu-cloud')).toBe(false)
-    expect(sendsToALanBackend('anthropic')).toBe(false)
+    expect(sendsToALanBackend('openai', null)).toBe(true)
+    expect(sendsToALanBackend('lu-cloud', null)).toBe(false)
+    expect(sendsToALanBackend('anthropic', null)).toBe(false)
   })
 })
 
@@ -84,7 +84,7 @@ describe('the budget follows it', () => {
     const budget = effectiveSendWindow({
       providerId: 'openai',
       modelWindow: LOCAL_MODEL_WINDOW,
-      localBackend: sendsToALanBackend('openai'),
+      localBackend: sendsToALanBackend('openai', null),
     })
     expect(budget).toBe(Math.floor(LOCAL_MODEL_WINDOW * WINDOW_SHARE))
     expect(budget).toBeGreaterThan(DEFAULT_SEND_WINDOW_TOKENS)
@@ -94,7 +94,7 @@ describe('the budget follows it', () => {
     const budget = effectiveSendWindow({
       providerId: 'openai',
       modelWindow: LOCAL_MODEL_WINDOW,
-      localBackend: sendsToALanBackend('openai'),
+      localBackend: sendsToALanBackend('openai', null),
     })
     expect(budget).toBe(DEFAULT_SEND_WINDOW_TOKENS)
   })
@@ -105,7 +105,7 @@ describe('the budget follows it', () => {
       effectiveSendWindow({
         providerId: 'lu-cloud',
         modelWindow: LOCAL_MODEL_WINDOW,
-        localBackend: sendsToALanBackend('lu-cloud'),
+        localBackend: sendsToALanBackend('lu-cloud', null),
       }),
     ).toBe(DEFAULT_SEND_WINDOW_TOKENS)
   })
@@ -125,7 +125,7 @@ describe('the budget follows it', () => {
     const local = chatSendBudget({
       providerId: 'openai',
       modelWindow: LOCAL_MODEL_WINDOW,
-      localBackend: sendsToALanBackend('openai'),
+      localBackend: sendsToALanBackend('openai', null),
     })
     expect(local).toBe(Math.floor(LOCAL_MODEL_WINDOW * WINDOW_SHARE))
 
@@ -134,7 +134,7 @@ describe('the budget follows it', () => {
       chatSendBudget({
         providerId: 'openai',
         modelWindow: LOCAL_MODEL_WINDOW,
-        localBackend: sendsToALanBackend('openai'),
+        localBackend: sendsToALanBackend('openai', null),
       }),
     ).toBe(DEFAULT_SEND_WINDOW_TOKENS)
   })
@@ -180,6 +180,10 @@ describe('no budget is computed without asking the question', () => {
       for (const call of calls) {
         const body = call.slice(0, call.indexOf('})'))
         expect(body, `${site} computes a send window without localBackend`).toContain('localBackend')
+        // GitHub #173: and asks about the server of THIS model, not the slot.
+        if (body.includes('sendsToALanBackend(')) {
+          expect(body, `${site} asks sendsToALanBackend without the model`).toMatch(/sendsToALanBackend\(\w+, \w+\)/)
+        }
       }
     }
   })
@@ -204,7 +208,9 @@ describe('no budget is computed without asking the question', () => {
       expect(calls.length, `${site} no longer builds a send budget`).toBeGreaterThan(0)
       for (const [i, call] of calls.entries()) {
         expect(call, `${site} budget ${i + 1} of ${calls.length} without localBackend`)
-          .toContain('localBackend: sendsToALanBackend(providerId)')
+          // GitHub #173: useChat names the model too, so a model of an
+          // additional OpenAI-compatible entry asks about ITS server.
+          .toMatch(/localBackend: sendsToALanBackend\(providerId, (model|activeModel|m)\)/)
       }
     }
   })
@@ -220,7 +226,7 @@ describe('no budget is computed without asking the question', () => {
       chatSendBudget({
         providerId: 'openai',
         modelWindow: 262_144,
-        localBackend: sendsToALanBackend('openai'),
+        localBackend: sendsToALanBackend('openai', null),
       }),
     ).toBe(209_715)
 
@@ -229,7 +235,7 @@ describe('no budget is computed without asking the question', () => {
       chatSendBudget({
         providerId: 'openai',
         modelWindow: 262_144,
-        localBackend: sendsToALanBackend('openai'),
+        localBackend: sendsToALanBackend('openai', null),
       }),
     ).toBe(DEFAULT_SEND_WINDOW_TOKENS)
   })

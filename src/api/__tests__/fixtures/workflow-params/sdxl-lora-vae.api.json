@@ -1,0 +1,13 @@
+{
+  "3": { "class_type": "KSampler", "_meta": { "title": "Sampler" }, "inputs": { "model": ["10", 0], "seed": 42, "steps": 25, "cfg": 7, "sampler_name": "euler", "scheduler": "karras", "positive": ["6", 0], "negative": ["7", 0], "latent_image": ["5", 0], "denoise": 0.85 } },
+  "4": { "class_type": "CheckpointLoaderSimple", "inputs": { "ckpt_name": "sd_xl_base_1.0.safetensors" } },
+  "5": { "class_type": "EmptyLatentImage", "inputs": { "width": 1024, "height": 1024, "batch_size": 1 } },
+  "6": { "class_type": "CLIPTextEncode", "_meta": { "title": "Positive" }, "inputs": { "text": "a lighthouse", "clip": ["11", 0] } },
+  "7": { "class_type": "CLIPTextEncode", "_meta": { "title": "Negative" }, "inputs": { "text": "blurry", "clip": ["11", 0] } },
+  "8": { "class_type": "VAEDecode", "inputs": { "samples": ["3", 0], "vae": ["12", 0] } },
+  "9": { "class_type": "SaveImage", "inputs": { "images": ["8", 0], "filename_prefix": "sdxl" } },
+  "10": { "class_type": "LoraLoader", "_meta": { "title": "Detail LoRA" }, "inputs": { "model": ["4", 0], "clip": ["4", 1], "lora_name": "detail_tweaker_xl.safetensors", "strength_model": 0.8, "strength_clip": 1 } },
+  "11": { "class_type": "CLIPSetLastLayer", "inputs": { "clip": ["10", 1], "stop_at_clip_layer": -2 } },
+  "12": { "class_type": "VAELoader", "inputs": { "vae_name": "sdxl_vae.safetensors" } },
+  "13": { "class_type": "LU_TestToggle", "inputs": { "enabled": true, "mode": "fast", "note": "first line\nsecond line" } }
+}

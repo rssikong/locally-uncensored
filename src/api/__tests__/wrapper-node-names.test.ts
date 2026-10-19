@@ -91,6 +91,11 @@ const CORE_NODES = new Set([
   // on the 2026-08-02 e2e box (full tile/overlap/temporal signature).
   'VAEDecode', 'VAEDecodeTiled', 'VAEDecodeAudio', 'VAEEncode', 'VAEEncodeForInpaint', 'ImageScale',
   'GetVideoComponents', 'CreateVideo',
+  // Enhance Image (3.0.7), read in Comfy-Org/ComfyUI master on 2026-10-14:
+  // UpscaleModelLoader (model_name) and ImageUpscaleWithModel (upscale_model,
+  // image) [comfy_extras/nodes_upscale_model.py]; ImageScaleBy (image,
+  // upscale_method, scale_by) [nodes.py].
+  'UpscaleModelLoader', 'ImageUpscaleWithModel', 'ImageScaleBy',
   // output
   'SaveImage', 'SaveAnimatedWEBP', 'SaveVideo', 'SaveAudioMP3',
 ])

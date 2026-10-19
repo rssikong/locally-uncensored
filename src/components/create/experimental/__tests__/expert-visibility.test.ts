@@ -7,7 +7,7 @@ import { ParamGroups } from '../ParamGroups'
 
 const host = vi.hoisted(() => ({ mlx: false }))
 vi.mock('../../../../api/mlx-image', () => ({ isMlxImageHost: () => host.mlx }))
-vi.mock('../../../../api/comfyui', () => ({ classifyModel: () => 'sdxl' }))
+vi.mock('../../../../api/comfyui', () => ({ classifyModel: (name?: string) => (name?.startsWith('wan') ? 'wan' : 'sdxl'), resolveLocalOpPick: (pick: string) => pick }))
 vi.mock('../CreateContext', () => ({ useCreateExp: () => ({
   samplerList: [], schedulerList: [], loraList: [], vaeList: [], refreshModelLists: vi.fn(),
 }) }))
@@ -65,6 +65,27 @@ describe('Expert controls match the desktop backend', () => {
       expect(screen.getByText('Sampler'), `${intent} lost its sampler`).toBeTruthy()
       expect(screen.getByText('Scheduler'), `${intent} lost its scheduler`).toBeTruthy()
     }
+  })
+
+  it('has no LoRA stack on Motion Control and Talking Character, whose graphs take none', () => {
+    // 3.0.7: LocalOpParams carries no LoRA, so the stack on these two lanes
+    // set nothing (how-it-works session, round 2).
+    for (const intent of ['lipsync', 'motion'] as const) {
+      cleanup()
+      useCreateStore.setState({ backend: 'local', mode: 'video', videoModel: 'wan2.2_t2v.safetensors' })
+      useCreateStore.getState().setIntent(intent)
+      render(createElement(ParamGroups))
+      fireEvent.click(screen.getByText('Expert'))
+      expect(screen.queryByText('LoRA stack'), `${intent} still offers LoRAs`).toBeNull()
+    }
+  })
+
+  it('COUNTER-TEST: the Image tab keeps its LoRA stack (the text is found when it is there)', () => {
+    useCreateStore.setState({ backend: 'local', mode: 'image' })
+    useCreateStore.getState().setIntent('image')
+    render(createElement(ParamGroups))
+    fireEvent.click(screen.getByText('Expert'))
+    expect(screen.getByText('LoRA stack')).toBeTruthy()
   })
 
   it('keeps cloud edit denoise while hiding local mask controls', () => {

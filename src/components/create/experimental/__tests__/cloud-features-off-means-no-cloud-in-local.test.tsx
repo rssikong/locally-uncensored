@@ -9,6 +9,9 @@
  *
  * And the click on "Don't show Cloud features in Local mode" is answered: one
  * line says where to turn them back on.
+ *
+ * 3.0.7: Enhance runs on local ComfyUI (core upscale nodes), so it is a local
+ * tab now and only Erase is the hosted-only tool these tests watch.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, cleanup, screen, fireEvent, act } from '@testing-library/react'
@@ -44,14 +47,14 @@ describe('the rule', () => {
 
   it('off: the local bar holds exactly the tools that run locally', () => {
     const ids = visibleIntents('local', false, false).map((m) => m.id)
-    expect(ids).not.toContain('upscale')
+    expect(ids).toContain('upscale')
     expect(ids).not.toContain('eraser')
     expect(ids).toEqual(INTENTS.filter((m) => !isIntentLocked(m, 'local', false)).map((m) => m.id))
-    expect(ids).toEqual(expect.arrayContaining(['image', 'edit', 'removebg', 'video', 'animate', 'character', 'lipsync', 'music', 'extend', 'motion']))
+    expect(ids).toEqual(expect.arrayContaining(['image', 'edit', 'removebg', 'upscale', 'video', 'animate', 'character', 'lipsync', 'music', 'extend', 'motion']))
   })
 
-  it('off on a Mac: only what MLX runs', () => {
-    expect(visibleIntents('local', true, false).map((m) => m.id)).toEqual(['image', 'video'])
+  it('off on a Mac: only what the Mac runs itself', () => {
+    expect(visibleIntents('local', true, false).map((m) => m.id)).toEqual(['image', 'removebg', 'video', 'character'])
   })
 
   it('cloud mode shows everything, whatever the switch says', () => {
@@ -61,18 +64,22 @@ describe('the rule', () => {
 })
 
 describe('the bar', () => {
-  it('on: Enhance and Erase carry the cloud tag and open the Cloud sheet', () => {
+  it('on: Erase carries the cloud tag and opens the Cloud sheet, Enhance is a local tab', () => {
     render(<IntentBar />)
-    expect(cloudTagged().map((b) => b.textContent)).toEqual(['Enhance', 'Erase'])
+    expect(cloudTagged().map((b) => b.textContent)).toEqual(['Erase'])
+    fireEvent.click(screen.getByRole('radio', { name: /Erase Object/ }))
+    expect(useUIStore.getState().cloudTeaser).toEqual({ surface: 'intent', intent: 'eraser' })
+    useUIStore.setState({ cloudTeaser: null })
     fireEvent.click(screen.getByRole('radio', { name: /Enhance Image/ }))
-    expect(useUIStore.getState().cloudTeaser).toEqual({ surface: 'intent', intent: 'upscale' })
+    expect(useUIStore.getState().cloudTeaser).toBeNull()
+    expect(useCreateStore.getState().intent()).toBe('upscale')
   })
 
-  it('off: no cloud tag, no Enhance, no Erase, nothing left that opens the Cloud sheet', () => {
+  it('off: no cloud tag, no Erase, nothing left that opens the Cloud sheet', () => {
     setFeatures(false)
     render(<IntentBar />)
     expect(cloudTagged()).toEqual([])
-    expect(pills()).not.toContain('Enhance')
+    expect(pills()).toContain('Enhance')
     expect(pills()).not.toContain('Erase')
     for (const b of screen.getAllByRole('radio')) fireEvent.click(b)
     expect(useUIStore.getState().cloudTeaser).toBeNull()
@@ -80,17 +87,17 @@ describe('the bar', () => {
 
   it('the switch acts on the bar that is on screen', () => {
     render(<IntentBar />)
-    expect(pills()).toContain('Enhance')
+    expect(pills()).toContain('Erase')
     act(() => setFeatures(false))
-    expect(pills()).not.toContain('Enhance')
+    expect(pills()).not.toContain('Erase')
     act(() => setFeatures(true))
-    expect(pills()).toContain('Enhance')
+    expect(pills()).toContain('Erase')
   })
 })
 
 describe('the link on the Cloud sheet is answered', () => {
   const clickLink = async () => {
-    useUIStore.getState().setCloudTeaser({ surface: 'intent', intent: 'upscale' })
+    useUIStore.getState().setCloudTeaser({ surface: 'intent', intent: 'eraser' })
     await act(async () => { render(<><CloudHiddenNotice /><IntentBar /><CloudTeaserModal /></>) })
     fireEvent.click(screen.getByText("Don't show Cloud features in Local mode"))
   }
@@ -100,7 +107,7 @@ describe('the link on the Cloud sheet is answered', () => {
     await clickLink()
     expect(CLOUD_HIDDEN_NOTICE).toBe('Cloud features are hidden. Turn them back on in Settings, General.')
     expect(screen.getByRole('status').textContent).toContain(CLOUD_HIDDEN_NOTICE)
-    expect(pills()).not.toContain('Enhance')
+    expect(pills()).not.toContain('Erase')
   })
 
   it('closing the sheet any other way says nothing', async () => {

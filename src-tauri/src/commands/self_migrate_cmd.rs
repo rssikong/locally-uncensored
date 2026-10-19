@@ -48,7 +48,7 @@ fn updater_config(app: &tauri::AppHandle) -> Result<(Vec<String>, String), Strin
         .and_then(|v| v.as_str())
         .ok_or("this build has no update signing key")?
         .to_string();
-    let version = app.package_info().version.to_string();
+    let version = crate::app_identity::APP_VERSION.to_string();
     let endpoints: Vec<String> = updater
         .get("endpoints")
         .and_then(|v| v.as_array())

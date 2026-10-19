@@ -4,7 +4,8 @@ import { useUIStore, type CloudTeaserTarget } from '../../../stores/uiStore'
 import { useSettingsStore } from '../../../stores/settingsStore'
 import { isIntentLocked, visibleIntents } from './intents'
 import { isMlxImageHost } from '../../../api/mlx-image'
-import { mlxTakesStartImage } from '../../../api/mlx-video'
+import { mlxFollowsMotion, mlxTakesStartImage, mlxTalking } from '../../../api/mlx-video'
+import { mlxMakesMusic } from '../../../lib/mac-music'
 import { mlxTakesEditImage } from '../../../lib/image-engines'
 import { cn } from '../ui/cn'
 import { ICON_SM } from '../../ui/icon-size'
@@ -71,9 +72,10 @@ export function IntentBar() {
   // local bar (visibleIntents). The 2.5.8 lanes with hasLocalLane
   // (lipsync / music / extend / motion) are REAL local tabs, plain selectable
   // pills with NO cloud glyph (2026-07-19: the top row only carries a
-  // cloud badge for the genuinely hosted-only tools). Only upscale, eraser and
-  // character training (cloudOnly, no local backend) render as locked,
-  // cloud-tagged pills in local mode; a tap opens the teaser sheet / plans gate.
+  // cloud badge for the genuinely hosted-only tools). Enhance Image runs on
+  // local ComfyUI since 3.0.7. Only eraser (cloudOnly, no local backend)
+  // renders as a locked, cloud-tagged pill in local mode; a tap opens the
+  // teaser sheet / plans gate.
   //
   // On an MLX Mac (no ComfyUI at all) those lanes have no local implementation
   // either, so they lock there too. Both rules live in intents.ts so they stay
@@ -85,7 +87,15 @@ export function IntentBar() {
   const mlxAnimate = useCreateStore((s) => mlxTakesStartImage(s.videoModelList))
   // And Edit while an installed image model takes an image (Qwen-Image 2.1).
   const mlxEdit = useCreateStore((s) => mlxTakesEditImage(s.imageModelList))
-  const intents = visibleIntents(backend, mlxHost, cloudFeatures, mlxAnimate, mlxEdit)
+  // And Enhance Image while an upscaler is installed (SeedVR2), and Music
+  // while the music engine (ACE-Step 1.5) is installed.
+  const mlxUpscale = useCreateStore((s) => s.mlxUpscale)
+  const mlxMusic = useCreateStore((s) => mlxMakesMusic(s.audioModelList))
+  // And Motion Control while an installed LTX-2.3 pack follows a motion video.
+  const mlxMotion = useCreateStore((s) => mlxFollowsMotion(s.videoModelList))
+  // And Talking Character while a video model that talks is installed.
+  const mlxTalk = useCreateStore((s) => mlxTalking(s.videoModelList).tab)
+  const intents = visibleIntents(backend, mlxHost, cloudFeatures, mlxAnimate, mlxEdit, mlxUpscale, mlxMusic, mlxMotion, mlxTalk)
 
   return (
     <div
@@ -109,7 +119,7 @@ export function IntentBar() {
       className="flex flex-wrap items-center justify-center gap-x-[3px] gap-y-[3px] px-3 pt-1.5 pb-[1.5px] [--text-control:9px]"
     >
       {intents.map((meta) => {
-        const locked = isIntentLocked(meta, backend, mlxHost, mlxAnimate, mlxEdit)
+        const locked = isIntentLocked(meta, backend, mlxHost, mlxAnimate, mlxEdit, mlxUpscale, mlxMusic, mlxMotion, mlxTalk)
         const selected = !locked && intent === meta.id
         const Icon = meta.icon
         return (

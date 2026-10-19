@@ -11,7 +11,7 @@
 
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { ShieldCheck, Unlock, Sparkles, Cpu, Loader2, Image as ImageIcon, Video as VideoIcon, KeyRound, Download, X } from 'lucide-react'
+import { ShieldCheck, Unlock, Sparkles, Cpu, Loader2, Image as ImageIcon, Video as VideoIcon, Music as MusicIcon, KeyRound, Download, X } from 'lucide-react'
 import { HardwareChip, TILE_BAR, TILE_BAR_FILL, TILE_BUSY, TILE_CONTROL } from './ModelTiles'
 import { MacMediaTile, memoryFit, type MacMediaTileState } from './MacMediaTile'
 import { ModelEmptyState } from './ModelPageParts'
@@ -23,7 +23,7 @@ import { ICON_MD, ICON_SM } from '../ui/icon-size'
 import { openExternal } from '../../api/backend'
 import { getTotalRamGb } from '../../lib/hardware'
 import { formatBytes } from '../../lib/formatters'
-import { MAC_IMAGE_SETUP_SIZE, MAC_VIDEO_ENGINE_SIZE } from '../../lib/mac-setup-sizes'
+import { MAC_IMAGE_SETUP_SIZE, MAC_MUSIC_ENGINE_SIZE, MAC_VIDEO_ENGINE_SIZE } from '../../lib/mac-setup-sizes'
 import { installedRowMatchesSearch } from '../../lib/model-search'
 import { memoryNeedGb } from '../../lib/mac-memory-fit'
 import type { MlxCatalogModel, MlxKind, MlxLane, MlxMedia } from '../../hooks/useMlxMedia'
@@ -45,7 +45,10 @@ const TIERS: { key: MemoryTier; label: string; desc: string; has: (minRamGB: num
   { key: 'heavy', label: 'Heavy', desc: '48 GB and up', has: (g) => g > 32 },
 ]
 
-const NOUN: Record<MlxKind, string> = { image: 'image', video: 'video' }
+const NOUN: Record<MlxKind, string> = { image: 'image', video: 'video', music: 'music' }
+
+/** What a lane makes, for the empty Installed view. */
+const MADE: Record<MlxKind, string> = { image: 'Images', video: 'Videos', music: 'Tracks' }
 
 function tileState(m: MlxCatalogModel, lane: MlxLane): MacMediaTileState {
   if (m.installed) return { kind: 'installed' }
@@ -81,7 +84,7 @@ export function MacMediaLane({ kind, media, tab, search, onGetNew }: Props) {
   }, [])
 
   const matches = (m: MlxCatalogModel) => !search || installedRowMatchesSearch(`${m.name} ${m.repo}`, search)
-  const LaneIcon = kind === 'image' ? ImageIcon : VideoIcon
+  const LaneIcon = kind === 'image' ? ImageIcon : kind === 'music' ? MusicIcon : VideoIcon
 
   const grid = (models: MlxCatalogModel[]) => (
     <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-2.5">
@@ -95,6 +98,7 @@ export function MacMediaLane({ kind, media, tab, search, onGetNew }: Props) {
             onCancel={() => media.cancel(kind)}
             onRemove={() => setRemoving(m)}
             onOpenUrl={(u) => { void openExternal(u) }}
+            cloudTask={kind}
           />
         </motion.div>
       ))}
@@ -153,7 +157,7 @@ export function MacMediaLane({ kind, media, tab, search, onGetNew }: Props) {
               </button>
             )}
           >
-            {kind === 'image' ? 'Images' : 'Videos'} are made on this Mac, with no server involved. Pick a model and it installs with one click.
+            {MADE[kind]} are made on this Mac, with no server involved. Pick a model and it installs with one click.
           </ModelEmptyState>
         ) : (
           <>
@@ -192,6 +196,8 @@ export function MacMediaLane({ kind, media, tab, search, onGetNew }: Props) {
           engine that runs it and, where the rail has no room for it, this
           Mac's memory. Narrow windows break the row between its groups. */}
       <div className="flex items-center gap-2 flex-wrap">
+        {/* One model on the music lane: nothing to narrow. */}
+        {kind !== 'music' && (<>
         <div className={SEGMENT_TRACK} role="group" aria-label="Catalogue">
           <button onClick={() => setCatalogue('mainstream')} aria-pressed={catalogue === 'mainstream'} title="Well-known models from the big labs" className="lu-control">
             <ShieldCheck size={ICON_SM} /> Mainstream
@@ -215,11 +221,14 @@ export function MacMediaLane({ kind, media, tab, search, onGetNew }: Props) {
             </button>
           ))}
         </div>
+        </>)}
 
         <div className="ml-auto flex items-center gap-3">
           {/* The engine when it is there: one quiet line. When it is not, the
               card below with its one button. */}
-          {!lane.unsupported && lane.engineReady && (
+          {/* The music engine has no state of its own to show: it comes
+              with the model, and the tile says whether that is installed. */}
+          {!lane.unsupported && lane.engineReady && kind !== 'music' && (
             <p
               className="flex items-center gap-1.5 t-micro whitespace-nowrap text-gray-500 dark:text-gray-400"
               data-engine-state="ready"
@@ -300,6 +309,7 @@ export function MacMediaLane({ kind, media, tab, search, onGetNew }: Props) {
           Models download from Hugging Face. Without a token the downloads can be slower or rate limited.
           A free token goes under Hugging Face token in Settings, AI Backends.
           {kind === 'video' && ' Video models are large and a clip takes minutes, so start with a light one.'}
+          {kind === 'music' && ` Get also sets up the music engine on the way, a one-time Python environment of ${MAC_MUSIC_ENGINE_SIZE} on disk.`}
         </span>
       </p>
 

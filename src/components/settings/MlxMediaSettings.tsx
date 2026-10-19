@@ -16,7 +16,7 @@
 import { useEffect, useState } from 'react'
 import { Check, Cpu, Download, FolderOpen, HardDrive, KeyRound, Layers, Loader2, Boxes, MemoryStick } from 'lucide-react'
 import { mlxUnload, hfTokenPresent } from '../../api/mlx-image'
-import { useMlxMedia, type MlxKind, type MlxLane } from '../../hooks/useMlxMedia'
+import { useMlxMedia, type MlxLane } from '../../hooks/useMlxMedia'
 import { useMlxLoras } from '../../hooks/useMlxLoras'
 import { openMlxLoraFolder, MAC_LORA_MODELS } from '../../api/mlx-loras'
 import { useUIStore } from '../../stores/uiStore'
@@ -33,7 +33,7 @@ const ROW_TEXT = 't-micro leading-relaxed text-gray-500 dark:text-gray-400 mt-1'
 
 /** What a first setup fetches. The image setup pulls the starter model along
  *  (commands/mlx.rs), the same sentence the Model Manager uses. */
-const ENGINE_SETUP: Record<MlxKind, string> = {
+const ENGINE_SETUP: Record<'image' | 'video', string> = {
   image: `Not set up. A one-time setup of ${MAC_IMAGE_SETUP_SIZE}, the starter model SD Turbo included.`,
   video: `Not set up. A one-time setup of ${MAC_VIDEO_ENGINE_SIZE}.`,
 }
@@ -71,7 +71,7 @@ export function MlxMediaSettings() {
     }
   }
 
-  const engineState = (kind: MlxKind): string => {
+  const engineState = (kind: 'image' | 'video'): string => {
     if (kind === 'image') {
       if (imageEngine?.broken) return 'The engine on this Mac is incomplete. Setting it up again repairs it.'
       if (!imageEngine?.installed) {
@@ -89,7 +89,7 @@ export function MlxMediaSettings() {
     return videoEngine.mlxVersion ? `Set up, MLX ${videoEngine.mlxVersion}.` : 'Set up.'
   }
 
-  const engineRow = (kind: MlxKind, lane: MlxLane) => (
+  const engineRow = (kind: 'image' | 'video', lane: MlxLane) => (
     <div className={ROW} data-mlx-engine={kind} data-engine-state={lane.engineInstall ? 'installing' : lane.engineReady ? 'ready' : 'missing'}>
       <Cpu size={ICON_SM} className="shrink-0 text-gray-400 dark:text-gray-500" />
       <div className="flex-1 min-w-0">

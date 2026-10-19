@@ -224,6 +224,19 @@ fn run_probe_with_timeout(mut cmd: std::process::Command, timeout: std::time::Du
 
 /// The interpreter's own `(major, minor)`, the way wheel filenames spell it
 /// (`cp312` -> `(3, 12)`).
+/// Whether `python_bin` finds a torch package, without importing it: a
+/// `find_spec` costs milliseconds where `import torch` costs seconds. Used
+/// for an interpreter whose prefix holds no torch but whose user site might
+/// (`pip install --user`). Bounded like every other probe here.
+pub(crate) fn python_finds_torch(python_bin: &str) -> bool {
+    if python_bin.is_empty() {
+        return false;
+    }
+    let mut cmd = crate::python::python_command(python_bin);
+    cmd.args(["-c", "import importlib.util, sys; sys.exit(0 if importlib.util.find_spec('torch') else 1)"]);
+    matches!(run_probe_with_timeout(cmd, PYTHON_PROBE_TIMEOUT), Some(out) if out.status.success())
+}
+
 pub(crate) fn python_version_tuple(python_bin: &str) -> Option<(u32, u32)> {
     let mut cmd = crate::python::python_command(python_bin);
     cmd.args(["-c", "import sys; print(f'{sys.version_info[0]}.{sys.version_info[1]}')"]);
@@ -285,6 +298,40 @@ fn fetch_index_python_versions(index_url: Option<&str>, package: &str) -> Result
     }
     let html = resp.text().map_err(|e| format!("index body: {}", crate::os_error::english(&e)))?;
     Ok(python_versions_from_index_html(&html))
+}
+
+/// The Python versions EVERY package of the install has a wheel for on this
+/// index, None when that cannot be told (no packages, an index that does not
+/// answer, or one that lists nothing).
+///
+/// Discord 14.10.2026: only `torch` used to be asked. On the cu130 channel
+/// torch and torchvision already ship cp315 wheels, torchaudio stops at
+/// cp314, so a Python 3.15 was waved through and pip then ended on "No
+/// matching wheel". The versions the whole trio has in common are the ones
+/// the install can actually use.
+fn served_python_versions(index_url: Option<&str>, packages: &[&str]) -> Option<std::collections::BTreeSet<(u32, u32)>> {
+    common_python_versions(packages.iter().map(|package| {
+        // The AMD Windows channel serves "torch[device-all]"; strip any extra
+        // so the index lookup is against the real package directory.
+        let name = package.split('[').next().unwrap_or(package);
+        fetch_index_python_versions(index_url, name).ok()
+    }))
+}
+
+/// The pure half of [`served_python_versions`]: None as soon as one package
+/// could not be read or lists nothing, otherwise what all of them share.
+pub(crate) fn common_python_versions(
+    per_package: impl IntoIterator<Item = Option<std::collections::BTreeSet<(u32, u32)>>>,
+) -> Option<std::collections::BTreeSet<(u32, u32)>> {
+    let mut common: Option<std::collections::BTreeSet<(u32, u32)>> = None;
+    for served in per_package {
+        let served = served.filter(|s| !s.is_empty())?;
+        common = Some(match common {
+            None => served,
+            Some(c) => c.intersection(&served).copied().collect(),
+        });
+    }
+    common.filter(|c| !c.is_empty())
 }
 
 /// One `(path, version)` pair per interpreter `python_interpreters()` found,
@@ -460,8 +507,15 @@ pub(crate) enum TorchPythonDecision {
     /// exactly the invented number the house rule forbids. Both were
     /// already known here, so they are handed over instead of re-derived.
     UseInstead { path: String, current_version: (u32, u32), chosen_version: (u32, u32) },
-    /// Nothing on this machine serves torch for the chosen channel. The
-    /// message is ready to show as-is.
+    /// Nothing on this machine serves torch for the chosen channel, but LU's
+    /// own Python ([`crate::private_python`], 3.12) does: the caller builds
+    /// the venv from that one, downloaded once into LU's data folder without
+    /// admin rights (Discord 14.10.2026, a machine whose only Python was
+    /// 3.15). `own_version` is the pinned version, so a message can name it.
+    UseOwn { current_version: (u32, u32), own_version: (u32, u32) },
+    /// Nothing on this machine serves torch for the chosen channel, and LU
+    /// has no Python of its own for this system either. The message is
+    /// ready to show as-is.
     Blocked(String),
 }
 
@@ -556,16 +610,9 @@ pub(crate) fn choose_torch_python(current_python: &str, index_url: Option<&str>,
     let Some(current) = python_version_tuple(current_python) else {
         return TorchPythonDecision::Proceed;
     };
-    let Some(first_package) = packages.first() else {
-        return TorchPythonDecision::Proceed;
-    };
-    // The AMD Windows channel serves "torch[device-all]"; strip any extra so
-    // the index lookup is against the real package directory.
-    let package = first_package.split('[').next().unwrap_or("torch");
-    let supported = match fetch_index_python_versions(index_url, package) {
-        Ok(s) if !s.is_empty() => s,
+    let Some(supported) = served_python_versions(index_url, packages) else {
         // Empty or unreachable: cannot tell, so do not block (see doc above).
-        _ => return TorchPythonDecision::Proceed,
+        return TorchPythonDecision::Proceed;
     };
     let probe: fn(&str) -> bool = if will_build_venv { python_can_build_a_venv } else { python_can_use_an_existing_venv };
     // Runde 6, F9 (review Runde 5, Abschnitt 7): `interpreter_inventory()`
@@ -584,7 +631,36 @@ pub(crate) fn choose_torch_python(current_python: &str, index_url: Option<&str>,
         return TorchPythonDecision::Proceed;
     }
     let interpreters = interpreter_inventory();
-    decide_torch_python(current_python, current, &supported, interpreters, retry_action, will_build_venv, probe)
+    decide_torch_python(
+        current_python,
+        current,
+        &supported,
+        interpreters,
+        retry_action,
+        will_build_venv,
+        crate::private_python::version_here(),
+        probe,
+    )
+}
+
+/// [`choose_torch_python`] with the machine scan replaced by `current`
+/// alone, for the box run in `base_python.rs` (a test machine has other
+/// Pythons that must not take part). The live index and the real probe stay.
+#[cfg(test)]
+pub(crate) fn decide_torch_python_for_box(current_python: &str, current: (u32, u32), index_url: Option<&str>, packages: &[&str]) -> TorchPythonDecision {
+    let supported = served_python_versions(index_url, packages).expect("the index answers");
+    println!("[box] every package of {packages:?} serves {supported:?}");
+    assert!(!supported.contains(&current), "the index serves {current:?} by now, the premise of this run is gone");
+    decide_torch_python(
+        current_python,
+        current,
+        &supported,
+        vec![(current_python.to_string(), Some(current))],
+        "retry",
+        true,
+        crate::private_python::version_here(),
+        python_can_build_a_venv,
+    )
 }
 
 /// The pure decision core of [`choose_torch_python`], split out so B8's
@@ -593,6 +669,11 @@ pub(crate) fn choose_torch_python(current_python: &str, index_url: Option<&str>,
 /// network fetch [`choose_torch_python`] itself does first. Everything
 /// [`choose_torch_python`] does beyond this is resolving `current`'s version
 /// and fetching what the live index serves; this is what decides.
+///
+/// `own` is the version of LU's own Python for this system, None where the
+/// pin has no build. It is the last answer, after every interpreter the
+/// machine has, and only when the index serves it.
+#[allow(clippy::too_many_arguments)]
 fn decide_torch_python(
     current_python: &str,
     current: (u32, u32),
@@ -600,6 +681,7 @@ fn decide_torch_python(
     mut interpreters: Vec<(String, Option<(u32, u32)>)>,
     retry_action: &str,
     will_build_venv: bool,
+    own: Option<(u32, u32)>,
     mut probe: impl FnMut(&str) -> bool,
 ) -> TorchPythonDecision {
     if !interpreters.iter().any(|(p, _)| p == current_python) {
@@ -629,8 +711,9 @@ fn decide_torch_python(
     // version here serves torch at all".
     let any_version_match = interpreters.iter().any(|(_, v)| v.is_some_and(|v| supported.contains(&v)));
 
-    match pick_newest_working_interpreter(&replacement_pool, supported, &mut probe) {
-        Some(path) => {
+    let machine = pick_newest_working_interpreter(&replacement_pool, supported, &mut probe);
+    match super::base_python::decide(machine, own, |v| supported.contains(&v)) {
+        super::base_python::Base::Machine(path) => {
             // Always present: `path` came out of `interpreters` itself, and
             // only entries with a known, version-matching `Some(v)` are
             // ever returned by `pick_newest_working_interpreter`.
@@ -641,12 +724,17 @@ fn decide_torch_python(
                 .unwrap_or(current);
             TorchPythonDecision::UseInstead { path, current_version: current, chosen_version }
         }
+        super::base_python::Base::Own(own_version) => TorchPythonDecision::UseOwn { current_version: current, own_version },
         // Nothing passed both the version check AND the ssl/venv/ensurepip
         // probe. Two different customer stories need two different
         // messages: "torch does not serve any version I have" versus "I
         // have the right version, but it cannot build a venv" (B7(b)).
-        None if any_version_match => TorchPythonDecision::Blocked(venv_probe_failed_message(current, &interpreters, supported, will_build_venv)),
-        None => TorchPythonDecision::Blocked(no_compatible_interpreter_message(current, &interpreters, supported, retry_action)),
+        super::base_python::Base::Missing if any_version_match => {
+            TorchPythonDecision::Blocked(venv_probe_failed_message(current, &interpreters, supported, will_build_venv))
+        }
+        super::base_python::Base::Missing => {
+            TorchPythonDecision::Blocked(no_compatible_interpreter_message(current, &interpreters, supported, retry_action))
+        }
     }
 }
 
@@ -693,6 +781,70 @@ pub(crate) fn python_for_existing_venv(decision: TorchPythonDecision, venv_py: &
         TorchPythonDecision::Proceed => Ok(venv_py.to_string()),
         TorchPythonDecision::UseInstead { path, current_version, chosen_version } => {
             Err(existing_venv_needs_repair_message(current_version, &path, chosen_version))
+        }
+        TorchPythonDecision::UseOwn { current_version, own_version } => {
+            Err(existing_venv_needs_own_python_message(current_version, own_version))
+        }
+        TorchPythonDecision::Blocked(msg) => Err(msg),
+    }
+}
+
+/// The existing venv runs on a Python PyTorch has no wheels for, nothing else
+/// on this machine does better, and LU's own Python would. The venv is not
+/// rebuilt here (same reasoning as [`existing_venv_needs_repair_message`]),
+/// so the sentence names the button that does it.
+pub(crate) fn existing_venv_needs_own_python_message(current: (u32, u32), own: (u32, u32)) -> String {
+    format!(
+        "This ComfyUI's own Python is {cmaj}.{cmin}, and the PyTorch build LU needs for this \
+         machine does not ship wheels for that version yet. LU can fix this itself: press \
+         \"Repair environment\" in Settings. It rebuilds ComfyUI's venv with LU's own Python \
+         {omaj}.{omin} (downloaded once into LU's folder, no administrator rights needed, the \
+         Pythons already on this machine stay as they are) and leaves models and custom nodes \
+         untouched.",
+        cmaj = current.0,
+        cmin = current.1,
+        omaj = own.0,
+        omin = own.1,
+    )
+}
+
+/// What Install and Repair build a NEW venv from, after
+/// [`choose_torch_python`] has decided. Both used to carry this match each,
+/// word for word; the own Python is a fourth answer and it needs the
+/// download, so it lives once here. `say` writes one line into the panel.
+///
+/// Every answer that is not `Blocked` goes through
+/// [`super::base_python::machine_or_own`], the same function the trainer
+/// uses, so "a Python of the machine, else LU's own" is decided in one place.
+/// `Err("cancelled")` is a Stop during the download.
+pub(crate) fn base_for_new_venv(
+    decision: TorchPythonDecision,
+    default_python: &str,
+    progress: &dyn crate::private_python::Progress,
+    say: &dyn Fn(&str),
+) -> Result<String, String> {
+    match decision {
+        TorchPythonDecision::Proceed => Ok(default_python.to_string()),
+        TorchPythonDecision::UseInstead { path, chosen_version, .. } => {
+            say(&format!(
+                "The default Python ({default_python}) does not have a PyTorch wheel for this \
+                 machine yet; using {path} instead, found on this machine already."
+            ));
+            let served = move |v: (u32, u32)| v == chosen_version;
+            super::base_python::machine_or_own(Some(path), served, progress, super::base_python::FOR_PYTORCH)
+                .map(|p| p.unwrap_or_default())
+        }
+        TorchPythonDecision::UseOwn { current_version, own_version } => {
+            say(&format!(
+                "No Python on this machine has a PyTorch wheel for it yet (the default one is \
+                 {}.{}), so LU sets up its own Python {}.{} for ComfyUI. The Pythons already \
+                 installed stay as they are.",
+                current_version.0, current_version.1, own_version.0, own_version.1
+            ));
+            match super::base_python::machine_or_own(None, |v| v == own_version, progress, super::base_python::FOR_PYTORCH)? {
+                Some(path) => Ok(path),
+                None => Err("LU has no Python of its own for this system.".to_string()),
+            }
         }
         TorchPythonDecision::Blocked(msg) => Err(msg),
     }
@@ -1086,6 +1238,7 @@ mod tests {
             interpreters,
             "press Repair environment again",
             true,
+            None,
             always_works,
         );
         assert!(
@@ -1114,6 +1267,7 @@ mod tests {
             interpreters,
             "press Repair environment again",
             true,
+            None,
             always_works,
         );
         match decision {
@@ -1143,7 +1297,7 @@ mod tests {
             }
             path != current
         };
-        let decision = decide_torch_python(current, (3, 12), &supported, interpreters, "retry", true, probe);
+        let decision = decide_torch_python(current, (3, 12), &supported, interpreters, "retry", true, None, probe);
         match decision {
             TorchPythonDecision::UseInstead { path, .. } => assert_eq!(path, "/usr/bin/python3.11"),
             _ => panic!("expected UseInstead"),
@@ -1159,7 +1313,7 @@ mod tests {
         let current = "/comfy/venv/bin/python3";
         let interpreters = vec![(current.to_string(), Some((3, 12)))];
         let supported = supported_3_10_through_13();
-        let decision = decide_torch_python(current, (3, 12), &supported, interpreters, "retry", true, |_| false);
+        let decision = decide_torch_python(current, (3, 12), &supported, interpreters, "retry", true, None, |_| false);
         match decision {
             TorchPythonDecision::Blocked(msg) => {
                 assert!(msg.contains("ssl, venv and ensurepip"), "{msg}");
@@ -1266,7 +1420,7 @@ mod tests {
         let current = "/comfy/venv/bin/python3";
         let interpreters = vec![(current.to_string(), Some((3, 12)))];
         let supported = supported_3_10_through_13();
-        let decision = decide_torch_python(current, (3, 12), &supported, interpreters, "retry", false, |_| false);
+        let decision = decide_torch_python(current, (3, 12), &supported, interpreters, "retry", false, None, |_| false);
         match decision {
             TorchPythonDecision::Blocked(msg) => {
                 assert!(msg.contains("no longer works"), "{msg}");
@@ -1277,4 +1431,108 @@ mod tests {
             _ => panic!("expected Blocked with the existing-venv wording"),
         }
     }
+
+    // ── Discord 14.10.2026: only Python 3.15 on the machine ────────────────
+
+    #[test]
+    fn only_3_15_on_the_machine_takes_lus_own_python() {
+        let current = "C:\\Python315\\python.exe";
+        let interpreters = vec![(current.to_string(), Some((3, 15)))];
+        let decision = decide_torch_python(current, (3, 15), &supported_3_10_through_13(), interpreters, "retry", true, Some((3, 12)), always_works);
+        match decision {
+            TorchPythonDecision::UseOwn { current_version, own_version } => {
+                assert_eq!(current_version, (3, 15));
+                assert_eq!(own_version, (3, 12));
+            }
+            _ => panic!("expected UseOwn: nothing on the machine serves torch, LU's own 3.12 does"),
+        }
+    }
+
+    #[test]
+    fn a_3_12_on_the_machine_beats_lus_own_python() {
+        let interpreters = vec![
+            ("/usr/bin/python3.15".to_string(), Some((3, 15))),
+            ("/usr/bin/python3.12".to_string(), Some((3, 12))),
+        ];
+        let decision = decide_torch_python("/usr/bin/python3.15", (3, 15), &supported_3_10_through_13(), interpreters, "retry", true, Some((3, 12)), always_works);
+        match decision {
+            TorchPythonDecision::UseInstead { path, chosen_version, .. } => {
+                assert_eq!(path, "/usr/bin/python3.12");
+                assert_eq!(chosen_version, (3, 12));
+            }
+            _ => panic!("a Python of the machine comes before LU's own"),
+        }
+    }
+
+    #[test]
+    fn a_healthy_current_python_never_reaches_lus_own() {
+        let interpreters = vec![("/venv/bin/python".to_string(), Some((3, 12)))];
+        let decision = decide_torch_python("/venv/bin/python", (3, 12), &supported_3_10_through_13(), interpreters, "retry", false, Some((3, 12)), always_works);
+        assert!(matches!(decision, TorchPythonDecision::Proceed));
+    }
+
+    #[test]
+    fn lus_own_python_is_only_taken_when_the_index_serves_it() {
+        let only_3_13: std::collections::BTreeSet<(u32, u32)> = [(3, 13)].into_iter().collect();
+        let current = "/usr/bin/python3.15";
+        let decision = decide_torch_python(current, (3, 15), &only_3_13, vec![(current.to_string(), Some((3, 15)))], "retry", true, Some((3, 12)), always_works);
+        assert!(matches!(decision, TorchPythonDecision::Blocked(_)));
+    }
+
+    #[test]
+    fn an_existing_venv_on_3_15_is_sent_to_the_repair_not_to_a_python_reinstall() {
+        let decision = TorchPythonDecision::UseOwn { current_version: (3, 15), own_version: (3, 12) };
+        let msg = python_for_existing_venv(decision, "/venv/bin/python").expect_err("no install into a venv torch cannot serve");
+        assert!(msg.contains("Repair environment"), "{msg}");
+        assert!(msg.contains("3.15") && msg.contains("3.12"), "{msg}");
+        assert!(!msg.to_lowercase().contains("reinstall"), "{msg}");
+    }
+
+    struct NoProgress(std::sync::Arc<std::sync::atomic::AtomicBool>);
+    impl crate::private_python::Progress for NoProgress {
+        fn log(&self, _: String) {}
+        fn cancel_flag(&self) -> std::sync::Arc<std::sync::atomic::AtomicBool> {
+            self.0.clone()
+        }
+        fn set_download(&self, _: u64, _: u64, _: u64) {}
+    }
+
+    #[test]
+    fn a_new_venv_is_built_from_the_decided_python_and_says_so() {
+        let progress = NoProgress(Default::default());
+        let said = std::cell::RefCell::new(Vec::<String>::new());
+        let say = |l: &str| said.borrow_mut().push(l.to_string());
+        assert_eq!(base_for_new_venv(TorchPythonDecision::Proceed, "/py312", &progress, &say), Ok("/py312".to_string()));
+        assert!(said.borrow().is_empty());
+        let got = base_for_new_venv(
+            TorchPythonDecision::UseInstead { path: "/py311".to_string(), current_version: (3, 15), chosen_version: (3, 11) },
+            "/py315",
+            &progress,
+            &say,
+        );
+        assert_eq!(got, Ok("/py311".to_string()));
+        assert!(said.borrow().iter().any(|l| l.contains("/py311")), "{:?}", said.borrow());
+        assert_eq!(
+            base_for_new_venv(TorchPythonDecision::Blocked("why".to_string()), "/py315", &progress, &say),
+            Err("why".to_string())
+        );
+    }
+
+    #[test]
+    fn only_versions_every_package_serves_count() {
+        // cu130 on 14.10.2026: torch and torchvision with cp315, torchaudio
+        // up to cp314. A Python 3.15 must not count as served.
+        let page = |tags: &[&str]| python_versions_from_index_html(&tags.iter().map(|t| format!("x-{t}-{t}-win_amd64.whl ")).collect::<String>());
+        let torch = page(&["cp312", "cp313", "cp314", "cp315"]);
+        let vision = page(&["cp312", "cp313", "cp314", "cp315"]);
+        let audio = page(&["cp312", "cp313", "cp314"]);
+        let common = common_python_versions([Some(torch.clone()), Some(vision), Some(audio)]).unwrap();
+        assert!(!common.contains(&(3, 15)), "{common:?}");
+        assert!(common.contains(&(3, 14)) && common.contains(&(3, 12)), "{common:?}");
+        // One package that could not be read: no answer, fail open as before.
+        assert_eq!(common_python_versions([Some(torch.clone()), None]), None);
+        assert_eq!(common_python_versions([Some(torch), Some(Default::default())]), None);
+        assert_eq!(common_python_versions(Vec::new()), None);
+    }
+
 }

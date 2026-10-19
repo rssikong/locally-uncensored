@@ -59,8 +59,8 @@ export function RemoteAccessDocs() {
         </Step>
 
         <Step n={2} icon={<Wifi size={12} className="text-gray-500" />} title="Dispatch over LAN">
-          Click <span className="text-gray-400 font-medium">Dispatch → LAN</span>, pick the chat to
-          share and a working folder, and LU starts a local server on this machine. Your phone
+          Click <span className="text-gray-400 font-medium">Dispatch → LAN</span> and pick a working
+          folder. LU opens a new chat for the session and starts a local server on this machine. Your phone
           reaches it directly over your home/office Wi-Fi, which is fastest, and the traffic never leaves
           your network. Both devices must be on the same network.
         </Step>
@@ -87,7 +87,8 @@ export function RemoteAccessDocs() {
           The local server listens on <span className="text-gray-400 font-mono">port 11435</span>.
           Paired devices appear under <span className="text-gray-400 font-medium">Connected Devices</span> in
           Settings → Voice &amp; Remote → Remote Access, hit the trash icon next to a device to kick
-          it. Ending the dispatch (Undispatch) stops the server and the tunnel.
+          it. <span className="text-gray-400 font-medium">Stop</span> in the Remote tab ends the
+          dispatch: it stops the server and the tunnel.
         </Step>
       </div>
 

@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   Check,
   FileJson,
+  FolderOpen,
   HelpCircle,
   Pencil,
   Plus,
@@ -15,7 +16,10 @@ import {
   X,
 } from 'lucide-react'
 import { v4 as uuid } from 'uuid'
-import { parseImportedWorkflow, validateWorkflowJson } from '../../api/workflows'
+import { parseImportedWorkflow } from '../../api/workflows'
+import { readWorkflowText } from '../../api/workflow-import'
+import type { ComfyApiGraph } from '../../types/comfy-graph'
+import { topLevelFiles } from './experimental/batchFiles'
 import { useModels } from '../../hooks/useModels'
 import {
   useWorkflowStore,
@@ -23,6 +27,7 @@ import {
   type WorkflowTagMode,
 } from '../../stores/workflowStore'
 import { TagPicker } from '../workflows/TagPicker'
+import { MissingNodePacks } from './MissingNodePacks'
 import { Modal } from '../ui/Modal'
 import { Button } from './ui/Button'
 import { EmptyState } from './ui/EmptyState'
@@ -30,6 +35,8 @@ import { Segmented } from './ui/Segmented'
 import { cn } from './ui/cn'
 
 type PageTab = 'workflows' | 'models' | 'tags'
+type ImportOutcome = { ok: true; message: string } | { ok: false; reason: string; missingNodeTypes?: string[] }
+type FileResult = { file: string; ok: boolean; message: string }
 type ModelFilter = 'all' | WorkflowTagMode
 
 const TABS: Array<{ value: PageTab; label: string }> = [
@@ -86,7 +93,13 @@ function WorkflowsModalInner() {
   const [importJson, setImportJson] = useState('')
   const [importError, setImportError] = useState<string | null>(null)
   const [importSuccess, setImportSuccess] = useState<string | null>(null)
+  const [importBusy, setImportBusy] = useState(false)
+  const [fileResults, setFileResults] = useState<FileResult[] | null>(null)
+  // Node types the last import found missing in ComfyUI (GitHub wish #14):
+  // the panel under the result offers the packs LU knows for them.
+  const [missingTypes, setMissingTypes] = useState<string[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const folderInputRef = useRef<HTMLInputElement>(null)
 
   const [newTagName, setNewTagName] = useState('')
   const [editingTagId, setEditingTagId] = useState<string | null>(null)
@@ -126,54 +139,119 @@ function WorkflowsModalInner() {
       )
   }, [models, modelFilter, modelSearch])
 
-  const importWorkflowJson = (rawText: string, suggestedName?: string) => {
-    setImportError(null)
-    setImportSuccess(null)
-    try {
-      const json = JSON.parse(rawText)
-      if (!validateWorkflowJson(json)) {
-        setImportError('Invalid workflow. Export it from ComfyUI using Save (API Format).')
-        return
-      }
-      const name = importName.trim() || suggestedName?.trim() || 'Imported Workflow'
-      const parsed = parseImportedWorkflow(name, json, 'manual')
+  // Re-importing under the same name updates in place, which also keeps the
+  // tags that workflow already carries. Read from the store itself, so a
+  // folder of files sees the ones installed a moment ago.
+  const installGraph = (name: string, graph: ComfyApiGraph): 'installed' | 'updated' => {
+    const parsed = parseImportedWorkflow(name, graph, 'manual')
+    const existing = useWorkflowStore.getState().installedWorkflows.find(
+      (workflow) =>
+        workflow.source === 'manual' &&
+        workflow.name.toLowerCase() === name.toLowerCase(),
+    )
+    installWorkflow({
+      ...parsed,
+      id: existing?.id ?? uuid(),
+      installedAt: existing?.installedAt ?? Date.now(),
+    })
+    return existing ? 'updated' : 'installed'
+  }
 
-      // Re-importing under the same name updates in place, which also keeps
-      // the tags that workflow already carries.
-      const existing = installedWorkflows.find(
-        (workflow) =>
-          workflow.source === 'manual' &&
-          workflow.name.toLowerCase() === name.toLowerCase(),
-      )
-      installWorkflow({
-        ...parsed,
-        id: existing?.id ?? uuid(),
-        installedAt: existing?.installedAt ?? Date.now(),
-      })
-      setImportName('')
-      setImportJson('')
-      setImportSuccess(existing ? `Updated "${name}".` : `Installed "${name}".`)
+  const importOne = async (rawText: string, name: string): Promise<ImportOutcome> => {
+    try {
+      const read = await readWorkflowText(rawText)
+      if (!read.ok) return read
+      const verb = installGraph(name, read.graph) === 'updated' ? 'Updated' : 'Installed'
+      const converted = read.format === 'ui'
+        ? ` Converted from the regular ComfyUI format${read.notes.length ? ` (${read.notes.join(', ')})` : ''}.`
+        : ''
+      return { ok: true, message: `${verb} "${name}".${converted}` }
     } catch (error) {
-      setImportError(
-        error instanceof SyntaxError
-          ? 'That file does not contain valid JSON.'
-          : `Import failed: ${error instanceof Error ? error.message : String(error)}`,
-      )
+      return { ok: false, reason: `Import failed: ${error instanceof Error ? error.message : String(error)}` }
     }
   }
 
-  const handleFileImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-    try {
-      importWorkflowJson(await file.text(), file.name.replace(/\.json$/i, ''))
-    } catch (error) {
-      setImportError(
-        `Could not read that file: ${error instanceof Error ? error.message : String(error)}`,
-      )
-    } finally {
-      event.target.value = ''
+  const resetMessages = () => {
+    setImportError(null)
+    setImportSuccess(null)
+    setFileResults(null)
+    setMissingTypes([])
+  }
+
+  const importSingle = async (rawText: string, suggestedName?: string) => {
+    resetMessages()
+    setImportBusy(true)
+    const name = importName.trim() || suggestedName?.trim() || 'Imported Workflow'
+    const outcome = await importOne(rawText, name)
+    setImportBusy(false)
+    if (!outcome.ok) {
+      setImportError(outcome.reason)
+      setMissingTypes(outcome.missingNodeTypes ?? [])
+      return false
     }
+    setImportName('')
+    setImportSuccess(outcome.message)
+    return true
+  }
+
+  const fileBaseName = (file: File) => file.name.replace(/\.json$/i, '')
+
+  // One file after the other, each with its own line: installed, updated or
+  // the reason it was not.
+  const importMany = async (files: File[]) => {
+    resetMessages()
+    setImportBusy(true)
+    const results: FileResult[] = []
+    const missing = new Set<string>()
+    for (const file of files) {
+      let outcome: ImportOutcome
+      try {
+        outcome = await importOne(await file.text(), fileBaseName(file))
+      } catch (error) {
+        outcome = { ok: false, reason: `Could not read that file: ${error instanceof Error ? error.message : String(error)}` }
+      }
+      results.push({ file: file.name, ok: outcome.ok, message: outcome.ok ? outcome.message : outcome.reason })
+      if (!outcome.ok) for (const type of outcome.missingNodeTypes ?? []) missing.add(type)
+      setFileResults([...results])
+    }
+    setMissingTypes([...missing].sort())
+    setImportBusy(false)
+  }
+
+  const handleFileImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? [])
+    event.target.value = ''
+    if (files.length === 0) return
+    if (files.length > 1) {
+      await importMany(files)
+      return
+    }
+    let rawText: string
+    try {
+      rawText = await files[0].text()
+    } catch (error) {
+      resetMessages()
+      setImportError(`Could not read that file: ${error instanceof Error ? error.message : String(error)}`)
+      return
+    }
+    await importSingle(rawText, fileBaseName(files[0]))
+  }
+
+  const handleFolderImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = topLevelFiles(Array.from(event.target.files ?? []))
+      .filter((file) => /\.json$/i.test(file.name))
+      .sort((a, b) => a.name.localeCompare(b.name))
+    event.target.value = ''
+    if (files.length === 0) {
+      resetMessages()
+      setImportError('That folder has no .json files.')
+      return
+    }
+    await importMany(files)
+  }
+
+  const handlePasteImport = async () => {
+    if (await importSingle(importJson)) setImportJson('')
   }
 
   const handleCreateTag = () => {
@@ -246,7 +324,8 @@ function WorkflowsModalInner() {
                   <span className="t-label text-gray-400">Install a workflow</span>
                 </div>
                 <p className="mt-1.5 t-body text-gray-500">
-                  Import a ComfyUI JSON saved in API format. An editable graph export will not work.
+                  Import a ComfyUI workflow JSON, saved normally or with Save (API Format). A normal save
+                  is read through the running ComfyUI, so start it first.
                 </p>
 
                 <div className="mt-3 flex gap-2">
@@ -262,16 +341,36 @@ function WorkflowsModalInner() {
                     ref={fileInputRef}
                     type="file"
                     accept=".json,application/json"
+                    multiple
                     onChange={handleFileImport}
                     className="hidden"
+                    data-testid="workflow-files-input"
                   />
-                  <div className="shrink-0 whitespace-nowrap">
+                  <input
+                    ref={folderInputRef}
+                    type="file"
+                    multiple
+                    onChange={handleFolderImport}
+                    className="hidden"
+                    data-testid="workflow-folder-input"
+                    {...{ webkitdirectory: '' }}
+                  />
+                  <div className="shrink-0 whitespace-nowrap flex gap-2">
                     <Button
                       variant="secondary"
                       icon={FileJson}
+                      disabled={importBusy}
                       onClick={() => fileInputRef.current?.click()}
                     >
-                      Choose file
+                      Choose files
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      icon={FolderOpen}
+                      disabled={importBusy}
+                      onClick={() => folderInputRef.current?.click()}
+                    >
+                      Choose folder
                     </Button>
                   </div>
                 </div>
@@ -279,16 +378,16 @@ function WorkflowsModalInner() {
                 <textarea
                   value={importJson}
                   onChange={(e) => setImportJson(e.target.value)}
-                  placeholder={'Or paste the API JSON here: {"1":{"class_type":"KSampler",…}}'}
+                  placeholder="Or paste the workflow JSON here"
                   className="mt-2 h-28 w-full resize-y px-2.5 py-2 t-mono text-gray-300 placeholder:text-gray-600 rounded-[var(--radius-control)] bg-white/[0.04] border border-white/[0.08] outline-none focus:border-white/20 transition-colors scrollbar-thin"
                 />
                 <div className="mt-2">
                   <Button
                     variant="primary"
-                    disabled={!importJson.trim()}
-                    onClick={() => importWorkflowJson(importJson)}
+                    disabled={!importJson.trim() || importBusy}
+                    onClick={() => void handlePasteImport()}
                   >
-                    Install pasted workflow
+                    {importBusy ? 'Importing…' : 'Install pasted workflow'}
                   </Button>
                 </div>
 
@@ -301,6 +400,35 @@ function WorkflowsModalInner() {
                   <div className="mt-2.5 rounded-[var(--radius-control)] bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1.5 t-body text-emerald-300">
                     {importSuccess}
                   </div>
+                )}
+                {fileResults && (
+                  <div className="mt-2.5 space-y-1" data-testid="workflow-import-results">
+                    <p className="t-label text-gray-400">
+                      Imported {fileResults.filter((r) => r.ok).length} of {fileResults.length}
+                      {importBusy ? ', reading the next file…' : ''}
+                    </p>
+                    {fileResults.map((result, i) => (
+                      <div
+                        key={`${result.file}-${i}`}
+                        className={cn(
+                          'flex gap-2 rounded-[var(--radius-control)] border px-2.5 py-1.5 t-body',
+                          result.ok
+                            ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
+                            : 'bg-red-500/10 border-red-500/20 text-red-300',
+                        )}
+                      >
+                        {result.ok
+                          ? <Check size={13} className="shrink-0 mt-0.5" />
+                          : <X size={13} className="shrink-0 mt-0.5" />}
+                        <span className="min-w-0 break-words">
+                          <span className="font-medium">{result.file}</span>: {result.message}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {missingTypes.length > 0 && !importBusy && (
+                  <MissingNodePacks key={missingTypes.join(',')} types={missingTypes} />
                 )}
               </section>
 
@@ -316,7 +444,7 @@ function WorkflowsModalInner() {
                     <EmptyState
                       icon={Workflow}
                       title="No workflows installed"
-                      description="Import an API-format JSON above, then tag it so a model can find it."
+                      description="Import a ComfyUI workflow above, then tag it so a model can find it."
                     />
                   </div>
                 ) : (
@@ -549,17 +677,28 @@ function WorkflowsModalInner() {
 function HowItWorks() {
   const steps: Array<{ title: string; body: React.ReactNode }> = [
     {
-      title: 'Export from ComfyUI',
+      title: 'Save from ComfyUI',
       body: (
-        <>Save your graph with <b className="text-gray-300 font-medium">Save (API Format)</b> in
-        ComfyUI. The regular editable export will not import here.</>
+        <>Use <b className="text-gray-300 font-medium">Save</b>, <b className="text-gray-300 font-medium">Export</b> or{' '}
+        <b className="text-gray-300 font-medium">Save (API Format)</b> in ComfyUI. A normal save is
+        converted with the node definitions of the running ComfyUI, so keep ComfyUI started while
+        you import. Subgraphs are unpacked. The older group nodes are not: export those with Save (API Format).</>
       ),
     },
     {
       title: 'Install it',
       body: (
-        <>Pick the file or paste the JSON on the Workflows view. Importing again under the
-        same name updates the workflow in place and keeps its tags.</>
+        <>Pick one or more files, a whole folder, or paste the JSON on the Workflows view. Every
+        file of a folder is named after the file and gets its own result. Importing again under
+        the same name updates the workflow in place and keeps its tags.</>
+      ),
+    },
+    {
+      title: 'Missing nodes',
+      body: (
+        <>When ComfyUI does not know a node of the workflow, LU names it. For a pack LU knows it
+        offers the install right there. For any other, paste the pack&apos;s Git link under
+        Settings, ComfyUI node packs. Restart ComfyUI afterwards and import again.</>
       ),
     },
     {
@@ -577,7 +716,8 @@ function HowItWorks() {
         sliders next to the Create button). The Workflow selector lists every workflow whose
         tags match the current model. Pick yours instead of Auto and the next render runs
         through your graph. Your prompt, size, steps and seed are still injected, so the
-        Create controls keep working.</>
+        Create controls keep working. On Motion Control only the model, prompt, seed, character
+        picture and driving video are filled in; everything else runs as you saved it.</>
       ),
     },
     {

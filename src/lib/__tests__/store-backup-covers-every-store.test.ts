@@ -48,7 +48,10 @@ async function persistKeysByFile(): Promise<Map<string, string[]>> {
   return out
 }
 
-describe('the appData backup covers every persisted store', () => {
+// Importing every store module cold takes about five seconds on its own; in
+// the full run, next to 1400 other files, it went past vitest's 5 s default
+// and failed on time, not on content (already on integ/308 at a9b1f4306).
+describe('the appData backup covers every persisted store', { timeout: 30_000 }, () => {
   it('lists every persist key that exists in src/stores', async () => {
     const byFile = await persistKeysByFile()
     const missing: string[] = []

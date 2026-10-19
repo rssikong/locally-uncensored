@@ -786,6 +786,15 @@ export interface CustomNodeEntry {
    * (custom_nodes.rs, return_to_default_branch).
    */
   commit?: string
+  /**
+   * More node types this pack registers, beyond `requiredNodes`. Read only
+   * when a workflow import names node types ComfyUI does not know
+   * (custom-node-packs.ts, packsForMissingTypes): it is how LU knows which
+   * pack to offer. Not part of the "is it loaded" check.
+   */
+  alsoProvides?: string[]
+  /** A class name prefix only this pack uses, for the same purpose. */
+  providesPrefixes?: string[]
 }
 
 export const CUSTOM_NODE_REGISTRY: Record<string, CustomNodeEntry> = {
@@ -793,6 +802,7 @@ export const CUSTOM_NODE_REGISTRY: Record<string, CustomNodeEntry> = {
     repo: 'https://github.com/Kosinkadink/ComfyUI-AnimateDiff-Evolved',
     name: 'ComfyUI-AnimateDiff-Evolved',
     requiredNodes: ['ADE_LoadAnimateDiffModel', 'ADE_ApplyAnimateDiffModelSimple', 'ADE_UseEvolvedSampling'],
+    providesPrefixes: ['ADE_'],
   },
   'cogvideox-wrapper': {
     repo: 'https://github.com/kijai/ComfyUI-CogVideoXWrapper',
@@ -825,6 +835,7 @@ export const CUSTOM_NODE_REGISTRY: Record<string, CustomNodeEntry> = {
     repo: 'https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite',
     name: 'ComfyUI-VideoHelperSuite',
     requiredNodes: ['VHS_VideoCombine', 'VHS_LoadVideo'],
+    providesPrefixes: ['VHS_'],
   },
   // Background removal (Create → Remove Background). ComfyUI-RMBG registers the
   // `RMBG` node · the exact class the capability probe + workflow builder look
@@ -855,6 +866,7 @@ export const CUSTOM_NODE_REGISTRY: Record<string, CustomNodeEntry> = {
     repo: 'https://github.com/city96/ComfyUI-GGUF',
     name: 'ComfyUI-GGUF',
     requiredNodes: ['UnetLoaderGGUF'],
+    alsoProvides: ['UnetLoaderGGUFAdvanced', 'CLIPLoaderGGUF', 'DualCLIPLoaderGGUF', 'TripleCLIPLoaderGGUF', 'QuadrupleCLIPLoaderGGUF'],
   },
   // Pose extraction for the local Motion Control lane (DWPose skeletons feed
   // WanAnimateToVideo / WanVaceToVideo). Its requirements pull the CPU
@@ -1837,6 +1849,40 @@ export function getMotionBundles(): ModelBundle[] {
           filename: 'Wan2.2-Animate-14B-Q4_K_M.gguf', subfolder: 'diffusion_models', sizeGB: 10.71,
         },
         ...wanSupport,
+      ],
+    },
+  ])
+}
+
+// ─── Enhance Image (local upscale, 3.0.7) ───
+//
+// One small file for the local Enhance lane on Windows and Linux: Real-ESRGAN
+// x4plus, BSD 3-Clause licensed (xinntao/Real-ESRGAN), in the safetensors
+// repack ComfyUI's own upscale template loads. No pickle file: the original
+// ships as a .pth, this repack is the same weights as safetensors. Pinned to
+// the repository's commit; byte count and SHA-256 read from the downloaded
+// file on 2026-10-14 (they match the Hugging Face LFS values).
+export function getUpscaleBundles(): ModelBundle[] {
+  return withVramNeed([
+    {
+      name: 'Real-ESRGAN x4plus (Enhance Image)',
+      description: 'Sharpens and enlarges a picture up to four times its size. Small, fast, BSD licensed.',
+      tags: ['Upscale', 'Enhance', 'BSD-3'],
+      totalSizeGB: 0.07,
+      vramRequired: '2-4 GB',
+      workflow: 'upscale',
+      tier: 'standard',
+      url: 'https://huggingface.co/Comfy-Org/Real-ESRGAN_repackaged',
+      files: [
+        {
+          name: 'Real-ESRGAN x4plus',
+          description: 'The upscale model.',
+          pulls: '', tags: ['Upscale Model', '67 MB'], updated: '',
+          downloadUrl: 'https://huggingface.co/Comfy-Org/Real-ESRGAN_repackaged/resolve/5fd49b7b278836f48af63ecd314d0f98ab336105/RealESRGAN_x4plus.safetensors',
+          filename: 'RealESRGAN_x4plus.safetensors', subfolder: 'upscale_models', sizeGB: 0.0623,
+          sizeBytes: 66857836,
+          sha256: '37f9a931c215f040aa6d50f711f2cb115f713c46df1d0d6469a8bd7bfe9a60bb',
+        },
       ],
     },
   ])

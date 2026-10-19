@@ -1,11 +1,12 @@
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react'
 import { useCreate } from '../../../hooks/useCreate'
+import { useRereadOnReturn } from '../../../hooks/useRereadOnReturn'
 import { useCloudCreate, hasActiveCloudRun } from '../../../hooks/useCloudCreate'
 import { useCloudSession } from '../../../hooks/useCloudSession'
 import { useCreateStore, type GalleryItem } from '../../../stores/createStore'
 import { listedLoras, getVAEModels, checkComfyConnection, refreshComfyModels, bundleForVideoIntent } from '../../../api/comfyui'
 import { getAllNodeInfo, clearNodeCache } from '../../../api/comfyui-nodes'
-import { installCustomNodes, nodePacksNotLoaded, assertBundleFits, checkBundlesOnDisk, getImageBundles, getVideoBundles, getAudioBundles, getLipsyncBundles, getMotionBundles, startModelDownload, getDownloadProgress, modelsNotVisibleInComfy, judgeableFolders } from '../../../api/discover'
+import { installCustomNodes, nodePacksNotLoaded, assertBundleFits, checkBundlesOnDisk, getImageBundles, getVideoBundles, getAudioBundles, getLipsyncBundles, getMotionBundles, getUpscaleBundles, startModelDownload, getDownloadProgress, modelsNotVisibleInComfy, judgeableFolders } from '../../../api/discover'
 import { CUSTOM_NODE_REGISTRY } from '../../../api/model-bundles'
 import { backendCall, isMacOS, isLinux } from '../../../api/backend'
 import { asComfyGpuMode, comfyCpuBannerText, type ComfyCpuBannerFacts } from '../../../lib/comfy-cpu-banner'
@@ -104,7 +105,7 @@ interface CreateExpValue {
    *  2.5.8 lanes → ACE / S2V / VACE starters incl. their node packs)
    *  with streamed progress, refresh ComfyUI's model enums and re-fetch the
    *  model lists. Throws on failure. */
-  installModelBundle: (kind: 'image' | 'video' | 'audio' | 'lipsync' | 'motion', onProgress?: (msg: string) => void, signal?: AbortSignal) => Promise<void>
+  installModelBundle: (kind: 'image' | 'video' | 'audio' | 'lipsync' | 'motion' | 'upscale', onProgress?: (msg: string) => void, signal?: AbortSignal) => Promise<void>
   /** Runtime backend axis: hosted rendering offered for this session? */
   cloudAvailable: boolean
   quota: CloudQuota | null
@@ -220,6 +221,7 @@ export function CreateExpProvider({ children }: { children: ReactNode }) {
       const listing = await listMlxLoras().catch(() => null)
       const names = listing?.loras.map((l) => l.name) ?? null
       setLoraList(names ?? [])
+      useCreateStore.getState().setLoraListKey(names ?? [])
       setLoraKeys(Object.fromEntries((listing?.loras ?? []).map((l) => [l.name, l.keys])))
       setLoraAlpha(Object.fromEntries((listing?.loras ?? []).map((l) => [l.name, l.alpha ?? 'none'])))
       // A file taken out of the folder leaves the stack, as on Windows.
@@ -232,6 +234,8 @@ export function CreateExpProvider({ children }: { children: ReactNode }) {
       getVAEModels().catch(() => [] as string[]),
     ])
     setLoraList(loras ?? [])
+    // The character chip lists again from it (box run d307-d).
+    useCreateStore.getState().setLoraListKey(loras ?? [])
     // A file deleted from models/loras leaves the stack here (GH #146).
     if (loras) useCreateStore.getState().keepListedLoras(loras)
     setVaeList(['auto', ...vaes])
@@ -271,6 +275,14 @@ export function CreateExpProvider({ children }: { children: ReactNode }) {
       window.removeEventListener(MLX_LORAS_CHANGED, onDownloaded)
     }
   }, [refreshModelLists])
+  // A model or LoRA copied into a ComfyUI folder by hand fires none of the
+  // events above (box run d307-b, H3): Create only saw it after another page
+  // remounted it. Coming back to the app reads the lists again, at most every
+  // 30 s and never while a render runs, so ComfyUI is not asked on every alt-tab.
+  useRereadOnReturn(() => {
+    void fetchModels()
+    void refreshModelLists()
+  }, { skip: () => useCreateStore.getState().isGenerating })
 
   // Rebuild the ComfyUI venv via the same status contract the installer uses,
   // narrating pip's progress (GH #98). Throws with the last log line on error.
@@ -445,7 +457,7 @@ export function CreateExpProvider({ children }: { children: ReactNode }) {
   // then refresh ComfyUI's model enums so the new files are pickable without
   // a restart. Bundles that need a custom node pack (GGUF loader, pose
   // extractor) install + register it first — one click really means one click.
-  const installModelBundle = useCallback(async (kind: 'image' | 'video' | 'audio' | 'lipsync' | 'motion', onProgress?: (msg: string) => void, signal?: AbortSignal) => {
+  const installModelBundle = useCallback(async (kind: 'image' | 'video' | 'audio' | 'lipsync' | 'motion' | 'upscale', onProgress?: (msg: string) => void, signal?: AbortSignal) => {
     // macOS takes the MLX path — engine plus the smallest model of that kind.
     // Everything below this line is the ComfyUI bundle flow, which would start
     // by installing ComfyUI itself; on a Mac that is the one thing that must
@@ -453,7 +465,7 @@ export function CreateExpProvider({ children }: { children: ReactNode }) {
     // Only image and video exist locally there; the other lanes are cloud
     // teasers on a Mac and never render this card.
     if (isMacOS()) {
-      if (kind !== 'image' && kind !== 'video') {
+      if (kind !== 'image' && kind !== 'video' && kind !== 'motion') {
         throw new Error('This one runs in LU Cloud on a Mac — local generation covers images and video.')
       }
       await installMlxStack(kind, onProgress, signal)
@@ -472,6 +484,7 @@ export function CreateExpProvider({ children }: { children: ReactNode }) {
         kind === 'image' ? getImageBundles()
         : kind === 'audio' ? getAudioBundles()
         : kind === 'lipsync' ? getLipsyncBundles()
+        : kind === 'upscale' ? getUpscaleBundles()
         : getMotionBundles()
       )[0]
     if (!bundle) throw new Error('No starter bundle available for this intent.')

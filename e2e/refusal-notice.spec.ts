@@ -78,9 +78,9 @@ test('a refusing answer gets the notice under it, and "New chat" opens a chat on
   expect(await notice(page).evaluate((el) => !!el.closest('.overflow-y-auto')?.querySelector('textarea'))).toBe(false)
 
   // A second refusal moves the notice to the latest one.
-  // The composer holds a short double-fire lock after an accepted send
-  // (SEND_LOCK_MS, chat/ChatInput.tsx); a send inside it stays in the field,
-  // and a person presses again.
+  // The composer's double-fire lock (SEND_LOCK_MS, chat/ChatInput.tsx) holds
+  // only for the same message since 3.0.7, so a new one goes out right away.
+  // The retry stays as a margin and never sends twice (guarded by the count).
   await expect(async () => {
     if ((await answer(page).count()) < 2) {
       const box = page.locator('textarea').first()

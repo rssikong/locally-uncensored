@@ -1,7 +1,8 @@
 // The Qwen-Image 2.1 prompt enhancer as a writer for "Improve my prompt"
 // (GH #148): the pure half. Which files are enhancers, which one a run takes,
 // what the switch offers, and how the enhancer's answer becomes a prompt. No
-// stores, no network; the graph and the run live in api/qwen-enhancer.ts.
+// stores, no network; the graph and the run live in api/qwen-enhancer.ts, and
+// on a Mac the run is api/mlx-enhancer.ts with the MLX editions of the models.
 //
 // Read off the sources on 2026-10-03:
 //   - Comfy-Org/Qwen-Image-2.1 ships the two official enhancers as single
@@ -15,7 +16,7 @@
 // trained for its own task and its own system prompt.
 
 import type { ImproveOutcome } from './improve-prompt'
-import { displayModelName } from '../../api/providers/model-name'
+import { modelDisplayLabel } from '../model-label'
 
 /** What the enhancer rewrites: a prompt for a new picture, or an edit instruction. */
 export type QwenEnhancerMode = 't2i' | 'i2i'
@@ -77,19 +78,26 @@ const WRITER_LABEL: Record<ImproveWriter['id'], string> = {
 
 /** The name "Prompt details" gives the writer of a rewrite: the enhancer
  *  edition, or the chat model by its own name. */
-export function rewrittenByName(writer: ImproveWriter['id'], chatModel: string | null): string {
+export function rewrittenByName(
+  writer: ImproveWriter['id'],
+  chatModel: string | null,
+  /** The chat model list. It carries the display name the picker shows
+   *  ("Kimi K2.6"); without it the short form of the id stands. */
+  models: ReadonlyArray<{ name: string; displayName?: string }> = [],
+): string {
   if (writer !== 'chat') return WRITER_LABEL[writer]
-  return chatModel ? displayModelName(chatModel) : WRITER_LABEL.chat
+  return chatModel ? modelDisplayLabel(models, chatModel) : WRITER_LABEL.chat
 }
 
 export interface EnhancerSituation {
-  /** Create runs on this machine through ComfyUI. */
+  /** Create runs on this machine: through ComfyUI, or on a Mac through MLX. */
   local: boolean
   /** The Create intent: 'image' writes a new picture, 'edit' changes one. */
   intent: string
   /** The family of the picked image model. Only 'qwenimage' has an enhancer. */
   modelType: string | null | undefined
-  /** ComfyUI's text encoder files. */
+  /** ComfyUI's text encoder files, or on a Mac the installed MLX enhancers
+   *  (`enhancerNames`). */
   textEncoders: readonly string[]
 }
 
@@ -139,7 +147,13 @@ export function activeWriter(s: EnhancerSituation, choice: ImproveWith): Improve
 }
 
 export const QWEN_ENHANCER_HINT =
-  'The Qwen prompt enhancer rewrites your prompt for Qwen-Image 2.1. It runs on your machine before the picture starts.'
+  'The Qwen prompt enhancer rewrites your prompt for Qwen-Image 2.1. It runs on your machine before the picture starts. It does not replace the text encoder: that is part of the image model and reads the rewritten prompt.'
+
+/** The line under the switch while the enhancer writes. Discord report
+ *  (3.0.7): with the enhancer on, a user asked why a text encoder is still
+ *  picked. One line says the two do different jobs, on every platform. */
+export const QWEN_ENHANCER_LINE =
+  'Rewrites your prompt first. The text encoder, part of the image model, then reads it.'
 
 const THINK_BLOCK = /<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi
 const OPEN_THINK = /<think(?:ing)?>[\s\S]*$/i
@@ -183,4 +197,33 @@ export function enhancedOutcome(raw: string | null, original: string): ImproveOu
   if (!cleaned) return { status: 'failed' }
   if (cleaned === original.trim()) return { status: 'unchanged' }
   return { status: 'improved', prompt: cleaned }
+}
+
+const END_OF_TURN = /(?:\s*<\|(?:im_end|endoftext)\|>)+\s*$/
+const OPENS_THINK = /<think(?:ing)?>/i
+
+/** The outcome of the enhancer's answer on a Mac (commands/mlx_enhancer.rs).
+ *  There the model's own template opens the reasoning: `<think>` is the last
+ *  piece of the prompt, so the answer starts inside the reasoning and carries
+ *  only its closing tag. Put back, it reads like the answer Windows gets, and
+ *  an answer cut off before the reasoning closed fails as it does there. */
+export function mlxEnhancedOutcome(raw: string | null, original: string): ImproveOutcome {
+  if (raw === null) return enhancedOutcome(null, original)
+  const text = raw.replace(END_OF_TURN, '')
+  return enhancedOutcome(OPENS_THINK.test(text) ? text : `<think>${text}`, original)
+}
+
+/** The names the enhancer is found by: ComfyUI's text encoder files, or on a
+ *  Mac the catalogue ids of the installed MLX enhancers, which carry the same
+ *  "qwen-image-2.1-pe-t2i" or "-i2i" (lib/image-engines `installedMlxEnhancers`).
+ *  On a Mac only a model of the MLX branch takes the enhancer: a ComfyUI model
+ *  there keeps the chat model's rewrite, so none is found for it. The switch
+ *  and the run both ask this, and so offer and run the same writer. */
+export function enhancerNames(
+  where: { onMac: boolean; mlxModel: boolean },
+  textEncoders: readonly string[],
+  macEnhancers: readonly string[],
+): readonly string[] {
+  if (!where.onMac) return textEncoders
+  return where.mlxModel ? macEnhancers : []
 }

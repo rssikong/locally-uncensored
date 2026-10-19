@@ -18,7 +18,7 @@ export function ClassicLoraManager({ rows, total, searchQuery, onDelete, onGetNe
         <div className="space-y-1">
           <p className="t-control text-gray-900 dark:text-white">No LoRAs installed yet</p>
           <p className="t-micro text-gray-500 dark:text-gray-400 max-w-[300px] leading-relaxed">
-            Get new has ready-made LoRAs and a CivitAI search. What you pick lands in ComfyUI&apos;s models/loras folder. {LORA_USE_HINT}
+            Get new has ready-made LoRAs, a field for a CivitAI or Hugging Face link and a CivitAI search. What you pick lands in ComfyUI&apos;s models/loras folder. {LORA_USE_HINT}
           </p>
         </div>
         <button

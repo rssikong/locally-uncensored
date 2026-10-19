@@ -15,7 +15,8 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import {
   MLX_VIDEO_MIN_FRAMES, buildMlxVideoModels, mlxFramesOnGrid, mlxVideoFrameStep,
-  mlxVideoLaneEntry, mlxVideoMaxFrames, mlxVideoSeconds, type VideoModel,
+  mlxVideoLaneEntry, mlxVideoMaxFrames, mlxVideoRunRate, mlxVideoRunSize, mlxVideoRunSteps, mlxVideoSeconds,
+  type VideoModel,
 } from '../mlx-video'
 
 const rust = (file: string) => readFileSync(resolve(__dirname, '../../../src-tauri/src/commands', file), 'utf-8')
@@ -93,18 +94,20 @@ describe('the length a run asks for', () => {
 
 describe('the Create list entry of a Mac video model', () => {
   const catalogue = [
-    entry({ id: 'wan21-t2v-1.3b', name: 'Wan 2.1 T2V 1.3B', family: 'wan_2', defaultFrames: 81, fps: 16, defaultWidth: 832, defaultHeight: 480, negativePrompt: true, recommendedRamGB: 32 }),
-    entry({ id: 'ltx-2.3-q8', name: 'LTX-2.3 Distilled 8-bit', family: 'ltx_2q', defaultFrames: 49, acceptsImage: true, fps: 24, defaultWidth: 768, defaultHeight: 512, negativePrompt: false }),
+    entry({ id: 'wan21-t2v-1.3b', name: 'Wan 2.1 T2V 1.3B', family: 'wan_2', defaultFrames: 81, fps: 16, defaultWidth: 832, defaultHeight: 480, negativePrompt: true, recommendedRamGB: 32, loras: true }),
+    entry({ id: 'ltx-2.3-q8', name: 'LTX-2.3 Distilled 8-bit', family: 'ltx_2q', defaultFrames: 49, acceptsImage: true, fps: 24, defaultWidth: 768, defaultHeight: 512, negativePrompt: false, loras: true }),
     entry({ id: 'ltx-2.3-dev', name: 'LTX-2.3 Dev', family: 'ltx_2', defaultFrames: 49, installed: false, fps: 24, defaultWidth: 768, defaultHeight: 512 }),
   ]
   const list = buildMlxVideoModels(catalogue)
 
-  it('carries the frames of its catalogue entry, its rate, its grid, its size, whether it reads a negative prompt, and the memory it is recommended for', () => {
+  it('carries the frames of its catalogue entry, its rate, its grid, its size, whether it reads a negative prompt and takes the LoRA stack, and the memory it is recommended for', () => {
     expect(list.map((m) => [m.name, m.mlxVideo])).toEqual([
-      ['MLX Wan 2.1 T2V 1.3B', { frames: 81, fps: 16, frameStep: 4, width: 832, height: 480, negativePrompt: true, recommendedRamGB: 32 }],
+      ['MLX Wan 2.1 T2V 1.3B', { frames: 81, fps: 16, frameStep: 4, width: 832, height: 480, negativePrompt: true, loras: true, recommendedRamGB: 32 }],
       // An entry that names one number is recommended for that one.
-      ['MLX LTX-2.3 Distilled 8-bit', { frames: 49, fps: 24, frameStep: 8, width: 768, height: 512, negativePrompt: false, recommendedRamGB: 16 }],
+      ['MLX LTX-2.3 Distilled 8-bit', { frames: 49, fps: 24, frameStep: 8, width: 768, height: 512, negativePrompt: false, loras: true, recommendedRamGB: 16 }],
     ])
+    // A list from before the stack (no `loras`) takes none.
+    expect(buildMlxVideoModels([entry({ id: 'old' })])[0].mlxVideo?.loras).toBe(false)
   })
 
   it('the lane runs the stored pick where it can, else the first model that can', () => {
@@ -118,19 +121,35 @@ describe('the Create list entry of a Mac video model', () => {
 })
 
 describe('what video_generate takes', () => {
-  // Create on the Mac shows the length and no slider for steps, guidance or
-  // size, because Rust takes none of them. The day it does, this turns red:
-  // the catalogue then has to name the value, and Create has to show it.
+  // Create on the Mac shows the length and no slider for guidance, because
+  // Rust takes none. The day it does, this turns red: the catalogue then has
+  // to name the value, and Create has to show it.
   //
   // The negative prompt came with 82ff5890. It is text, not a slider, and it
   // reaches only the models that read one: the catalogue says which
   // (`negativePrompt`, from `takes_negative_prompt`).
-  it('is a prompt, a seed, a start image, a length and a negative prompt, and nothing a slider could set', () => {
+  //
+  // The LoRA stack came with M12 (14.10.2026). It is a list of files, not a
+  // slider, and reaches only the models whose engine takes `--lora`
+  // (`loras`, from `takes_loras`).
+  //
+  // Size and steps came with M2 (14.10.2026), changed on purpose: the second
+  // engine and Wan read `-W`/`-H` and `--width`/`--height`, Wan reads
+  // `--steps`. The catalogue says per entry which (`sizeGrid`, `steps`).
+  //
+  // The voice came with Talking Character on the Mac (3.0.8). It is a file,
+  // not a slider, and turns the run into the engine's a2v on a model whose
+  // entry talks (`talking`, from `talks`).
+  it('is a prompt, a seed, a start image, a length, a negative prompt, the LoRA stack, a size and steps, a motion video, and no guidance', () => {
     const source = rust('video.rs')
     const args = source.slice(source.indexOf('struct GenerateArgs {'))
     const fields = [...args.slice(0, args.indexOf('\n}')).matchAll(/^\s+(\w+): /gm)].map((m) => m[1])
-    expect(fields).toEqual(['id', 'prompt', 'seconds', 'fps', 'init_image', 'seed', 'negative_prompt'])
+    expect(fields).toEqual(['id', 'prompt', 'seconds', 'fps', 'init_image', 'seed', 'negative_prompt', 'loras', 'width', 'height', 'steps', 'motion_video', 'audio'])
+    expect(source).toContain('"talking": talks(c),')
+    expect(source).toContain('"loras": takes_loras(c),')
     expect(source).toContain('"negativePrompt": takes_negative_prompt(c),')
+    expect(source).toContain('"sizeGrid": size_grid(c),')
+    expect(source).toContain('"steps": default_steps(c),')
   })
 
   it('and the catalogue names frames and a size per entry, no steps, no guidance and no rate', () => {
@@ -139,5 +158,72 @@ describe('what video_generate takes', () => {
     const fields = [...struct.slice(0, struct.indexOf('\n}')).matchAll(/^\s+(\w+): /gm)].map((m) => m[1])
     expect(fields).toContain('default_frames')
     for (const absent of ['steps', 'default_steps', 'guidance', 'cfg', 'fps', 'frame_rate']) expect(fields).not.toContain(absent)
+  })
+})
+
+describe('the size and the steps of a Mac video run', () => {
+  const [wan, ltx, first] = buildMlxVideoModels([
+    entry({ id: 'wan21-t2v-1.3b', defaultWidth: 832, defaultHeight: 480, sizeGrid: 16, maxPixels: 832 * 480, minSide: 256, maxSide: 1280, steps: 50, maxSteps: 60, measuredRunSecondsPerClipSecond: 345 }),
+    entry({ id: 'ltx-2.3-q4', family: 'ltx_2q', fps: 24, defaultWidth: 768, defaultHeight: 512, sizeGrid: 64, maxPixels: 768 * 512, minSide: 256, maxSide: 1280, steps: null, maxSteps: 60 }),
+    entry({ id: 'ltx-2.3-distilled', family: 'ltx_2', fps: 24, defaultWidth: 768, defaultHeight: 512, sizeGrid: null, steps: null }),
+  ]).map((m) => m.mlxVideo!)
+
+  /** `run_size` of video.rs, for a size that was asked. */
+  const rustTakes = (clip: typeof wan, w: number, h: number) =>
+    w % clip.sizeGrid! === 0 && h % clip.sizeGrid! === 0
+    && [w, h].every((v) => v >= clip.minSide! && v <= clip.maxSide!) && w * h <= clip.maxPixels!
+
+  it('the list entry carries the grid and the steps where the catalogue names them, and nothing where it does not', () => {
+    expect(wan).toMatchObject({ sizeGrid: 16, maxPixels: 399360, minSide: 256, maxSide: 1280, steps: 50, maxSteps: 60 })
+    expect(ltx).toMatchObject({ sizeGrid: 64, maxPixels: 393216 })
+    expect(ltx.steps).toBeUndefined()
+    expect(first.sizeGrid).toBeUndefined()
+    expect(first.steps).toBeUndefined()
+  })
+
+  it('a size goes out on the grid, inside the bounds and the own pixels, so Rust takes it', () => {
+    expect(mlxVideoRunSize(832, 480, wan)).toEqual({ width: 832, height: 480 })
+    expect(mlxVideoRunSize(480, 832, wan)).toEqual({ width: 480, height: 832 })
+    expect(mlxVideoRunSize(512, 768, ltx)).toEqual({ width: 512, height: 768 })
+    // The Image tab's 1024 square on an LTX: the same square, within its pixels.
+    expect(mlxVideoRunSize(1024, 1024, ltx)).toEqual({ width: 576, height: 576 })
+    // Off the grid: floored, as the engine would, before it reaches it.
+    expect(mlxVideoRunSize(800, 480, ltx)).toEqual({ width: 768, height: 448 })
+    for (const clip of [wan, ltx]) {
+      for (const w of [64, 200, 256, 333, 512, 768, 832, 1024, 1280, 1920, 4096]) {
+        for (const h of [64, 200, 256, 333, 512, 768, 832, 1024, 1280, 1920, 4096]) {
+          const run = mlxVideoRunSize(w, h, clip)
+          expect(rustTakes(clip, run.width, run.height), `${w} x ${h} gave ${run.width} x ${run.height}`).toBe(true)
+        }
+      }
+    }
+    // A model without a grid runs at its own size whatever the fields say.
+    expect(mlxVideoRunSize(512, 512, first)).toEqual({ width: 768, height: 512 })
+    expect(mlxVideoRunSize(Number.NaN, 512, wan)).toEqual({ width: 832, height: 480 })
+  })
+
+  it('steps go out for a model that takes them, between 1 and its most', () => {
+    expect(mlxVideoRunSteps(8, wan)).toBe(8)
+    expect(mlxVideoRunSteps(0, wan)).toBe(1)
+    expect(mlxVideoRunSteps(500, wan)).toBe(60)
+    expect(mlxVideoRunSteps(8, ltx)).toBeUndefined()
+    expect(mlxVideoRunSteps(Number.NaN, wan)).toBeUndefined()
+  })
+
+  it('the time a run takes follows its steps and its pixels', () => {
+    expect(mlxVideoRunRate(wan, { width: 832, height: 480 }, 50)).toBe(345)
+    expect(mlxVideoRunRate(wan, { width: 832, height: 480 }, 10)).toBe(69)
+    expect(mlxVideoRunRate(wan, { width: 416, height: 480 }, 50)).toBe(172.5)
+    expect(mlxVideoRunRate(ltx, { width: 768, height: 512 }, undefined)).toBeUndefined()
+  })
+
+  it('the run sends what the settings show, and the gallery keeps it', () => {
+    const hook = readFileSync(resolve(__dirname, '../../hooks/useCreate.ts'), 'utf-8')
+    // A talking clip takes the shape of its portrait, every other the canvas.
+    expect(hook).toContain('const shape = talking && source?.width && source?.height ? { width: source.width, height: source.height } : { width, height }')
+    expect(hook).toContain('const clipSize = clip ? mlxVideoRunSize(shape.width, shape.height, clip) : null')
+    expect(hook).toContain('...(clip?.sizeGrid && clipSize ? { width: clipSize.width, height: clipSize.height } : {}),')
+    expect(hook).toContain('...(clipSteps ? { steps: clipSteps } : {}),')
+    expect(hook).toContain('width: clipSize?.width ?? width, height: clipSize?.height ?? height')
   })
 })

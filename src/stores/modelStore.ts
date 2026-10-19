@@ -16,6 +16,7 @@ import { useSettingsStore } from './settingsStore'
 import { useGenerationStore } from './generationStore'
 import { log } from '../lib/logger'
 import { isLuEngineName } from '../lib/engine-name'
+import { isGroupChat } from '../lib/group-chat'
 import { offloadWhenLocalLaneFree } from '../lib/cloud-offload-defer'
 // Which provider slot a model name routes to. There is exactly one answer to
 // that question in this app and it lives in api/providers/registry, the same
@@ -24,8 +25,8 @@ import { offloadWhenLocalLaneFree } from '../lib/cloud-offload-defer'
 // ('sdxl::x.safetensors' → null vs 'sdxl', 'a::b::c' → null vs 'ollama'), which
 // is the worst possible place for two answers: the guard below would decline to
 // clear a pick that the send path would then route to a dead backend.
-import { getProviderIdFromModel } from '../api/providers/model-name'
-import { onProviderSlotsDarkened } from '../lib/provider-slot-darkening'
+import { modelBackendKey } from '../api/providers/model-name'
+import { onProviderSlotsDarkened, type BackendKey } from '../lib/provider-slot-darkening'
 import {
   announceChatPickLostItsEngine,
   onBuiltinSlotLostToForeignBackend,
@@ -33,7 +34,6 @@ import {
 } from '../lib/builtin-slot-handover'
 import { ensureBuiltinEngineAlive, builtinSlotSwitchedOff } from '../api/builtin-ensure'
 import { isBuiltinEngineEntry, type InstalledModelLike } from '../lib/lmstudio-match'
-import type { ProviderId } from '../api/providers/types'
 
 /**
  * B6 followup (Auflage 1.1, lu-301/bau/review-offload2.md): `stop_bundled_engine`
@@ -72,6 +72,28 @@ function deferLocalUnload(target: string, stillWanted: () => boolean, unload: ()
     unload()
   })
   if (!fired) pendingLocalUnloads.set(target, cancel)
+}
+
+/**
+ * Does the chat on screen still use this model as a speaker of its group?
+ *
+ * GH #168: a group chat with an LM Studio model and a KoboldCpp model (behind
+ * the Ollama API) on separate GPUs. Picking the KoboldCpp model as the main
+ * model unloaded the LM Studio one, although the very next round of the same
+ * group sends to it again; LM Studio then loaded it once more, at a size the
+ * person had not picked. One model in VRAM at a time stays the rule for a
+ * plain switch. A model the group on screen still speaks with is not the
+ * previous model, it is a current one, and only the person removes it (from
+ * the group, or with its On switch). Read at fire time, like `stillWanted`.
+ */
+function speaksInActiveGroup(model: string): boolean {
+  try {
+    const chat = useChatStore.getState()
+    const conv = chat.conversations.find((c) => c.id === chat.activeConversationId)
+    return isGroupChat(conv?.groupModels) && conv.groupModels.includes(model)
+  } catch {
+    return false
+  }
 }
 
 /** Test-only (R2-6, lu-301/bau/review-offload2.md, Runde 2): forget every
@@ -193,7 +215,9 @@ interface ModelState {
    *  and the next successful refresh the composer showed a model whose backend
    *  was gone and every send failed with model-not-found. providerStore calls
    *  this the moment a slot goes dark. */
-  dropActiveModelIfServedBy: (providerId: ProviderId) => void
+  /** `providerId` is a slot, or `openai:<entry>` for an additional
+   *  OpenAI-compatible entry (GitHub #173). */
+  dropActiveModelIfServedBy: (providerId: BackendKey) => void
   /** Der geteilte lokale Steckplatz ist an ein eingeschaltetes fremdes Backend
    *  gegangen. Der Chip im Chat nennt danach weiter das GGUF, das auf 8127 lag,
    *  auf dem Port liegt nichts mehr, und die Selbstheilung des Absendewegs
@@ -357,6 +381,8 @@ export const useModelStore = create<ModelState>()(
         // one, because the old one's unload is held back until every local run
         // still using it has ended. That is not a break of this rule; it is the
         // documented price of never dropping a run out from under itself.
+        // And a speaker of the group chat on screen is not unloaded at all
+        // (GH #168, `speaksInActiveGroup`): the group is its own Compare.
         // Unload the PREVIOUS local model via the right provider.
         //   - Ollama (no provider prefix)  → unloadModel
         //   - LM Studio (openai:: + LM-Studio providerName) → unloadLmStudioModel
@@ -377,7 +403,7 @@ export const useModelStore = create<ModelState>()(
         const prevIsBuiltin =
           !!prevModel && 'providerName' in prevModel && isLuEngineName(prevModel.providerName)
         if (prevIsLms) {
-          const bareKey = prev.replace(/^[^:]+::/, '') // strip LU's routing prefix
+          const bareKey = prev.replace(/^[^:]+(?::[a-z0-9-]+)?::/, '') // strip LU's routing prefix, an entry's (#173) too
           // B6 (klaerung-n7.md) / Auflage 1.1 (review-offload2.md): this LM
           // Studio unload sits in the SAME function as the LU Engine stop
           // below and fires on the SAME Cloud-switch click, at a model
@@ -387,7 +413,7 @@ export const useModelStore = create<ModelState>()(
           // this exact model again before the local lane freed up".
           deferLocalUnload(
             `lms:${bareKey}`,
-            () => get().activeModel === prev,
+            () => get().activeModel === prev || speaksInActiveGroup(prev),
             () => unloadLmStudioModel(bareKey).catch((e) =>
               log.warn('[modelStore] failed to unload previous LM Studio model', { model: prev, err: e }),
             ),
@@ -418,6 +444,7 @@ export const useModelStore = create<ModelState>()(
             deferLocalUnload(
               'builtin-engine',
               () => {
+                if (speaksInActiveGroup(prev)) return true
                 const stillActiveModel = get().activeModel
                 const stillActiveEntry = stillActiveModel
                   ? get().models.find((m) => m.name === stillActiveModel)
@@ -464,7 +491,7 @@ export const useModelStore = create<ModelState>()(
           // relying on an unverified assumption about Ollama's scheduler.
           deferLocalUnload(
             `ollama:${prev}`,
-            () => get().activeModel === prev,
+            () => get().activeModel === prev || speaksInActiveGroup(prev),
             () => unloadModel(prev).catch((e) =>
               log.warn('[modelStore] failed to unload previous model', { model: prev, err: e }),
             ),
@@ -555,7 +582,9 @@ export const useModelStore = create<ModelState>()(
 
       dropActiveModelIfServedBy: (providerId) => {
         const active = get().activeModel
-        if (!active || getProviderIdFromModel(active) !== providerId) return
+        // modelBackendKey, not the provider id: switching the `openai` slot
+        // off must not clear a pick served by an additional entry (#173).
+        if (!active || modelBackendKey(active) !== providerId) return
         log.warn('[modelStore] the picked model\'s backend was switched off, clearing the pick', {
           model: active, provider: providerId,
         })

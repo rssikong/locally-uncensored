@@ -17,3 +17,8 @@ export const MIN_TRAIN_IMAGES = 4
 export function maxTrainImages(backend: 'local' | 'cloud'): number {
   return backend === 'cloud' ? 30 : 100
 }
+
+/** What a training run with too few photos says, with the cap of its way. */
+export function tooFewTrainPhotosLine(backend: 'local' | 'cloud'): string {
+  return `Add at least ${MIN_TRAIN_IMAGES} photos of your character first (up to ${maxTrainImages(backend)}).`
+}

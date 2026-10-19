@@ -22,14 +22,17 @@ describe('the Cloud switch counts its presses', () => {
     expect(act).toBeGreaterThan(report)
   })
 
-  it('names the same four events in TypeScript and in Rust', () => {
+  it('names the same events in TypeScript and in Rust', () => {
     const ts = read('src/api/funnel.ts')
     const rs = read('src-tauri/src/commands/funnel.rs')
-    const tsEvents = [...ts.matchAll(/'(cloud_switch_[a-z]+)'/g)].map((m) => m[1])
+    const tsEvents = [...ts.matchAll(/'(cloud_(?:switch|gate)_[a-z_]+)'/g)].map((m) => m[1])
     const rsBlock = rs.slice(rs.indexOf('FUNNEL_EVENTS'), rs.indexOf('];', rs.indexOf('FUNNEL_EVENTS')))
-    const rsEvents = [...rsBlock.matchAll(/"(cloud_switch_[a-z]+)"/g)].map((m) => m[1])
+    const rsEvents = [...rsBlock.matchAll(/"(cloud_(?:switch|gate)_[a-z_]+)"/g)].map((m) => m[1])
     const uniq = (a: string[]) => [...new Set(a)].sort()
-    expect(uniq(tsEvents)).toEqual(['cloud_switch_arm', 'cloud_switch_enter', 'cloud_switch_gate', 'cloud_switch_leave'])
+    expect(uniq(tsEvents)).toEqual([
+      'cloud_gate_model_click', 'cloud_gate_pick_credits', 'cloud_gate_pick_sub',
+      'cloud_switch_arm', 'cloud_switch_enter', 'cloud_switch_gate', 'cloud_switch_leave',
+    ])
     expect(uniq(rsEvents)).toEqual(uniq(tsEvents))
   })
 
@@ -46,6 +49,8 @@ describe('the Cloud switch counts its presses', () => {
     expect(settings).toContain('counts each press of the Cloud switch with LU Labs: which way it was pressed, platform and app version, no identifier')
     // Signed in, the same press is counted for the account too (api/funnel.ts).
     expect(settings).toContain('a press of the Cloud switch is counted for your account as well')
+    // The clicks in the gate pop-up are counted too, without the model.
+    expect(settings).toContain('A click in the window behind the switch counts the same way: that a model, a plan or a pack was clicked, not which model.')
     // A counter and "no telemetry" do not go on the same page.
     expect(settings).not.toMatch(/no telemetry/i)
   })

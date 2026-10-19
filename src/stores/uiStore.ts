@@ -7,7 +7,7 @@ export type View = 'chat' | 'models' | 'settings' | 'create' | 'benchmark' | 'vo
 
 /** Which collapsible section of the Settings page a deep link wants open.
  *  Only sections a hint elsewhere in the app sends people to. */
-export type SettingsSection = 'comfyui'
+export type SettingsSection = 'comfyui' | 'comfyui-nodes'
 
 /** Where a "go to Settings" button wants to land. Nebenbefund 3 of the R8
  *  re-measure: the ComfyUI empty state says "press Start under ComfyUI (Image
@@ -120,6 +120,11 @@ interface UIState {
    *  flip lands, then cleared. Never persisted: it describes one click, not a
    *  preference. */
   pendingCloudModel: string | null
+  /** The LU Cloud line in Create was closed. Never persisted: it holds for
+   *  this session, the next start may offer it again where a model does not
+   *  fit. The switch in Settings ("Show Cloud features in Local mode") is
+   *  the lasting way out. */
+  cloudOfferDismissed: boolean
   /** Breite der Chatspalte links in px, persistiert. */
   sidebarWidth: number
   /** Agent panel width in px, persisted. */
@@ -149,6 +154,7 @@ interface UIState {
   setCloudTeaser: (target: CloudTeaserTarget | null) => void
   setCloudHiddenNotice: (shown: boolean) => void
   setPendingCloudModel: (name: string | null) => void
+  setCloudOfferDismissed: (dismissed: boolean) => void
   setSidebarWidth: (width: number, viewportWidth: number) => void
   setAgentPanelWidth: (width: number, viewportWidth: number) => void
   setAgentPanelCollapsed: (collapsed: boolean) => void
@@ -203,6 +209,7 @@ export const useUIStore = create<UIState>()(
       cloudTeaser: null,
       cloudHiddenNotice: false,
       pendingCloudModel: null,
+      cloudOfferDismissed: false,
       sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
       agentPanelWidth: AGENT_PANEL_DEFAULT_WIDTH,
       // Zugeklappt ist die Vorgabe: das Panel soll sich melden, wenn etwas
@@ -232,6 +239,7 @@ export const useUIStore = create<UIState>()(
       setCloudTeaser: (target) => set({ cloudTeaser: target }),
       setCloudHiddenNotice: (shown) => set({ cloudHiddenNotice: shown }),
       setPendingCloudModel: (name) => set({ pendingCloudModel: name }),
+      setCloudOfferDismissed: (dismissed) => set({ cloudOfferDismissed: dismissed }),
       setSidebarWidth: (width, viewportWidth) =>
         set({ sidebarWidth: clampSidebarWidth(width, viewportWidth) }),
 

@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { Folder, Shield, Check, Plus, X } from 'lucide-react'
+import { HowItWorks } from '../ui/HowItWorks'
+import { HOWTO } from '../../lib/howto'
 import { Modal } from '../ui/Modal'
 import { ModalActions, ModalButton } from '../ui/ModalActions'
 import { useAgentModeStore } from '../../stores/agentModeStore'
@@ -183,6 +185,7 @@ export function AgentWorkspaceDialog({
             Workspace protection is a folder path jail, not a container or virtual machine.
             Commands run on this computer. Review tool requests before allowing them.
           </p>
+          {HOWTO.sandbox && <HowItWorks topic="sandbox" variant="line" placement="below-end" />}
         </div>
 
         {/* Drei Wahlmoeglichkeiten, drei Farben, und keine davon sagt etwas

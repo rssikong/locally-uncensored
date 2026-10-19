@@ -81,7 +81,9 @@ describe('the picker uses the filter', () => {
     const here = dirname(fileURLToPath(import.meta.url))
     const src = readFileSync(resolve(here, '../../components/chat/PluginsDropdown.tsx'), 'utf8')
 
-    expect(src).toContain('groupChatCandidates(models, groupModels).map(')
+    // Since GH #165 through groupChatRows, which filters with
+    // groupChatCandidates and adds the members that left the list.
+    expect(src).toContain('groupChatRows(models, groupModels, inventoryLoaded)')
     // NEGATIVE CONTROL: the old, unfiltered map must be gone.
     expect(src).not.toContain('{models.map(')
   })

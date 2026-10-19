@@ -144,6 +144,38 @@ const serverStarted = () => until(() => lastServer !== null, 'the server to spaw
 const wroteRequests = (n: number) => until(() => (lastServer?.written.length ?? 0) >= n, `${n} requests`)
 
 describe('connecting to an external server', () => {
+  // d307-k (19.10.2026): an npx server answers `initialize` only once its
+  // packages are installed. REA's first start on the Windows box took about
+  // two minutes and ended at the general 30 s every time.
+  async function slowHandshake(initializeTimeoutMs: number | undefined, answerAfterMs: number) {
+    vi.useFakeTimers()
+    try {
+      let held: FakeRequest | null = null
+      responder = (req) => {
+        if (req.method === 'initialize') { held = req; return null }
+        return goodServer(req)
+      }
+      const client = new MCPExternalClient({ ...config, initializeTimeoutMs })
+      const done = client.connect().then(() => 'connected', (e: unknown) => String(e))
+      for (let i = 0; i < 100 && !held; i++) await vi.advanceTimersByTimeAsync(1)
+      expect(held).not.toBeNull()
+      await vi.advanceTimersByTimeAsync(answerAfterMs)
+      lastServer!.stdout.emit('data', JSON.stringify({ jsonrpc: '2.0', id: held!.id, result: { protocolVersion: '2024-11-05' } }) + '\n')
+      await vi.advanceTimersByTimeAsync(1)
+      return await done
+    } finally {
+      vi.useRealTimers()
+    }
+  }
+
+  it('waits for the handshake as long as the server config allows', async () => {
+    expect(await slowHandshake(10 * 60_000, 120_000)).toBe('connected')
+  })
+
+  it('without a handshake time of its own a server still gets the general 30 s', async () => {
+    expect(await slowHandshake(undefined, 31_000)).toMatch(/Request initialize timed out/)
+  })
+
   it('completes the handshake and returns the discovered tools', async () => {
     const client = new MCPExternalClient(config)
     const tools = await client.connect()

@@ -15,6 +15,17 @@ interface Props {
   className?: string
 }
 
+// Whether the focus that just arrived was walked there with Tab. Focus also
+// arrives without the user going to the control: a drawer that closes hands
+// the focus back to the button that opened it, and after Escape the browser
+// counts that as keyboard focus (`:focus-visible`). The bubble then opened
+// over the composer and stayed, because nothing ever blurred the button.
+let cameByTab = false
+if (typeof window !== 'undefined') {
+  window.addEventListener('keydown', (e) => { cameByTab = e.key === 'Tab' }, true)
+  window.addEventListener('pointerdown', () => { cameByTab = false }, true)
+}
+
 export function Tooltip({ content, children, side = 'top', delay = 400, className }: Props) {
   const [show, setShow] = useState(false)
   // The bubble is portalled to the body, so its coordinates are computed
@@ -52,8 +63,9 @@ const handleFocus = (
   const target = event.target as HTMLElement
 
   // Show focus tooltips for keyboard navigation, but not when a mouse
-  // click leaves the wrapped button focused.
-  if (target.matches(':focus-visible')) {
+  // click leaves the wrapped button focused, and not when the focus was
+  // handed back by something that closed.
+  if (cameByTab && target.matches(':focus-visible')) {
     open()
   }
 }

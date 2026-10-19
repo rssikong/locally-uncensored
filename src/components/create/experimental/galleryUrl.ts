@@ -111,7 +111,8 @@ async function restoreFromDisk(item: GalleryItem): Promise<void> {
     const binary = atob(b64)
     const bytes = new Uint8Array(binary.length)
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-    const url = URL.createObjectURL(new Blob([bytes], { type: guessMime(item.filename) }))
+    // A Mac render keeps no ComfyUI file name: its kind is in the path.
+    const url = URL.createObjectURL(new Blob([bytes], { type: guessMime(item.filename || item.localPath || '') }))
     recovered.set(item.id, Date.now())
     useCreateStore.getState().updateGalleryItem(item.id, { dataUrl: url, unavailable: undefined })
   } catch {
@@ -127,10 +128,22 @@ export function markGalleryItemAvailable(item: GalleryItem): void {
   if (item.unavailable) useCreateStore.getState().updateGalleryItem(item.id, { unavailable: undefined })
 }
 
+/** The bytes of a file the app keeps on disk, read through the guarded
+ *  `read_media_file` command. */
+async function localFileBlob(path: string): Promise<Blob> {
+  const b64 = await backendCall<string>('read_media_file', { path })
+  const binary = atob(b64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return new Blob([bytes], { type: guessMime(path) })
+}
+
 function guessMime(filename: string): string {
   const ext = filename.toLowerCase().split('.').pop() || ''
   if (ext === 'mp4') return 'video/mp4'
   if (ext === 'webm') return 'video/webm'
+  // A track of the Mac's music engine.
+  if (ext === 'wav') return 'audio/wav'
   if (ext === 'gif') return 'image/gif'
   if (ext === 'webp') return 'image/webp'
   if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg'
@@ -180,6 +193,17 @@ export async function proxiedComfyBlobUrl(item: GalleryItem): Promise<string | n
  *  TypeError. Re-sign expired cloud media once via the job id, and turn the
  *  unrecoverable cases into actionable messages. */
 export async function fetchGalleryItemBlob(item: GalleryItem): Promise<Blob> {
+  // A render of the MLX lanes keeps its bytes on disk, and after a restart it
+  // has no blob: URL until its tile is drawn. Its file name is empty, so
+  // galleryItemUrl would make a ComfyUI address of it, which a Mac never
+  // answers. Extend Video picks such a clip from the gallery.
+  if (item.localPath && !item.dataUrl) {
+    try {
+      return await localFileBlob(item.localPath)
+    } catch {
+      throw new Error('This render is no longer on disk. Pick another one, or upload the file from disk.')
+    }
+  }
   const tryFetch = blobFromUrl
   try {
     return await tryFetch(galleryItemUrl(item))

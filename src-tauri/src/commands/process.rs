@@ -304,8 +304,9 @@ pub fn comfy_startup_failure(
     if !has_own_python_env {
         msg.push_str(
             " This install has no python_embeded and no venv of its own, so it ran on the \
-             system Python, which usually does not have ComfyUI's dependencies. Repair \
-             environment, in Settings, AI Backends, builds one.",
+             Python of this machine that holds PyTorch, shared with every other program that \
+             uses it. Repair environment, in Settings, AI Backends, builds ComfyUI an \
+             environment of its own.",
         );
     }
     let lines: Vec<&str> = tail
@@ -434,7 +435,8 @@ pub(crate) fn venv_rebuild_can_fix(kind: crate::commands::install::pip::PipFailu
 ///
 /// - `baseline_needs_cpu`: `needs_cpu_fallback()` — false when NVIDIA present or macOS.
 /// - `torch_gpu`: Some(true) = the comfy python's torch reports a usable GPU
-///   (CUDA / ROCm / ZLUDA all answer via `torch.cuda.is_available()`),
+///   (CUDA / ROCm / ZLUDA answer via `torch.cuda.is_available()`, Intel Arc
+///   via `torch.xpu.is_available()`, see `COMFY_GPU_PROBE`),
 ///   Some(false) = no usable GPU, None = not probed / probe failed.
 ///
 /// rhodium92 (AMD RX 6600 XT, 2026-07-01): before this, ANY non-NVIDIA box was
@@ -483,10 +485,16 @@ pub(crate) fn force_gpu_warning(
     if mode != ComfyGpuMode::ForceGpu || torch_gpu != Some(false) {
         return None;
     }
-    let head = "ComfyUI GPU is set to Force GPU, but the PyTorch in this ComfyUI                 environment reports no usable GPU. ComfyUI will stop with                 \"Torch not compiled with CUDA enabled\" instead of rendering.";
+    // A torch that offers Intel XPU answers Some(true) and never gets here, so
+    // naming CUDA as the error is right for every box that does.
+    let head = "ComfyUI GPU is set to Force GPU, but the PyTorch in this ComfyUI \
+                environment reports no usable GPU, neither CUDA nor Intel XPU. ComfyUI \
+                will stop with \"Torch not compiled with CUDA enabled\" instead of rendering.";
     let fix = match (has_amd, os) {
         (true, "linux") => {
-            "Your card is AMD and this environment holds CUDA-only wheels. Reinstall the              ComfyUI environment from Settings > ComfyUI: LU now installs the ROCm build              of PyTorch when it sees an AMD card."
+            "Your card is AMD and this environment holds CUDA-only wheels. Reinstall the \
+             ComfyUI environment from Settings > ComfyUI: LU now installs the ROCm build \
+             of PyTorch when it sees an AMD card."
         }
         (true, "windows") => {
             // Since Runde 12 LU does install AMD's own Windows ROCm wheels for
@@ -497,10 +505,18 @@ pub(crate) fn force_gpu_warning(
             // outside that list or because the index did not answer. Still no
             // reinstall advice: on the cards that reach this message a rebuild
             // lands in the same place.
-            "Your card is AMD, and this ComfyUI environment holds processor wheels:              pytorch.org publishes no Windows ROCm wheels, and AMD's own Windows ROCm              index either does not cover this card or did not answer when the              environment was built. Use a ComfyUI of your own on ZLUDA or DirectML, or              set ComfyUI GPU back to Auto and render on the processor."
+            "Your card is AMD, and this ComfyUI environment holds processor wheels: \
+             pytorch.org publishes no Windows ROCm wheels, and AMD's own Windows ROCm \
+             index either does not cover this card or did not answer when the \
+             environment was built. Use a ComfyUI of your own on ZLUDA or DirectML, or \
+             set ComfyUI GPU back to Auto and render on the processor."
         }
         _ => {
-            "Reinstall the ComfyUI environment from Settings > ComfyUI so PyTorch is              rebuilt for the card LU detects, or set ComfyUI GPU back to Auto."
+            "Reinstall the ComfyUI environment from Settings > ComfyUI so PyTorch is \
+             rebuilt for the card LU detects, or set ComfyUI GPU back to Auto. An Intel \
+             Arc card needs the XPU build of PyTorch, which LU does not install: use \
+             ComfyUI's Intel portable build, or install PyTorch from \
+             download.pytorch.org/whl/xpu into this environment."
         }
     };
     Some(format!("[LU] {head} {fix}"))
@@ -583,6 +599,10 @@ fn scan_for_comfyui(dir: &Path, depth: u32) -> Option<PathBuf> {
         // Check if this directory IS ComfyUI
         if name_str.eq_ignore_ascii_case("comfyui") && full.join("main.py").exists() {
             return Some(full);
+        }
+        // Or holds it one level down under any name, the portable layout
+        if let Some(inner) = nested_comfyui_dir(&full) {
+            return Some(inner);
         }
         // Recurse deeper
         if let Some(found) = scan_for_comfyui(&full, depth - 1) {
@@ -724,7 +744,7 @@ pub(crate) fn prefix_has_torch(prefix: &Path) -> bool {
 /// Unix — so both the containing directory and its parent are tried. A
 /// relative interpreter name (no directory component at all) yields no
 /// prefix and is refused rather than silently probed against the cwd.
-fn python_prefix_has_torch(interpreter: &Path) -> bool {
+pub(crate) fn python_prefix_has_torch(interpreter: &Path) -> bool {
     let Some(bin_dir) = interpreter.parent() else {
         return false;
     };
@@ -737,6 +757,151 @@ fn python_prefix_has_torch(interpreter: &Path) -> bool {
     match bin_dir.parent() {
         Some(p) if !p.as_os_str().is_empty() => prefix_has_torch(p),
         _ => false,
+    }
+}
+
+/// Where the Python a ComfyUI without a venv of its own was found to run on
+/// is remembered: `{"comfyui": <folder>, "python": <interpreter>}` in the
+/// app's config.json, next to `comfyui_path`.
+const BOUND_PYTHON_KEY: &str = "comfyui_python";
+
+/// The interpreter remembered for `comfy_dir`, if one was, and for exactly
+/// this folder: a second ComfyUI elsewhere does not inherit it.
+pub(crate) fn remembered_bound_python_in(config: &Path, comfy_dir: &Path) -> Option<String> {
+    let json: serde_json::Value = serde_json::from_str(&fs::read_to_string(config).ok()?).ok()?;
+    let entry = json.get(BOUND_PYTHON_KEY)?;
+    let folder = entry.get("comfyui")?.as_str()?;
+    let python = entry.get("python")?.as_str()?.trim();
+    (Path::new(folder) == comfy_dir && !python.is_empty()).then(|| python.to_string())
+}
+
+/// Remember `python` for `comfy_dir`. Every other key in the file stays, the
+/// same read, change, write `custom_models::remember_root_in` does.
+pub(crate) fn remember_bound_python_in(config: &Path, comfy_dir: &Path, python: &str) {
+    if let Some(parent) = config.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let mut json: serde_json::Value = fs::read_to_string(config)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_else(|| serde_json::json!({}));
+    json[BOUND_PYTHON_KEY] = serde_json::json!({
+        "comfyui": comfy_dir.to_string_lossy(),
+        "python": python,
+    });
+    let _ = fs::write(config, serde_json::to_string_pretty(&json).unwrap_or_default());
+}
+
+fn same_interpreter(a: &str, b: &str) -> bool {
+    if cfg!(target_os = "windows") {
+        a.eq_ignore_ascii_case(b)
+    } else {
+        a == b
+    }
+}
+
+/// The pure half of [`bound_comfy_python`]: which interpreter holds this
+/// ComfyUI's torch. The remembered one first, then LU's default, then every
+/// other one on the machine (`others` is only asked when the first two have
+/// no torch on disk, it starts a scan). Two rounds: torch in the
+/// interpreter's own prefix (a file check, no process), and only when no
+/// candidate has that, whether the interpreter finds torch at all (a user
+/// site install). None when no interpreter has torch.
+pub(crate) fn pick_torch_python(
+    saved: Option<&str>,
+    default: &str,
+    others: impl FnOnce() -> Vec<String>,
+    on_disk: impl Fn(&str) -> bool,
+    finds: impl Fn(&str) -> bool,
+) -> Option<String> {
+    let mut list: Vec<String> = Vec::new();
+    let add = |list: &mut Vec<String>, p: &str| {
+        let p = p.trim();
+        if !p.is_empty() && !list.iter().any(|q| same_interpreter(q, p)) {
+            list.push(p.to_string());
+        }
+    };
+    for p in saved.into_iter().chain(std::iter::once(default)) {
+        add(&mut list, p);
+    }
+    if let Some(hit) = list.iter().find(|p| on_disk(p)) {
+        return Some(hit.clone());
+    }
+    for p in others() {
+        add(&mut list, &p);
+    }
+    if let Some(hit) = list.iter().find(|p| on_disk(p)) {
+        return Some(hit.clone());
+    }
+    list.into_iter().find(|p| finds(p))
+}
+
+/// The Python a ComfyUI WITHOUT a venv of its own starts and installs with.
+///
+/// Discord 14.10.2026: such a ComfyUI used to take `state.python_bin`, the
+/// interpreter LU resolves as its default at app start. A machine that got a
+/// Python 3.15 next to the 3.12 that holds torch could resolve the new one,
+/// and ComfyUI died at `import torch` after an update of nothing but the
+/// app. The interpreter that holds torch is the one this install belongs to,
+/// so that is the one asked for, and it is remembered per ComfyUI folder so
+/// the next default change cannot move it again.
+///
+/// None: no interpreter on this machine has torch; [`comfy_no_torch_python_message`]
+/// says what to do (Repair environment builds the venv).
+pub(crate) fn bound_comfy_python(comfy_dir: &Path, default: &str) -> Option<String> {
+    let config = crate::os_paths::app_config_json();
+    let saved = remembered_bound_python_in(&config, comfy_dir);
+    let chosen = pick_torch_python(
+        saved.as_deref(),
+        default,
+        || {
+            let mut all = crate::python::python_interpreters();
+            all.extend(collect_candidate_pythons());
+            all
+        },
+        |p| python_prefix_has_torch(Path::new(p)),
+        crate::commands::install::python_finds_torch,
+    )?;
+    if saved.as_deref() != Some(chosen.as_str()) {
+        info!(python = %chosen, comfyui = %comfy_dir.display(), "comfyui without venv bound to the python that holds torch");
+        remember_bound_python_in(&config, comfy_dir, &chosen);
+    }
+    Some(chosen)
+}
+
+/// A ComfyUI without a venv, and no Python on this machine has torch. Not a
+/// reinstall-Python sentence: Repair environment builds ComfyUI a venv of its
+/// own, from a Python of the machine that PyTorch serves or from LU's own.
+pub(crate) fn comfy_no_torch_python_message(comfy_dir: &Path) -> String {
+    format!(
+        "ComfyUI at {} has no environment of its own, and none of the Python installations \
+         LU found on this machine has PyTorch. Press \"Repair environment\" in Settings, \
+         AI Backends: LU builds ComfyUI its own environment (with LU's own Python 3.12 if no \
+         Python here fits) and leaves models and custom nodes untouched.",
+        comfy_dir.display()
+    )
+}
+
+/// Which interpreter a ComfyUI start uses, one decision for the start button
+/// and the auto-start. Portable wins over everything (it ships the matching
+/// torch wheel, a leftover venv beside it must not refuse that start), then
+/// the install's own venv, and only without a venv the Python that holds
+/// torch (`bind`, in production [`bound_comfy_python`]). A venv without its
+/// interpreter is P3's third answer and stops the start; no venv and no
+/// Python with torch stops it too, with the button that builds one.
+pub(crate) fn launch_python(
+    bundled: Option<&str>,
+    venv: &crate::python::ComfyVenv,
+    comfy_dir: &Path,
+    bind: impl FnOnce() -> Option<String>,
+) -> Result<String, String> {
+    match (bundled, venv) {
+        (Some(p), _) => Ok(p.to_string()),
+        (None, crate::python::ComfyVenv::Usable(p)) => Ok(p.clone()),
+        (None, crate::python::ComfyVenv::Broken { venv_dir, interpreter }) => {
+            Err(comfy_broken_venv_message(venv_dir, interpreter))
+        }
+        (None, crate::python::ComfyVenv::Absent) => bind().ok_or_else(|| comfy_no_torch_python_message(comfy_dir)),
     }
 }
 
@@ -852,15 +1017,31 @@ fn desktop_app_working_dir_candidates() -> Vec<PathBuf> {
     out
 }
 
+/// The ComfyUI one level below `dir`, if that is where `main.py` sits.
+///
+/// The Windows portable builds (NVIDIA, AMD and Intel alike) unpack as
+/// `ComfyUI_windows_portable\{ComfyUI, python_embeded}`, and people pick the
+/// outer folder, often renamed. `main.py` lives in the inner one, and
+/// `python_embeded` stays found as its sibling exactly as before.
+fn nested_comfyui_dir(dir: &Path) -> Option<PathBuf> {
+    let inner = dir.join("ComfyUI");
+    inner.join("main.py").is_file().then_some(inner)
+}
+
 /// Best-effort: turn whatever the user/auto-detector handed us into a
 /// directory that contains `main.py`. Accepts either:
 ///   - A directory with `main.py` (classic / portable / from-source install)
+///   - A directory whose `ComfyUI` subfolder has `main.py` (the portable
+///     archive's outer folder, see `nested_comfyui_dir`)
 ///   - A directory with `ComfyUI.exe` (Comfy-Org desktop app binary dir) —
 ///     we then look up the Working Directory via the probe order above.
 fn resolve_comfyui_path(input: &str) -> Option<String> {
     let p = Path::new(input);
     if p.join("main.py").exists() {
         return Some(input.to_string());
+    }
+    if let Some(inner) = nested_comfyui_dir(p) {
+        return Some(inner.to_string_lossy().to_string());
     }
     if p.join("ComfyUI.exe").exists() {
         for candidate in desktop_app_working_dir_candidates() {
@@ -1287,7 +1468,7 @@ fn fix_comfyui_cors_blocking(state: &AppState) -> Result<serde_json::Value, Stri
     let host = state.comfy_host.lock().unwrap().clone();
     if !is_local_host(&host) {
         return Err(
-            "ComfyUI runs on a remote host, so LU can't restart it from here. Add --enable-cors-header http://tauri.localhost to the launch command on that machine instead.".to_string(),
+            format!("ComfyUI runs on a remote host, so LU can't restart it from here. Add --enable-cors-header {} to the launch command on that machine instead.", comfy_cors_origin()),
         );
     }
     let path_known = state
@@ -1299,7 +1480,7 @@ fn fix_comfyui_cors_blocking(state: &AppState) -> Result<serde_json::Value, Stri
         .is_some();
     if !path_known {
         return Err(
-            "LU doesn't know this ComfyUI's folder yet. Set it under Settings → AI Backends → ComfyUI → Path, then press the button again. Or add --enable-cors-header http://tauri.localhost to your own launch script.".to_string(),
+            format!("LU doesn't know this ComfyUI's folder yet. Set it under Settings → AI Backends → ComfyUI → Path, then press the button again. Or add --enable-cors-header {} to your own launch script.", comfy_cors_origin()),
         );
     }
     let port = *state.comfy_port.lock().unwrap();
@@ -1610,24 +1791,43 @@ fn comfy_gpu_available_cached(
     }
 }
 
-/// Does `python`'s torch report a usable GPU (CUDA / ROCm / ZLUDA)?
+/// What the probe asks torch. CUDA covers NVIDIA, ROCm and ZLUDA, which all
+/// answer through `torch.cuda`. Intel Arc answers through `torch.xpu`, which
+/// only exists in torch 2.4 and later, hence the `hasattr` guard.
 ///
-/// `torch.cuda.is_available()` is SAFE — it never raises (unlike
-/// `current_device()`): on a stock-CUDA torch on an AMD box it simply returns
-/// False. So this cleanly separates "ROCm/ZLUDA torch → run on GPU" from "stock
-/// torch, no GPU → --cpu". Some(true/false) = definitive, None = timeout / spawn fail.
+/// 3.0.7: the probe asked `torch.cuda` alone, so an Intel XPU torch read as
+/// "no GPU" and Auto started ComfyUI with --cpu on a working Arc card, while
+/// ComfyUI itself would have found the card without any flag.
+const COMFY_GPU_PROBE: &str = "import torch; print('cuda' if torch.cuda.is_available() else \
+     'xpu' if hasattr(torch, 'xpu') and torch.xpu.is_available() else 'none')";
+
+/// The device the probe printed, or None when it named none. Reads the last
+/// line that says anything, because a torch import can print a warning first.
+pub(crate) fn parse_comfy_gpu_probe(stdout: &str) -> Option<&'static str> {
+    match stdout.lines().map(str::trim).rfind(|l| !l.is_empty())? {
+        "cuda" => Some("cuda"),
+        "xpu" => Some("xpu"),
+        _ => None,
+    }
+}
+
+/// Does `python`'s torch report a usable GPU (CUDA / ROCm / ZLUDA / Intel XPU)?
+///
+/// `torch.cuda.is_available()` and `torch.xpu.is_available()` are SAFE, they
+/// never raise (unlike `current_device()`): on a stock-CUDA torch on an AMD box
+/// they simply return False. So this cleanly separates "GPU torch → run on the
+/// GPU" from "stock torch, no GPU → --cpu". A torch that fails to import prints
+/// nothing and reads as no GPU, as before. Some(true/false) = definitive,
+/// None = timeout / spawn fail.
 pub(crate) fn probe_comfy_gpu(python: &str) -> Option<bool> {
     if python.is_empty() {
         return Some(false);
     }
     let mut cmd = python_command(python);
-    cmd.args([
-        "-c",
-        "import torch,sys; sys.exit(0 if torch.cuda.is_available() else 1)",
-    ])
-    .stdin(Stdio::null())
-    .stdout(Stdio::null())
-    .stderr(Stdio::null());
+    cmd.args(["-c", COMFY_GPU_PROBE])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
     #[cfg(target_os = "windows")]
     cmd.creation_flags(CREATE_NO_WINDOW);
     let mut child = match cmd.spawn() {
@@ -1636,9 +1836,20 @@ pub(crate) fn probe_comfy_gpu(python: &str) -> Option<bool> {
     };
     // 60 s ceiling: torch import is ~4 s warm but can lag during an app-boot disk
     // storm; a missing/broken torch exits non-zero fast.
+    // The answer is one short word, far below a pipe buffer, so waiting for
+    // the exit before reading cannot block the child.
     for _ in 0..300 {
         match child.try_wait() {
-            Ok(Some(status)) => return Some(status.success()),
+            Ok(Some(_)) => {
+                let mut out = String::new();
+                if let Some(mut pipe) = child.stdout.take() {
+                    use std::io::Read;
+                    let _ = pipe.read_to_string(&mut out);
+                }
+                let device = parse_comfy_gpu_probe(&out);
+                println!("[ComfyUI] GPU probe: torch reports {}", device.unwrap_or("no GPU"));
+                return Some(device.is_some());
+            }
             Ok(None) => std::thread::sleep(std::time::Duration::from_millis(200)),
             Err(_) => return None,
         }
@@ -1778,31 +1989,20 @@ pub(crate) fn start_comfyui_blocking(state: &AppState) -> Result<serde_json::Val
     let has_usable_venv = matches!(venv_state, crate::python::ComfyVenv::Usable(_));
     let has_own_python_env = bundled_python.is_some() || has_usable_venv;
     let system_python = state.python_bin.lock().unwrap().clone();
-    let python = match (&bundled_python, &venv_state) {
-        // Portable wins over everything: it ships the matching torch wheel,
-        // and a leftover venv beside it must not refuse that start.
-        (Some(p), _) => p.clone(),
-        (None, crate::python::ComfyVenv::Usable(p)) => p.clone(),
-        (None, crate::python::ComfyVenv::Broken { venv_dir, interpreter }) => {
-            error!(venv = %venv_dir.display(), "comfyui venv interpreter missing");
-            return Err(comfy_broken_venv_message(venv_dir, interpreter));
-        }
-        (None, crate::python::ComfyVenv::Absent) => system_python.clone(),
-    };
+    let comfy_dir = std::path::Path::new(&comfy_path);
+    // Discord 14.10.2026: without a venv not blindly the default Python, but
+    // the one that holds this install's torch, remembered per folder.
+    let python = launch_python(bundled_python.as_deref(), &venv_state, comfy_dir, || {
+        bound_comfy_python(comfy_dir, &system_python)
+    })
+    .inspect_err(|e| error!(comfyui = %comfy_path, "comfyui start refused: {e}"))?;
     let port_str = port.to_string();
-    if python.is_empty() {
-        return Err(
-            "No Python available — install Python first (Settings → ComfyUI → Install Python). \
-             ComfyUI from-source needs a system Python; install one and retry."
-                .to_string(),
-        );
-    }
     if bundled_python.is_some() {
         println!("[ComfyUI] Using bundled portable Python: {}", python);
     } else if has_usable_venv {
-        println!("[ComfyUI] Using ComfyUI venv Python (PEP 668 install): {}", python);
+        println!("[ComfyUI] Using ComfyUI venv Python: {}", python);
     } else {
-        println!("[ComfyUI] Using system Python: {}", python);
+        println!("[ComfyUI] No venv here, using the Python that holds torch: {}", python);
     }
     println!("[ComfyUI] Starting from: {} on port {}", comfy_path, port);
     info!(port = port, "comfyui start");
@@ -1844,7 +2044,7 @@ pub(crate) fn start_comfyui_blocking(state: &AppState) -> Result<serde_json::Val
         "main.py",
         "--listen", "127.0.0.1",
         "--port", &port_str,
-        "--enable-cors-header", "*",
+        "--enable-cors-header", comfy_cors_origin(),
     ];
     if needs_cpu_fallback {
         comfy_args.push("--cpu");
@@ -1880,6 +2080,14 @@ pub(crate) fn start_comfyui_blocking(state: &AppState) -> Result<serde_json::Val
         comfy_args.push(file);
         println!("[ComfyUI] Extra model paths: {}", file);
     }
+    // GH #183: what the user's own start script hands ComfyUI (more model
+    // path configs, input and output folders). LU starts `main.py` directly,
+    // so without this a ComfyUI that LU starts ignored all of it.
+    let user_args = crate::commands::comfy_user_paths::UserComfyPaths::discover(Path::new(&comfy_path)).launch_args();
+    if !user_args.is_empty() {
+        println!("[ComfyUI] From the start script: {}", user_args.join(" "));
+    }
+    comfy_args.extend(user_args.iter().map(String::as_str));
     let mut cmd = python_command(&python);
     cmd.args(&comfy_args)
         .current_dir(&comfy_path)
@@ -2065,6 +2273,36 @@ pub async fn stop_comfyui(app: tauri::AppHandle) -> Result<serde_json::Value, St
 // The missing half is a way back to control. `find_orphaned_comfyui` looks for
 // a ComfyUI process that LU itself started, on LU's own configured port, and
 // `stop_comfyui` kills that tree instead of lying.
+
+/// The one origin a ComfyUI started by LU answers to: the app's own page.
+///
+/// Until 3.0.6 the flag carried `*`. ComfyUI has no login, and with the flag
+/// set it also drops its own check that a request comes from its own page
+/// (server.py, `create_origin_only_middleware`). Together that let any web
+/// page open in the user's browser read `http://127.0.0.1:8188`: the queue,
+/// the history and every picture in the output folder. With the app's origin
+/// in the header a browser hands those answers to the app and to nobody else.
+///
+/// What this does not close: ComfyUI still takes a request a foreign page
+/// sends blind, it only keeps the answer from it. Closing that takes ComfyUI
+/// without the flag and every media load through the Rust side.
+pub(crate) fn comfy_cors_origin() -> &'static str {
+    app_page_origin(tauri::is_dev(), cfg!(any(windows, target_os = "android")))
+}
+
+/// The origin of the app's page. Tauri serves it from `http://tauri.localhost`
+/// where the webview takes no custom scheme (Windows, Android) and from
+/// `tauri://localhost` elsewhere. A dev run loads the Vite server instead
+/// (`build.devUrl` in tauri.conf.json).
+fn app_page_origin(dev: bool, http_scheme: bool) -> &'static str {
+    if dev {
+        "http://localhost:5273"
+    } else if http_scheme {
+        "http://tauri.localhost"
+    } else {
+        "tauri://localhost"
+    }
+}
 
 /// Is this command line a ComfyUI that LU started on `port`?
 ///
@@ -2561,7 +2799,10 @@ pub fn set_comfyui_path(path: String, state: State<'_, AppState>) -> Result<serd
                     path
                 )
             } else {
-                format!("main.py not found in {}", path)
+                format!(
+                    "main.py not found in {} or in its ComfyUI subfolder. Pick the folder that holds ComfyUI's main.py.",
+                    path
+                )
             }
         })?;
 
@@ -2890,26 +3131,22 @@ pub fn auto_start_comfyui(state: &AppState) {
             let venv_state = crate::python::comfy_venv_state(std::path::Path::new(&path));
             let has_usable_venv = matches!(venv_state, crate::python::ComfyVenv::Usable(_));
             let system_python = state.python_bin.lock().unwrap().clone();
-            let python = match (&portable_python, &venv_state) {
-                (Some(p), _) => p.clone(),
-                (None, crate::python::ComfyVenv::Usable(p)) => p.clone(),
-                (None, crate::python::ComfyVenv::Broken { venv_dir, interpreter }) => {
-                    println!(
-                        "[ComfyUI] Auto-start skipped: {}",
-                        comfy_broken_venv_message(venv_dir, interpreter)
-                    );
+            let comfy_dir = std::path::Path::new(&path);
+            let python = match launch_python(portable_python.as_deref(), &venv_state, comfy_dir, || {
+                bound_comfy_python(comfy_dir, &system_python)
+            }) {
+                Ok(p) => p,
+                Err(why) => {
+                    println!("[ComfyUI] Auto-start skipped: {why}");
                     return;
                 }
-                (None, crate::python::ComfyVenv::Absent) => system_python.clone(),
             };
-            if python.is_empty() {
-                println!("[ComfyUI] Auto-start skipped: no Python available (install via P14 flow)");
-                return;
-            }
             if portable_python.is_some() {
                 println!("[ComfyUI] Auto-start using bundled portable Python: {}", python);
             } else if has_usable_venv {
-                println!("[ComfyUI] Auto-start using ComfyUI venv Python (PEP 668 install): {}", python);
+                println!("[ComfyUI] Auto-start using ComfyUI venv Python: {}", python);
+            } else {
+                println!("[ComfyUI] Auto-start without a venv, using the Python that holds torch: {}", python);
             }
 
             // Bug J: same --cpu fallback as start_comfyui to avoid the
@@ -2930,7 +3167,7 @@ pub fn auto_start_comfyui(state: &AppState) {
                 "main.py",
                 "--listen", "127.0.0.1",
                 "--port", &port_str,
-                "--enable-cors-header", "*",
+                "--enable-cors-header", comfy_cors_origin(),
             ];
             if auto_needs_cpu {
                 comfy_args.push("--cpu");
@@ -2953,6 +3190,13 @@ pub fn auto_start_comfyui(state: &AppState) {
                 comfy_args.push(file);
                 println!("[ComfyUI] Auto-start: extra model paths: {}", file);
             }
+            // GH #183: the same flags from the user's start script as the
+            // manual start.
+            let user_args = crate::commands::comfy_user_paths::UserComfyPaths::discover(std::path::Path::new(&path)).launch_args();
+            if !user_args.is_empty() {
+                println!("[ComfyUI] Auto-start: from the start script: {}", user_args.join(" "));
+            }
+            comfy_args.extend(user_args.iter().map(String::as_str));
             let mut cmd = python_command(&python);
             cmd.args(&comfy_args)
                 .current_dir(&path)
@@ -3061,6 +3305,83 @@ mod tests {
     #[test]
     fn comfyui_disk_search_is_off_on_macos_and_on_elsewhere() {
         assert_eq!(comfyui_disk_search_allowed(), !cfg!(target_os = "macos"));
+    }
+
+    // ── 3.0.7: the portable archive's outer folder ───────────────────────
+    //
+    // ComfyUI_windows_portable(_intel|_amd) unpacks as
+    // <outer>/{ComfyUI, python_embeded}. Picking <outer> answered
+    // "main.py not found", and the disk search only knew folders named
+    // ComfyUI, so a renamed outer folder needed one level more of depth.
+
+    fn file(root: &Path, rel: &str) {
+        let f = root.join(rel);
+        std::fs::create_dir_all(f.parent().unwrap()).unwrap();
+        std::fs::write(f, b"").unwrap();
+    }
+
+    fn resolved(p: &Path) -> Option<PathBuf> {
+        resolve_comfyui_path(&p.to_string_lossy()).map(PathBuf::from)
+    }
+
+    #[test]
+    fn a_folder_with_main_py_is_taken_as_it_is() {
+        let tmp = tempfile::tempdir().unwrap();
+        file(tmp.path(), "main.py");
+        // Even with a ComfyUI subfolder below it: the direct hit wins.
+        file(tmp.path(), "ComfyUI/main.py");
+        assert_eq!(resolved(tmp.path()), Some(tmp.path().to_path_buf()));
+    }
+
+    #[test]
+    fn the_portable_outer_folder_resolves_to_its_comfyui_and_keeps_python_embeded_beside_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let outer = tmp.path().join("ComfyUI_windows_portable");
+        file(&outer, "ComfyUI/main.py");
+        file(&outer, "python_embeded/python.exe");
+        let got = resolved(&outer).expect("the outer folder must resolve");
+        assert_eq!(got, outer.join("ComfyUI"));
+        assert!(got.parent().unwrap().join("python_embeded").join("python.exe").is_file());
+    }
+
+    #[test]
+    fn a_renamed_outer_folder_resolves_too() {
+        let tmp = tempfile::tempdir().unwrap();
+        let outer = tmp.path().join("Bilder KI");
+        file(&outer, "ComfyUI/main.py");
+        assert_eq!(resolved(&outer), Some(outer.join("ComfyUI")));
+    }
+
+    #[test]
+    fn a_folder_without_comfyui_still_resolves_to_nothing() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert_eq!(resolved(tmp.path()), None);
+        // A ComfyUI folder without main.py is no ComfyUI either.
+        std::fs::create_dir_all(tmp.path().join("ComfyUI")).unwrap();
+        file(tmp.path(), "ComfyUI/README.md");
+        assert_eq!(resolved(tmp.path()), None);
+        // And main.py two levels down is not taken: only the portable layout.
+        file(tmp.path(), "x/ComfyUI/main.py");
+        assert_eq!(resolved(tmp.path()), None);
+    }
+
+    #[test]
+    fn the_disk_search_finds_comfyui_inside_a_renamed_outer_folder() {
+        let tmp = tempfile::tempdir().unwrap();
+        file(tmp.path(), "KI Kram/ComfyUI/main.py");
+        // Depth 1 only looks at the direct children of the root. Before 3.0.7
+        // a child had to be NAMED ComfyUI, so "KI Kram" was missed here.
+        assert_eq!(
+            scan_for_comfyui(tmp.path(), 1),
+            Some(tmp.path().join("KI Kram").join("ComfyUI")),
+        );
+    }
+
+    #[test]
+    fn the_disk_search_still_ignores_folders_that_only_have_a_main_py() {
+        let tmp = tempfile::tempdir().unwrap();
+        file(tmp.path(), "some-python-project/main.py");
+        assert_eq!(scan_for_comfyui(tmp.path(), 3), None);
     }
 
     // ── OI-1: "your working ComfyUI is a broken torso" ───────────────────
@@ -3633,6 +3954,63 @@ mod tests {
     #[test]
     fn probe_comfy_gpu_on_empty_python_is_definitive_false() {
         assert_eq!(probe_comfy_gpu(""), Some(false));
+    }
+
+    // ── 3.0.7: Intel XPU counts as a GPU ─────────────────────────────────
+
+    #[test]
+    fn the_probe_output_names_cuda_xpu_or_nothing() {
+        assert_eq!(parse_comfy_gpu_probe("cuda\n"), Some("cuda"));
+        assert_eq!(parse_comfy_gpu_probe("xpu\r\n"), Some("xpu"));
+        assert_eq!(parse_comfy_gpu_probe("none\n"), None);
+        // A torch that did not import prints nothing to stdout.
+        assert_eq!(parse_comfy_gpu_probe(""), None);
+        // A warning printed before the answer does not hide it.
+        assert_eq!(parse_comfy_gpu_probe("UserWarning: something\nxpu\n\n"), Some("xpu"));
+        // Only the answer itself counts, not a line that mentions a device.
+        assert_eq!(parse_comfy_gpu_probe("cuda is not here\nnone"), None);
+    }
+
+    #[test]
+    fn the_probe_asks_xpu_behind_a_hasattr_guard_and_cuda_first() {
+        let cuda = COMFY_GPU_PROBE.find("torch.cuda.is_available()").expect("cuda is asked");
+        let guard = COMFY_GPU_PROBE.find("hasattr(torch, 'xpu')").expect("xpu is guarded");
+        let xpu = COMFY_GPU_PROBE.find("torch.xpu.is_available()").expect("xpu is asked");
+        assert!(cuda < guard && guard < xpu, "{COMFY_GPU_PROBE}");
+        // Every word the parser accepts is one the script can print.
+        for word in ["'cuda'", "'xpu'", "'none'"] {
+            assert!(COMFY_GPU_PROBE.contains(word), "{word} missing: {COMFY_GPU_PROBE}");
+        }
+    }
+
+    #[test]
+    fn auto_keeps_an_intel_xpu_card_off_the_processor() {
+        // No NVIDIA driver (baseline true), torch answered xpu: Some(true).
+        let xpu = parse_comfy_gpu_probe("xpu").is_some();
+        assert!(!decide_comfy_cpu_flag(ComfyGpuMode::Auto, true, Some(xpu)));
+        assert_eq!(cpu_flag_reason(ComfyGpuMode::Auto, true, Some(xpu)), None);
+        // NEGATIVE CONTROL: the same box with a processor torch stays on --cpu.
+        let none = parse_comfy_gpu_probe("none").is_some();
+        assert!(decide_comfy_cpu_flag(ComfyGpuMode::Auto, true, Some(none)));
+    }
+
+    #[test]
+    fn force_gpu_on_an_xpu_torch_says_nothing_and_without_one_names_both() {
+        // An Intel box: no AMD card, torch reported xpu.
+        let xpu = parse_comfy_gpu_probe("xpu").is_some();
+        assert_eq!(force_gpu_warning(ComfyGpuMode::ForceGpu, Some(xpu), false, "windows"), None);
+        // Without an XPU torch the note says what was asked and how an Arc card gets there.
+        let warn = force_gpu_warning(ComfyGpuMode::ForceGpu, Some(false), false, "windows")
+            .expect("a dead torch is still worth a word");
+        assert!(warn.contains("neither CUDA nor Intel XPU"), "{warn}");
+        assert!(warn.contains("download.pytorch.org/whl/xpu"), "{warn}");
+        // The continuation lines no longer leave runs of spaces in the text.
+        for amd_os in ["linux", "windows"] {
+            let w = force_gpu_warning(ComfyGpuMode::ForceGpu, Some(false), true, amd_os).unwrap();
+            assert!(!w.contains("  "), "double space in {w}");
+            assert!(!w.contains("Arc card"), "the AMD note sends nobody to the XPU build: {w}");
+        }
+        assert!(!warn.contains("  "), "double space in {warn}");
     }
 
     #[test]
@@ -4477,6 +4855,27 @@ mod comfy_adoption_tests {
         ))
     }
 
+    /// Found in the security pass of 2026-10-13: the flag carried `*`, and
+    /// with it any web page could read the local ComfyUI. The start names the
+    /// app's own origin, and no build names every origin.
+    #[test]
+    fn a_comfyui_started_here_answers_to_the_app_and_to_no_other_page() {
+        assert_eq!(app_page_origin(false, true), "http://tauri.localhost");
+        assert_eq!(app_page_origin(false, false), "tauri://localhost");
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../../tauri.conf.json")).unwrap();
+        assert_eq!(app_page_origin(true, true), conf["build"]["devUrl"].as_str().unwrap());
+        assert_eq!(app_page_origin(true, false), conf["build"]["devUrl"].as_str().unwrap());
+        assert_ne!(comfy_cors_origin(), "*");
+        let source = include_str!("process.rs");
+        let wildcard = ["\"--enable-cors-header\", ", "\"*\""].concat();
+        assert!(!source.contains(&wildcard), "a ComfyUI start passes the wildcard origin again");
+        assert!(is_lu_started_comfyui(
+            &argv(&format!("python main.py --listen 127.0.0.1 --port 8188 --enable-cors-header {}", comfy_cors_origin())),
+            8188
+        ));
+    }
+
     #[test]
     fn the_argv_this_app_actually_spawns_is_recognised() {
         assert!(is_lu_started_comfyui(&lu_argv(8188), 8188));
@@ -4685,6 +5084,11 @@ mod comfy_adoption_tests {
                 body.contains("--extra-model-paths-config"),
                 "{name} baut die Datei und uebergibt sie nicht",
             );
+            // GH #183: die Schalter aus dem Startskript des Nutzers.
+            assert!(
+                body.contains("UserComfyPaths::discover(") && body.contains(".launch_args()"),
+                "{name} reicht die Ordner aus dem Startskript nicht weiter",
+            );
         }
         // Und der reine Existenztest von frueher darf nicht zurueckkommen. Der
         // Name wird zur Laufzeit zusammengesetzt, damit diese Zeile sich nicht
@@ -4759,17 +5163,128 @@ mod comfy_adoption_tests {
                 body.contains("comfy_venv_state("),
                 "{name} kennt weiter nur zwei Antworten auf die venv-Frage",
             );
+            // 3.0.7: beide Wege entscheiden ueber `launch_python`, und dort
+            // steht das kaputte venv als eigene Antwort (unten geprueft).
             assert!(
-                body.contains("comfy_broken_venv_message("),
-                "{name} erkennt das kaputte venv und sagt es niemandem",
+                body.contains("launch_python("),
+                "{name} entscheidet am gemeinsamen Weg vorbei",
             );
-            for kette in ["unwrap_or(system_python", "unwrap_or_else(|| system_python"] {
+            for kette in ["unwrap_or(system_python", "unwrap_or_else(|| system_python", "=> system_python.clone()"] {
                 assert!(
                     !body.contains(kette),
                     "{name} faellt wieder still auf das System-Python zurueck: {kette}",
                 );
             }
         }
+        let start = src.find("pub(crate) fn launch_python(").expect("launch_python ist weg");
+        let end = start + src[start..].find("\n}\n").expect("unterminated fn");
+        assert!(
+            src[start..end].contains("comfy_broken_venv_message("),
+            "launch_python erkennt das kaputte venv und sagt es niemandem",
+        );
+    }
+
+    // ── Discord 14.10.2026: welches Python ein ComfyUI startet ─────────────
+
+    fn usable(p: &str) -> crate::python::ComfyVenv {
+        crate::python::ComfyVenv::Usable(p.to_string())
+    }
+
+    #[test]
+    fn a_venv_starts_from_the_venv_and_nobody_scans_the_machine() {
+        let dir = Path::new("/c/ComfyUI");
+        let got = launch_python(None, &usable("/c/ComfyUI/venv/bin/python"), dir, || panic!("bound without need"));
+        assert_eq!(got.as_deref(), Ok("/c/ComfyUI/venv/bin/python"));
+        // Portable still wins over a leftover venv.
+        let got = launch_python(Some("/c/python_embeded/python.exe"), &usable("/v"), dir, || panic!("bound without need"));
+        assert_eq!(got.as_deref(), Ok("/c/python_embeded/python.exe"));
+    }
+
+    #[test]
+    fn a_broken_venv_still_stops_the_start() {
+        let venv = crate::python::ComfyVenv::Broken {
+            venv_dir: PathBuf::from("/c/ComfyUI/venv"),
+            interpreter: PathBuf::from("/c/ComfyUI/venv/bin/python"),
+        };
+        let err = launch_python(None, &venv, Path::new("/c/ComfyUI"), || panic!("bound past a broken venv")).unwrap_err();
+        assert!(err.contains("/c/ComfyUI/venv/bin/python"), "{err}");
+    }
+
+    #[test]
+    fn without_a_venv_the_python_that_holds_torch_starts_comfyui() {
+        let got = launch_python(None, &crate::python::ComfyVenv::Absent, Path::new("/c"), || Some("/py312".to_string()));
+        assert_eq!(got.as_deref(), Ok("/py312"));
+        let err = launch_python(None, &crate::python::ComfyVenv::Absent, Path::new("/c/ComfyUI"), || None).unwrap_err();
+        assert!(err.contains("Repair environment"), "{err}");
+        assert!(err.contains("LU's own Python 3.12"), "{err}");
+        assert!(!err.to_lowercase().contains("reinstall"), "{err}");
+    }
+
+    /// The Discord case itself: no venv, torch in 3.12, LU's default is now
+    /// 3.15. The 3.12 is found, and only after the default had no torch.
+    #[test]
+    fn default_3_15_without_torch_binds_the_3_12_that_has_it() {
+        let asked_for_others = std::cell::Cell::new(false);
+        let got = pick_torch_python(
+            None,
+            "C:\\Python315\\python.exe",
+            || {
+                asked_for_others.set(true);
+                vec!["C:\\Python315\\python.exe".to_string(), "C:\\Python312\\python.exe".to_string()]
+            },
+            |p| p.contains("Python312"),
+            |_| panic!("the import probe runs only when no prefix has torch"),
+        );
+        assert_eq!(got.as_deref(), Some("C:\\Python312\\python.exe"));
+        assert!(asked_for_others.get());
+    }
+
+    #[test]
+    fn the_remembered_python_wins_and_the_machine_is_not_scanned() {
+        let got = pick_torch_python(
+            Some("/py312"),
+            "/py315",
+            || panic!("scanned although the remembered one has torch"),
+            |p| p == "/py312" || p == "/py315",
+            |_| false,
+        );
+        assert_eq!(got.as_deref(), Some("/py312"), "a default that also has torch does not move the binding");
+        // A remembered Python that lost its torch is passed over.
+        let got = pick_torch_python(Some("/gone"), "/py315", Vec::new, |p| p == "/py315", |_| false);
+        assert_eq!(got.as_deref(), Some("/py315"));
+    }
+
+    #[test]
+    fn torch_in_a_user_site_is_found_by_the_second_round() {
+        let got = pick_torch_python(None, "/py315", || vec!["/py311".to_string()], |_| false, |p| p == "/py311");
+        assert_eq!(got.as_deref(), Some("/py311"));
+        let none = pick_torch_python(None, "/py315", || vec!["/py311".to_string()], |_| false, |_| false);
+        assert_eq!(none, None);
+        // Empty entries and duplicates are never asked.
+        let asked = std::cell::RefCell::new(Vec::new());
+        let _ = pick_torch_python(Some(""), "/a", || vec!["/a".to_string(), " ".to_string()], |_| false, |p| {
+            asked.borrow_mut().push(p.to_string());
+            false
+        });
+        assert_eq!(*asked.borrow(), vec!["/a".to_string()]);
+    }
+
+    #[test]
+    fn the_binding_is_remembered_per_folder_next_to_the_other_settings() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = tmp.path().join("cfg").join("config.json");
+        std::fs::create_dir_all(config.parent().unwrap()).unwrap();
+        std::fs::write(&config, r#"{"comfyui_path": "/c/ComfyUI", "comfyui_port": 8188}"#).unwrap();
+        let comfy = Path::new("/c/ComfyUI");
+        assert_eq!(remembered_bound_python_in(&config, comfy), None);
+        remember_bound_python_in(&config, comfy, "/py312");
+        assert_eq!(remembered_bound_python_in(&config, comfy).as_deref(), Some("/py312"));
+        // Another ComfyUI does not inherit it.
+        assert_eq!(remembered_bound_python_in(&config, Path::new("/d/ComfyUI")), None);
+        // The other keys survive the write.
+        let json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        assert_eq!(json["comfyui_port"], 8188);
+        assert_eq!(json["comfyui_path"], "/c/ComfyUI");
     }
 
     // ── box-gruen/n9 Punkt 87, final review (B2/K3): one pure decision for

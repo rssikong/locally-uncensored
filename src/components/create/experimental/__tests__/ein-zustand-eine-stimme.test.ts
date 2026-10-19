@@ -95,6 +95,13 @@ describe('D-S31: die Regel gibt es genau einmal', () => {
     expect(b![1]).toContain('comfyStarting ? null')
   })
 
+  it('schweigt im Cloud-Modus: dort rendert nichts lokal (12.10.2026)', () => {
+    // Die lokale Modellliste wird in jedem Modus geholt. Ohne laufendes
+    // ComfyUI stand "ComfyUI is not running." rot ueber dem Cloud-Reiter.
+    const b = CREATE.match(/const banner = ([^\n]+)/)
+    expect(b![1]).toMatch(/^error \?\? \(backend === 'cloud' \? null : /)
+  })
+
   it('echte Laufzeitfehler bleiben unberuehrt', () => {
     // `error` ist die einzige Quelle mit Schliesskreuz und beschreibt einen
     // konkreten Lauf, den die Karte nicht erklaert. Sie darf NICHT

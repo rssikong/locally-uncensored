@@ -448,10 +448,47 @@ function ledgerArg(args: unknown): string {
  * drop point moves: between trims every request keeps the same prefix and the
  * upstream cache keeps hitting.
  */
-export function runLedger(dropped: DecayMessage[]): string | null {
+const LEDGER_HEAD = '[Run ledger] Earlier steps of this run were removed from the context to save cost. They were already done, do not repeat them unless something changed:'
+const LEDGER_TAIL = 'Continue from where the run stands now.'
+
+/**
+ * Splits a ledger the task already carries off its text. A second trim in
+ * the same run drops the pinned task with the old ledger on it; its lines
+ * have to go into the new ledger, or the steps of the first trim are gone
+ * (box run d307-l: a run trimmed twice lost files 0 to 14 from its ledger).
+ */
+export function splitLedger(content: string): { task: string; lines: string[]; skipped: number } {
+  const at = content.indexOf(LEDGER_HEAD)
+  if (at === -1) return { task: content, lines: [], skipped: 0 }
+  const task = content.slice(0, at).replace(/\n+$/, '')
   const lines: string[] = []
-  const seen = new Set<string>()
+  let skipped = 0
+  for (const raw of content.slice(at + LEDGER_HEAD.length).split('\n')) {
+    if (!raw.startsWith('- ')) continue
+    const older = /^- \((\d+) older steps\)$/.exec(raw)
+    if (older) { skipped += Number(older[1]); continue }
+    lines.push(raw.slice(2))
+  }
+  return { task, lines, skipped }
+}
+
+export function runLedger(dropped: DecayMessage[], earlier: { lines: string[]; skipped: number } = { lines: [], skipped: 0 }): string | null {
+  const lines: string[] = [...earlier.lines]
+  const seen = new Set<string>(lines)
+  let skippedBefore = earlier.skipped
   for (const m of dropped) {
+    // A dropped message can carry a ledger of its own: the persisted chain
+    // puts the ledger of its cut on its first kept message
+    // (codex/hidden-history.ts). Its lines come first, in their order.
+    if (typeof m.content === 'string' && m.content.includes(LEDGER_HEAD)) {
+      const inner = splitLedger(m.content)
+      skippedBefore += inner.skipped
+      for (const line of inner.lines) {
+        if (seen.has(line)) continue
+        seen.add(line)
+        lines.push(line)
+      }
+    }
     if (m.role !== 'assistant') continue
     for (const tc of toolCallsIn(m)) {
       const name = callName(tc)
@@ -465,12 +502,12 @@ export function runLedger(dropped: DecayMessage[]): string | null {
   }
   if (lines.length === 0) return null
   const kept = lines.length > LEDGER_MAX_LINES ? lines.slice(-LEDGER_MAX_LINES) : lines
-  const skipped = lines.length - kept.length
+  const skipped = lines.length - kept.length + skippedBefore
   return [
-    '[Run ledger] Earlier steps of this run were removed from the context to save cost. They were already done, do not repeat them unless something changed:',
+    LEDGER_HEAD,
     ...(skipped > 0 ? [`- (${skipped} older steps)`] : []),
     ...kept.map((l) => `- ${l}`),
-    'Continue from where the run stands now.',
+    LEDGER_TAIL,
   ].join('\n')
 }
 
@@ -505,10 +542,13 @@ export function trimWorkingHistory<T extends DecayMessage>(
     if (firstUser && !tail.includes(firstUser)) {
       // The ledger rides on the pinned task instead of being a message of its
       // own: two user messages in a row break strict chat templates.
-      const ledger = runLedger(rest.slice(0, drop))
-      out.push(ledger && typeof firstUser.content === 'string'
-        ? { ...firstUser, content: `${firstUser.content}\n\n${ledger}` }
-        : firstUser)
+      if (typeof firstUser.content === 'string') {
+        const { task, ...earlier } = splitLedger(firstUser.content)
+        const ledger = runLedger(rest.slice(0, drop), earlier)
+        out.push(ledger ? { ...firstUser, content: `${task}\n\n${ledger}` } : firstUser)
+      } else {
+        out.push(firstUser)
+      }
     }
     out.push(...tail)
     return out

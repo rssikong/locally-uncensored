@@ -173,8 +173,8 @@ export function ResultView({ item, onFullscreen, onSendToEditor, onAnimate, onSa
   const download = () => void downloadGalleryItem(item)
   const isVideo = item.type === 'video'
   const isAudio = item.type === 'audio'
-  // `maxHeight` is the height the stage of a source tool has left for the result
-  // (FitStage); without one it keeps the share of the window it always had.
+  // `maxHeight` is the height the stage has left for the result (FitStage).
+  // Until the stage is measured it keeps the share of the window it always had.
   const media = (maxHeight?: string) => (
       <div className="relative group max-w-full max-h-full">
         {isAudio ? (
@@ -224,7 +224,7 @@ export function ResultView({ item, onFullscreen, onSendToEditor, onAnimate, onSa
             <IconBtn title="Animate this image" onClick={onAnimate}><Film size={14} /></IconBtn>
           )}
           {onSaveCharacter && isVideo && !item.unavailable && (
-            <IconBtn title="Save character from this video" onClick={onSaveCharacter}><UserRoundPlus size={14} /></IconBtn>
+            <IconBtn title="Use frames of this video for a character" onClick={onSaveCharacter}><UserRoundPlus size={14} /></IconBtn>
           )}
           <IconBtn
             title={item.unavailable ? 'Download needs the local engine' : 'Download'}
@@ -266,7 +266,7 @@ export function ResultView({ item, onFullscreen, onSendToEditor, onAnimate, onSa
             <button
               type="button"
               onClick={onFullscreen}
-              title="Show the prompt of this result"
+              title="Show the prompt and settings of this result"
               className="shrink-0 underline underline-offset-2 hover:text-gray-300"
               data-testid="result-prompt-open"
             >
@@ -284,15 +284,10 @@ export function ResultView({ item, onFullscreen, onSendToEditor, onAnimate, onSa
       {!side && <PromptDetails item={item} className="mt-2" />}
     </>
   )
-  if (side) return <FitStage picture={media} under={facts} side={side} capVh={62} />
-  return (
-    <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin flex flex-col">
-     <div className="m-auto flex flex-col items-center p-6">
-      {media()}
-      {facts}
-     </div>
-    </div>
-  )
+  // With no source beside it the result is fitted all the same: the stage is
+  // lower than 62 % of the window (451 px in a 1440 × 900 window), so a wide
+  // result and the prompt fold under it ran below its edge.
+  return <FitStage picture={media} under={facts} side={side} capVh={62} />
 }
 
 function IconBtn({ children, title, onClick, disabled }: { children: React.ReactNode; title: string; onClick: () => void; disabled?: boolean }) {

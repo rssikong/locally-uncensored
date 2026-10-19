@@ -1,6 +1,7 @@
 import { itemHasAlpha } from '../../../lib/transparent-image'
+import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Images, Play, PanelRightClose, Trash2, Download, MonitorOff, AudioLines } from 'lucide-react'
+import { Images, Play, PanelRightClose, Trash2, Download, MonitorOff, AudioLines, FolderInput } from 'lucide-react'
 import { useCreateStore, type GalleryItem } from '../../../stores/createStore'
 import { galleryLabel } from '../../../lib/render/gallery-label'
 import { GALLERY_DRAG_TYPE } from './galleryUrl'
@@ -9,6 +10,8 @@ import { isMlxImageHost } from '../../../api/mlx-image'
 import { downloadGalleryItem } from './galleryDownload'
 import { useComfyMedia } from './useComfyMedia'
 import { cn } from '../ui/cn'
+import { itemsInFolder } from '../../../lib/gallery-folders'
+import { FolderFilter, MoveToFolderModal, OnBody } from './GalleryFolders'
 
 interface Props {
   open: boolean
@@ -24,8 +27,12 @@ interface Props {
  * local-availability affordances (recover/mark, the "unavailable" overlay).
  */
 export function CreatePanel({ open, onOpenChange, activeId, onSelect }: Props) {
-  const gallery = useCreateStore((s) => s.gallery)
+  const all = useCreateStore((s) => s.gallery)
+  const folderOpen = useCreateStore((s) => s.galleryFolderOpen)
   const removeFromGallery = useCreateStore((s) => s.removeFromGallery)
+  // D3: the panel shows the open folder, "All" when none is open.
+  const gallery = folderOpen === null ? all : itemsInFolder(all, folderOpen)
+  const [moving, setMoving] = useState<string[]>([])
   const count = gallery.length
 
   const bubble =
@@ -67,9 +74,9 @@ export function CreatePanel({ open, onOpenChange, activeId, onSelect }: Props) {
           >
             <span className="relative">
               <Images size={16} />
-              {count > 0 && (
+              {all.length > 0 && (
                 <span className="absolute -top-1.5 -right-2 min-w-[14px] h-[14px] px-0.5 flex items-center justify-center rounded-full text-[0.5rem] font-bold bg-gray-300 dark:bg-white/20 text-gray-700 dark:text-gray-200">
-                  {count}
+                  {all.length}
                 </span>
               )}
             </span>
@@ -101,9 +108,12 @@ export function CreatePanel({ open, onOpenChange, activeId, onSelect }: Props) {
             {count > 0 && <span className="t-mono text-gray-600">{count}</span>}
           </div>
 
+          <FolderFilter />
+          <OnBody><MoveToFolderModal ids={moving} onClose={() => setMoving([])} /></OnBody>
+
           <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin p-3">
             {count === 0 ? (
-              <p className="t-body text-gray-500 py-2">Nothing generated yet.</p>
+              <p className="t-body text-gray-500 py-2">{all.length > 0 ? 'Nothing in this folder yet.' : 'Nothing generated yet.'}</p>
             ) : (
               <div className="grid grid-cols-2 gap-2">
                 {gallery.map((g) => (
@@ -138,6 +148,13 @@ export function CreatePanel({ open, onOpenChange, activeId, onSelect }: Props) {
                       title={deleteTitle(isMlxImageHost())}
                     >
                       <Trash2 size={12} />
+                    </button>
+                    <button
+                      onClick={() => setMoving([g.id])}
+                      className="absolute bottom-1 left-1 w-6 h-6 rounded-md bg-black/55 hover:bg-black/70 text-gray-100 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center shadow-sm"
+                      title="Move to folder" aria-label="Move to folder"
+                    >
+                      <FolderInput size={12} />
                     </button>
                     <button
                       onClick={() => { void downloadGalleryItem(g) }}

@@ -20,11 +20,18 @@ import { routeCloud, seedOnboardingDone, signInViaGate, cloudSwitch } from './su
 const PICTURE = '<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="3000"><rect width="2000" height="3000" fill="#a33"/></svg>'
 const BASE: TauriMockOptions = { assistantReply: DEFAULT_ASSISTANT_REPLY, modelName: DEFAULT_MODEL_NAME }
 
-const bigView = (page: Page) => page.getByTestId('result-facts').locator('..')
+// The stage of a result: since the result is fitted to the stage (FitStage),
+// the picture and the facts under it are siblings in their column, so the
+// big view is the stage that holds the facts, not the parent of the facts.
+const bigView = (page: Page) => page.getByTestId('fit-stage').filter({ has: page.getByTestId('result-facts') })
 const lightbox = (page: Page) => page.locator('.fixed.inset-0').filter({ has: page.locator('img, video') }).last()
+// D9 (3.0.7): a result that carries settings folds them in with its prompt.
+const FOLD = 'Prompt and settings'
+// "Copy prompt and settings" stands in the same panel; the name must match whole.
+const COPY_PROMPT = { name: 'Copy prompt', exact: true } as const
 
 async function openFullscreen(page: Page) {
-  await page.getByTestId('result-facts').locator('..').locator('.group').first().hover()
+  await bigView(page).locator('.group').first().hover()
   await page.getByTitle('Fullscreen').click()
 }
 
@@ -64,13 +71,16 @@ test('local engine: a result shows its prompt in the big view and in the lightbo
   // Under the picture on the stage: folded, one click unfolds it.
   await tiles.nth(0).click()
   const under = bigView(page).getByTestId('prompt-details')
-  await expect(under.getByText('Prompt', { exact: true })).toBeVisible()
+  await expect(under.getByText(FOLD, { exact: true })).toBeVisible()
   await expect(under.getByTestId('prompt-text')).toBeHidden()
-  await under.getByText('Prompt', { exact: true }).click()
+  await under.getByText(FOLD, { exact: true }).click()
   await expect(under.getByTestId('prompt-text')).toBeVisible()
   await expect(under.getByTestId('prompt-text')).toHaveText(LONG.trim())
-  await under.getByRole('button', { name: 'Copy prompt' }).click()
-  await expect(under.getByRole('button', { name: 'Copy prompt' })).toHaveText('Copied')
+  // Unfolded, the prompt is on screen: the stage gives it the room or scrolls to it.
+  await under.getByTestId('prompt-text').scrollIntoViewIfNeeded()
+  await expect(under.getByTestId('prompt-text')).toBeInViewport()
+  await under.getByRole('button', COPY_PROMPT).click()
+  await expect(under.getByRole('button', COPY_PROMPT)).toHaveText('Copied')
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(LONG.trim())
 
   // The lightbox: the same box, unfolded, under the picture and never on it,
@@ -88,7 +98,7 @@ test('local engine: a result shows its prompt in the big view and in the lightbo
   expect(details.y).toBeGreaterThanOrEqual(picture.y + picture.height)
   expect(details.y + details.height).toBeLessThanOrEqual(view.height)
   await page.evaluate(() => navigator.clipboard.writeText(''))
-  await box.getByRole('button', { name: 'Copy prompt' }).click()
+  await box.getByRole('button', COPY_PROMPT).click()
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(LONG.trim())
   // Copying and selecting do not close the view; Escape does.
   await box.getByTestId('prompt-text').click()
@@ -127,7 +137,7 @@ test('mac: a picture made by the local engine carries its prompt into the big vi
   await openFullscreen(page)
   await expect(lightbox(page).getByTestId('prompt-text')).toBeVisible()
   await expect(lightbox(page).getByTestId('prompt-text')).toHaveText('a red apple on a wooden table')
-  await expect(lightbox(page).getByRole('button', { name: 'Copy prompt' })).toBeVisible()
+  await expect(lightbox(page).getByRole('button', COPY_PROMPT)).toBeVisible()
 })
 
 test('cloud: a picture made in the cloud carries its prompt into the big view and the lightbox', async ({ page }) => {
@@ -148,5 +158,5 @@ test('cloud: a picture made in the cloud carries its prompt into the big view an
   await openFullscreen(page)
   await expect(lightbox(page).getByTestId('prompt-text')).toBeVisible()
   await expect(lightbox(page).getByTestId('prompt-text')).toHaveText('a lighthouse at dusk, cinematic')
-  await expect(lightbox(page).getByRole('button', { name: 'Copy prompt' })).toBeVisible()
+  await expect(lightbox(page).getByRole('button', COPY_PROMPT)).toBeVisible()
 })

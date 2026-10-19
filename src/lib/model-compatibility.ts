@@ -90,7 +90,7 @@ function normalizeFamily(modelName: string): string {
   // `:tag` strip below would otherwise cut at the FIRST colon and reduce
   // `lu-cloud::qwen3-32b` to `lu-cloud` — every family check then silently
   // says no.
-  let s = modelName.toLowerCase().replace(/^[a-z0-9_-]+::/, '').replace(/^.*\//, '')
+  let s = modelName.toLowerCase().replace(/^[a-z0-9_-]+(?::[a-z0-9-]+)?::/, '').replace(/^.*\//, '')
   // Suffix markers — drop wherever they appear
   s = s
     .replace(/-abliterated/g, '')

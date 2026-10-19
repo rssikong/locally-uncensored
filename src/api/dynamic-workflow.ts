@@ -1,8 +1,10 @@
 import { transparentPrompt } from '../lib/transparent-image'
 import {
-  classifyModel, findMatchingVAE, findMatchingCLIP, findFluxCLIPPair, findMiniMaxAudioVAE, findLtx25AudioVAE, isFastH3,
-  findMatchingAudioEncoder, findMatchingClipVision, findFramePackCLIPPair,
+  classifyModel, ref2vFamily, ref2vRefusal, findMatchingVAE, findMatchingCLIP, findFluxCLIPPair, findMiniMaxAudioVAE, findLtx25AudioVAE, isFastH3,
+  findMatchingAudioEncoder, findMatchingClipVision, findFramePackCLIPPair, getSystemVRAM,
 } from './comfyui'
+import { isMacOS } from './backend'
+import { comfyEditFullImages, qwenEditPlusOverCard } from '../lib/comfy-edit-memory'
 import type { ModelType, GenerateParams, VideoParams } from './comfyui'
 import { log } from '../lib/logger'
 import { resolveRunSeed } from '../lib/run-seed'
@@ -58,7 +60,8 @@ function specDefault(spec: ComfyInputValue | undefined): ComfyInputValue | undef
 // dort). Re-Export, damit bestehende Importpfade unverändert bleiben.
 export { promptFilenamePrefix, videoDecodeNode } from './comfyui-graph'
 import { promptFilenamePrefix, videoDecodeNode } from './comfyui-graph'
-import { extraReferenceSlots, isQwenImageEditModel } from '../lib/edit-references'
+import { extraReferenceSlots, isQwenImageEditModel, referenceSide } from '../lib/edit-references'
+import { nativeUpscaleScale, upscaleTarget, type UpscaleFactor } from '../lib/local-upscale'
 
 // ─── Strategy Detection ───
 
@@ -609,6 +612,27 @@ export async function buildDynamicWorkflow(
     return buildRemoveBgWorkflow(gp, rmbgMeta)
   }
 
+  // ─── Reference to video (Animate with a Ref2V model, D24) ───
+  // Before the strategy table: VACE has no entry there (it is a Motion lane
+  // family), and Phantom/MAGREF classify as plain Wan, whose i2v override
+  // would feed the picture to WanImageToVideo as a first frame. Without a
+  // picture Phantom and MAGREF stay the text to video runs they always were;
+  // VACE has no such run in LU.
+  const refFamily = isVideo ? ref2vFamily(params.model) : null
+  if (refFamily && (videoParams.inputImage || refFamily === 'vace')) {
+    const refusal = ref2vRefusal(params.model)
+    if (refusal) throw new WorkflowUnavailableError(refusal, 'unavailable')
+    if (!videoParams.inputImage) {
+      throw new WorkflowUnavailableError('This reference model needs a picture to work from. Use it on the Animate tab and add the image there.', 'unavailable')
+    }
+    try {
+      return await buildVaceReferenceWorkflow(videoParams, resolveRunSeed(params.seed), nodes, allNodes)
+    } catch (err) {
+      if (!(err instanceof Error) || err instanceof WorkflowUnavailableError) throw err
+      throw new WorkflowUnavailableError(err.message, 'unet_video', undefined, { missing: registrySpecsNamedIn('wan', err.message) })
+    }
+  }
+
   const determined = determineStrategy(type, isVideo, nodes, models)
   const { reason, installHint } = determined
   let strategy = determined.strategy
@@ -1067,6 +1091,18 @@ export async function buildDynamicWorkflow(
   const references = (isQwenEdit || isQwen1Edit)
     ? (gp.referenceImages ?? []).slice(0, extraReferenceSlots(type, params.model))
     : []
+  // The graphics card, read only for an edit with further images: past what
+  // it carries, ComfyUI 0.37 ends the run in "aimdo memory compile error"
+  // (lib/comfy-edit-memory). Not on a Mac, where ComfyUI has no such compiler
+  // and the figure is the shared memory.
+  const cardGb = references.length > 0 && !isMacOS()
+    ? await getSystemVRAM().catch(() => null)
+    : null
+  const fullImages = comfyEditFullImages(cardGb)
+  if (isQwen1Edit) {
+    const over = qwenEditPlusOverCard(1 + references.length, cardGb)
+    if (over) throw new WorkflowUnavailableError(over, strategy)
+  }
   if (isQwen1Edit && !allNodes['TextEncodeQwenImageEditPlus']) {
     throw new WorkflowUnavailableError(
       'Qwen-Image-Edit needs a newer ComfyUI (TextEncodeQwenImageEditPlus). Update ComfyUI, then try again.',
@@ -1106,7 +1142,14 @@ export async function buildDynamicWorkflow(
       // from the reference, so the wrapper stays out of it.
       prompt: gp.transparent && !isQwenEdit ? transparentPrompt(params.prompt) : params.prompt,
       negative_prompt: params.negativePrompt || '',
-      resolution: qwenEditResolution(params.width, params.height),
+      // With more images in an edit than the card carries at full size
+      // (four, fewer on a card under 24 GB) they share a pixel budget
+      // (referenceSide in lib/edit-references, lib/comfy-edit-memory).
+      // The node takes ONE side for all of them and the result follows the
+      // first, so such an edit comes out smaller than the canvas.
+      resolution: isQwenEdit
+        ? referenceSide(qwenEditResolution(params.width, params.height), 1 + references.length, fullImages)
+        : qwenEditResolution(params.width, params.height),
     }
     if (isQwenEdit) {
       // The source is image_1 and sets the output shape; the references the
@@ -1608,6 +1651,82 @@ function buildRemoveBgWorkflow(params: GenerateParams, rmbgMeta: NodeMetadata): 
     inputs: { images: ['2', 0], filename_prefix: promptFilenamePrefix(params.prompt, false) },
   }
   return workflow
+}
+
+// ─── Enhance Image on local ComfyUI (3.0.7) ───
+//
+// Core nodes only: LoadImage → UpscaleModelLoader + ImageUpscaleWithModel →
+// (a resize when the model's own scale is not the factor asked for) →
+// SaveImage. ImageUpscaleWithModel tiles on its own and halves the tile when
+// the card runs out of memory, so no tile settings are needed here.
+
+export interface UpscaleParams {
+  /** The source, as ComfyUI's /upload/image named it. */
+  image: string
+  /** A file ComfyUI lists for UpscaleModelLoader (models/upscale_models). */
+  model: string
+  factor: UpscaleFactor
+  /** The source's size, for the exact resize when the model's scale is unknown. */
+  sourceWidth: number
+  sourceHeight: number
+}
+
+const UPSCALE_NODES = ['LoadImage', 'UpscaleModelLoader', 'ImageUpscaleWithModel', 'SaveImage']
+
+/** The resize method: area to go down (a 4x model asked for 2x), lanczos to go
+ *  up. Taken from the node's live list when it can be read, so a ComfyUI that
+ *  renamed one never sees a value it would reject. */
+function resizeMethod(allNodes: NodePresence, node: 'ImageScaleBy' | 'ImageScale', down: boolean): string {
+  const wanted = down ? 'area' : 'lanczos'
+  const listed = nodeComboOptions(allNodes, node, 'upscale_method')
+  if (listed.length === 0 || listed.includes(wanted)) return wanted
+  return listed.includes('bicubic') ? 'bicubic' : listed[0]
+}
+
+export function buildUpscaleWorkflow(params: UpscaleParams, allNodes: NodePresence): ComfyApiGraph {
+  requireNodes(allNodes, UPSCALE_NODES, 'Enhance Image')
+  const listed = nodeComboOptions(allNodes, 'UpscaleModelLoader', 'model_name')
+  if (listed.length > 0 && !listed.includes(params.model)) {
+    throw new WorkflowUnavailableError(
+      `${params.model} is no longer in ComfyUI's upscale model list. It may have been moved or deleted. Restart ComfyUI after adding files, then try again.`,
+      'unavailable',
+    )
+  }
+  const workflow: ComfyApiGraph = {}
+  workflow['1'] = { class_type: 'LoadImage', inputs: { image: params.image } }
+  workflow['2'] = { class_type: 'UpscaleModelLoader', inputs: { model_name: params.model } }
+  workflow['3'] = { class_type: 'ImageUpscaleWithModel', inputs: { upscale_model: ['2', 0], image: ['1', 0] } }
+  let out: [string, number] = ['3', 0]
+  const native = nativeUpscaleScale(params.model)
+  if (native !== null && native !== params.factor) {
+    // A 4x model asked for 2x: the model's result, scaled by 0.5.
+    requireNodes(allNodes, ['ImageScaleBy'], 'Enhance Image')
+    const scale = params.factor / native
+    workflow['4'] = {
+      class_type: 'ImageScaleBy',
+      inputs: { image: out, upscale_method: resizeMethod(allNodes, 'ImageScaleBy', scale < 1), scale_by: scale },
+    }
+    out = ['4', 0]
+  } else if (native === null) {
+    // The name does not say the model's scale: resize to the exact target.
+    requireNodes(allNodes, ['ImageScale'], 'Enhance Image')
+    const t = upscaleTarget(params.sourceWidth, params.sourceHeight, params.factor)
+    workflow['4'] = {
+      class_type: 'ImageScale',
+      inputs: { image: out, upscale_method: resizeMethod(allNodes, 'ImageScale', false), width: t.width, height: t.height, crop: 'disabled' },
+    }
+    out = ['4', 0]
+  }
+  workflow['5'] = {
+    class_type: 'SaveImage',
+    inputs: { images: out, filename_prefix: `${promptFilenamePrefix('', false)}_enhanced` },
+  }
+  return workflow
+}
+
+/** The graph against the running ComfyUI's node list. */
+export async function buildLocalUpscaleWorkflow(params: UpscaleParams): Promise<ComfyApiGraph> {
+  return buildUpscaleWorkflow(params, await getAllNodeInfo())
 }
 
 // Resolve a default value for one RMBG widget input from its object_info spec.
@@ -2579,6 +2698,76 @@ export async function buildMotionWorkflow(params: LocalOpParams, seed: number, a
   workflow[decodeId] = videoDecodeNode([trimId, 0], [vaeId, 0], 'VAEDecodeTiled' in allNodes)
 
   addVideoWithAudioOutput(workflow, n, decodeId, params.fps || 16, [componentsId, 1], allNodes, params.prompt)
+  return workflow
+}
+
+/**
+ * Animate with Wan 2.1 VACE as a reference model (D24): the picture goes into
+ * WanVaceToVideo as reference_image, with no control video, so the clip is
+ * made from the prompt around the subject instead of starting on the picture.
+ * The same conditioner, sampling and trim as the VACE path of
+ * buildMotionWorkflow above, only without the pose video and its audio.
+ */
+export async function buildVaceReferenceWorkflow(params: VideoParams, seed: number, nodes: CategorizedNodes, allNodes: NodePresence): Promise<ComfyApiGraph> {
+  if (!params.inputImage) throw new Error('Add the reference picture first.')
+  requireNodes(allNodes, ['WanVaceToVideo', 'TrimVideoLatent', 'LoadImage', 'ImageScale'], 'Animate with VACE')
+  const workflow: ComfyApiGraph = {}
+  let n = 1
+
+  const snap16 = (v: number, def: number) => Math.max(16, Math.round(((v && v > 0) ? v : def) / 16) * 16)
+  const width = snap16(params.width, 832)
+  const height = snap16(params.height, 480)
+  const length = snapWanLength(params.frames || 81)
+
+  const [wanClip, wanVae] = await Promise.all([
+    findMatchingCLIP('wan', params.model),
+    findMatchingVAE('wan'),
+  ])
+
+  const unetId = String(n++)
+  addUnetLoader(workflow, unetId, params.model, allNodes)
+  const clipId = String(n++)
+  workflow[clipId] = { class_type: 'CLIPLoader', inputs: { clip_name: wanClip, type: 'wan', device: 'default' } }
+  const vaeId = String(n++)
+  workflow[vaeId] = { class_type: 'VAELoader', inputs: { vae_name: wanVae } }
+  const posId = String(n++)
+  workflow[posId] = { class_type: 'CLIPTextEncode', inputs: { text: params.prompt || 'the subject moving naturally, high quality', clip: [clipId, 0] } }
+  const negId = String(n++)
+  workflow[negId] = { class_type: 'CLIPTextEncode', inputs: { text: params.negativePrompt || '', clip: [clipId, 0] } }
+
+  const imageId = String(n++)
+  workflow[imageId] = { class_type: 'LoadImage', inputs: { image: params.inputImage } }
+  const scaleId = String(n++)
+  workflow[scaleId] = { class_type: 'ImageScale', inputs: { image: [imageId, 0], upscale_method: 'lanczos', width, height, crop: 'center' } }
+
+  const condId = String(n++)
+  workflow[condId] = {
+    class_type: 'WanVaceToVideo',
+    inputs: {
+      positive: [posId, 0], negative: [negId, 0], vae: [vaeId, 0],
+      width, height, length, batch_size: 1, strength: 1.0,
+      reference_image: [scaleId, 0],
+    },
+  }
+
+  const shiftId = String(n++)
+  workflow[shiftId] = { class_type: 'ModelSamplingSD3', inputs: { model: [unetId, 0], shift: 8.0 } }
+  const samplerId = String(n++)
+  workflow[samplerId] = {
+    class_type: 'KSampler',
+    inputs: {
+      model: [shiftId, 0], positive: [condId, 0], negative: [condId, 1], latent_image: [condId, 2],
+      seed, steps: params.steps, cfg: params.cfgScale, sampler_name: params.sampler, scheduler: params.scheduler, denoise: 1.0,
+    },
+  }
+  // The reference rides in front of the clip as extra latent frames; the trim
+  // takes them out again so the video does not open on a still of it.
+  const trimId = String(n++)
+  workflow[trimId] = { class_type: 'TrimVideoLatent', inputs: { samples: [samplerId, 0], trim_amount: [condId, 3] } }
+  const decodeId = String(n++)
+  workflow[decodeId] = videoDecodeNode([trimId, 0], [vaeId, 0], 'VAEDecodeTiled' in allNodes)
+
+  addVideoOutput(workflow, n, decodeId, params.fps || 16, nodes, params.prompt)
   return workflow
 }
 

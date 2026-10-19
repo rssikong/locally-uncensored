@@ -133,6 +133,53 @@ describe('Extended Thinking sends a body the API can accept', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
+  // Think budget (D12): the user's count replaces the automatic one.
+  it('sends the chosen think budget and keeps room for the answer', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(sse([STOP]))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await drain(new AnthropicProvider(config())
+      .chatStream('claude-sonnet-4-20250514', [{ role: 'user', content: 'hi' }], { thinking: true, thinkingBudget: 12000 }))
+
+    const body = sentBody(fetchMock)
+    expect(thinkingOf(body).budget_tokens).toBe(12000)
+    expect(body.max_tokens).toBeGreaterThan(12000)
+  })
+
+  it('raises a think budget under the API floor to 1024', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(sse([STOP]))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await drain(new AnthropicProvider(config())
+      .chatStream('claude-sonnet-4-20250514', [{ role: 'user', content: 'hi' }], { thinking: true, thinkingBudget: 300 }))
+
+    expect(thinkingOf(sentBody(fetchMock)).budget_tokens).toBe(1024)
+  })
+
+  it('auto (0) keeps the automatic budget it always sent', async () => {
+    const auto = vi.fn().mockResolvedValue(sse([STOP]))
+    vi.stubGlobal('fetch', auto)
+    await drain(new AnthropicProvider(config())
+      .chatStream('claude-sonnet-4-20250514', [{ role: 'user', content: 'hi' }], { thinking: true }))
+    const zero = vi.fn().mockResolvedValue(sse([STOP]))
+    vi.stubGlobal('fetch', zero)
+    await drain(new AnthropicProvider(config())
+      .chatStream('claude-sonnet-4-20250514', [{ role: 'user', content: 'hi' }], { thinking: true, thinkingBudget: 0 }))
+
+    expect(sentBody(zero).thinking).toEqual(sentBody(auto).thinking)
+    expect(sentBody(zero).max_tokens).toBe(sentBody(auto).max_tokens)
+  })
+
+  it('a think budget with thinking off sends no thinking block', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(sse([STOP]))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await drain(new AnthropicProvider(config())
+      .chatStream('claude-sonnet-4-20250514', [{ role: 'user', content: 'hi' }], { thinking: false, thinkingBudget: 8000 }))
+
+    expect(sentBody(fetchMock)).not.toHaveProperty('thinking')
+  })
+
   it('still leaves the sampling knobs alone when thinking is off', async () => {
     const fetchMock = vi.fn().mockResolvedValue(sse([STOP]))
     vi.stubGlobal('fetch', fetchMock)

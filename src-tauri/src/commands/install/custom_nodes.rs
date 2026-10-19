@@ -39,6 +39,7 @@ use crate::os_error;
 use crate::state::AppState;
 
 use super::pip::diagnose_pip_error;
+use super::custom_node_packs::{node_log, node_repo_from_url};
 #[cfg(target_os = "windows")]
 use super::git::{windows_git_install_hint, windows_git_probe, WindowsGitState};
 #[cfg(target_os = "windows")]
@@ -54,6 +55,7 @@ pub async fn install_custom_node(
     repoUrl: String,
     nodeName: String,
     commit: Option<String>,
+    freshOnly: Option<bool>,
 ) -> Result<serde_json::Value, String> {
     // Snapshot the state the blocking worker needs before spawning it: a Tauri
     // `State` (and the MutexGuard behind it) is not Send, so clone the values
@@ -87,7 +89,11 @@ pub async fn install_custom_node(
                 }
             },
         };
-        install_custom_node_blocking(repoUrl, nodeName, commit, comfy_path, &fallback_python, &pause)
+        let result = install_custom_node_blocking(repoUrl, nodeName, commit, freshOnly.unwrap_or(false), comfy_path, &fallback_python, &pause);
+        if let Err(e) = &result {
+            node_log(e);
+        }
+        result
     })
     .await
     .map_err(|e| format!("Custom node install task failed to run: {e}"))?
@@ -101,11 +107,11 @@ fn install_custom_node_blocking(
     repoUrl: String,
     nodeName: String,
     commit: Option<String>,
+    fresh_only: bool,
     comfy_path: Option<String>,
     fallback_python: &str,
     pause: &ComfyPause<'_>,
 ) -> Result<serde_json::Value, String> {
-    let repo_url = repoUrl;
     let node_name = nodeName;
 
     // Security review 2.5.7: this clones `repo_url` and joins `node_name` under
@@ -116,12 +122,15 @@ fn install_custom_node_blocking(
     // commands, and a leading `-` would be parsed as a git flag. Reject any path
     // syntax in `node_name` (`/`, `\`, `..`, `:`, leading `-`/`.`) — an absolute
     // or `..` component makes `custom_nodes_dir.join(node_name)` escape the dir.
-    if !repo_url.starts_with("https://")
-        || repo_url.len() > 512
-        || repo_url.contains(|c: char| c.is_whitespace() || c.is_control())
-    {
-        return Err("Refusing to install: repository URL must be a plain https:// URL.".to_string());
-    }
+    //
+    // Since the node pack manager (GitHub wish #14) a pasted link reaches this
+    // command too, so the link has to be a plain https link to a repository on
+    // github.com, gitlab.com or codeberg.org (custom_node_packs.rs). Every
+    // registry entry is one.
+    let repo_url = match node_repo_from_url(&repoUrl) {
+        Ok(repo) => repo.url,
+        Err(reason) => return Err(format!("Refusing to install: {reason}")),
+    };
     if node_name.is_empty()
         || node_name.len() > 128
         || node_name.contains('/')
@@ -159,6 +168,14 @@ fn install_custom_node_blocking(
 
     let custom_nodes_dir = comfy_dir.join("custom_nodes");
     let target_dir = custom_nodes_dir.join(&node_name);
+
+    // A pasted link must never turn into an update of whatever already sits
+    // under that name: that folder can come from a different repository.
+    if fresh_only && std::fs::symlink_metadata(&target_dir).is_ok() {
+        return Err(format!(
+            "A node pack named {node_name} is already in the custom_nodes folder. Update it from the list instead."
+        ));
+    }
 
     // Create custom_nodes dir if it doesn't exist
     if !custom_nodes_dir.exists() {
@@ -202,7 +219,7 @@ fn install_custom_node_blocking(
     let mut fresh_clone = true;
     if target_dir.exists() {
         if target_dir.join(".git").exists() {
-            println!("[Install] Custom node {} already exists, updating...", node_name);
+            node_log(&format!("{node_name} is already there, updating it (git pull)"));
             // A pinned pack is set to its commit further down and never
             // pulled: a pull is exactly what brings in the newer state the
             // pin is there to keep out.
@@ -217,6 +234,7 @@ fn install_custom_node_blocking(
                 ))?;
                 let output = git_in(&target_dir, &["pull"])
                     .map_err(|e| format!("Git pull failed: {e}"))?;
+                log_git_output(&output);
                 if !output.status.success() {
                     let stderr = String::from_utf8_lossy(&output.stderr);
                     error!(node = %node_name, "custom node git pull failed");
@@ -231,23 +249,25 @@ fn install_custom_node_blocking(
         } else {
             // Not a git repo — pull can never succeed. Move it aside and re-clone.
             let moved_to = move_aside_broken_node_dir(&target_dir)?;
-            println!(
-                "[Install] Custom node {} folder exists but is not a git repo — moved aside to {}, re-cloning",
+            node_log(&format!(
+                "{} exists but is not a git checkout, moved it aside to {} and cloning again",
                 node_name,
                 moved_to.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
-            );
+            ));
         }
     }
 
     if fresh_clone {
-        println!("[Install] Cloning custom node {} from {}", node_name, repo_url);
+        node_log(&format!("Cloning {repo_url} into custom_nodes/{node_name}"));
         let mut cmd = crate::process_util::foreign_system_command("git");
-        cmd.args(["clone", &repo_url]).arg(&target_dir)
+        cmd.args(["clone", "--", &repo_url]).arg(&target_dir)
             .stdout(Stdio::piped()).stderr(Stdio::piped());
+        quiet_git(&mut cmd);
         #[cfg(target_os = "windows")]
         cmd.creation_flags(CREATE_NO_WINDOW);
         let output = cmd.output()
             .map_err(|e| format!("Git clone failed: {}", os_error::english(&e)))?;
+        log_git_output(&output);
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             error!(node = %node_name, "custom node clone failed");
@@ -259,6 +279,7 @@ fn install_custom_node_blocking(
     // on its commit either way, so a clone that ran ahead of the pin (every
     // install before the pin existed) is set back by the same click.
     if let Some(c) = &commit {
+        node_log(&format!("Setting {node_name} to its tested version {}", &c[..7]));
         checkout_pinned_commit(&target_dir, c).map_err(|e| {
             error!(node = %node_name, "custom node pin checkout failed");
             format!(
@@ -284,6 +305,7 @@ fn install_custom_node_blocking(
         let _ = fs::remove_file(c);
     }
     installed?;
+    node_log(&format!("{node_name} is ready. Restart ComfyUI to load it."));
 
     Ok(serde_json::json!({
         "status": if fresh_clone { "installed" } else { "updated" },
@@ -298,12 +320,33 @@ fn is_full_commit_id(s: &str) -> bool {
 
 /// One git call inside a node pack's checkout, output captured, no console
 /// window on Windows.
-fn git_in(dir: &std::path::Path, args: &[&str]) -> Result<std::process::Output, String> {
+pub(super) fn git_in(dir: &std::path::Path, args: &[&str]) -> Result<std::process::Output, String> {
     let mut cmd = crate::process_util::foreign_system_command("git");
     cmd.args(args).current_dir(dir).stdout(Stdio::piped()).stderr(Stdio::piped());
+    quiet_git(&mut cmd);
     #[cfg(target_os = "windows")]
     cmd.creation_flags(CREATE_NO_WINDOW);
     cmd.output().map_err(|e| os_error::english(&e))
+}
+
+/// No git may wait for a password nobody can type: a mistyped or private
+/// repository answers with a login request, and without a terminal the
+/// install would hang there (or the credential manager would open a window).
+fn quiet_git(cmd: &mut std::process::Command) {
+    cmd.env("GIT_TERMINAL_PROMPT", "0").env("GCM_INTERACTIVE", "never");
+}
+
+/// What git printed, line by line, into the node pack log. Progress output
+/// separates its updates with carriage returns; only the last one counts.
+fn log_git_output(output: &std::process::Output) {
+    for text in [&output.stdout, &output.stderr] {
+        for line in String::from_utf8_lossy(text).lines() {
+            let line = line.rsplit('\r').next().unwrap_or(line).trim();
+            if !line.is_empty() {
+                node_log(line);
+            }
+        }
+    }
 }
 
 /// `git_in`, where anything but success is the error text git printed.
@@ -380,7 +423,7 @@ fn install_requirements_freeing_locked_files(
     }
     match (pause.stop)() {
         OwnComfyStop::Stopped => {
-            println!("[Install] A running ComfyUI held a file the requirements replace. Stopped it, installing again.");
+            node_log("A running ComfyUI held a file the requirements replace. Stopped it, installing again.");
             let second = install();
             // Back up whether the second try worked or not: it was running
             // before this install touched it.
@@ -402,6 +445,17 @@ fn install_requirements_freeing_locked_files(
     }
 }
 
+/// A ComfyUI without a venv runs on the Python that holds its torch, not on
+/// whatever LU resolves as its default today (Discord 14.10.2026), so its
+/// node packs go there too. The default stays the answer when no Python has
+/// torch: ComfyUI cannot start then anyway, and the start says why.
+fn venvless_python(comfy_dir: &std::path::Path, fallback_python: &str) -> String {
+    if fallback_python.is_empty() {
+        return String::new();
+    }
+    crate::commands::process::bound_comfy_python(comfy_dir, fallback_python).unwrap_or_else(|| fallback_python.to_string())
+}
+
 /// The Python a node pack's requirements go into: ComfyUI's venv when it has
 /// a usable one, the fallback otherwise. None for a broken venv, which
 /// `install_node_requirements` reports in its own words.
@@ -410,7 +464,7 @@ fn node_python(comfy_dir: &std::path::Path, fallback_python: &str) -> Option<Str
         crate::python::ComfyVenv::Usable(p) => Some(p),
         crate::python::ComfyVenv::Broken { .. } => None,
         crate::python::ComfyVenv::Absent if fallback_python.is_empty() => None,
-        crate::python::ComfyVenv::Absent => Some(fallback_python.to_string()),
+        crate::python::ComfyVenv::Absent => Some(venvless_python(comfy_dir, fallback_python)),
     }
 }
 
@@ -469,7 +523,7 @@ pub(crate) fn install_node_requirements(
         crate::python::ComfyVenv::Broken { venv_dir, interpreter } => {
             return Err(crate::commands::process::comfy_broken_venv_message(&venv_dir, &interpreter));
         }
-        crate::python::ComfyVenv::Absent => fallback_python.to_string(),
+        crate::python::ComfyVenv::Absent => venvless_python(comfy_dir, fallback_python),
     };
     if python_bin.is_empty() {
         return Err(format!(
@@ -479,7 +533,7 @@ pub(crate) fn install_node_requirements(
             node_name
         ));
     }
-    println!("[Install] Installing requirements for {} via {}", node_name, python_bin);
+    node_log(&format!("Installing the requirements of {node_name} with {python_bin}"));
     let run_pip = |extra: &[&str]| -> Result<std::process::Output, String> {
         let mut pip = python_command(&python_bin);
         pip.args(["-m", "pip", "install", "--no-input"]);
@@ -495,8 +549,10 @@ pub(crate) fn install_node_requirements(
         }
         pip.args(extra);
         pip.arg("-r").arg(&reqs);
-        pip.stdout(Stdio::piped()).stderr(Stdio::piped());
-        pip.output()
+        // Line by line into the node pack log while pip runs, so the Settings
+        // list shows what a long install is doing instead of a still spinner.
+        pip.env("PYTHONUNBUFFERED", "1");
+        output_logging_lines(pip)
             .map_err(|e| format!("Failed to spawn pip for {} requirements: {}", node_name, os_error::english(&e)))
     };
     let pip_out = run_pip(&[])?;
@@ -525,10 +581,9 @@ pub(crate) fn install_node_requirements(
         if is_permission_denied_pip_error(&combined)
             && user_site_allowed(is_venv_python(&python_bin))
         {
-            println!(
-                "[Install] {} requirements hit a permission error — retrying into the user site (--user)",
-                node_name
-            );
+            node_log(&format!(
+                "{node_name} requirements hit a permission error, retrying into the user site (--user)"
+            ));
             if let Ok(user_out) = run_pip(&["--user"]) {
                 if user_out.status.success() {
                     return Ok(());
@@ -547,6 +602,41 @@ pub(crate) fn install_node_requirements(
     Ok(())
 }
 
+
+/// `Command::output`, with every line of stdout and stderr also handed to the
+/// node pack log as it arrives. The collected bytes are the same as
+/// `output()` would return, so the diagnosis below reads what it always read.
+fn output_logging_lines(mut cmd: std::process::Command) -> std::io::Result<std::process::Output> {
+    use std::io::{BufRead, BufReader, Read};
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = cmd.spawn()?;
+    fn pump(stream: Option<impl Read + Send + 'static>) -> std::thread::JoinHandle<Vec<u8>> {
+        std::thread::spawn(move || {
+            let mut all = Vec::new();
+            let Some(stream) = stream else { return all };
+            let mut reader = BufReader::new(stream);
+            let mut line = Vec::new();
+            while reader.read_until(b'\n', &mut line).unwrap_or(0) > 0 {
+                let text = String::from_utf8_lossy(&line);
+                let text = text.trim_end();
+                if !text.is_empty() {
+                    node_log(text);
+                }
+                all.extend_from_slice(&line);
+                line.clear();
+            }
+            all
+        })
+    }
+    let out = pump(child.stdout.take());
+    let err = pump(child.stderr.take());
+    let status = child.wait()?;
+    Ok(std::process::Output {
+        status,
+        stdout: out.join().unwrap_or_default(),
+        stderr: err.join().unwrap_or_default(),
+    })
+}
 
 /// Runde 6, Folgeposten (a) (review Runde 5, F2): the core packages a
 /// repair just spent four steps building and verifying, as a `pip freeze`
@@ -953,6 +1043,104 @@ mod tests {
         let at_pin = body.find("checkout_pinned_commit(").expect("a pinned pack is no longer set to its commit");
         let at_reqs = body.find("install_requirements_freeing_locked_files(").expect("the requirements install is gone");
         assert!(at_pin < at_reqs, "the requirements must be the pinned commit's, so the checkout comes first");
+    }
+
+    // ── The node pack manager (GitHub wish #14) on this path ────────────
+
+    fn no_pause() -> (impl Fn() -> OwnComfyStop, impl Fn()) {
+        (|| OwnComfyStop::NotRunning, || {})
+    }
+
+    /// A ComfyUI folder with a fake venv Python that answers every pip call
+    /// with two lines, a bare repository as the origin, and a checkout of it
+    /// in custom_nodes/Pack that is one commit behind. No network, no pip.
+    #[cfg(unix)]
+    fn comfy_with_a_pack_behind() -> (tempfile::TempDir, PathBuf, PathBuf) {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let comfy = tmp.path().join("ComfyUI");
+        let python = comfy.join("venv/bin/python");
+        std::fs::create_dir_all(python.parent().unwrap()).unwrap();
+        std::fs::write(&python, "#!/bin/sh\necho 'Collecting gguf'\necho 'Successfully installed gguf-0.1'\n").unwrap();
+        std::fs::set_permissions(&python, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let work = tmp.path().join("work");
+        std::fs::create_dir(&work).unwrap();
+        test_git(&work, &["init", "-b", "main"]);
+        std::fs::write(work.join("__init__.py"), "v1").unwrap();
+        test_git(&work, &["add", "."]);
+        test_git(&work, &["commit", "-m", "v1"]);
+        let bare = tmp.path().join("origin.git");
+        test_git(tmp.path(), &["clone", "--bare", &work.to_string_lossy(), &bare.to_string_lossy()]);
+        let pack = comfy.join("custom_nodes/Pack");
+        test_git(tmp.path(), &["clone", &bare.to_string_lossy(), &pack.to_string_lossy()]);
+
+        std::fs::write(work.join("__init__.py"), "v2").unwrap();
+        std::fs::write(work.join("requirements.txt"), "gguf\n").unwrap();
+        test_git(&work, &["add", "."]);
+        test_git(&work, &["commit", "-m", "v2"]);
+        test_git(&work, &["push", &bare.to_string_lossy(), "main"]);
+        (tmp, comfy, pack)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_update_pulls_the_pack_installs_its_requirements_and_logs_both() {
+        let (_tmp, comfy, pack) = comfy_with_a_pack_behind();
+        let (stop, start) = no_pause();
+        let mark = super::super::custom_node_packs::tests_log_mark();
+        let result = install_custom_node_blocking(
+            "https://github.com/someone/Pack".into(), "Pack".into(), None, false,
+            Some(comfy.to_string_lossy().into_owned()), "", &ComfyPause { stop: &stop, start: &start },
+        )
+        .unwrap();
+        assert_eq!(result["status"], "updated");
+        assert_eq!(std::fs::read_to_string(pack.join("__init__.py")).unwrap(), "v2");
+        let log = super::super::custom_node_packs::tests_log_since(mark).join("\n");
+        assert!(log.contains("Pack is already there, updating it (git pull)"), "{log}");
+        assert!(log.contains("Installing the requirements of Pack"), "{log}");
+        assert!(log.contains("Successfully installed gguf-0.1"), "{log}");
+        assert!(log.contains("Pack is ready. Restart ComfyUI to load it."), "{log}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_pasted_link_never_updates_a_folder_that_is_already_there() {
+        let (_tmp, comfy, pack) = comfy_with_a_pack_behind();
+        let (stop, start) = no_pause();
+        let err = install_custom_node_blocking(
+            "https://github.com/someone-else/Pack".into(), "Pack".into(), None, true,
+            Some(comfy.to_string_lossy().into_owned()), "", &ComfyPause { stop: &stop, start: &start },
+        )
+        .unwrap_err();
+        assert!(err.contains("already in the custom_nodes folder"), "{err}");
+        assert_eq!(std::fs::read_to_string(pack.join("__init__.py")).unwrap(), "v1", "it was pulled anyway");
+    }
+
+    #[test]
+    fn a_link_to_another_host_is_refused_before_anything_runs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (stop, start) = no_pause();
+        for url in ["https://example.com/a/Pack", "http://github.com/a/Pack", "https://github.com/a/Pack/tree/main"] {
+            let err = install_custom_node_blocking(
+                url.into(), "Pack".into(), None, true,
+                Some(tmp.path().to_string_lossy().into_owned()), "", &ComfyPause { stop: &stop, start: &start },
+            )
+            .unwrap_err();
+            assert!(err.starts_with("Refusing to install:"), "{url}: {err}");
+        }
+        assert!(!tmp.path().join("custom_nodes").exists(), "a refused link still created the folder");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_command_logged_line_by_line_still_returns_all_its_output() {
+        let mut cmd = std::process::Command::new("sh");
+        cmd.args(["-c", "echo one; echo two >&2; echo three; exit 3"]);
+        let out = output_logging_lines(cmd).unwrap();
+        assert_eq!(out.status.code(), Some(3));
+        assert_eq!(String::from_utf8_lossy(&out.stdout), "one\nthree\n");
+        assert_eq!(String::from_utf8_lossy(&out.stderr), "two\n");
     }
 
     // ── install_custom_node helpers (#72 bob: VHS install loop) ─────────

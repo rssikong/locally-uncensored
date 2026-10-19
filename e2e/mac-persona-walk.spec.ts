@@ -24,8 +24,9 @@ const ONE_PIXEL_PNG = Buffer.from(
   'base64',
 )
 
-async function bootCreate(page: Page, opts: TauriMockOptions) {
+async function bootCreate(page: Page, opts: TauriMockOptions, memoryGb?: number) {
   await page.addInitScript(tauriMockInit, opts)
+  if (memoryGb) await giveMemory(page, memoryGb)
   await seedOnboardingDone(page)
   await routeCloud(page, { license: 'active', access: true, mediaLive: true, paidPlan: true })
   await page.setViewportSize({ width: 1440, height: 900 })
@@ -296,15 +297,16 @@ test('COUNTER-CHECK: on Windows the setup card leaves Create as it was', async (
   await expect(page.getByTitle('Set this up first: Download & install, above.')).toHaveCount(0)
 })
 
-test('power user: the Mac Edit tab asks for no mask and offers no ComfyUI workflows', async ({ page }) => {
+test('power user: the Mac Edit tab offers a mask and no ComfyUI workflows', async ({ page }) => {
   await bootCreate(page, QWEN)
   await page.getByRole('radio', { name: 'Edit / Image to Image', exact: true }).click()
   await page.locator('input[type="file"]').first().setInputFiles({ name: 'car.png', mimeType: 'image/png', buffer: ONE_PIXEL_PNG })
   await expect(page.getByRole('img', { name: 'source' })).toBeVisible({ timeout: 15_000 })
-  // The prompt field spoke of a mask to leave empty or to paint. There is
-  // none on this lane, as the stage says one line above it.
-  await expect(page.locator('textarea').first()).toHaveAttribute('placeholder', 'Describe what to change in this image…')
-  await expect(page.getByText(/needs no mask/)).toBeVisible()
+  // The prompt field and the stage say what a mask does on this lane: it
+  // limits the edit, and without one the prompt edits the whole image.
+  await expect(page.locator('textarea').first()).toHaveAttribute('placeholder', 'Describe what to change in this image. Paint a mask to change only that area…')
+  await expect(page.getByText(/leave the mask empty to edit the whole image/)).toBeVisible()
+  await expect(page.getByRole('button', { name: /Paint mask/ })).toBeVisible()
   // Workflows are ComfyUI graphs. A Mac can run none, so neither the manager
   // nor the row that asks for a tagged one is offered.
   await expect(page.getByRole('button', { name: 'Workflows and tags' })).toHaveCount(0)
@@ -337,10 +339,27 @@ test('COUNTER-CHECK: Windows keeps the mask sentence, the workflow manager and t
   expect((await mlxCalls(page)).filter((c) => c.cmd === 'mlx_output_trash')).toHaveLength(0)
 })
 
-test('power user: Animate with LTX shows the length of its own model and no slider that sets nothing', async ({ page }) => {
+for (const [memoryGb, frames] of [[48, 241], [32, 113]] as const) {
+  test(`power user: Animate with LTX runs to ${frames} frames on a Mac with ${memoryGb} GB`, async ({ page }) => {
+    // Fund 6 (3.0.7): the Length slider ended at 113 frames, 4.7 seconds, on
+    // every Mac. Ten seconds ran on 48 GB (real run, 16.10.2026); nothing
+    // smaller has, so a smaller Mac keeps the old ceiling.
+    await bootCreate(page, { ...MAC, mlx: { installedVideos: ['ltx-2.3-q4'] } }, memoryGb)
+    await page.getByRole('radio', { name: 'Animate Image', exact: true }).click()
+    const slider = page.getByTestId('mac-video-length').getByRole('slider')
+    await expect(slider).toHaveAttribute('max', String(frames), { timeout: 20_000 })
+    await slider.fill(String(frames))
+    await expect(page.getByTestId('mac-video-length')).toContainText(`${frames} frames · ${(frames / 24).toFixed(1)}s`)
+  })
+}
+
+test('power user: Animate with LTX shows the length and the size of its own model and no slider that sets nothing', async ({ page }) => {
   // Fund 19: the sliders stood on Wan's 25 steps, guidance 5.0 and 16 fps
   // under "LTX-2.3 Distilled 8-bit", and 49 frames went out as 3.0625
-  // seconds. The Mac's video engines take a length and nothing else.
+  // seconds. Since M2 (14.10.2026) the second engine takes a size as well,
+  // on its grid of 64 (`size_grid` in video.rs), so Width and Height are
+  // shown and start at the pack's own size; steps, guidance and the rate
+  // stay away.
   await bootCreate(page, { ...MAC, mlx: { installedVideos: ['wan21-t2v-1.3b', 'ltx-2.3-q8'] } })
   await page.getByRole('radio', { name: 'Video', exact: true }).click()
   const length = page.getByTestId('mac-video-length')
@@ -355,7 +374,8 @@ test('power user: Animate with LTX shows the length of its own model and no slid
   await page.getByRole('button', { name: 'Advanced settings' }).click()
   const drawer = page.locator('aside').filter({ hasText: 'Advanced settings' })
   await expect(drawer.getByText('49 frames · 2.0s at 24 fps')).toBeVisible({ timeout: 15_000 })
-  for (const dead of ['Steps', 'Guidance', 'Width', 'Height', 'FPS']) await expect(drawer.getByText(dead, { exact: true })).toHaveCount(0)
+  for (const dead of ['Steps', 'Guidance', 'FPS']) await expect(drawer.getByText(dead, { exact: true })).toHaveCount(0)
+  await expect(drawer.getByTestId('mac-video-size')).toContainText('Runs at 768×512 px')
   await expect(drawer.getByText(/Seed/)).toBeVisible()
   await page.keyboard.press('Escape')
 
@@ -370,6 +390,7 @@ test('power user: Animate with LTX shows the length of its own model and no slid
   // 49 frames at the engine's 24, with half a frame of margin for its cut.
   expect(gen.raw.fps).toBe(24)
   expect(gen.seconds).toBeCloseTo(49.5 / 24, 6)
+  expect([gen.raw.width, gen.raw.height, gen.raw.steps]).toEqual([768, 512, undefined])
 })
 
 test('newcomer: Video without a model shows no values that belong to no model', async ({ page }) => {
@@ -399,7 +420,11 @@ test('power user: the closed model picker tells 4-bit, 8-bit and Turbo apart, an
   await bootCreate(page, { ...MAC, mlx: { installedImages: ['sd-turbo', 'qwen-image-2.1-4bit', 'qwen-image-2.1-8bit', 'qwen-image-2.1-turbo'], mfluxEngineInstalled: true } })
   const chip = page.locator('button[aria-haspopup="listbox"]').last()
   const name = chip.locator('span.truncate')
-  for (const width of [1440, 1024, 760]) {
+  // 760 px is measured with the Mac's own font. The Linux runner of the
+  // release gate draws the same names wider, so there the narrow width proves
+  // nothing about a Mac and is left out.
+  const widths = process.platform === 'darwin' ? [1440, 1024, 760] : [1440, 1024]
+  for (const width of widths) {
     await page.setViewportSize({ width, height: 900 })
     for (const pack of ['MLX Qwen-Image 2.1 4-bit', 'MLX Qwen-Image 2.1 8-bit', 'MLX Qwen-Image 2.1 Turbo 8-bit']) {
       await chip.click()
@@ -477,7 +502,11 @@ test('power user: on Edit the references and "Change image" are on screen with t
     await page.setViewportSize({ width, height: 900 })
     await expect(stage).toHaveAttribute('data-layout', layout)
     await expect.poll(() => stage.evaluate((el) => el.scrollHeight <= el.clientHeight + 1), { message: `the stage scrolls at ${width}` }).toBe(true)
-    for (const part of [source, page.getByTestId('reference-strip'), page.getByRole('button', { name: 'Change image' }), page.getByText(/This model needs no mask/)]) {
+    // The how-to line at the stage's foot (help, 3.0.7) stands where the
+    // controls sit beside the picture; on the narrow stage it took the 28 px
+    // the picture needed and the stage scrolled again (Mac check 16.10.2026).
+    await expect(page.getByTestId('howto-mac-mask')).toHaveCount(layout === 'beside' ? 1 : 0)
+    for (const part of [source, page.getByTestId('reference-strip'), page.getByRole('button', { name: 'Change image' }), page.getByText(/leave the mask empty to edit the whole image/)]) {
       expect(await onStage(page, part), `off the stage at ${width}`).toBe(true)
     }
     // The picture is still a picture, not a thumbnail.
@@ -503,7 +532,7 @@ test('power user: on Edit the references and "Change image" are on screen with t
     const big = page.locator('.fixed.inset-0').filter({ has: page.getByTestId('prompt-details') })
     await expect(big.getByTestId('prompt-text')).toBeVisible()
     await expect(big.getByTestId('prompt-text')).toHaveText('make the car blue')
-    await expect(big.getByRole('button', { name: 'Copy prompt' })).toBeVisible()
+    await expect(big.getByRole('button', { name: 'Copy prompt', exact: true })).toBeVisible()
     await page.keyboard.press('Escape')
     await expect(big).toHaveCount(0)
   }
@@ -838,7 +867,7 @@ test('on Windows a video whose file cannot be read shows its sentence and no pla
   await page.locator('aside').filter({ hasText: 'Gallery' }).locator('.group').first().click()
   const video = page.locator('video').first()
   await expect(video).toBeAttached({ timeout: 15_000 })
-  const line = page.getByTestId('result-facts').locator('..').getByText(/ComfyUI/)
+  const line = page.getByText('This file is no longer in the ComfyUI output folder.')
   await expect(line).toBeVisible({ timeout: 20_000 })
   expect(await video.evaluate((v: HTMLVideoElement) => v.controls)).toBe(false)
   const [box, text] = [await video.boundingBox(), await line.boundingBox()]

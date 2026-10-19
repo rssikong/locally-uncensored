@@ -155,6 +155,29 @@ describe('fetchGalleryItemBlob', () => {
     expect(await blob.text()).toBe('PNGBYTES')
     expect(fetchMock).not.toHaveBeenCalled()
   })
+
+  // Extend Video on the Mac (14.10.2026) picks a clip of the gallery. After a
+  // restart an MLX clip has its path and no blob: URL yet, and an empty file
+  // name, which galleryItemUrl would turn into a ComfyUI address.
+  it('reads an MLX render from disk when it has no blob: URL, and never asks ComfyUI', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    vi.mocked(backendCall).mockReset()
+    vi.mocked(backendCall).mockResolvedValueOnce(btoa('MP4BYTES') as never)
+    const item = { ...baseItem, type: 'video' as const, filename: '', localPath: '/videos/abc.mp4' }
+    const blob = await fetchGalleryItemBlob(item)
+    expect(vi.mocked(backendCall)).toHaveBeenCalledWith('read_media_file', { path: '/videos/abc.mp4' })
+    expect(blob.type).toBe('video/mp4')
+    expect(await blob.text()).toBe('MP4BYTES')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('an MLX render that left the disk says so in words', async () => {
+    vi.mocked(backendCall).mockReset()
+    vi.mocked(backendCall).mockRejectedValueOnce(new Error('No such file') as never)
+    const item = { ...baseItem, type: 'video' as const, filename: '', localPath: '/videos/gone.mp4' }
+    await expect(fetchGalleryItemBlob(item)).rejects.toThrow('This render is no longer on disk. Pick another one, or upload the file from disk.')
+  })
 })
 
 // Cloud renders are deleted after seven days (the Create banner says so, and

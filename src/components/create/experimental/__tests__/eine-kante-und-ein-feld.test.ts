@@ -57,10 +57,12 @@ describe('D-S32: die Reglerzeile steht mittig ueber der Promptbox', () => {
     const rezept = code.match(/const LANE_ROW = '([^']+)'/)
     expect(rezept, 'LANE_ROW fehlt in Composer.tsx').toBeTruthy()
     expect(rezept![1]).toContain('justify-center')
-    // Vier Verwendungen: `{LANE_ROW}` zweimal (Audio, und die Laengenzeile
-    // der Mac-Videobahn seit 09.10.2026) und `cn(LANE_ROW, …)` zweimal.
+    // Sechs Verwendungen: `{LANE_ROW}` viermal (Audio, die Laengenzeile
+    // der Mac-Videobahn seit 09.10.2026, die Zeile von Talking Character
+    // auf dem Mac seit 3.0.8, der Hinweis von Motion Control mit eigenem
+    // Workflow seit 3.0.7) und `cn(LANE_ROW, …)` zweimal.
     const nutzungen = code.match(/LANE_ROW/g) ?? []
-    expect(nutzungen.length).toBe(5) // Definition + vier Zeilen
+    expect(nutzungen.length).toBe(7) // Definition + sechs Zeilen
   })
 
   it('die Zeile ist ein Geschwister des Promptpanels, teilt also dessen Mitte', () => {

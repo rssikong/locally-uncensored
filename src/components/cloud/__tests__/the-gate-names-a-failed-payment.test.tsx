@@ -21,7 +21,8 @@ vi.mock('../../../hooks/useCloudAuth', () => ({
 }))
 vi.mock('../../../api/cloud/supabase', () => ({ loginWithProvider: vi.fn() }))
 const openExternal = vi.fn(async () => {})
-vi.mock('../../../api/backend', () => ({ openExternal }))
+vi.mock('../../../api/backend', () => ({ openExternal, backendCall: vi.fn(async () => undefined), isMacOS: () => false }))
+vi.mock('../../../api/cloud/public-catalog', () => ({ getPublicCatalog: vi.fn(async () => null) }))
 
 const { CloudGateModal } = await import('../CloudGateModal')
 const { useCloudAuthStore } = await import('../../../stores/cloudAuthStore')

@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { STUDIO_MODELS, studioSchema } from '../studio-contract'
 import { MAX_STUDIO_PHOTOS, referenceModel, startImageCount, studioExtraPhotoSlots, studioPhotoCap } from '../create-studio'
 import { MAX_IMAGE_COUNT, bumpSeed, clampImageCount, imageCountApplies, runImageCount } from '../image-count'
-import { MAX_STORED_REFERENCES } from '../../edit-references'
+import { MAX_EXTRA_REFERENCES, MAX_STORED_REFERENCES } from '../../edit-references'
 import { useCloudCatalogStore } from '../../../stores/cloudCatalogStore'
 import { neuerServer } from './fixtures/test-catalogs'
 
@@ -32,8 +32,9 @@ describe('wie viele Fotos ein Modell liest', () => {
     expect(MAX_STUDIO_PHOTOS).toBe(5)
   })
 
-  it('der Speicher haelt genau so viele weitere Fotos, wie das groesste Modell neben dem Standbild liest', () => {
-    expect(MAX_STORED_REFERENCES).toBe(MAX_STUDIO_PHOTOS - 1)
+  it('der Speicher haelt so viele weitere Fotos, wie das groesste Modell neben dem Standbild liest, lokal oder in der Cloud', () => {
+    expect(MAX_STORED_REFERENCES).toBe(Math.max(MAX_EXTRA_REFERENCES, MAX_STUDIO_PHOTOS - 1))
+    expect(MAX_STORED_REFERENCES).toBe(9)
   })
 
   it('ein Modell mit einem einzelnen Bildfeld oder ohne Bild bietet keine Leiste', () => {

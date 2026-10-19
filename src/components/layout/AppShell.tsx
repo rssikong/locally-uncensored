@@ -22,6 +22,7 @@ import { useSettingsStore } from '../../stores/settingsStore'
 import { useCompareStore } from '../../stores/compareStore'
 import { useProviderStore } from '../../stores/providerStore'
 import { mayEnableFromWizard } from '../../lib/onboarding-provider-gate'
+import { sameEndpoint } from '../../lib/openai-entries'
 import { useChatStore } from '../../stores/chatStore'
 import { useGenerationStore } from '../../stores/generationStore'
 import { offloadWhenLocalLaneFree } from '../../lib/cloud-offload-defer'
@@ -1010,7 +1011,15 @@ export function AppShell() {
       // fragt. Der baseUrl-Teil darf bleiben: ein geaenderter Port ist keine
       // Einschaltung, nur eine aktuelle Adresse.
       const openaiSlot = useProviderStore.getState().providers.openai
-      const nonOllama = backends.find((b) => b.id !== 'ollama')
+      // GitHub #173: a backend that already has its own entry is not adopted
+      // into the slot a second time, and a slot whose own backend is among the
+      // detected ones keeps it. Before, the first detected server overwrote the
+      // slot on every start, whichever one the user had put there.
+      const entries = useProviderStore.getState().openaiEntries
+      const slotDetected = backends.some((b) => b.id !== 'ollama' && sameEndpoint(b.baseUrl, openaiSlot.baseUrl))
+      const nonOllama = slotDetected
+        ? undefined
+        : backends.find((b) => b.id !== 'ollama' && !entries.some((e) => sameEndpoint(e.baseUrl, b.baseUrl)))
       if (nonOllama && !openaiSlot.managed) {
         useProviderStore.getState().setProviderConfig('openai', {
           ...(mayEnableFromWizard(openaiSlot) ? { enabled: true } : {}),

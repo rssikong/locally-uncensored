@@ -30,6 +30,7 @@ import { ChatNotices } from './ChatNotices'
 import { LocalLaneWaitLine } from './LocalLaneWaitLine'
 import { LoopBar } from './LoopBar'
 import { useSettingsStore } from '../../stores/settingsStore'
+import { HowItWorks } from '../ui/HowItWorks'
 import { useModelStore } from '../../stores/modelStore'
 import { useAnyAgentLoopActive } from '../../stores/agentLoopStore'
 import { useUIStore } from '../../stores/uiStore'
@@ -143,6 +144,7 @@ export function CodexView() {
   )
 
   const codexReviewMode = useSettingsStore((s) => s.settings.codexReviewMode)
+  const cloudMode = useSettingsStore((s) => s.settings.appMode === 'cloud')
   const userAvatarDataUrl = useSettingsStore((s) => s.settings.userAvatarDataUrl)
   const activeModel = useModelStore((s) => s.activeModel)
   const codexWorkingDir = useCodexStore((s) => s.workingDirectory)
@@ -296,6 +298,7 @@ export function CodexView() {
             <RotateCcw size={10} />
             <span>New</span>
           </button>
+          {cloudMode && <HowItWorks topic="code" variant="mark" placement="below-end" />}
           {/* Plugins (Chat Tools · Caveman · Persona · Group) lives HERE, next
               to New, as a bare icon with the name in the tooltip. It used to
               sit in the composer action bar and was one of the four things
@@ -749,6 +752,7 @@ export function CodexView() {
           isGenerating={isRunning || codexGenerating || queuedForLocalLane}
           waitingForLocalLane={queuedForLocalLane}
           slashCommands="agent"
+          filesReachTools
           composerModel={<ModelSelector openUpward surface="code" />}
           // Ask / Bypass / Plan sits here, in the CODE composer only (plan
           // C1). ChatInput stays surface-neutral, so the Chat tab inherits

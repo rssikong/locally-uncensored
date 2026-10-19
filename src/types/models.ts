@@ -41,6 +41,9 @@ export interface CloudModel {
   type: 'text'
   provider: ProviderId
   providerName: string
+  /** GitHub #173: the additional OpenAI-compatible entry serving this row,
+   *  absent for the original slot. The `name` carries it too. */
+  providerEntry?: string
   contextLength?: number
   supportsTools?: boolean
   supportsVision?: boolean
@@ -60,6 +63,13 @@ export interface CloudModel {
    *  fixed behaviour. See lib/effort.ts. */
   effortLevels?: string[]
   effortDefault?: string
+  /** Local models without rungs (issue 176): why the effort control is
+   *  greyed out. Absent = nothing to say, and no control. */
+  effortNote?: string
+  /** The rungs come from the local server itself, not from a catalogue
+   *  (issue 176). Until the user picks one the composer shows Default and the
+   *  request stays as it was before 3.0.7 (settings.localEffortChosen). */
+  effortLocal?: boolean
   /** The context window the server stated in its listing. Absent when it
    *  stated none; `contextLength` may then hold a table value or a guess,
    *  which is fine for a budget and wrong for a printed figure. */
@@ -70,6 +80,9 @@ export interface CloudModel {
   /** Friendly picker label when the server provides one (LU Cloud /models
    *  `name`) — pickers fall back to the raw id otherwise. */
   displayName?: string
+  /** A quiet line the picker prints after the name, no mark (the gate
+   *  pop-up: a model too big to run on this machine). */
+  quietNote?: string
   /** Where the file lies, for a row that IS a file: the LU Engine's GGUFs.
    *  Absent for everything served over a network API. Two rows naming one
    *  path are one model however differently the two backends spell its name,

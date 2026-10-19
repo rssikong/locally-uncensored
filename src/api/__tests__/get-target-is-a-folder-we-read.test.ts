@@ -47,10 +47,10 @@ vi.mock('../backend', async (importOriginal) => ({
 
 import {
   COMFY_MODEL_FOLDERS, getVideoModels, getImageModels, getAudioModels,
-  getLipsyncModels, getMotionModels, type ClassifiedModel,
+  getLipsyncModels, getMotionModels, getUpscaleModels, type ClassifiedModel,
 } from '../comfyui'
 import {
-  getImageBundles, getVideoBundles, getAudioBundles, getLipsyncBundles, getMotionBundles,
+  getImageBundles, getVideoBundles, getAudioBundles, getLipsyncBundles, getMotionBundles, getUpscaleBundles,
   modelsNotVisibleInComfy, type ModelBundle, type DiscoverModel,
 } from '../discover'
 
@@ -183,6 +183,12 @@ const LANES: Array<{ lane: string; bundles: () => ModelBundle[]; picker: () => P
   { lane: 'audio', bundles: getAudioBundles, picker: getAudioModels },
   { lane: 'lipsync', bundles: getLipsyncBundles, picker: getLipsyncModels },
   { lane: 'motion', bundles: getMotionBundles, picker: getMotionModels },
+  // Enhance Image (3.0.7): the upscale model is the bundle's only file and
+  // lives in upscale_models, so it is checked as a support file below.
+  {
+    lane: 'upscale', bundles: getUpscaleBundles,
+    picker: async () => (await getUpscaleModels()).map((name) => ({ name }) as ClassifiedModel),
+  },
 ]
 
 const allBundles = () => LANES.flatMap((l) => l.bundles())

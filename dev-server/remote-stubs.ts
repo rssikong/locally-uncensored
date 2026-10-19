@@ -1,7 +1,7 @@
 import type { Connect } from 'vite'
 import type { RouteMount } from './routes'
 
-/** Die zwölf Remote-Access-Endpunkte, die es im reinen Vite-Prozess nicht gibt. */
+/** Die dreizehn Remote-Access-Endpunkte, die es im reinen Vite-Prozess nicht gibt. */
 export function registerRemoteStubs(routes: RouteMount): void {
   // ─── Remote Access stubs (dev mode) ───────────────────────────
   // Reported by a user on v2.4.2: clicking LAN/Internet from
@@ -34,6 +34,7 @@ export function registerRemoteStubs(routes: RouteMount): void {
     '/local-api/remote-connected-devices',
     '/local-api/disconnect-remote-device',
     '/local-api/set-remote-permissions',
+    '/local-api/set-remote-page-title',
     '/local-api/start-tunnel',
     '/local-api/stop-tunnel',
     '/local-api/tunnel-status',
@@ -54,7 +55,19 @@ export function registerRemoteStubs(routes: RouteMount): void {
     error: 'This needs the installed desktop app. The plain vite dev server has no Rust backend.',
     devModeOnly: true,
   })
-  for (const path of ['/local-api/local-api-usage', '/local-api/set-download-limit']) {
+  // The training photos of a local character (character_photos) too: the
+  // caller asks only inside the desktop app. The GGUF file dialog of the
+  // Model Manager (pick_gguf_file) is a native dialog of the Rust process.
+  // The node pack manager (list_custom_nodes, remove_custom_node,
+  // custom_node_log) too: listing, the trash and the install log are Rust.
+  // Check files and Repair of the Model Manager (GH #113): the digest job
+  // and the Trash are Rust.
+  for (const path of [
+    '/local-api/local-api-usage', '/local-api/set-download-limit', '/local-api/character-photos', '/local-api/pick-gguf-file',
+    '/local-api/list-custom-nodes', '/local-api/remove-custom-node', '/local-api/custom-node-log',
+    '/local-api/verify-model-files', '/local-api/verify-model-files-status', '/local-api/verify-model-files-cancel',
+    '/local-api/trash-model-file',
+  ]) {
     routes.use(path, (_req, res) => {
       res.writeHead(501, { 'Content-Type': 'application/json' })
       res.end(DESKTOP_ONLY_BODY)

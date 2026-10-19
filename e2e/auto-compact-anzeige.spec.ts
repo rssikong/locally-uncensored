@@ -22,20 +22,19 @@ import { openNewChat } from './support/ui'
  * nichts. Diese Datei ist die fehlende Sperrklinke.
  */
 
-async function boot(page: Page, schwelle: number) {
+async function boot(page: Page, schwelle: number, an = true) {
   await page.addInitScript(tauriMockInit, {
     assistantReply: DEFAULT_ASSISTANT_REPLY,
     modelName: DEFAULT_MODEL_NAME,
   })
   await seedOnboardingDone(page)
-  if (schwelle > 0) {
-    await page.addInitScript((s: number) => {
-      const roh = window.localStorage.getItem('chat-settings')
-      const env = roh ? JSON.parse(roh) : { state: { settings: {} }, version: 10 }
-      env.state.settings = { ...env.state.settings, autoCompactThreshold: s }
-      window.localStorage.setItem('chat-settings', JSON.stringify(env))
-    }, schwelle)
-  }
+  await page.addInitScript(({ s, on }: { s: number; on: boolean }) => {
+    const roh = window.localStorage.getItem('chat-settings')
+    const env = roh ? JSON.parse(roh) : { state: { settings: {} }, version: 10 }
+    env.state.settings = { ...env.state.settings, autoCompactThreshold: s }
+    if (!on) env.state.settings.autoCompact = false
+    window.localStorage.setItem('chat-settings', JSON.stringify(env))
+  }, { s: schwelle, on: an })
   await page.goto('/')
   await openNewChat(page)
   // Der Zaehler erscheint erst, wenn das Gespraech Nachrichten hat
@@ -49,14 +48,39 @@ async function boot(page: Page, schwelle: number) {
 
 const marke = (page: Page) => page.locator('[data-testid="auto-compact-mark"]')
 
-test('ohne die Einstellung zeigt der Balken keine Marke', async ({ page }) => {
-  // Auto-Compact ist ab Werk aus (`autoCompactThreshold: 0`). Eine Marke fuer
-  // etwas, das nicht passieren wird, waere eine Behauptung.
+test('ab Werk auf einem 8K-Modell keine Marke: der Standard laeuft erst ab 32K', async ({ page }) => {
+  // Entscheid 18.10.2026: "bei 8k nie, bei 32k immer und alles darueber".
+  // Das Modell dieser Attrappe hat 8K, also kuendigt der Balken nichts an,
+  // was nicht passieren wird. Ab 32K pruefen das die vitest-Faelle in
+  // compact-fits-the-window.test.ts und run-compact-midway.test.ts.
   await boot(page, 0)
+  await expect(page.locator('.lu-hud-num').first()).toHaveText(/\/8K/)
+  await expect(marke(page)).toHaveCount(0)
+})
+
+test('ausgeschaltet zeigt der Balken keine Marke', async ({ page }) => {
+  // Eine Marke fuer etwas, das nicht passieren wird, waere eine Behauptung.
+  await boot(page, 0, false)
   // Gegenprobe, dass der Zaehler ueberhaupt da ist — sonst pruefte die Zeile
   // darunter nur, dass eine leere Seite keine Marke hat.
   await expect(page.locator('.lu-hud-num').first()).toHaveText(/\d+.*\/.*\d/)
   await expect(marke(page)).toHaveCount(0)
+})
+
+test('die Einstellung: Schalter an, 0 heisst passend zum Modell, aus bleibt aus', async ({ page }) => {
+  await boot(page, 0)
+  await page.getByRole('button', { name: 'Settings' }).click()
+  await page.getByRole('button', { name: /^Generation/ }).click()
+  const schalter = page.getByRole('switch', { name: 'Auto-compact' })
+  await expect(schalter).toHaveAttribute('aria-checked', 'true')
+  const feld = page.getByLabel('Auto-compact at')
+  await expect(feld).toHaveValue('0')
+  await expect(page.getByText(/0 = fit the model/)).toBeVisible()
+  await schalter.click()
+  await expect(schalter).toHaveAttribute('aria-checked', 'false')
+  await expect(feld).toBeDisabled()
+  const gespeichert = await page.evaluate(() => JSON.parse(window.localStorage.getItem('chat-settings') || '{}').state?.settings?.autoCompact)
+  expect(gespeichert).toBe(false)
 })
 
 test('mit der Einstellung steht die Marke da — und zwar auf der WIRKSAMEN Schwelle', async ({ page }) => {

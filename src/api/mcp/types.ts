@@ -65,6 +65,13 @@ export interface MCPServerConfig {
   command: string
   args: string[]
   env?: Record<string, string>
+  /** The folder the server runs in; the app's own where it is left out. A
+   *  plugin server (lib/plugins) works in its own folder. */
+  cwd?: string
+  /** How long the `initialize` handshake may take, in ms; 30 s when left
+   *  out. A server that `npx` installs on its first start answers only once
+   *  its packages are in, and that can take minutes (lib/plugins/rea.ts). */
+  initializeTimeoutMs?: number
   enabled: boolean
 }
 

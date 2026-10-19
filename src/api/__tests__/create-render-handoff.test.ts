@@ -64,15 +64,17 @@ import {
   __resetRenderJuggleForTests,
   RENDER_RESTORE_GRACE_MS,
   RENDER_RESTORE_IDLE_MS,
+  kvSaveWorthAWarning,
   type RenderEviction,
 } from '../vram-handoff'
+import { log } from '../../lib/logger'
 import { chatBackendsBack } from '../../lib/chat-backends-gate'
 import { useSettingsStore } from '../../stores/settingsStore'
 
 const GB = 1024 * 1024 * 1024
 
 /** backendCall programmed like the live box: engine up, save works. */
-function mockBackends(opts?: { engineRunning?: boolean; saveOk?: boolean }) {
+function mockBackends(opts?: { engineRunning?: boolean; saveOk?: boolean; saveReply?: Record<string, unknown> }) {
   backendCall.mockImplementation(async (cmd: unknown, args?: unknown) => {
     if (cmd === 'bundled_engine_status') {
       return (opts?.engineRunning ?? true)
@@ -81,7 +83,7 @@ function mockBackends(opts?: { engineRunning?: boolean; saveOk?: boolean }) {
     }
     if (cmd === 'kv_slot_action') {
       const a = args as { action?: string } | undefined
-      if (a?.action === 'save') return { ok: opts?.saveOk ?? true }
+      if (a?.action === 'save') return opts?.saveReply ?? { ok: opts?.saveOk ?? true }
       return { ok: true }
     }
     if (cmd === 'lmstudio_list_loaded') return { loaded: [] }
@@ -152,6 +154,46 @@ describe('evictChatBackendsForRender', () => {
     const haul = await evictChatBackendsForRender()
     expect(haul.bundled?.slotSaved).toBe(false)
     expect(callsTo('offload_local_models')).toHaveLength(1)
+  })
+})
+
+describe('KV hand-off with an image part (box runs d307-b, d307-c, H1)', () => {
+  it('a save the engine cannot do is not warned about on every render', async () => {
+    const warn = vi.spyOn(log, 'warn')
+    try {
+      mockBackends({ saveReply: { ok: false, skipped: 'multimodal', body: {} } })
+      for (let run = 0; run < 3; run++) {
+        __resetRenderJuggleForTests()
+        const haul = await evictChatBackendsForRender()
+        expect(haul.bundled?.slotSaved).toBe(false)
+      }
+      expect(warn.mock.calls.filter((c) => c[0] === 'render_juggle.kv_save_failed')).toHaveLength(0)
+      // Nothing was saved, so nothing is restored after the render.
+      expect(callsTo('kv_slot_action').filter((c) => (c[1] as { action?: string }).action === 'restore')).toHaveLength(0)
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('NEGATIVE: a save that really failed still warns', async () => {
+    const warn = vi.spyOn(log, 'warn')
+    try {
+      mockBackends({ saveOk: false })
+      await evictChatBackendsForRender()
+      expect(warn.mock.calls.filter((c) => c[0] === 'render_juggle.kv_save_failed')).toHaveLength(1)
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('kvSaveWorthAWarning tells the two apart, and both save sites use it', () => {
+    expect(kvSaveWorthAWarning({ ok: true })).toBe(false)
+    expect(kvSaveWorthAWarning({ ok: false, skipped: 'multimodal' })).toBe(false)
+    expect(kvSaveWorthAWarning({ ok: false })).toBe(true)
+    expect(kvSaveWorthAWarning(null)).toBe(true)
+    const src = fs.readFileSync(path.resolve(__dirname, '..', 'vram-handoff.ts'), 'utf8')
+    expect(src.split('if (kvSaveWorthAWarning(saved)) log.warn(').length - 1).toBe(2)
+    expect(src).not.toMatch(/if \(saved\?\.ok !== true\) log\.warn/)
   })
 })
 

@@ -1,7 +1,9 @@
 import type { OllamaModel, PullProgress } from "../types/models"
 import { ollamaUrl, localFetch, localFetchStream, isTauri } from "./backend"
 import { isRecord, prop, asString, asNumber, asStringArray, asRecordArray } from "./providers/wire"
+import { parseOllamaShowContext } from "./providers/context-probe"
 import { log } from "../lib/logger"
+import { oneEntryPerName } from "../lib/one-entry-per-name"
 import { isLocalTransportFailure, localBackendUnreachableMessage } from "../lib/local-backend-transport"
 import { ollamaWindowFor, type WindowChoice, type WindowUse } from "../lib/context-window"
 import { useSettingsStore } from "../stores/settingsStore"
@@ -70,7 +72,7 @@ export async function listModels(): Promise<OllamaModel[]> {
   const entries: OllamaTagsEntry[] = Array.isArray(rawModels)
     ? (rawModels as OllamaTagsEntry[])
     : []
-  return entries.map((m) => ({
+  return oneEntryPerName(entries).map((m) => ({
     ...m,
     type: "text" as const,
     // /api/tags states this per model. Without the mapping the field arrives as
@@ -108,49 +110,98 @@ export async function showModel(name: string): Promise<Record<string, unknown>> 
   return isRecord(body) ? body : {}
 }
 
-export async function getModelContext(name: string): Promise<number> {
+/**
+ * What a server that speaks the Ollama API says about one model's context.
+ *
+ * `known` is false when no source named a length. `max` is then the old
+ * conservative 4096, so what Auto sends does not change; but the number is a
+ * stand in and not a fact, and the context picker must not end its list there
+ * (GH #166: a KoboldCpp started with 262144 behind its Ollama emulation got a
+ * picker that offered "Auto · 4K" and "4K · max" and nothing else).
+ */
+export interface OllamaModelContext {
+  max: number
+  known: boolean
+}
+
+/** What Auto runs with when nobody named the model's length. */
+export const UNKNOWN_MODEL_CONTEXT = 4096
+
+const positiveNumber = (v: unknown): number | null =>
+  typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.floor(v) : null
+
+/** One GET that answers `{ value: N }` (KoboldCpp), or null. */
+async function koboldValue(path: string): Promise<number | null> {
+  try {
+    const res = await localFetch(ollamaUrl(path), { timeoutMs: 5000 })
+    if (!res.ok) return null
+    const body: unknown = await res.json()
+    return typeof body === 'number' ? positiveNumber(body) : positiveNumber(prop(body, 'value'))
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The context window of one model, and whether anyone actually named it.
+ *
+ * Order, each only asked when the one before said nothing:
+ *   1. `/api/show` (`parseOllamaShowContext`). Ollama itself always answers here.
+ *   2. KoboldCpp's own endpoints on the same port, for its Ollama emulation,
+ *      whose `/api/show` carries an empty `model_info` (GH #166):
+ *      `/api/extra/true_max_context_length`, then the KoboldAI
+ *      `/api/v1/config/max_context_length`. Both answer `{ "value": N }`, the
+ *      context the server was started with. (`/api/v1/model` only names the
+ *      model and carries no length.)
+ *   3. `/api/ps`: the `context_length` the model is loaded with right now. Not
+ *      its maximum, but a window the server demonstrably runs.
+ *
+ * Nobody answered: `{ max: 4096, known: false }`. `answered` says whether the
+ * server could be reached at all, so a server that is down does not leave a
+ * stand in cached for the whole session.
+ */
+export async function getModelContextInfo(name: string): Promise<OllamaModelContext & { answered: boolean }> {
+  let answered = false
   try {
     const info = await showModel(name)
+    answered = true
+    const fromShow = parseOllamaShowContext(info)
+    if (fromShow) return { max: fromShow, known: true, answered }
+  } catch { /* fall through to the other sources */ }
 
-    // Try model_info fields (various architectures use different keys)
-    const modelInfo: Record<string, unknown> = isRecord(info.model_info) ? info.model_info : {}
-    const contextFromInfo =
-      modelInfo["general.context_length"] ||
-      // Architecture-specific keys (gemma2.context_length, llama.context_length, etc.)
-      Object.entries(modelInfo).find(([k]) => k.endsWith('.context_length'))?.[1]
+  const kobold =
+    (await koboldValue('/extra/true_max_context_length')) ??
+    (await koboldValue('/v1/config/max_context_length'))
+  if (kobold) return { max: kobold, known: true, answered: true }
 
-    if (contextFromInfo && Number(contextFromInfo) > 0) {
-      return Number(contextFromInfo)
-    }
+  try {
+    const loaded = (await readLoadedModels()).find((m) => m.name === name)
+    answered = true
+    if (loaded && loaded.contextLength > 0) return { max: loaded.contextLength, known: true, answered }
+  } catch { /* nothing more to ask */ }
 
-    // Try parameters (can be a string like "num_ctx 8192" or an object)
-    const params: unknown = info.parameters
-    if (params) {
-      if (isRecord(params) && params.num_ctx) {
-        return Number(params.num_ctx)
-      }
-      if (typeof params === 'string') {
-        const match = params.match(/num_ctx\s+(\d+)/)
-        if (match) return Number(match[1])
-      }
-    }
+  return { max: UNKNOWN_MODEL_CONTEXT, known: false, answered }
+}
 
-    return 4096
-  } catch {
-    return 4096
-  }
+export async function getModelContext(name: string): Promise<number> {
+  return (await getModelContextInfo(name)).max
 }
 
 // Cached model-context lookup so the chat hooks can forward a correct num_ctx
 // to Ollama on EVERY send without an /api/show round-trip each time. A model's
 // trained context length doesn't change at runtime; cache lives for the session.
-const _ctxCache = new Map<string, number>()
-export async function getModelContextCached(name: string): Promise<number> {
+const _ctxCache = new Map<string, OllamaModelContext>()
+export async function getModelContextInfoCached(name: string): Promise<OllamaModelContext> {
   const hit = _ctxCache.get(name)
   if (hit !== undefined) return hit
-  const v = await getModelContext(name)
-  _ctxCache.set(name, v)
+  const { max, known, answered } = await getModelContextInfo(name)
+  const v = { max, known }
+  if (answered) _ctxCache.set(name, v)
   return v
+}
+
+export async function getModelContextCached(name: string): Promise<number> {
+  return (await getModelContextInfoCached(name)).max
 }
 
 /**

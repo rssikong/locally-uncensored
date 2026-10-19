@@ -26,6 +26,11 @@ export interface ProviderConfig {
   // (the Tauri command), not `/v1/models`. Undefined = a normal user-configured
   // backend, unchanged behavior.
   managed?: boolean
+  // GitHub #173: set on an ADDITIONAL OpenAI-compatible entry (LM Studio next
+  // to KoboldCpp next to the LU Engine), never on the four fixed slots. Its
+  // models are named `openai:<entryId>::<model>` (api/providers/model-name.ts)
+  // and route to this entry's own address and key. Undefined = the slot itself.
+  entryId?: string
   // Set when the user switched this provider off with the Disable button in
   // Settings, AI Backends, and cleared when Enable puts it back. The list keeps
   // such a row visible (greyed, with Enable) instead of dropping it, so the
@@ -133,6 +138,9 @@ export interface ProviderModel {
   name: string          // Display name
   provider: ProviderId
   providerName: string  // "OpenRouter", "Ollama", "Anthropic" etc.
+  /** GitHub #173: the additional OpenAI-compatible entry this row came from.
+   *  Absent for the original slot and every other provider. */
+  entryId?: string
   contextLength?: number
   supportsTools?: boolean
   supportsVision?: boolean
@@ -154,6 +162,12 @@ export interface ProviderModel {
   /** The rung the model itself defaults to (`reasoning_effort_default`). Used
    *  only where no wish was made; the user's own choice always wins. */
   effortDefault?: string
+  /** A LAN model whose server takes no rungs (issue 176): the sentence the
+   *  greyed effort control shows. See lib/local-effort.ts. */
+  effortNote?: string
+  /** The rungs come from the local server, not from a catalogue (issue 176).
+   *  They go on the wire only once the user picked one (localEffortChosen). */
+  effortLocal?: boolean
   /** The context window the server itself stated in its listing, and nothing
    *  else: no table, no guess from the name. `contextLength` above always
    *  holds a number to budget with; this one is absent when nobody stated
@@ -200,6 +214,13 @@ export interface ChatOptions {
   // an extension field, the same way it already sends top_p.
   topK?: number
   maxTokens?: number
+  /** GH #175: the extra samplers a persona (or a chat) can set. Each provider
+   *  sends only the ones its backend reads, see sampler-fields.ts. */
+  minP?: number
+  repeatPenalty?: number
+  presencePenalty?: number
+  frequencyPenalty?: number
+  dryMultiplier?: number
   /**
    * True when `maxTokens` above is THIS caller's own fallback default, not a
    * value the user actually typed into a slider (bau/wfprogress.md Runde 3,
@@ -234,6 +255,20 @@ export interface ChatOptions {
    * a model default above it would quietly upgrade the bill.
    */
   effortDefault?: string
+  /**
+   * Has the user picked a rung for a local model himself (settings
+   * `localEffortChosen`)? Until then a local server gets exactly the request
+   * it got before 3.0.7: top-level 'high' with Think on and nothing in the
+   * template. Absent counts as not picked, so a caller that does not pass it
+   * keeps the old request rather than a new rung.
+   */
+  localEffortChosen?: boolean
+  /**
+   * Think budget in tokens (D12), 0 or absent for auto. Read only by the
+   * backends that take a count (lib/think-budget.ts) and only while
+   * `thinking` is true; every other provider ignores it.
+   */
+  thinkingBudget?: number
   /**
    * Which window this call runs in on an Ollama model. Named only by a turn a
    * person started (`chat` or `agent`); left out, the call is sent the window
@@ -315,6 +350,9 @@ export interface ToolDefinition {
 
 export interface ProviderClient {
   readonly id: ProviderId
+  /** GitHub #173: the additional OpenAI-compatible entry this client serves.
+   *  Absent for the four fixed slots. */
+  readonly entryId?: string
 
   /** Stream a chat response. Yields unified ChatStreamChunks. */
   chatStream(

@@ -30,8 +30,11 @@ import {
   getMlxInstallStatus,
   installVideoModel,
   getModelInstallStatus,
+  MLX_MOTION_ID,
+  MLX_MOTION_NAME,
   type InstallStatus,
 } from './mlx-video'
+import { getMusicStatus, installMusic, getMusicInstallStatus } from './mlx-music'
 import { starterPick, macVideoSetupPlan } from './mlx-starter'
 import { videoModelBringsItsEngine } from '../lib/video-engines'
 import { imageModelBringsItsEngine } from '../lib/image-engines'
@@ -130,12 +133,14 @@ interface Run {
 let runs = 0
 const newRun = (lane: MlxInstallLane): Run => ({ lane, started: mlxLaneGeneration(lane), id: ++runs })
 
-const ENGINE_LABEL: Record<MlxInstallLane, string> = { image: 'MLX image engine', video: 'MLX video engine' }
+const ENGINE_LABEL: Record<'image' | 'video', string> = { image: 'MLX image engine', video: 'MLX video engine' }
 
 /** Set the engine of a lane up and wait for it. */
 async function runEngine(run: Run, onProgress?: (msg: string) => void, signal?: AbortSignal): Promise<void> {
   const store = useMlxInstallStore.getState()
   const { lane } = run
+  // The music engine has no setup of its own: it installs with its model.
+  if (lane === 'music') return
   store.begin(`${lane}-engine`, ENGINE_LABEL[lane], undefined, run.id)
   if (lane === 'image') {
     // Also the way out of a half finished setup: Rust keeps a venv that still
@@ -160,6 +165,13 @@ async function runModel(
   const store = useMlxInstallStore.getState()
   const { lane } = run
   store.begin(`${lane}-model`, model.name, model.id, run.id)
+  if (lane === 'music') {
+    // The engine and its one model in one slot (commands/music.rs).
+    await start(run, installMusic)
+    store.watch('music-model', model.name, model.id)
+    await awaitSlot(run, getMusicInstallStatus, `${model.name} download`, onProgress, signal)
+    return
+  }
   if (lane === 'image') {
     await start(run, () => installMlxImageModel(model.id))
     store.watch('image-model', model.name, model.id)
@@ -176,7 +188,7 @@ async function runModel(
  *  shown a row in the same place. */
 function abandonRows(run: Run) {
   const store = useMlxInstallStore.getState()
-  store.abandon(`${run.lane}-engine`, run.id)
+  if (run.lane !== 'music') store.abandon(`${run.lane}-engine`, run.id)
   store.abandon(`${run.lane}-model`, run.id)
 }
 
@@ -188,12 +200,18 @@ function abandonRows(run: Run) {
  * resumes instead of reinstalling.
  */
 export async function installMlxStack(
-  kind: 'image' | 'video',
+  kind: 'image' | 'video' | 'motion',
   onProgress?: (msg: string) => void,
   signal?: AbortSignal,
 ): Promise<void> {
-  const run = newRun(kind)
+  // Motion Control's LoRA goes down the video lane's slot, as a model of it.
+  const run = newRun(kind === 'motion' ? 'video' : kind)
   try {
+    if (kind === 'motion') {
+      onProgress?.(`Downloading ${MLX_MOTION_NAME}…`)
+      await runModel(run, { id: MLX_MOTION_ID, name: MLX_MOTION_NAME }, onProgress, signal)
+      return
+    }
     if (kind === 'image') {
       const st = await mlxStatus().catch(() => null)
       // An Intel Mac has no engine to install. Say so before a setup starts.
@@ -257,13 +275,26 @@ export async function installMlxStack(
  * click had done nothing one could see (08.10.2026).
  */
 export async function installMlxModel(
-  kind: 'image' | 'video',
+  kind: MlxInstallLane,
   model: { id: string; name: string; family?: string },
   signal?: AbortSignal,
   known?: { engineReady?: boolean },
 ): Promise<void> {
   const store = useMlxInstallStore.getState()
   const run = newRun(kind)
+  if (kind === 'music') {
+    // One slot for the engine and the model, so one row and one step.
+    store.begin('music-model', model.name, model.id, run.id)
+    try {
+      const st = await getMusicStatus().catch(() => null)
+      if (st && !st.appleSilicon) throw new Error('Local music needs a Mac with Apple Silicon.')
+      await runModel(run, model, undefined, signal)
+    } catch (e) {
+      abandonRows(run)
+      throw e
+    }
+    return
+  }
   // A pack of a second engine brings that engine in its own install. Setting
   // up the first one for it would be gigabytes and a wait for nothing.
   const bringsEngine = kind === 'image' ? imageModelBringsItsEngine(model.family) : videoModelBringsItsEngine(model.family)
@@ -291,6 +322,31 @@ export async function installMlxModel(
       store.abandon(`${kind}-engine`, run.id)
     }
     await runModel(run, model, undefined, signal)
+  } catch (e) {
+    abandonRows(run)
+    throw e
+  }
+}
+
+/**
+ * The Talking Character part of an installed video model: the files its
+ * `a2v` run reads on top of the model (`install_talking` in video.rs). It runs
+ * on the slot of a video model install, so its row, its bar and its Stop are
+ * the ones of a model download.
+ */
+export async function installMlxTalking(
+  model: { id: string; name: string },
+  onProgress?: (msg: string) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const store = useMlxInstallStore.getState()
+  const run = newRun('video')
+  const label = `${model.name}, Talking Character`
+  store.begin('video-model', label, model.id, run.id)
+  try {
+    await start(run, () => installVideoModel(model.id, 'talking'))
+    store.watch('video-model', label, model.id)
+    await awaitSlot(run, getModelInstallStatus, 'Talking Character download', onProgress, signal)
   } catch (e) {
     abandonRows(run)
     throw e

@@ -9,12 +9,28 @@
 /** The family of the mflux packs, as `mlx_image_models` names it. */
 export const MFLUX_FAMILY = 'mflux'
 
+/** The family of the Qwen-Image 2.1 prompt enhancers, listed in the same
+ *  catalogue (commands/mlx_enhancer.rs). They make no images: no picker
+ *  offers them, and their install sets up the engine that runs them. */
+export const ENHANCER_FAMILY = 'enhancer'
+
+/** Whether a catalogue entry is a prompt enhancer and no image model. */
+export function isMlxEnhancer(m: { family?: string; enhancer?: string }): boolean {
+  return m.family === ENHANCER_FAMILY || !!m.enhancer
+}
+
+/** The installed prompt enhancers by their catalogue ids, which carry the
+ *  name "Improve my prompt" knows an enhancer by (lib/render/qwen-enhancer). */
+export function installedMlxEnhancers(catalog: readonly { id: string; installed: boolean; family?: string; enhancer?: string }[]): string[] {
+  return catalog.filter((m) => m.installed && isMlxEnhancer(m)).map((m) => m.id)
+}
+
 /**
  * Whether a model of this family brings its engine along. Such a model needs
  * no engine set up beforehand: its own install does that, in the same slot.
  */
 export function imageModelBringsItsEngine(family: string | undefined): boolean {
-  return family === MFLUX_FAMILY
+  return family === MFLUX_FAMILY || family === ENHANCER_FAMILY
 }
 
 /**

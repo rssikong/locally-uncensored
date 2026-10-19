@@ -34,7 +34,7 @@ import { useChatStore } from './chatStore'
 
 /** Die Zeilen, die es gibt. Kein freier Schluessel: eine Aufzaehlung laesst
  *  sich nachzaehlen, ein String-Schluessel waechst unbemerkt. */
-export type ChatNoticeId = 'document-belongs-in-docs' | 'model-cannot-see-images' | 'image-attach' | 'file-attach' | 'agent-outside-workspace' | 'agent-for-local-files' | 'create-save'
+export type ChatNoticeId = 'document-belongs-in-docs' | 'model-cannot-see-images' | 'image-attach' | 'file-attach' | 'binary-summary-only' | 'file-cut' | 'agent-outside-workspace' | 'agent-for-local-files' | 'create-save'
 
 export interface ChatNotice {
   id: ChatNoticeId
@@ -98,7 +98,7 @@ export const useChatNoticeStore = create<ChatNoticeState>((set, get) => ({
  * Unterhaltung: in der 3.0.4-Box blieb "The agent can only open files in this
  * chat's folder" in einem neuen Chat mit ausgeschaltetem Agent stehen.
  */
-export const CONVERSATION_BOUND: ReadonlySet<ChatNoticeId> = new Set(['agent-outside-workspace', 'agent-for-local-files'])
+export const CONVERSATION_BOUND: ReadonlySet<ChatNoticeId> = new Set(['agent-outside-workspace', 'agent-for-local-files', 'binary-summary-only', 'file-cut'])
 
 // Wechselt die Unterhaltung, gehen sie. Von "keine" zur gerade angelegten
 // nicht: das ist dieselbe Unterhaltung, die erste Nachricht legt sie erst an.

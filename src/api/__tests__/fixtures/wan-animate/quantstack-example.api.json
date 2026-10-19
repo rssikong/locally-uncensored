@@ -1,0 +1,23 @@
+{
+  "85": { "class_type": "UnetLoaderGGUF", "inputs": { "unet_name": "Wan2_2_Animate_14B_Q8_0.gguf" } },
+  "54": { "class_type": "LoraLoaderModelOnly", "inputs": { "model": ["85", 0], "lora_name": "WAN\\Wan21_I2V_14B_lightx2v_cfg_step_distill_lora_rank64.safetensors", "strength_model": 1 } },
+  "48": { "class_type": "ModelSamplingSD3", "inputs": { "model": ["54", 0], "shift": 8 } },
+  "38": { "class_type": "CLIPLoader", "inputs": { "clip_name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors", "type": "wan", "device": "default" } },
+  "39": { "class_type": "VAELoader", "inputs": { "vae_name": "wan_2.1_vae.safetensors" } },
+  "6": { "class_type": "CLIPTextEncode", "inputs": { "text": "a girl is dancing", "clip": ["38", 0] } },
+  "7": { "class_type": "CLIPTextEncode", "inputs": { "text": "static, blurry, worst quality", "clip": ["38", 0] } },
+  "78": { "class_type": "LoadImage", "inputs": { "image": "ComfyUIfinal_00001_.png" } },
+  "79": { "class_type": "VHS_LoadVideo", "inputs": { "video": "Tutorial video. ShuffleCuttingshapes.mp4", "force_rate": 16, "custom_width": 0, "custom_height": 0, "frame_load_cap": 33, "skip_first_frames": 0, "select_every_nth": 1, "format": "Wan" } },
+  "64": { "class_type": "ImageResizeKJv2", "inputs": { "image": ["79", 0], "width": ["76", 0], "height": ["83", 0], "upscale_method": "lanczos", "keep_proportion": "pad_edge_pixel", "pad_color": "0, 0, 0", "crop_position": "center", "divisible_by": 16, "device": "cpu" } },
+  "76": { "class_type": "INTConstant", "inputs": { "value": 832 } },
+  "83": { "class_type": "INTConstant", "inputs": { "value": 480 } },
+  "55": { "class_type": "DWPreprocessor", "inputs": { "image": ["64", 0], "detect_hand": "disable", "detect_body": "enable", "detect_face": "disable", "resolution": 960, "bbox_detector": "yolox_l.torchscript.pt", "pose_estimator": "dw-ll_ucoco_384_bs5.torchscript.pt", "scale_stick_for_xinsr_cn": "disable" } },
+  "68": { "class_type": "ImageCropByMaskAndResize", "inputs": { "image": ["64", 0], "mask": ["66", 0], "base_resolution": 512, "padding": 0, "min_crop_resolution": 128, "max_crop_resolution": 512 } },
+  "66": { "class_type": "FaceMaskFromPoseKeypoints", "inputs": { "pose_kps": ["55", 1], "person_index": 0 } },
+  "95": { "class_type": "ImageResizeKJv2", "inputs": { "image": ["68", 0], "width": 512, "height": 512, "upscale_method": "nearest-exact", "keep_proportion": "stretch", "pad_color": "0, 0, 0", "crop_position": "center", "divisible_by": 2, "device": "cpu" } },
+  "51": { "class_type": "WanAnimateToVideo", "inputs": { "positive": ["6", 0], "negative": ["7", 0], "vae": ["39", 0], "reference_image": ["78", 0], "face_video": ["95", 0], "pose_video": ["55", 0], "width": ["76", 0], "height": ["83", 0], "length": 33, "batch_size": 1, "continue_motion_max_frames": 5, "video_frame_offset": 0 } },
+  "3": { "class_type": "KSampler", "inputs": { "model": ["48", 0], "positive": ["51", 0], "negative": ["51", 1], "latent_image": ["51", 2], "seed": 54819921193947, "steps": 6, "cfg": 1, "sampler_name": "euler", "scheduler": "simple", "denoise": 1 } },
+  "84": { "class_type": "TrimVideoLatent", "inputs": { "samples": ["3", 0], "trim_amount": ["51", 3] } },
+  "8": { "class_type": "VAEDecode", "inputs": { "samples": ["84", 0], "vae": ["39", 0] } },
+  "114": { "class_type": "VHS_VideoCombine", "inputs": { "images": ["8", 0], "audio": ["79", 2], "frame_rate": 16, "loop_count": 0, "filename_prefix": "Animate", "format": "video/h264-mp4", "pix_fmt": "yuv420p", "crf": 19, "save_metadata": true, "trim_to_audio": false, "pingpong": false, "save_output": true } }
+}

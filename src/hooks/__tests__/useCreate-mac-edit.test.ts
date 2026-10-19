@@ -109,6 +109,9 @@ describe('Edit on the Mac hands the engine the image on the Stage', () => {
       prompt: 'make the car blue', steps: 30, seed: 7, guidance: 4, negativePrompt: 'blurry',
       // Edit opens on 1056 on the Mac: the model does not edit on 1024.
       model: 'qwen-image-2.1-8bit', images: ['/data/videos/start-images/a.png'], resolution: 1056,
+      // No mask painted, and the strength at its start: the edit from the
+      // prompt alone, as before.
+      strength: 1,
     }])
     expect(state().error).toBeNull()
     // The gallery says what the run took and what came back.
@@ -119,9 +122,53 @@ describe('Edit on the Mac hands the engine the image on the Stage', () => {
     })
   })
 
-  it('with references: the source first, three more at most, and the size in the shape of the source', async () => {
+  it('HiRes fix runs a second pass over the picture at the larger size and keeps only that one', async () => {
+    arrange('image', [QWEN], QWEN)
+    useCreateStore.setState({ hiresFixEnabled: true, hiresScale: 1.5, hiresSteps: 12, hiresDenoise: 0.5 } as never)
+    const { result } = renderHook(() => useCreate())
+    await result.current.generate()
+    expect(mlx.runs).toHaveLength(2)
+    expect(mlx.runs[0].images).toBeUndefined()
+    // 1376 x 768 at 1.5 is past the engine's 2048: both sides shrink together.
+    expect(mlx.runs[1]).toMatchObject({
+      images: ['/data/videos/start-images/late.png'], width: 2048, height: 1152, steps: 24, strength: 0.5, seed: 7,
+      // 1376 x 768 read at its own size.
+      resolution: 1024,
+    })
+    expect(state().gallery).toHaveLength(1)
+    expect(state().error).toBeNull()
+  })
+
+  it('HiRes fix does nothing for a model that cannot edit', async () => {
+    arrange('image', [SDTURBO], SDTURBO)
+    useCreateStore.setState({ hiresFixEnabled: true, hiresScale: 1.5, hiresSteps: 12, hiresDenoise: 0.5 } as never)
+    const { result } = renderHook(() => useCreate())
+    await result.current.generate()
+    expect(mlx.runs).toHaveLength(1)
+  })
+
+  it('a painted mask is written to disk and goes with the strength to the engine', async () => {
     arrange('edit', [QWEN], QWEN)
-    useCreateStore.setState({ source: img('a'), references: [img('b', 600, 800), img('c'), img('d'), img('e')] } as never)
+    // A feather of 0 hands the mask on as it was painted (jsdom has no
+    // canvas to soften it in; lib/mask-feather has its own test).
+    useCreateStore.setState({
+      source: img('a'), growMaskBy: 0, editStrength: 0.6,
+      mask: { filename: '', url: 'data:image/png;base64,AAAA', width: 1600, height: 900 },
+    } as never)
+    const { result } = renderHook(() => useCreate())
+    await result.current.generate()
+    expect(mlx.staged).toHaveLength(1)
+    expect(mlx.runs[0]).toMatchObject({
+      images: ['/data/videos/start-images/a.png'],
+      mask: '/data/videos/start-images/late.png',
+      strength: 0.6,
+    })
+    expect(state().error).toBeNull()
+  })
+
+  it('with references: the source first, then the references, and the size in the shape of the source', async () => {
+    arrange('edit', [QWEN], QWEN)
+    useCreateStore.setState({ source: img('a'), references: [img('b', 600, 800), img('c'), img('d')] } as never)
     const { result } = renderHook(() => useCreate())
     await result.current.generate()
     expect(mlx.runs[0]).toMatchObject({
@@ -130,6 +177,23 @@ describe('Edit on the Mac hands the engine the image on the Stage', () => {
       // 1600 x 900 at a budget of 1056 x 1056, as the engine works it out.
       width: 1408, height: 800,
     })
+  })
+
+  // Discord D7 (3.0.8): mflux reads ten images (MAX_REFERENCES = 10). Past
+  // four they share the budget of four (referenceSide), the canvas stays.
+  it('ten images at most, in order: the images shrink, the canvas does not', async () => {
+    arrange('edit', [QWEN], QWEN)
+    const refs = 'bcdefghijk'.split('')
+    useCreateStore.setState({ source: img('a'), references: refs.map((n) => img(n)) } as never)
+    const { result } = renderHook(() => useCreate())
+    await result.current.generate()
+    expect(mlx.runs[0]).toMatchObject({
+      images: ['a', ...refs.slice(0, 9)].map((n) => `/data/videos/start-images/${n}.png`),
+      // 1056 * sqrt(4 / 10) = 667.9, floored to the grid of 32.
+      resolution: 640,
+      width: 1408, height: 800,
+    })
+    expect(mlx.runs[0].images).toHaveLength(10)
   })
 
   // Real run, 09.10.2026: on a canvas of exactly 1024 x 1024 Qwen-Image 2.1

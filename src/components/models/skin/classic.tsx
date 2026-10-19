@@ -17,8 +17,9 @@
 //
 // Pictures of this face: proof/design-pill/win/model-manager/.
 import type { ReactNode } from 'react'
+import { ADD_GGUF_TITLE } from './types'
 import {
-  ArrowLeft, Download, HardDrive, RefreshCw, Search, Sparkles, X as XIcon,
+  ArrowLeft, Download, FilePlus, HardDrive, RefreshCw, Search, Sparkles, X as XIcon,
 } from 'lucide-react'
 import { CapLegend, HardwareChip } from '../ModelTiles'
 import {
@@ -54,7 +55,7 @@ const VIEW_OPEN = 'bg-lu-accent-soft ring-1 ring-inset ring-lu-accent-edge dark:
 const VIEW_CLOSED = 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
 const VIEW_GLYPH = 'text-lu-accent-ink dark:text-lu-accent'
 
-function ClassicManagerFrame({ entries, onBack, tab, onTab, installedBadge, searchRef, search, onRefresh, onPull, children }: ManagerFrameProps) {
+function ClassicManagerFrame({ entries, onBack, tab, onTab, installedBadge, searchRef, search, onRefresh, onPull, onAddFile, children }: ManagerFrameProps) {
   return (
     <>
       {/* Category rail, the big, labeled home of Chat / Image / Video */}
@@ -171,6 +172,15 @@ function ClassicManagerFrame({ entries, onBack, tab, onTab, installedBadge, sear
                 title="Pull any Ollama model by name"
               >
                 <Download size={11} /> Pull
+              </button>
+            )}
+            {onAddFile && (
+              <button
+                onClick={onAddFile}
+                className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-black/[0.14] dark:border-white/[0.14] text-gray-600 dark:text-gray-400 hover:bg-black/[0.05] dark:hover:bg-white/[0.07] hover:text-gray-900 dark:hover:text-gray-100 t-micro transition-colors"
+                title={ADD_GGUF_TITLE}
+              >
+                <FilePlus size={11} /> GGUF file
               </button>
             )}
           </div>

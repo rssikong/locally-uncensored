@@ -4,6 +4,8 @@ import { v4 as uuid } from 'uuid'
 import { useCodexStore } from '../stores/codexStore'
 import { useModelStore } from '../stores/modelStore'
 import { runCompactForConversation, compactOutcomeMessage, maybeAutoCompact } from '../lib/run-compact-command'
+import { autoCompactOn } from '../lib/compact-trigger'
+import { compactRunMidway, newRunCompactState } from '../lib/run-compact-midway'
 import { applyStoredCompaction } from '../lib/compact-summary'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useChatStore, flushChatPersist } from '../stores/chatStore'
@@ -41,6 +43,7 @@ import { CODEX_PLAN_SYSTEM_PROMPT } from '../lib/codex-plan-prompt'
 import { resolveWorkspace } from '../api/agents/workspace-resolve'
 import { useChatNoticeStore, CHAT_NOTICE_MS } from '../stores/chatNoticeStore'
 import { copyFailedMessage, fileMessageFields, placeChatFiles, type ChatFileInput } from '../lib/chat-files'
+import { fitFilesForSend, requestTextOf } from './chat-file-room'
 import type { FileAttachment } from '../types/chat'
 import { useAgentModeStore } from '../stores/agentModeStore'
 import { loadLurules, renderRulesSection } from '../lib/lurules'
@@ -625,6 +628,15 @@ export function useCodex() {
       if (placed.failed.length) {
         useChatNoticeStore.getState().show('file-attach', copyFailedMessage(placed.failed), 'ruhig', CHAT_NOTICE_MS)
       }
+      // GH #171: the text goes inline as far as it fits beside the run; the
+      // whole file is in the folder for the tools either way.
+      attachedFiles = await fitFilesForSend({
+        files: attachedFiles,
+        models: [activeModel],
+        use: 'agent',
+        otherText: requestTextOf(useChatStore.getState().conversations.find((c) => c.id === convId), instruction),
+        surface: 'workspace',
+      })
     }
 
     // Add user message to chat store. For a slash command the UI shows the raw
@@ -878,7 +890,7 @@ export function useCodex() {
     // budget and never moves the prefix.
     // 2.6.8 auto-compact, once per user turn — outside the iteration loop for
     // the same reason as in useAgentChat.
-    if (settings.autoCompactThreshold) {
+    if (autoCompactOn(settings)) {
       await maybeAutoCompact({ conversationId: convId, activeModel })
     }
     const convForPayload =
@@ -978,6 +990,8 @@ export function useCodex() {
     // the run itself pushed, in order; a copy the trim makes (the pinned task
     // with its ledger) is not the run's own and is kept out.
     const notRunOwn = new Set<ChatMessage>(messages)
+    // Auto-compact in the middle of this run (3.0.7), one state per run.
+    const laufVerdichtung = newRunCompactState()
     const runLog: ChatMessage[] = []
     const logged = new Set<ChatMessage>()
     const logRun = () => {
@@ -1278,6 +1292,9 @@ export function useCodex() {
           // The Coding Agent is the third caller that builds its own options,
           // and the one where a forgotten field costs the most tokens.
           reasoningEffort: settings.reasoningEffort,
+          localEffortChosen: settings.localEffortChosen,
+          // Think budget (D12): only the backends that take a count read it.
+          thinkingBudget: settings.thinkingBudget,
           effortLevels: cxEffort.levels,
           effortDefault: cxEffort.fallback,
           signal: abort.signal,
@@ -1312,7 +1329,7 @@ export function useCodex() {
           sendWindowTokens: sendWindowFor(settings, activeModel),
           capEnabled: decayOn,
           smallModelMode: settings.smallModelMode,
-          localBackend: sendsToALanBackend(providerId),
+          localBackend: sendsToALanBackend(providerId, activeModel),
         }), modelToUse, numCtx)
         // What this step sends, estimated: the history, and the catalogue that
         // rides beside it on the native transport. Read when the server
@@ -1330,6 +1347,22 @@ export function useCodex() {
           // the send copy alone, so the store keeps every result complete.
           logRun()
           const beforeTrim = new Set(messages)
+          // Before the trim: when the run nears the window, its older steps
+          // are summarised by the run's own model instead of only dropped.
+          // The copies it makes are not the run's own (marked just below
+          // with the trim's), so runLog keeps every result complete.
+          const verdichtet = await compactRunMidway({
+            messages,
+            budgetTokens: sendWindow,
+            modelWindow: numCtx,
+            activeModel,
+            convId,
+            beforeMessageId: assistantMsg.id,
+            signal: abort.signal,
+            state: laufVerdichtung,
+            decay: { enabled: decayOn },
+          })
+          if (verdichtet.compacted) messages = verdichtet.messages
           messages = trimWorkingHistory(messages, sendWindow, { enabled: decayOn, hysteresis: decayOn }).messages
           for (const m of messages) if (!beforeTrim.has(m)) notRunOwn.add(m)
           const built = buildRequestMessages(messages, {

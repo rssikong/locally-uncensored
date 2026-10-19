@@ -50,8 +50,13 @@ describe('which slot a model name routes to', () => {
     // worst possible split — the guard below would decline to clear a pick
     // that getProviderForModel then routes to a backend that is switched off.
     const src = readFileSync(join(HERE, '../modelStore.ts'), 'utf8')
-    expect(src).toContain('getProviderIdFromModel')
+    // GitHub #173: the store asks modelBackendKey, which is
+    // getProviderIdFromModel plus the entry of an additional OpenAI-compatible
+    // backend, and lives next to it. Still one answer, in one module.
+    expect(src).toMatch(/getProviderIdFromModel|modelBackendKey/)
     expect(src).not.toMatch(/function\s+providerIdForModel/)
+    const names = readFileSync(join(HERE, '../../api/providers/model-name.ts'), 'utf8')
+    expect(names).toMatch(/export function modelBackendKey[\s\S]{0,300}getProviderIdFromModel\(modelName\)/)
   })
 
   it('and the guard agrees with it on the names that used to differ', () => {

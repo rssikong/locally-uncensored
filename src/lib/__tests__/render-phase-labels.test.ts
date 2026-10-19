@@ -102,9 +102,10 @@ describe('the sampling claim (Befund 4)', () => {
 describe('the Create tab uses this module and holds no labels of its own', () => {
   it('useCreate asks for the phase instead of writing one', () => {
     const src = read('src/hooks/useCreate.ts')
-    expect(src).toMatch(/import \{ phaseForExecutingNode, phaseForProgressStep \} from '\.\.\/lib\/render-phase-labels'/)
+    expect(src).toMatch(/import \{ phaseForExecutingNode, phaseForExecutionStart, phaseForProgressStep, phaseForSaveNode \} from '\.\.\/lib\/render-phase-labels'/)
     expect(src).toMatch(/phaseForExecutingNode\(classType, mode === 'video' \? 'video' : 'image', cutoutDownload\)/)
-    expect(src).toMatch(/phaseForProgressStep\(value, max, st\.progressPhase\)/)
+    // An Enhance run (3.0.7) counts parts instead of sampler steps.
+    expect(src).toMatch(/phaseForProgressStep\(value, max, st\.progressPhase, isUpscale\)/)
   })
 
   it('NEGATIVE: the two wrong lines are gone from the hook', () => {

@@ -2454,11 +2454,22 @@ checksum = "85ab80394333c02fe689eaf900ab500fbd0c2213da414687ebf995a65d5a6104"
 dependencies = [
  "bytemuck",
  "byteorder-lite",
+ "image-webp",
  "moxcms",
  "num-traits",
  "png 0.18.1",
  "zune-core",
  "zune-jpeg",
+]
+
+[[package]]
+name = "image-webp"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "525e9ff3e1a4be2fbea1fdf0e98686a6d98b4d8f937e1bf7402245af1909e8c3"
+dependencies = [
+ "byteorder-lite",
+ "quick-error",
 ]
 
 [[package]]
@@ -2890,7 +2901,7 @@ dependencies = [
 
 [[package]]
 name = "locally-uncensored"
-version = "3.0.6"
+version = "3.0.7"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -2909,8 +2920,12 @@ dependencies = [
  "local-ip-address",
  "minisign-verify",
  "num_cpus",
+ "objc2",
  "objc2-app-kit",
+ "objc2-core-video",
  "objc2-foundation",
+ "objc2-image-io",
+ "objc2-vision",
  "once_cell",
  "qrcode",
  "rand 0.8.5",
@@ -2944,6 +2959,7 @@ dependencies = [
  "urlencoding",
  "uuid",
  "walkdir",
+ "webkit2gtk",
  "which",
  "whoami",
  "windows-sys 0.59.0",
@@ -3647,6 +3663,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "objc2-vision"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bfc194758a2d5d7540b1ad283bfb9ca318ec608991892326e95b428230b2689b"
+dependencies = [
+ "objc2",
+ "objc2-core-video",
+ "objc2-foundation",
+ "objc2-image-io",
+]
+
+[[package]]
 name = "objc2-web-kit"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4298,6 +4326,12 @@ checksum = "d68782463e408eb1e668cf6152704bd856c78c5b6417adaee3203d8f4c1fc9ec"
 dependencies = [
  "image",
 ]
+
+[[package]]
+name = "quick-error"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a993555f31e5a609f617c12db6250dedcac1b0a85076912c436e6fc9b2c8e6a3"
 
 [[package]]
 name = "quick-xml"

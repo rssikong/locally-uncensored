@@ -103,7 +103,8 @@ function dezimalfunde(zeilen: string[], quelle: string): string[] {
 
 describe('die Katalogzahl bleibt in der Quelle', () => {
   it('die beiden Kataloge sind gelesen, nicht geraten', () => {
-    expect(MLX_KATALOG).toHaveLength(56)
+    // 57 since SeedVR2 3B, the upscaler of Enhance Image (14.10.2026).
+    expect(MLX_KATALOG).toHaveLength(57)
     const nsfw = MLX_KATALOG.find((e) => e.name === 'UnfilteredAI Gen v2')
     expect(nsfw?.roh).toBe('8.6')
     // Die Zahl, um die es geht: derselbe Eintrag, zwei Zaehlweisen.

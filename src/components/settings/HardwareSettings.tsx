@@ -7,7 +7,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { backendCall, isTauri } from '../../api/backend'
 import { isMlxImageHost } from '../../api/mlx-image'
-import { Cpu, RefreshCw, AlertTriangle } from 'lucide-react'
+import { restartComfyForNewNodes } from '../../api/comfy-restart'
+import { Cpu, RefreshCw, AlertTriangle, RotateCcw } from 'lucide-react'
 import { Hinweis } from '../ui/Hinweis'
 import { HINWEIS_TEXT } from '../../lib/hinweis'
 
@@ -30,6 +31,12 @@ const VENDOR_LABELS: Record<GpuVendor, string> = {
   intel: 'Intel (ONEAPI_DEVICE_SELECTOR)',
 }
 
+/** What a ComfyUI LU does not own gets told when Restart ComfyUI is pressed
+ *  here. LU passes --cpu only to a ComfyUI it starts itself, so for that one
+ *  the GPU mode does nothing at all, restart or not. */
+const COMFY_GPU_OUTSIDE_LU =
+  'Your ComfyUI is running outside LU, so LU cannot restart it, and the ComfyUI GPU setting only applies to a ComfyUI that LU starts.'
+
 const VENDOR_HELP: Record<GpuVendor, string> = {
   auto: 'No env-var set. Ollama / ComfyUI use whatever the driver picks first. This matches pre-v2.5.0 behaviour.',
   nvidia: 'Forwards CUDA_VISIBLE_DEVICES. Use on NVIDIA-only or NVIDIA+iGPU setups.',
@@ -43,6 +50,11 @@ export function HardwareSettings() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showRestartHint, setShowRestartHint] = useState(false)
+  // 3.0.7: its own flag. The hint above only showed when a vendor or a card
+  // was picked, so Force GPU with the vendor on Auto changed the mode without
+  // a word, and the running ComfyUI kept the flags it was started with.
+  const [comfyModeChanged, setComfyModeChanged] = useState(false)
+  const [comfyRestart, setComfyRestart] = useState<{ busy: boolean; done: boolean; error: string }>({ busy: false, done: false, error: '' })
 
   const vendor = (settings.gpuVendor || 'auto') as GpuVendor
   // Das `|| []` erzeugte bei jedem Render ein frisches Array. Der Effekt unten
@@ -99,6 +111,22 @@ export function HardwareSettings() {
     // starts a local one, so this is a no-op there.
     if (isTauri()) backendCall('set_comfy_gpu_mode', { mode }).catch(() => {})
     setShowRestartHint(true)
+    setComfyModeChanged(true)
+    setComfyRestart({ busy: false, done: false, error: '' })
+  }
+
+  // The same restart the node pack screens use: stop, make sure the port went
+  // quiet, start. The mode is sent once more first, so a click right after the
+  // switch cannot start ComfyUI before the backend has the new mode.
+  const restartComfy = async () => {
+    setComfyRestart({ busy: true, done: false, error: '' })
+    try {
+      await backendCall('set_comfy_gpu_mode', { mode: comfyGpuMode })
+      await restartComfyForNewNodes(COMFY_GPU_OUTSIDE_LU)
+      setComfyRestart({ busy: false, done: true, error: '' })
+    } catch (e) {
+      setComfyRestart({ busy: false, done: false, error: e instanceof Error ? e.message : String(e) })
+    }
   }
 
   return (
@@ -251,6 +279,31 @@ export function HardwareSettings() {
           Windows LU installs AMD's own ROCm build for RX 7000 and RX 9000 cards, and the
           processor build for everything else. Takes effect on next ComfyUI start.
         </div>
+        {comfyModeChanged && (
+          <div className="mt-2 space-y-1" data-testid="comfy-gpu-restart-hint">
+            <p className={`t-micro leading-relaxed ${HINWEIS_TEXT.ruhig}`}>
+              ComfyUI only reads this when it starts, so the ComfyUI that is running now keeps its old mode.
+              Restart ComfyUI to apply it. After the restart, the Device line under Status in AI Backends,
+              ComfyUI (Image &amp; Video) shows what ComfyUI runs on: cuda or xpu is the card, cpu is the processor.
+            </p>
+            {isTauri() && (
+              <button
+                onClick={() => { void restartComfy() }}
+                disabled={comfyRestart.busy}
+                className="px-2 py-1 rounded t-micro bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 transition-colors disabled:opacity-30 inline-flex items-center gap-1"
+              >
+                <RotateCcw size={10} className={comfyRestart.busy ? 'animate-spin' : ''} />
+                {comfyRestart.busy ? 'Restarting ComfyUI' : 'Restart ComfyUI'}
+              </button>
+            )}
+            {comfyRestart.done && (
+              <p className="t-micro text-emerald-400">ComfyUI is starting again with the new mode.</p>
+            )}
+            {comfyRestart.error && (
+              <p role="alert" className={`t-micro ${HINWEIS_TEXT.fehler}`}>{comfyRestart.error}</p>
+            )}
+          </div>
+        )}
       </div>
       )}
 

@@ -414,10 +414,12 @@ describe('release.yml signs only where signing-config.sh said yes', () => {
 
   it('the SignPath steps are skipped without the SignPath values', () => {
     const condition = "if: matrix.platform == 'windows-latest' && steps.signcfg.outputs.signpath == 'true'"
-    const sign = stepBlock(build, 'Build and sign the Windows installers (SignPath)')
+    const sign = stepBlock(build, 'Build the app and submit it to SignPath (stage 1)')
     expect(sign).toContain(condition)
     expect(sign).toContain('uses: ./.github/actions/windows-signpath')
-    expect(stepBlock(build, 'Attach the signed Windows installers and update latest.json')).toContain(condition)
+    // Stage 1 publishes nothing; attaching is stage 3, in windows-signpath.yml.
+    expect(stepBlock(build, 'Attach the signed Windows installers and update latest.json')).toBe('')
+    expect(read('.github/workflows/windows-signpath.yml')).toContain('- name: Attach the signed Windows installers and update latest.json')
     // The token is handed to that one step and to the detection, nowhere else.
     const tokenLines = withoutComments(RELEASE_YML).split(/\r?\n/).filter((l) => l.includes('secrets.SIGNPATH_API_TOKEN'))
     expect(tokenLines.map((l) => l.trim()).sort()).toEqual([
@@ -446,25 +448,35 @@ describe('release.yml signs only where signing-config.sh said yes', () => {
     for (const name of [
       'Configure Windows code signing (Azure Artifact Signing)',
       'Verify the Windows signatures',
-      'Build and sign the Windows installers (SignPath)',
-      'Attach the signed Windows installers and update latest.json',
+      'Build the app and submit it to SignPath (stage 1)',
     ]) {
       expect(stepBlock(build, name), name).toMatch(/^\s*if: .* && !inputs\.dry_run\s*$/m)
     }
   })
 
   it('a release never accepts the self-signed test certificate', () => {
-    const sign = withoutComments(stepBlock(build, 'Build and sign the Windows installers (SignPath)'))
-    expect(sign).not.toContain('allow-test-certificate')
-    expect(sign).toMatch(/expected-publisher: \$\{\{ vars\.SIGNPATH_EXPECTED_PUBLISHER \|\| 'SignPath Foundation' \}\}/)
-    const action = read('.github/actions/windows-signpath/action.yml')
+    // The certificate is checked where the signed installers come back:
+    // stage 3, the publish job of windows-signpath.yml.
+    const stages = read('.github/workflows/windows-signpath.yml')
+    const publish = withoutComments(jobBlock(stages, 'publish'))
+    const finish = stepBlock(publish, 'Fetch the signed installers and write their updater files')
+    expect(finish).toContain('uses: ./.github/actions/windows-signpath-finish')
+    expect(finish).not.toContain('allow-test-certificate')
+    expect(finish).toMatch(/expected-publisher: \$\{\{ vars\.SIGNPATH_EXPECTED_PUBLISHER \|\| 'SignPath Foundation' \}\}/)
+    expect(withoutComments(stages)).not.toContain('allow-test-certificate')
+    const action = read('.github/actions/windows-signpath-finish/action.yml')
     expect(action).toMatch(/allow-test-certificate:\n(?:.*\n)*?\s+default: 'false'/)
   })
 
-  it('the job keeps its 90 minutes unless the SignPath lane has to wait for an approval', () => {
+  it('the job keeps its 90 minutes, the SignPath leg 120 because it builds llama.cpp from source, and nothing waits for an approval', () => {
     expect(withoutComments(build)).toMatch(
-      /^\s{4}timeout-minutes: \$\{\{ matrix\.platform == 'windows-latest' && vars\.SIGNPATH_SIGNING_POLICY_SLUG != '' && 360 \|\| 90 \}\}\s*$/m,
+      /^\s{4}timeout-minutes: \$\{\{ matrix\.platform == 'windows-latest' && vars\.SIGNPATH_SIGNING_POLICY_SLUG != '' && 120 \|\| 90 \}\}\s*$/m,
     )
+    for (const action of ['windows-signpath', 'windows-signpath-installers']) {
+      const text = withoutComments(read(`.github/actions/${action}/action.yml`))
+      expect(text, action).toMatch(/^\s+wait-for-completion: false$/m)
+      expect(text, action).not.toMatch(/wait-for-completion: true/)
+    }
   })
 
   it('and then the build gets the arguments it always got', () => {
@@ -495,26 +507,31 @@ describe('release.yml signs only where signing-config.sh said yes', () => {
     expect(JSON.parse(read('src-tauri/tauri.conf.json')).bundle.macOS.signingIdentity).toBe('-')
   })
 
-  it('the SignPath action signs the binary before the installers, and the updater files last', () => {
-    const action = read('.github/actions/windows-signpath/action.yml')
+  it('the SignPath stages sign the binary before the installers, and the updater files last', () => {
+    // One stage per action, in this order; each ends with a submitted
+    // request or, the last, with the verified files.
+    const text = ['windows-signpath', 'windows-signpath-installers', 'windows-signpath-finish']
+      .map((a) => read(`.github/actions/${a}/action.yml`)).join('\n')
     const order = [
       'npx tauri build --no-bundle',
       'windows-signpath.mjs stage-app',
       'id: sign-app',
+      'signpath-stages.mjs download-signed "$REQUEST_ID" "$RUNNER_TEMP/signpath/app-signed"',
       'npx tauri bundle --bundles "$kind"',
       'windows-signpath.mjs stage-installers',
       'id: sign-installers',
+      'signpath-stages.mjs download-signed "$REQUEST_ID" "$RUNNER_TEMP/signpath/installers-signed"',
       'windows-signpath.mjs updater-artifacts',
       'npx tauri signer sign',
       './scripts/windows-signing-verify.ps1',
-    ].map((needle) => ({ needle, at: action.indexOf(needle) }))
+    ].map((needle) => ({ needle, at: text.indexOf(needle) }))
     for (const { needle, at } of order) expect(at, needle).toBeGreaterThan(0)
     expect(order.map((o) => o.at)).toEqual([...order.map((o) => o.at)].sort((a, b) => a - b))
     // Third party actions by commit, like everywhere else in the workflows.
-    for (const uses of action.match(/^\s*uses: .*$/gm) ?? []) {
+    for (const uses of text.match(/^\s*uses: .*$/gm) ?? []) {
       expect(uses, uses).toMatch(/@[0-9a-f]{40} # v\d/)
     }
-    expect(withoutComments(action)).not.toMatch(/continue-on-error/)
+    expect(withoutComments(text)).not.toMatch(/continue-on-error/)
   })
 
   it('the artifact configurations sign this project\'s own files and nothing else', () => {

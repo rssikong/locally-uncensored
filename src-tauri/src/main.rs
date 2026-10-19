@@ -1,6 +1,8 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(target_os = "linux")]
+mod linux_media;
 mod app_identity;
 mod cancel_registry;
 mod commands;
@@ -21,6 +23,7 @@ mod private_python;
 mod private_tmp;
 mod process_util;
 mod python;
+mod runtime_root;
 mod state;
 // Test-only OS helpers (a shell, a sleeper, "is this pid alive"), shared by
 // the process tests in state.rs, commands/engine.rs and commands/bg_tasks.rs
@@ -381,6 +384,7 @@ fn init_tracing() -> Option<tracing_appender::non_blocking::WorkerGuard> {
                 fmt::layer()
                     .with_writer(writer)
                     .with_ansi(false)
+                    .with_timer(VersionedTime)
                     .fmt_fields(EnglishFields(fmt::format::DefaultFields::new())),
             ),
             Some(guard),
@@ -407,6 +411,25 @@ fn init_tracing() -> Option<tracing_appender::non_blocking::WorkerGuard> {
             .try_init();
     }
     guard
+}
+
+/// The file log's timestamp, followed by the version of the build that wrote
+/// the line.
+///
+/// A daily log file holds every run of that day and the file keeps seven days,
+/// so after an update it still carries the lines of the version before. Only
+/// the start line used to name a version, and a Discord report (3.0.7) had a
+/// user on 3.0.6 reading "3.0.5" in his logs: the lines of the run before the
+/// update, with nothing on them to say so. With the version on every line,
+/// each one says which build wrote it. File only: the console is read by the
+/// developer who started that very build.
+struct VersionedTime;
+
+impl tracing_subscriber::fmt::time::FormatTime for VersionedTime {
+    fn format_time(&self, w: &mut tracing_subscriber::fmt::format::Writer<'_>) -> std::fmt::Result {
+        tracing_subscriber::fmt::time::SystemTime.format_time(w)?;
+        write!(w, " v{}", app_identity::APP_VERSION)
+    }
 }
 
 /// A field formatter that runs the finished text through `os_error`.
@@ -468,7 +491,7 @@ fn main() {
     // with it before the first line was written.
     let _log_guard = init_tracing();
     tracing::info!(
-        version = env!("CARGO_PKG_VERSION"),
+        version = crate::app_identity::APP_VERSION,
         "LU starting"
     );
 
@@ -534,6 +557,9 @@ fn main() {
             commands::install::install_python_status,
             commands::install::python_check,
             commands::install::install_custom_node,
+            commands::install::list_custom_nodes,
+            commands::install::remove_custom_node,
+            commands::install::custom_node_log,
             commands::install::install_whisper,
             commands::install::install_whisper_status,
             commands::install::install_tts,
@@ -565,6 +591,9 @@ fn main() {
             commands::agent::get_chat_workspace_override,
             commands::agent::list_agent_workspaces,
             // Shell
+            // REA as an agent plugin: the pinned package and what its start needs.
+            commands::plugin_rea::plugin_rea_status,
+            commands::plugin_rea::plugin_rea_fetch,
             commands::shell::shell_execute,
             commands::shell::shell_execute_cancel,
             // Filesystem
@@ -585,6 +614,11 @@ fn main() {
             commands::system::process_list,
             commands::system::screenshot,
             commands::system::pick_folder,
+            // Settings, Model Storage: the folder of the voice engine, the
+            // read-aloud voices and LU's own Python.
+            commands::runtime_folder::runtime_folder_status,
+            commands::runtime_folder::set_runtime_folder,
+            commands::runtime_folder::move_runtime_folder,
             commands::system::is_onboarding_done,
             commands::system::set_onboarding_done,
             commands::system::get_current_time,
@@ -594,6 +628,8 @@ fn main() {
             commands::chat_attachments::save_chat_attachment_dialog,
             commands::cloud_file::save_cloud_file_dialog,
             commands::cloud_file::cancel_cloud_file,
+            commands::character_files::import_cloud_character,
+            commands::character_files::character_photos,
             commands::chat_attachments::export_chats_dialog,
             commands::chat_attachments::import_chats_dialog,
             commands::model_sniff::sniff_model_files,
@@ -610,6 +646,7 @@ fn main() {
             // Downloads
             commands::download::download_model,
             commands::download::comfy_model_target,
+            commands::comfy_user_paths::comfy_folder_targets,
             commands::download::download_model_to_path,
             commands::download::download_progress,
             commands::download::pause_download,
@@ -625,6 +662,11 @@ fn main() {
             commands::download::lmstudio_model_dir,
             commands::download::check_model_sizes,
             commands::download::delete_comfy_model,
+            // Check files and Repair (GH #113)
+            commands::model_verify::verify_model_files,
+            commands::model_verify::verify_model_files_status,
+            commands::model_verify::verify_model_files_cancel,
+            commands::model_verify::trash_model_file,
             // Built-in inference engine (bundled llama-server, P1)
             commands::engine::start_bundled_engine,
             commands::engine::stop_bundled_engine,
@@ -637,7 +679,9 @@ fn main() {
             // The user's own model folder, handed to ComfyUI (GH #122)
             commands::custom_models::sync_custom_model_paths,
             commands::engine::import_local_model,
+            commands::engine::pick_gguf_file,
             // Built-in embeddings server (bundled llama-server --embeddings, P5)
+            commands::engine_key::engine_key_for,
             commands::engine::start_bundled_embed,
             commands::engine::stop_bundled_embed,
             commands::engine::bundled_embed_status,
@@ -649,10 +693,13 @@ fn main() {
             commands::media_cmds::mlx_generate,
             commands::media_cmds::mlx_generate_progress,
             commands::media_cmds::mlx_generate_cancel,
+            commands::media_cmds::mlx_enhance_prompt,
+            commands::media_cmds::mlx_upscale,
             commands::media_cmds::mlx_loras,
             commands::media_cmds::mlx_loras_open_folder,
             commands::media_cmds::mlx_lora_delete,
             commands::media_cmds::mlx_output_trash,
+            commands::media_cmds::mlx_cutout,
             commands::media_cmds::mlx_image_models,
             commands::media_cmds::set_hf_token,
             commands::media_cmds::hf_token_present,
@@ -675,6 +722,23 @@ fn main() {
             commands::media_cmds::video_cancel,
             commands::media_cmds::read_media_file,
             commands::media_cmds::video_stage_start_image,
+            commands::media_cmds::video_stage_motion_video,
+            commands::media_cmds::video_stage_voice,
+            // The music engine of the Mac (ACE-Step 1.5). See commands/music.rs.
+            commands::media_cmds::mlx_music_status,
+            commands::media_cmds::mlx_music_install,
+            commands::media_cmds::mlx_music_install_status,
+            commands::media_cmds::mlx_music_cancel_install,
+            commands::media_cmds::mlx_music_delete,
+            commands::media_cmds::mlx_music_generate,
+            commands::media_cmds::mlx_music_progress,
+            commands::media_cmds::mlx_music_cancel,
+            commands::media_cmds::mlx_train_status,
+            commands::media_cmds::mlx_train_stage,
+            commands::media_cmds::mlx_train_clear,
+            commands::media_cmds::mlx_train_start,
+            commands::media_cmds::mlx_train_progress,
+            commands::media_cmds::mlx_train_cancel,
             // Astra voice loop: in-app setup and sidecar lifecycle.
             commands::voice_loop::voice_loop_requirements,
             commands::voice_loop::voice_loop_install,
@@ -742,6 +806,7 @@ fn main() {
             commands::remote::remote_connected_devices,
             commands::remote::disconnect_remote_device,
             commands::remote::set_remote_permissions,
+            commands::remote::set_remote_page_title,
             commands::remote::start_tunnel,
             commands::remote::stop_tunnel,
             commands::remote::tunnel_status,
@@ -758,8 +823,6 @@ fn main() {
             commands::proxy::register_openai_host,
             commands::proxy::pull_model_stream,
             commands::proxy::cancel_model_pull,
-            // Cloud "Hosted LU Workflows" waitlist — opt-in email capture
-            commands::waitlist::waitlist_submit,
             // The Cloud switch counts its presses anonymously (funnel.rs)
             commands::funnel::funnel_ping,
             // B7 (the web app Phase 4 inspiration) — one-shot diagnostic probe
@@ -804,6 +867,13 @@ fn main() {
             #[cfg(target_os = "windows")]
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_shadow(false);
+            }
+
+            // GitHub #162: WebKitGTK refuses the microphone unless the app
+            // answers for it, and on Linux nobody else asks the user.
+            #[cfg(target_os = "linux")]
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.with_webview(|webview| linux_media::answer_microphone_requests(&webview.inner()));
             }
 
             // ─── Erststart: Onboarding im eigenen Fenster ───
@@ -961,6 +1031,16 @@ fn main() {
                     // a process of its own with a whole pack in memory.
                     #[cfg(target_os = "macos")]
                     commands::mlx::reap_orphaned_mflux();
+                    // And a track of the music engine, the same way.
+                    #[cfg(target_os = "macos")]
+                    if let Some(pid) = commands::music::reap_orphaned_run() {
+                        tracing::warn!(target: "music", pid, "ended a track orphaned by a previous run");
+                    }
+                    // And a character training, the same way.
+                    #[cfg(target_os = "macos")]
+                    if let Some(pid) = commands::mlx::train::reap_orphaned_run() {
+                        tracing::warn!(target: "train", pid, "ended a training orphaned by a previous run");
+                    }
                     let state = handle.state::<AppState>();
                     commands::process::auto_start_ollama(&state);
                     commands::process::auto_start_comfyui(&state);
@@ -1308,6 +1388,30 @@ mod log_english_tests {
         String::from_utf8(out).expect("the log is utf8")
     }
 
+    /// Discord report (3.0.7): the file log names the build on every line,
+    /// not only on the start line, so the lines of the run before an update
+    /// can no longer pass for the installed version.
+    #[test]
+    fn every_file_log_line_names_the_build_that_wrote_it() {
+        let buf = Arc::new(Mutex::new(Vec::new()));
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(Capture(buf.clone()))
+            .with_ansi(false)
+            .with_timer(super::VersionedTime)
+            .finish();
+        tracing::subscriber::with_default(subscriber, || {
+            tracing::info!("first");
+            tracing::warn!("second");
+        });
+        let out = String::from_utf8(buf.lock().unwrap().clone()).expect("the log is utf8");
+        let lines: Vec<&str> = out.lines().collect();
+        assert_eq!(lines.len(), 2, "got: {out}");
+        let stamp = format!(" v{} ", crate::app_identity::APP_VERSION);
+        for line in lines {
+            assert!(line.contains(&stamp), "no version on: {line}");
+        }
+    }
+
     #[test]
     fn a_dependency_that_logs_an_os_error_still_reads_in_our_words() {
         // Exactly the hyper-util line that put German text into
@@ -1509,6 +1613,18 @@ mod log_file_tests {
             "commands::secret::secret_park_set",
             "commands::secret::secret_park_get",
             "commands::secret::secret_park_delete",
+        ] {
+            assert!(SRC.contains(cmd), "{cmd} is not in generate_handler!");
+        }
+    }
+
+    #[test]
+    fn the_frontend_can_actually_reach_the_runtime_folder_commands() {
+        // Settings, Model Storage, "Voice and Python folder" (Discord D2).
+        for cmd in [
+            "commands::runtime_folder::runtime_folder_status",
+            "commands::runtime_folder::set_runtime_folder",
+            "commands::runtime_folder::move_runtime_folder",
         ] {
             assert!(SRC.contains(cmd), "{cmd} is not in generate_handler!");
         }

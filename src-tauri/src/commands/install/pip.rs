@@ -618,13 +618,20 @@ pub(crate) fn pip_failure_hint(kind: PipFailureKind, text: &str) -> String {
         PipFailureKind::PipBroken =>
             "Python install is missing pip or is broken. Reinstall Python 3.10+ \
              from python.org with 'Add to PATH' checked.".to_string(),
+        // Discord 14.10.2026: "Reinstall a supported Python version" sent a
+        // customer with only Python 3.15 off to do by hand what LU does
+        // itself. Repair environment picks a Python PyTorch serves, and LU's
+        // own 3.12 when the machine has none.
         PipFailureKind::NoMatchingWheel =>
-            "No matching wheel for your Python version. ComfyUI needs Python \
-             3.10, 3.11, or 3.12. Reinstall a supported Python version.".to_string(),
+            "There is no matching wheel for the Python version this environment runs on. \
+             Press Repair environment in Settings: LU rebuilds ComfyUI's environment with a \
+             Python that has the wheels, one already on this machine or LU's own Python 3.12 \
+             (downloaded once, no administrator rights needed).".to_string(),
         PipFailureKind::UnsupportedPython =>
-            "A package refused the Python version it was asked to install into. \
-             ComfyUI needs Python 3.10, 3.11, or 3.12. Install one of those and \
-             set it up again.".to_string(),
+            "A package refused the Python version it was asked to install into. Press Repair \
+             environment in Settings: LU rebuilds ComfyUI's environment with a Python that \
+             package supports, one already on this machine or LU's own Python 3.12 \
+             (downloaded once, no administrator rights needed).".to_string(),
         PipFailureKind::Unknown => String::new(),
     }
 }
@@ -1621,6 +1628,19 @@ mod tests {
         let msg = diagnose_pip_error("ERROR: Could not find a version that satisfies the requirement torch");
         let lower = msg.to_lowercase();
         assert!(lower.contains("python") || lower.contains("version") || lower.contains("3.10"));
+    }
+
+    /// Discord 14.10.2026: only Python 3.15 on the machine, and the sentence
+    /// asked for a reinstall LU can do itself. Both version failures now name
+    /// the button that does it.
+    #[test]
+    fn a_version_failure_points_at_the_repair_not_at_a_python_reinstall() {
+        for kind in [PipFailureKind::NoMatchingWheel, PipFailureKind::UnsupportedPython] {
+            let hint = pip_failure_hint(kind, "");
+            assert!(hint.contains("Repair environment"), "{hint}");
+            assert!(hint.contains("LU's own Python 3.12"), "{hint}");
+            assert!(!hint.to_lowercase().contains("reinstall"), "{hint}");
+        }
     }
 
     /// A user (Discord 2026-07-28) read "ComfyUI needs Python 3.10, 3.11

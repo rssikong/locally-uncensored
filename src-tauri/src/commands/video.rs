@@ -25,6 +25,8 @@ use std::process::{Command, Stdio};
 /// already. A child module, so it shares this file's venv and download helpers.
 #[path = "video_ltx2mlx.rs"]
 mod ltx2mlx;
+#[path = "video_motion.rs"]
+mod motion;
 
 // ── Hardware guard ────────────────────────────────────────────────────
 
@@ -180,6 +182,10 @@ struct CatalogEntry {
     /// The entry the one-click setup of Create takes on a Mac it fits on. One
     /// entry carries it, and a test holds that it is one that has run here.
     starter: bool,
+    /// Gigabytes of `ltx2mlx::TALKING_FILES` the entry's repository carries
+    /// for a Talking Character run (`a2v`), fetched on their own after the
+    /// model; 0 for an entry that does not talk. Set where a real run talked.
+    talking_gb: f32,
     description: &'static str,
 }
 
@@ -206,6 +212,7 @@ const ENTRY: CatalogEntry = CatalogEntry {
     accepts_image: false,
     unfiltered: false,
     starter: false,
+    talking_gb: 0.0,
     description: "",
 };
 
@@ -281,6 +288,8 @@ const CATALOG: &[CatalogEntry] = &[
         starter: true,
         // 64 seconds for a clip of two (10.10.2026). One run.
         measured_run_s_per_clip_s: 32.0,
+        // The dev transformer of the same repository, 4-bit like the rest.
+        talking_gb: 11.3,
         description: "LTX-2.3 in 4-bit, ready to run with no convert step. Video with sound from text or from an image, for Macs from 16 GB.",
         ..ENTRY
     },
@@ -784,6 +793,103 @@ fn takes_negative_prompt(c: &CatalogEntry) -> bool {
     }
 }
 
+// ── Size and steps of a run ───────────────────────────────────────────
+//
+// Read from the engines at their pinned commits, 14.10.2026:
+//   ltx_2q  `generate --distilled` takes `-W` and `-H` and floors both to a
+//           multiple of 64 (`snap_output_dimensions(two_stage=True)` in
+//           `ltx_core_mlx/components/patchifiers.py`, called from
+//           `ltx_pipelines_mlx/distilled.py`): stage one runs at half size on
+//           the VAE's grid of 32. `--steps` is read by the one stage pipeline
+//           alone; the distilled one runs its own table of eight plus three
+//           steps, and `--stage1-steps` could only cut that table short.
+//   wan_2   `--width` and `--height` are floored to patch size times VAE
+//           stride (`wan_2/generate.py`): 2 x 8 = 16, and 2 x 16 = 32 for
+//           TI2V 5B, whose VAE strides by 16 (`wan_2/config.py`). TI2V 5B
+//           and I2V A14B cap the area at 1280 x 704. `--steps` goes to the
+//           sampler as it is; without it the config's `sample_steps` runs:
+//           50 on Wan 2.1, 40 on Wan 2.2.
+//   ltx_2   the first engine's LTX (`mlx_video.models.ltx_2.generate`) takes
+//           `--width` and `--height` and asserts both on 64 for its two
+//           stage pipelines (distilled, dev-two-stage) and on 32 for `dev`.
+//           Without them it ran at its own 512 x 512, so a landscape entry
+//           came out square. No steps: this app hands it none.
+
+/// The shortest side Create offers. On every grid above.
+const MIN_SIDE: u32 = 256;
+/// The longest side Create offers: the long side of Wan's 720p.
+const MAX_SIDE: u32 = 1280;
+/// The most steps a run takes, as the slider of the other lanes.
+const MAX_STEPS: u32 = 60;
+
+/// The grid both sides of a run sit on, or `None` for a model that runs at
+/// its entry's size whatever is asked.
+fn size_grid(c: &CatalogEntry) -> Option<u32> {
+    match c.family {
+        f if f == ltx2mlx::FAMILY => Some(64),
+        "ltx_2" if c.pipeline == "dev" => Some(32),
+        "ltx_2" => Some(64),
+        "wan_2" if c.repo.contains("TI2V-5B") => Some(32),
+        "wan_2" => Some(16),
+        _ => None,
+    }
+}
+
+/// The most pixels a run may have: the entry's own size. The memory a model
+/// is recommended for and the time a run was measured at belong to that size,
+/// so nothing larger is offered, only other shapes and smaller ones. For TI2V
+/// 5B and I2V A14B it is the engine's own cap as well.
+fn max_pixels(c: &CatalogEntry) -> u32 {
+    c.default_width * c.default_height
+}
+
+/// The steps a run of this model takes when nobody asks for others, or
+/// `None` for a model whose steps cannot be set (see above).
+fn default_steps(c: &CatalogEntry) -> Option<u32> {
+    match c.family {
+        "wan_2" if c.id.contains("wan21") => Some(50),
+        "wan_2" => Some(40),
+        _ => None,
+    }
+}
+
+/// The size a run goes out at: the entry's own where none is asked or the
+/// model takes none, else the asked size, which has to be what Create offers.
+/// A size the engine would quietly floor or shrink is refused here in words.
+fn run_size(c: &CatalogEntry, width: Option<u32>, height: Option<u32>) -> Result<(u32, u32), String> {
+    let own = (c.default_width, c.default_height);
+    let Some(grid) = size_grid(c) else { return Ok(own) };
+    let (w, h) = match (width, height) {
+        (None, None) => return Ok(own),
+        (Some(w), Some(h)) => (w, h),
+        _ => return Err("Pass both width and height, or neither for the model's own size.".to_string()),
+    };
+    if w % grid != 0 || h % grid != 0 {
+        return Err(format!("{} takes sizes in steps of {grid} px, and {w} x {h} is not one.", c.name));
+    }
+    if !(MIN_SIDE..=MAX_SIDE).contains(&w) || !(MIN_SIDE..=MAX_SIDE).contains(&h) {
+        return Err(format!("A side of a video on a Mac is {MIN_SIDE} to {MAX_SIDE} px, and {w} x {h} is outside that."));
+    }
+    if w * h > max_pixels(c) {
+        return Err(format!(
+            "{w} x {h} is larger than {} x {}, the size {} runs at. Pick a smaller size.",
+            c.default_width, c.default_height, c.name
+        ));
+    }
+    Ok((w, h))
+}
+
+/// The steps a run goes out with, `None` for the engine's own. A model that
+/// takes none is refused only when a number was asked for.
+fn run_steps(c: &CatalogEntry, steps: Option<u32>) -> Result<Option<u32>, String> {
+    match (steps, default_steps(c)) {
+        (None, _) => Ok(None),
+        (Some(_), None) => Err(format!("{} runs its own steps on a Mac, and takes no step count.", c.name)),
+        (Some(s), Some(_)) if (1..=MAX_STEPS).contains(&s) => Ok(Some(s)),
+        (Some(s), Some(_)) => Err(format!("{} takes 1 to {MAX_STEPS} steps, not {s}.", c.name)),
+    }
+}
+
 // ── Filesystem layout ─────────────────────────────────────────────────
 
 pub(crate) fn models_root() -> PathBuf {
@@ -912,6 +1018,40 @@ fn model_is_usable(entry: &CatalogEntry) -> bool {
     model_is_installed(entry) && (entry.family != ltx2mlx::FAMILY || ltx2mlx::engine_ready())
 }
 
+/// Whether the entry can run a Talking Character (`ltx2mlx::A2V_CLI`) at all.
+fn talks(entry: &CatalogEntry) -> bool {
+    entry.talking_gb > 0.0 && entry.family == ltx2mlx::FAMILY
+}
+
+/// Whether a Talking Character run of `entry` can start: the model is usable
+/// and the files its `a2v` reads on top are on disk.
+fn talking_ready(entry: &CatalogEntry) -> bool {
+    talks(entry) && model_is_usable(entry) && ltx2mlx::talking_files_present(&weights_dir(entry))
+}
+
+/// A Talking Character run streams the dev transformer, then the distilled
+/// one, beside Gemma and the VAE. A clip of four seconds at 768 x 512 peaked
+/// at a footprint of 17.0 GB on a Mac with 48 GB, streamed and with the
+/// decode capped (`ltx2mlx::TALKING_DECODE_BUDGET_GB`; real run, 15.10.2026).
+/// A Mac with 16 GB would swap through that, so the run starts from 24 GB.
+const TALKING_MIN_RAM_GB: u32 = 24;
+
+/// The sentence a Talking Character run is refused with on a Mac with less
+/// memory than that, or `None`.
+fn talking_needs_more_memory(entry: &CatalogEntry, total_bytes: u64) -> Option<String> {
+    if total_bytes == 0 {
+        return None;
+    }
+    let have_gb = (total_bytes as f64 / 1_073_741_824.0).round() as u32;
+    let need = TALKING_MIN_RAM_GB.max(entry.min_ram_gb);
+    (have_gb < need).then(|| {
+        format!(
+            "Talking Character on {} needs a Mac with {need} GB of memory, and this one has {have_gb} GB. It was not started, because loading it would freeze this Mac.",
+            entry.name
+        )
+    })
+}
+
 /// The record that an entry on shared weights was installed.
 ///
 /// Such an entry is a sibling's weights plus an encoder, and both can be on
@@ -977,7 +1117,7 @@ fn pick_engine_python(own_venv: &std::path::Path, shared_venv: &std::path::Path)
     [own_venv, shared_venv].into_iter().map(venv_python).find(|p| p.exists())
 }
 
-fn engine_python() -> Option<String> {
+pub(crate) fn engine_python() -> Option<String> {
     pick_engine_python(&own_venv_dir(), &shared_venv_dir()).map(|p| p.to_string_lossy().to_string())
 }
 
@@ -1146,7 +1286,7 @@ fn mlx_video_version(python: &str) -> Option<String> {
 
 /// `Version:` out of the dist-info record of `package` (its normalized name,
 /// with underscores) in any `lib/python*/site-packages` of `venv`.
-fn dist_version(venv: &std::path::Path, package: &str) -> Option<String> {
+pub(crate) fn dist_version(venv: &std::path::Path, package: &str) -> Option<String> {
     let sites = std::fs::read_dir(venv.join("lib")).ok()?;
     sites
         .flatten()
@@ -1202,6 +1342,8 @@ pub fn video_status(state: &AppState, _args: &Value) -> CmdResult {
         "modelsRoot": models_root(),
         "outputsRoot": outputs_root(),
         "installedModels": installed_ids,
+        // The LoRA of Motion Control (`motion`), which runs on the LTX-2.3 packs.
+        "motionInstalled": motion::installed(),
         "running": running,
     }))
 }
@@ -1213,6 +1355,9 @@ pub fn video_delete_model(state: &AppState, args: &Value) -> CmdResult {
         .get("id")
         .and_then(|v| v.as_str())
         .ok_or_else(|| crate::commands::bad_request("missing id".to_string()))?;
+    if id == motion::ID {
+        return delete_motion(state);
+    }
     let entry = catalog_lookup(id)
         .ok_or_else(|| crate::commands::bad_request(format!("unknown video model id: {id}")))?;
     if state.video_process().lock().unwrap().is_some() {
@@ -1226,6 +1371,9 @@ pub fn video_delete_model(state: &AppState, args: &Value) -> CmdResult {
         return Err(crate::commands::bad_request(
             "A video model is still installing. Wait for it to finish, or stop it first.".to_string(),
         ));
+    }
+    if talking_part(args.get("part").and_then(|v| v.as_str())).map_err(crate::commands::bad_request)? {
+        return delete_talking_files(entry);
     }
     delete_model_files(entry)
 }
@@ -1311,16 +1459,39 @@ pub fn video_list_models(_state: &AppState, _args: &Value) -> CmdResult {
             "acceptsImage": takes_start_image(c),
             // The frame rate the engine writes this model at. See `frame_rate`.
             "fps": frame_rate(c),
-            // The size a run has. Create shows it and cannot change it.
+            // The size a run has unless Create asks for another.
             "defaultWidth": c.default_width,
             "defaultHeight": c.default_height,
+            // The grid of a size Create may ask for, and the most pixels it
+            // may have (`run_size`). No grid: the entry's size is the run's.
+            "sizeGrid": size_grid(c),
+            "maxPixels": max_pixels(c),
+            "minSide": MIN_SIDE,
+            "maxSide": MAX_SIDE,
+            // The steps a run takes by default where Create may set them
+            // (Wan), else none: a distilled LTX runs its own table.
+            "steps": default_steps(c),
+            "maxSteps": MAX_STEPS,
             // Whether the negative prompt reaches the model. False: the
             // field is not shown, as nothing would read it.
             "negativePrompt": takes_negative_prompt(c),
-            // Steps and guidance set in Create reach no local video engine:
-            // `video_generate` passes neither. A distilled LTX runs its fixed
+            // Guidance set in Create reaches no local video engine, and steps
+            // only where `steps` says so: a distilled LTX runs its fixed
             // eight plus three steps without guidance, whatever a slider says.
             "userSampling": false,
+            // Whether a run takes the LoRA stack (`takes_loras`). Create
+            // shows the stack for these models and for no other video model.
+            "loras": takes_loras(c),
+            // Whether Create offers the shot list (`takes_shot_list`).
+            "multishot": takes_shot_list(c),
+            // Whether a run can follow a motion video (`motion::takes_motion`).
+            // What it needs on top is the LoRA, `motionInstalled` of the status.
+            "motion": motion::takes_motion(c),
+            // Talking Character (`a2v`): whether the model can run it, what
+            // its own download weighs, and whether that is on disk.
+            "talking": talks(c),
+            "talkingGB": c.talking_gb,
+            "talkingReady": talking_ready(c),
             "description": c.description,
             "installed": model_is_usable(c),
         }));
@@ -1353,7 +1524,7 @@ pub fn video_install_mlx(state: &AppState, _args: &Value) -> CmdResult {
     Ok(json!({ "ok": true, "status": "installing" }))
 }
 
-fn install_engine_steps(slot: &crate::install_state::InstallSlot, preferred_base: Option<String>) -> Result<(), String> {
+pub(crate) fn install_engine_steps(slot: &crate::install_state::InstallSlot, preferred_base: Option<String>) -> Result<(), String> {
     let python = ensure_engine_python(slot, preferred_base)?;
     let mut cmd = crate::python::python_command(&python);
     cmd.args(["-m", "pip", "install", "--upgrade"]).args(mlx_video_pip_specs());
@@ -1371,17 +1542,38 @@ pub fn video_install_mlx_status(state: &AppState, _args: &Value) -> CmdResult {
 #[derive(Deserialize)]
 struct InstallModelArgs {
     id: String,
+    /// `"talking"`: the files of a Talking Character run, for a model that is
+    /// installed. Absent: the model itself.
+    #[serde(default)]
+    part: Option<String>,
+}
+
+/// The one part of a model that installs and goes on its own.
+const TALKING_PART: &str = "talking";
+
+fn talking_part(part: Option<&str>) -> Result<bool, String> {
+    match part {
+        None => Ok(false),
+        Some(TALKING_PART) => Ok(true),
+        Some(other) => Err(format!("unknown part of a video model: {other}")),
+    }
 }
 
 pub fn video_install_model(state: &AppState, args: &Value) -> CmdResult {
     ensure_apple_silicon()?;
     let a: InstallModelArgs =
         serde_json::from_value(args.clone()).map_err(|e| bad_request(e.to_string()))?;
+    if a.id == motion::ID {
+        return install_motion(state);
+    }
     let entry = catalog_lookup(&a.id)
         .ok_or_else(|| bad_request(format!("unknown video model id: {}", a.id)))?;
     let slot = state.install_video_model();
     if slot.is_running() {
         return Ok(json!({ "ok": true, "status": "installing" }));
+    }
+    if talking_part(a.part.as_deref()).map_err(bad_request)? {
+        return install_talking(state, entry);
     }
     if model_is_usable(entry) {
         if slot.try_start() {
@@ -1437,6 +1629,65 @@ pub fn video_install_model(state: &AppState, args: &Value) -> CmdResult {
         }
     });
     Ok(json!({ "ok": true, "status": "installing", "id": entry.id }))
+}
+
+/// The Talking Character part of an installed model: the files its `a2v`
+/// reads on top (`ltx2mlx::TALKING_FILES`), from the model's own repository
+/// into its folder, on the slot of a model install, so the same bar, Stop and
+/// status serve it.
+fn install_talking(state: &AppState, entry: &'static CatalogEntry) -> CmdResult {
+    let slot = state.install_video_model();
+    if !talks(entry) {
+        return Err(bad_request(format!("{} cannot run Talking Character.", entry.name)));
+    }
+    if !model_is_usable(entry) {
+        return Err(bad_request(format!("Get {} first. Talking Character runs on it.", entry.name)));
+    }
+    if talking_ready(entry) {
+        if slot.try_start() {
+            slot.complete(format!("{} talking part already installed", entry.id));
+        }
+        return Ok(json!({ "ok": true, "status": "complete", "id": entry.id }));
+    }
+    let target = weights_dir(entry);
+    let need = (entry.talking_gb as f64 * 1e9) as u64 + DiskPlan::HEADROOM;
+    crate::commands::system::ensure_free_space(&models_root(), entry.name, need, "").map_err(bad_request)?;
+    if !slot.try_start() {
+        return Ok(json!({ "ok": true, "status": "installing" }));
+    }
+    // The bar counts the folder, which holds the model already.
+    let total = dir_bytes(&target) + (entry.talking_gb as f64 * 1e9) as u64;
+    crate::install_state::watch_dir_size(slot.clone(), target.clone(), Vec::new(), total);
+    let preferred_base = state.python_bin();
+    crate::install_state::spawn_install(slot, move |slot| {
+        let python = ltx2mlx::ensure_engine(slot, preferred_base)?;
+        ensure_python_module(slot, &python, "huggingface_hub", &["huggingface_hub"])?;
+        let owner = weights_owner(entry);
+        slot.log(format!("downloading the Talking Character part of {} ({} GB)", entry.name, entry.talking_gb));
+        hub_download(slot, &python, owner.repo, ltx2mlx::TALKING_FILES, &target)?;
+        ltx2mlx::verify_pack(&target, ltx2mlx::TALKING_FILES)?;
+        if !talking_ready(entry) {
+            return Err("The download finished, but the Talking Character part is not complete on disk. Start it again.".to_string());
+        }
+        Ok(format!("{} talking part installed", entry.id))
+    });
+    Ok(json!({ "ok": true, "status": "installing", "id": entry.id }))
+}
+
+/// Remove the Talking Character part of a model and keep the model.
+fn delete_talking_files(entry: &CatalogEntry) -> CmdResult {
+    if !talks(entry) {
+        return Err(bad_request(format!("{} has no Talking Character part.", entry.name)));
+    }
+    let dir = weights_dir(entry);
+    let present: Vec<PathBuf> = ltx2mlx::TALKING_FILES.iter().map(|f| dir.join(f)).filter(|p| p.is_file()).collect();
+    if present.is_empty() {
+        return Err(crate::commands::not_found(format!("the Talking Character part of {} is not installed", entry.id)));
+    }
+    for file in present {
+        std::fs::remove_file(&file).map_err(|e| internal(format!("delete {}: {}", file.display(), os_error::english(&e))))?;
+    }
+    Ok(json!({ "ok": true, "id": entry.id, "part": TALKING_PART }))
 }
 
 /// What an install still has to find room for, read from the disk.
@@ -1772,6 +2023,58 @@ pub fn video_cancel_model_install(state: &AppState, _args: &Value) -> CmdResult 
     Ok(json!({ "ok": true, "cancelled": model || engine }))
 }
 
+/// The download of the Motion Control LoRA, on the slot of a model install,
+/// so the same status, progress and Stop serve it. It runs on the packs of
+/// the second engine and takes that engine's Python to fetch with: the tab
+/// that offers it is only there while such a pack is installed.
+fn install_motion(state: &AppState) -> CmdResult {
+    ensure_apple_silicon()?;
+    let slot = state.install_video_model();
+    if slot.is_running() {
+        return Ok(json!({ "ok": true, "status": "installing" }));
+    }
+    if motion::installed() {
+        if slot.try_start() {
+            slot.complete(format!("{} already installed", motion::ID));
+        }
+        return Ok(json!({ "ok": true, "status": "complete", "id": motion::ID }));
+    }
+    let python = ltx2mlx::python()
+        .ok_or_else(|| bad_request("Motion Control runs on an LTX-2.3 model. Install one in the Model Manager first."))?;
+    crate::commands::system::ensure_free_space(&models_root(), motion::NAME, motion::SIZE_BYTES, "").map_err(bad_request)?;
+    let target = motion::dir();
+    std::fs::create_dir_all(&target).map_err(|e| internal(os_error::english(&e)))?;
+    crate::media_store::keep_out_of_backups(&models_root());
+    if !slot.try_start() {
+        return Ok(json!({ "ok": true, "status": "installing" }));
+    }
+    crate::install_state::watch_dir_size(slot.clone(), target.clone(), Vec::new(), motion::SIZE_BYTES);
+    crate::install_state::spawn_install(slot, move |slot| {
+        slot.log(format!("downloading {} ({} MB)", motion::REPO, motion::SIZE_BYTES / 1_000_000));
+        hub_download(slot, &python, motion::REPO, &[motion::FILE], &target)?;
+        if !motion::installed() {
+            return Err("The download finished, but Motion Control is not complete on disk. Start it again.".to_string());
+        }
+        Ok(format!("{} installed", motion::ID))
+    });
+    Ok(json!({ "ok": true, "status": "installing", "id": motion::ID }))
+}
+
+/// Remove the Motion Control LoRA. Its folder is the one place it lives.
+fn delete_motion(state: &AppState) -> CmdResult {
+    if state.video_process().lock().unwrap().is_some() {
+        return Err(bad_request("A video is being generated. Cancel it before removing Motion Control."));
+    }
+    if state.install_video_model().is_running() {
+        return Err(bad_request("A video model is still installing. Wait for it to finish, or stop it first."));
+    }
+    let dir = motion::dir();
+    if dir.exists() {
+        std::fs::remove_dir_all(&dir).map_err(|e| internal(format!("delete {}: {}", motion::ID, os_error::english(&e))))?;
+    }
+    Ok(json!({ "ok": true, "id": motion::ID }))
+}
+
 #[derive(Deserialize)]
 struct GenerateArgs {
     id: String,
@@ -1787,10 +2090,50 @@ struct GenerateArgs {
     /// Reaches the models that take one (`takes_negative_prompt`).
     #[serde(default)]
     negative_prompt: Option<String>,
+    /// The LoRA stack: files of the LoRA folder by name, each with its
+    /// strength, in the order they were picked. See `lora_stack`.
+    #[serde(default)]
+    loras: Vec<LoraArg>,
+    /// Another size than the entry's, on the model's grid (`run_size`).
+    #[serde(default)]
+    width: Option<u32>,
+    #[serde(default)]
+    height: Option<u32>,
+    /// Another step count than the engine's own, where one is taken
+    /// (`run_steps`).
+    #[serde(default)]
+    steps: Option<u32>,
+    /// Motion Control: the motion video the clip follows, a file on disk
+    /// (`video_stage_motion_video`). See `motion`.
+    #[serde(default)]
+    motion_video: Option<String>,
+    /// Talking Character: the speech, as a file. The run is the engine's
+    /// `a2v`, and the clip is as long as the speech (`ltx2mlx::talking_frames`).
+    #[serde(default)]
+    audio: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct LoraArg {
+    name: String,
+    #[serde(default = "full_strength")]
+    strength: f32,
+}
+
+fn full_strength() -> f32 {
+    1.0
 }
 
 pub fn video_generate(state: &AppState, args: &Value) -> CmdResult {
     ensure_apple_silicon()?;
+    // One model in the memory at a time: a track of the music lane holds its
+    // own until it is through.
+    if crate::commands::music::busy() {
+        return Err(bad_request("A track is being made on this Mac. Wait for it to finish, then start the video."));
+    }
+    if let Some(why) = crate::commands::mlx::train::refusal() {
+        return Err(bad_request(why));
+    }
     let a: GenerateArgs =
         serde_json::from_value(args.clone()).map_err(|e| bad_request(e.to_string()))?;
     let entry = catalog_lookup(&a.id)
@@ -1803,10 +2146,25 @@ pub fn video_generate(state: &AppState, args: &Value) -> CmdResult {
     }
     // Before anything is loaded: a model larger than the memory does not
     // fail, it swaps until the Mac stops answering.
-    if let Some(refusal) = memory_refusal(entry, crate::commands::system::total_memory_bytes()) {
+    if let Some(refusal) = memory_refusal(entry, machine_memory_bytes()) {
         return Err(bad_request(refusal));
     }
     let quant = entry.family == ltx2mlx::FAMILY;
+    let talking = a.audio.is_some();
+    if talking {
+        if !talks(entry) {
+            return Err(bad_request(format!("{} cannot run Talking Character. Pick LTX-2.3 Distilled 4-bit.", entry.name)));
+        }
+        if !talking_ready(entry) {
+            return Err(bad_request(format!(
+                "Talking Character on {} needs its own download ({} GB). Get it on the Talking Character tab.",
+                entry.name, entry.talking_gb
+            )));
+        }
+        if let Some(refusal) = talking_needs_more_memory(entry, machine_memory_bytes()) {
+            return Err(bad_request(refusal));
+        }
+    }
     let python = if quant {
         ltx2mlx::python()
     } else {
@@ -1848,6 +2206,42 @@ pub fn video_generate(state: &AppState, args: &Value) -> CmdResult {
             )));
         }
     }
+    // The same for the LoRA stack: a file that is gone, is not in the folder
+    // or is in a naming this engine cannot read is said now, and not after
+    // minutes of loading.
+    let asked_loras: Vec<(String, f32)> = a.loras.iter().map(|l| (l.name.clone(), l.strength)).collect();
+    let loras = lora_stack(entry, &asked_loras, &crate::commands::mlx_loras::loras_root()).map_err(bad_request)?;
+    // The engine's `a2v` takes no LoRA stack.
+    if talking && !loras.is_empty() {
+        return Err(bad_request("Talking Character runs without LoRAs. Remove them from the stack."));
+    }
+    // The speech: there, readable, and long enough for the shortest clip. Its
+    // length is the clip's, read here and not taken from the caller.
+    let talking_frames = match a.audio.as_deref() {
+        None => None,
+        Some(audio) => {
+            if !std::path::Path::new(audio).is_file() {
+                return Err(bad_request(format!("audio not found: {audio}. Pass the absolute path of a real audio file.")));
+            }
+            let seconds = ltx2mlx::audio_seconds(std::path::Path::new(audio))
+                .ok_or_else(|| bad_request("The length of the voice could not be read. Use a WAV, MP3, M4A or AIFF file."))?;
+            let frames = ltx2mlx::talking_frames(seconds, a.seconds.map(f64::from))
+                .ok_or_else(|| bad_request("The voice is too short. Use at least half a second of speech."))?;
+            Some((frames, seconds))
+        }
+    };
+    // A motion run needs a pack that can follow one, the LoRA and the video.
+    let motion_video = a.motion_video.as_deref().map(PathBuf::from);
+    if let Some(refusal) = motion_video.as_deref().and_then(|v| motion::refusal(entry, motion::installed(), v)) {
+        return Err(bad_request(refusal));
+    }
+    // A voice and a motion video are two runs of the engine, not one.
+    if talking && motion_video.is_some() {
+        return Err(bad_request("Talking Character and Motion Control are separate runs. Send a voice or a motion video, not both."));
+    }
+    // And a size or a step count the engine would floor, shrink or not read.
+    let (width, height) = run_size(entry, a.width, a.height).map_err(bad_request)?;
+    let steps = run_steps(entry, a.steps).map_err(bad_request)?;
 
     let out_dir = outputs_root();
     std::fs::create_dir_all(&out_dir).map_err(|e| internal(os_error::english(&e)))?;
@@ -1867,7 +2261,7 @@ pub fn video_generate(state: &AppState, args: &Value) -> CmdResult {
         .seconds
         .map(|s| (s * fps as f32).max(1.0) as u32)
         .unwrap_or(entry.default_frames);
-    let frames = clamp_frames(entry.family, frames);
+    let frames = talking_frames.map_or_else(|| clamp_frames(entry.family, frames), |(f, _)| f);
 
     // The families take different CLIs (the first two verified against
     // Blaizzy/mlx-video, the third against dgrauet/ltx-2-mlx):
@@ -1875,46 +2269,76 @@ pub fn video_generate(state: &AppState, args: &Value) -> CmdResult {
     //   wan_2  → --model-dir <dir> --num-frames (4n+1) --output-path <out>
     //   ltx_2q → generate --distilled --model <dir> [--gemma <dir>] --output <out>
     //            -W -H --frames (8k+1) --frame-rate 24 [--low-ram]
-    let module: Vec<String> = if quant {
+    //   a2v    → a2v, the same flags, always --low-ram, then --audio <file>
+    //   motion → -c motion::BOOT <video> <control> <filter> <frames> ic-lora,
+    //            the ltx_2q flags, then the LoRA and the control (`motion`)
+    let control = motion_video.as_ref().map(|_| motion::control_path(&out_dir, &job_id));
+    let module: Vec<String> = if talking {
+        ltx2mlx::A2V_CLI.iter().map(|s| s.to_string()).collect()
+    } else if control.is_some() {
+        motion::CLI.iter().map(|s| s.to_string()).collect()
+    } else if quant {
         ltx2mlx::CLI.iter().map(|s| s.to_string()).collect()
     } else {
         vec![format!("mlx_video.models.{}.generate", entry.family)]
     };
     let mut cmd = crate::python::python_command(&python);
-    if entry.family == "wan_2" {
+    if let (Some(video), Some(control)) = (motion_video.as_deref(), control.as_deref()) {
+        if let Some(parent) = control.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| internal(os_error::english(&e)))?;
+        }
+        cmd.arg("-c").arg(motion::BOOT);
+        motion::boot_args(&mut cmd, video, control, (width, height), frames);
+    } else if entry.family == "wan_2" {
         cmd.arg("-c").arg(CAPPED_CACHE_BOOT);
+        cmd.args(&module);
     } else {
         cmd.arg("-m");
+        cmd.args(&module);
     }
-    cmd.args(&module).arg("--prompt").arg(&a.prompt);
+    cmd.arg("--prompt").arg(&a.prompt);
     if quant {
         let encoder = (!entry.text_encoder_repo.is_empty()).then(|| text_encoder_dir(entry.text_encoder_repo));
-        let low_ram = ltx2mlx::wants_low_ram(
-            crate::commands::system::total_memory_bytes(),
-            ltx2mlx::transformer_bytes(&mdir),
-        );
+        // A talking run streams always: stage two then swaps to the
+        // distilled transformer on disk instead of fusing the distilled LoRA,
+        // a file the packs leave out (`ltx2mlx`, Talking Character).
+        // A motion run streams the transformer whatever the memory: it holds
+        // the control and the LoRA on top, and resident it took the free
+        // memory of a 48 GB Mac from 78 to 34 percent (`motion::motion_args`).
+        let low_ram = talking
+            || control.is_some()
+            || ltx2mlx::wants_low_ram(
+                crate::commands::system::total_memory_bytes(),
+                ltx2mlx::transformer_bytes(&mdir),
+            );
         ltx2mlx::model_args(
             &mut cmd,
             &mdir,
             encoder.as_deref(),
-            (entry.default_width, entry.default_height),
+            (width, height),
             frames,
             &out_path,
             low_ram,
         );
+        if let Some(audio) = a.audio.as_deref() {
+            ltx2mlx::talking_args(&mut cmd, std::path::Path::new(audio));
+        }
     } else if entry.family == "wan_2" {
         cmd.arg("--model-dir")
             .arg(mdir.as_os_str())
             .arg("--width")
-            .arg(entry.default_width.to_string())
+            .arg(width.to_string())
             .arg("--height")
-            .arg(entry.default_height.to_string())
+            .arg(height.to_string())
             .arg("--num-frames")
             .arg(frames.to_string())
             .arg("--output-path")
             .arg(out_path.as_os_str())
             .arg("--tiling")
             .arg(WAN_TILING);
+        if let Some(steps) = steps {
+            cmd.arg("--steps").arg(steps.to_string());
+        }
     } else {
         cmd.arg("--model-repo")
             .arg(mdir.as_os_str())
@@ -1927,7 +2351,11 @@ pub fn video_generate(state: &AppState, args: &Value) -> CmdResult {
         cmd.arg("-o")
             .arg(out_path.as_os_str())
             .arg("-n")
-            .arg(frames.to_string());
+            .arg(frames.to_string())
+            .arg("--width")
+            .arg(width.to_string())
+            .arg("--height")
+            .arg(height.to_string());
     }
     if let Some(seed) = a.seed {
         cmd.arg("--seed").arg(seed.to_string());
@@ -1936,6 +2364,10 @@ pub fn video_generate(state: &AppState, args: &Value) -> CmdResult {
     if let Some(negative) = a.negative_prompt.as_deref().map(str::trim).filter(|n| !n.is_empty() && takes_negative_prompt(entry)) {
         cmd.arg(format!("--negative-prompt={negative}"));
     }
+    if let Some(control) = control.as_deref() {
+        motion::motion_args(&mut cmd, &motion::lora_path(), control);
+    }
+    lora_args(&mut cmd, &loras);
     if let Some(img) = a.init_image.as_deref() {
         cmd.arg("--image").arg(img);
     }
@@ -1950,6 +2382,18 @@ pub fn video_generate(state: &AppState, args: &Value) -> CmdResult {
         mdir.display(),
         frames
     ));
+    if size_grid(entry).is_some() {
+        progress.log(format!("size {width} x {height}"));
+    }
+    if let Some(steps) = steps {
+        progress.log(format!("{steps} steps"));
+    }
+    if let Some((frames, seconds)) = talking_frames {
+        progress.log(format!("voice {seconds:.2} s, clip {:.2} s", frames as f64 / fps as f64));
+    }
+    for ((name, _), (_, strength)) in asked_loras.iter().zip(&loras) {
+        progress.log(format!("LoRA {} at {}", crate::commands::mlx_loras::stem(name), strength));
+    }
 
     // Unbuffered: through a pipe Python holds its lines back in blocks, the
     // card stood at "Loading T5 encoder" for the first 18 seconds and the
@@ -1998,6 +2442,8 @@ pub fn video_generate(state: &AppState, args: &Value) -> CmdResult {
     let video_progress_slot = state.video_progress();
     let out_path2 = out_path.clone();
     let job_id_for_thread = job_id.clone();
+    // The control of a motion run is of no use once the run has ended.
+    let control_for_thread = control.clone();
     std::thread::spawn(move || loop {
         std::thread::sleep(std::time::Duration::from_millis(500));
         let mut guard = video_process.lock().unwrap();
@@ -2017,6 +2463,9 @@ pub fn video_generate(state: &AppState, args: &Value) -> CmdResult {
         let waited = std::time::Instant::now();
         while pumps.iter().any(|p| !p.is_finished()) && waited.elapsed() < std::time::Duration::from_secs(2) {
             std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        if let Some(control) = control_for_thread.as_deref() {
+            let _ = std::fs::remove_file(control);
         }
         let out_of_memory = ran_out_of_memory(&video_progress_slot.snapshot().logs);
         match status.map(|s| job_outcome(&s, out_path2.exists(), out_of_memory)) {
@@ -2061,6 +2510,23 @@ pub fn video_cancel(state: &AppState, _args: &Value) -> CmdResult {
 
 // ── helpers ───────────────────────────────────────────────────────────
 
+// The memory of this machine. A test sets it per thread, so the runs that
+// check it do not depend on the machine the tests run on (CI runners have
+// 7 GB). Outside tests the cell stays 0 and is never read.
+thread_local! {
+    static TEST_MEMORY_BYTES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+fn machine_memory_bytes() -> u64 {
+    if cfg!(test) {
+        let set = TEST_MEMORY_BYTES.with(|m| m.get());
+        if set > 0 {
+            return set;
+        }
+    }
+    crate::commands::system::total_memory_bytes()
+}
+
 /// The sentence a generation is refused with on a Mac that has less memory
 /// than the model needs, or `None` when it fits (or nothing could be measured).
 ///
@@ -2091,6 +2557,111 @@ fn image_refusal(entry: &CatalogEntry, has_image: bool) -> Option<String> {
             entry.name
         )
     })
+}
+
+// ── LoRA stack ────────────────────────────────────────────────────────
+
+/// Whether a run of this model takes the user's LoRA stack, the files of the
+/// Mac's LoRA folder (`mlx_loras`). Read from the engines at their pinned
+/// commits, 14.10.2026:
+///   ltx_2q  `generate` takes `--lora PATH STRENGTH`, repeatable, in every
+///           mode, `--distilled` among them (`ltx_pipelines_mlx/cli.py`).
+///   wan_2   `mlx_video.models.wan_2.generate` takes the same flag for every
+///           checkpoint, a quantized one too (`wan_2/generate.py`, `utils.py`).
+///   ltx_2   the first engine names one file alone (`--lora-path`), and no
+///           run of this app has tried it. It takes none here.
+fn takes_loras(c: &CatalogEntry) -> bool {
+    c.family == ltx2mlx::FAMILY || c.family == "wan_2"
+}
+
+/// Whether Create offers the shot list for this model: the LTX-2.5 packs of
+/// the second engine. LTX-2.5 cuts between shots when the prompt writes each
+/// cut out in prose (the same rule as on Windows, `lib/ltx-multishot.ts`),
+/// and the pack reads the prompt through its own Gemma like any other run, so
+/// the shot list reaches it as the `--prompt` text. The engine's Prompt Relay
+/// (`--segment`) is not used: see the commit that brought this.
+fn takes_shot_list(c: &CatalogEntry) -> bool {
+    c.family == ltx2mlx::FAMILY && c.repo_files == ltx2mlx::PACK_25
+}
+
+/// Whether the second engine finds anything to fuse in a file with these
+/// tensor names: a `lora_A` matrix of a transformer block, with or without
+/// ComfyUI's `diffusion_model.` in front. That is the one naming its key map
+/// reads (`ltx_core_mlx/loader/sd_ops.py`, `LTXV_LORA_COMFY_RENAMING_MAP`);
+/// with any other, nothing is fused and the video comes out as if there were
+/// no LoRA, minutes later and without a word.
+fn ltx_reads_lora(names: &[String]) -> bool {
+    names.iter().any(|n| {
+        let n = n.strip_prefix("diffusion_model.").unwrap_or(n);
+        n.starts_with("transformer_blocks.") && n.split('.').any(|p| p == "lora_A")
+    })
+}
+
+/// The LoRA stack of a run as the engine may read it, or the sentence for the
+/// user. A name is a path below `folder` and nothing else (`mlx_loras::resolve`).
+///
+/// What an engine would only find out after minutes of loading is said here,
+/// from the header of the file. The second engine (ltx_2q) reads the naming
+/// of `ltx_reads_lora` and no alpha (`fuse_loras.py` multiplies the matrices
+/// by the strength alone), so its strength goes out times `alpha / rank`, as
+/// for Qwen-Image 2.1 on the image engine: the same file at the same number
+/// then does what it does in ComfyUI. The first engine (wan_2) reads both
+/// namings and the alpha of every layer itself (`mlx_video/lora/loader.py`)
+/// and is handed the strength as it was asked for.
+fn lora_stack(entry: &CatalogEntry, asked: &[(String, f32)], folder: &std::path::Path) -> Result<Vec<(PathBuf, f32)>, String> {
+    use crate::commands::mlx_loras::{read_alpha, read_header, resolve, scaled, stem, strength, tensor_names, Alpha, Keys};
+    if asked.is_empty() {
+        return Ok(Vec::new());
+    }
+    if !takes_loras(entry) {
+        return Err(format!(
+            "{} takes no LoRA on a Mac. Turn the LoRA stack off, or pick a Wan or a quantized LTX model.",
+            entry.name
+        ));
+    }
+    let ltx = entry.family == ltx2mlx::FAMILY;
+    asked
+        .iter()
+        .map(|(name, asked_strength)| {
+            let file = resolve(folder, name)?;
+            let header = read_header(&file);
+            if header.keys == Keys::Unreadable {
+                return Err(format!(
+                    "{} is not a LoRA file the video engine can read. It may be an incomplete download.",
+                    stem(name)
+                ));
+            }
+            if header.dora {
+                return Err(format!("{} is a DoRA. The video engines of the Mac read plain LoRAs only.", stem(name)));
+            }
+            if ltx && !ltx_reads_lora(&tensor_names(&file).unwrap_or_default()) {
+                return Err(format!(
+                    "{} is not a LoRA for LTX, or not in a format {} reads on a Mac. It takes LoRAs of the LTX transformer with lora_A and lora_B keys, the format of the LTX trainer and of ComfyUI. Turn this LoRA off or pick another one.",
+                    stem(name),
+                    entry.name
+                ));
+            }
+            if !ltx && header.keys == Keys::Other {
+                return Err(format!(
+                    "{} is not a plain LoRA. {} reads LoRAs with lora_A and lora_B or lora_down and lora_up keys. Turn this LoRA off or pick another one.",
+                    stem(name),
+                    entry.name
+                ));
+            }
+            let asked = strength(*asked_strength);
+            let alpha = if ltx { read_alpha(&file) } else { Alpha::None };
+            Ok((file, scaled(asked, alpha)))
+        })
+        .collect()
+}
+
+/// `--lora PATH STRENGTH` for every file of the stack, in the order it was
+/// picked. Both engines read the flag the same way (argparse, `nargs=2`,
+/// `action="append"`).
+fn lora_args(cmd: &mut Command, loras: &[(PathBuf, f32)]) {
+    for (file, strength) in loras {
+        cmd.arg("--lora").arg(file.as_os_str()).arg(strength.to_string());
+    }
 }
 
 /// How a generation ended, as `Ok` or the sentence for the progress card.
@@ -2669,6 +3240,201 @@ mod tests {
         assert_eq!(src.matches("memory_refusal(").count(), 2, "the definition and the one call in generate");
     }
 
+    /// A LoRA in the naming of the LTX trainer and of ComfyUI, one block at
+    /// rank 4, with an alpha of `alpha` where given.
+    fn write_ltx_lora(path: &std::path::Path, alpha: Option<f32>) {
+        use crate::commands::mlx_loras::tests::write_tensors;
+        let zeros = vec![0u8; 4 * 4 * 4];
+        let mut tensors: Vec<(&str, &str, &[u64], Vec<u8>)> = vec![
+            ("diffusion_model.transformer_blocks.0.attn1.to_q.lora_A.weight", "F32", &[4, 4], zeros.clone()),
+            ("diffusion_model.transformer_blocks.0.attn1.to_q.lora_B.weight", "F32", &[4, 4], zeros),
+        ];
+        if let Some(a) = alpha {
+            tensors.push(("diffusion_model.transformer_blocks.0.attn1.to_q.alpha", "F32", &[], a.to_le_bytes().to_vec()));
+        }
+        write_tensors(path, &tensors);
+    }
+
+    #[test]
+    fn the_lora_stack_reaches_the_two_engines_that_read_it_and_no_other() {
+        use crate::commands::mlx_loras::tests::{write_lora, KOHYA, PEFT};
+        let dir = crate::os_paths::test_dir("video-loras");
+        let folder: &std::path::Path = &dir;
+        write_ltx_lora(&folder.join("ltx/dance.safetensors"), None);
+        write_ltx_lora(&folder.join("ltx/half.safetensors"), Some(2.0));
+        write_lora(&folder.join("diffusers.safetensors"), PEFT);
+        write_lora(&folder.join("kohya.safetensors"), KOHYA);
+        write_lora(&folder.join("lokr.safetensors"), &["lycoris_blocks_0.lokr_w1"]);
+        write_lora(&folder.join("dora.safetensors"), &["diffusion_model.transformer_blocks.0.x.lora_A.weight", "diffusion_model.transformer_blocks.0.x.lora_magnitude_vector"]);
+        std::fs::write(folder.join("broken.safetensors"), b"not a header").unwrap();
+        let ask = |names: &[(&str, f32)]| names.iter().map(|(n, s)| (n.to_string(), *s)).collect::<Vec<_>>();
+
+        // Nothing asked: nothing to check, for every model.
+        for c in CATALOG {
+            assert_eq!(lora_stack(c, &[], folder), Ok(Vec::new()), "{}", c.id);
+        }
+        // The list says it per model: the two engines that take `--lora`.
+        for c in CATALOG {
+            assert_eq!(takes_loras(c), c.family == ltx2mlx::FAMILY || c.family == "wan_2", "{}", c.id);
+        }
+
+        // The second engine: its own naming, at the strength times alpha / rank.
+        let ltx = entry("ltx-2.3-q4");
+        let stack = lora_stack(ltx, &ask(&[("ltx/dance.safetensors", 0.8), ("ltx/half.safetensors", 1.0)]), folder).unwrap();
+        assert_eq!(stack.len(), 2);
+        assert!(stack[0].0.ends_with("ltx/dance.safetensors") && stack[0].1 == 0.8, "{stack:?}");
+        assert!(stack[1].0.ends_with("ltx/half.safetensors") && stack[1].1 == 0.5, "alpha 2 at rank 4: {stack:?}");
+        // A file whose keys the engine's map never reaches is refused before
+        // the model loads: the diffusers prefix, Kohya, anything else.
+        for name in ["diffusers.safetensors", "kohya.safetensors", "lokr.safetensors"] {
+            let err = lora_stack(ltx, &ask(&[(name, 1.0)]), folder).unwrap_err();
+            assert!(err.contains("is not a LoRA for LTX") && err.contains(ltx.name), "{name}: {err}");
+        }
+
+        // The first engine's Wan reads both namings and its alpha itself.
+        let wan = entry("wan21-t2v-1.3b");
+        let stack = lora_stack(wan, &ask(&[("kohya.safetensors", 0.7), ("diffusers.safetensors", 1.0), ("ltx/half.safetensors", 1.0)]), folder).unwrap();
+        assert_eq!(stack.iter().map(|(_, s)| *s).collect::<Vec<_>>(), [0.7, 1.0, 1.0], "no alpha scaling for Wan");
+        let err = lora_stack(wan, &ask(&[("lokr.safetensors", 1.0)]), folder).unwrap_err();
+        assert!(err.starts_with("lokr is not a plain LoRA."), "{err}");
+
+        // For both: a DoRA, a broken file, a name outside the folder.
+        for c in [ltx, wan] {
+            assert!(lora_stack(c, &ask(&[("dora.safetensors", 1.0)]), folder).unwrap_err().contains("is a DoRA"));
+            assert!(lora_stack(c, &ask(&[("broken.safetensors", 1.0)]), folder).unwrap_err().contains("incomplete download"));
+            assert!(lora_stack(c, &ask(&[("../outside.safetensors", 1.0)]), folder).unwrap_err().contains("LoRA folder"));
+            assert!(lora_stack(c, &ask(&[("gone.safetensors", 1.0)]), folder).unwrap_err().contains("no longer in the LoRA folder"));
+        }
+        // The first engine's LTX takes none, in words.
+        let first = entry("ltx-2.3-distilled");
+        let err = lora_stack(first, &ask(&[("ltx/dance.safetensors", 1.0)]), folder).unwrap_err();
+        assert!(err.starts_with("LTX-2.3 Distilled takes no LoRA on a Mac."), "{err}");
+    }
+
+    #[test]
+    fn the_shot_list_is_offered_for_the_ltx_2_5_packs_and_no_other_model() {
+        let state = std::mem::ManuallyDrop::new(AppState::new());
+        let list = video_list_models(&state, &json!({})).unwrap();
+        let offered: Vec<&str> = list.as_array().unwrap().iter().filter(|m| m["multishot"] == true).map(|m| m["id"].as_str().unwrap()).collect();
+        assert_eq!(offered, ["ltx-2.5-q4", "ltx-2.5-q8"]);
+        // The shots travel in the prompt, as one argument: no flag of their own.
+        let src = production_source();
+        let generate = &src[src.find("pub fn video_generate(").unwrap()..src.find("pub fn video_progress(").unwrap()];
+        assert!(!generate.contains("--segment"));
+    }
+
+    #[test]
+    fn size_and_steps_are_offered_on_the_grid_the_engine_keeps_and_nowhere_else() {
+        for c in CATALOG {
+            match c.family {
+                // The second engine floors to 64, so a size off that grid
+                // would come out smaller than Create said.
+                f if f == ltx2mlx::FAMILY => {
+                    assert_eq!(size_grid(c), Some(64), "{}", c.id);
+                    assert_eq!(default_steps(c), None, "{}: --distilled reads no --steps", c.id);
+                }
+                // The first engine asserts its grid and stops on any other
+                // size; without a size it ran square at 512 x 512.
+                "ltx_2" => {
+                    assert_eq!(size_grid(c), Some(if c.pipeline == "dev" { 32 } else { 64 }), "{}", c.id);
+                    assert_eq!(default_steps(c), None, "{}", c.id);
+                }
+                "wan_2" => {
+                    let ti2v = c.repo.contains("TI2V-5B");
+                    assert_eq!(size_grid(c), Some(if ti2v { 32 } else { 16 }), "{}", c.id);
+                    // Every Wan says which generation it is, which is what
+                    // its config's default steps go by.
+                    assert!(c.id.contains("wan21") || c.id.contains("wan22"), "{}", c.id);
+                    assert_eq!(default_steps(c), Some(if c.id.contains("wan21") { 50 } else { 40 }), "{}", c.id);
+                    // The engine's cap of 1280 x 704 for TI2V 5B and I2V A14B
+                    // is never above what is offered.
+                    if ti2v || c.requires_image {
+                        assert!(max_pixels(c) <= 1280 * 704, "{}", c.id);
+                    }
+                }
+                _ => {
+                    assert_eq!(size_grid(c), None, "{}", c.id);
+                    assert_eq!(default_steps(c), None, "{}", c.id);
+                }
+            }
+            // The entry's own size is always a size a run may have, and the
+            // smallest and the flipped shape of every grid fit the bounds.
+            assert_eq!(run_size(c, None, None), Ok((c.default_width, c.default_height)), "{}", c.id);
+            if let Some(grid) = size_grid(c) {
+                assert_eq!((c.default_width % grid, c.default_height % grid), (0, 0), "{}", c.id);
+                assert_eq!((MIN_SIDE % grid, MAX_SIDE % grid), (0, 0), "{}", c.id);
+                assert_eq!(run_size(c, Some(c.default_height), Some(c.default_width)), Ok((c.default_height, c.default_width)), "{}", c.id);
+                // The longest and the shortest side together still fit.
+                assert!(MIN_SIDE * MAX_SIDE <= max_pixels(c), "{}", c.id);
+            }
+        }
+
+        let ltx = entry("ltx-2.3-q4");
+        assert_eq!(run_size(ltx, Some(512), Some(768)), Ok((512, 768)));
+        assert_eq!(run_size(ltx, Some(640), Some(384)), Ok((640, 384)));
+        assert!(run_size(ltx, Some(800), Some(480)).unwrap_err().contains("steps of 64 px"));
+        assert!(run_size(ltx, Some(1024), Some(576)).unwrap_err().contains("larger than 768 x 512"));
+        assert!(run_size(ltx, Some(192), Some(512)).unwrap_err().contains("256 to 1280 px"));
+        assert!(run_size(ltx, Some(512), None).unwrap_err().contains("both width and height"));
+        assert!(run_steps(ltx, Some(20)).unwrap_err().contains("takes no step count"));
+        assert_eq!(run_steps(ltx, None), Ok(None));
+
+        // The first engine's LTX: landscape by default, on 64 for the
+        // distilled pipeline and on 32 for dev, and the size reaches it.
+        let big = entry("ltx-2.3-distilled-1.1");
+        assert_eq!(run_size(big, None, None), Ok((768, 512)));
+        assert_eq!(run_size(big, Some(512), Some(768)), Ok((512, 768)));
+        assert!(run_size(big, Some(736), Some(480)).unwrap_err().contains("steps of 64 px"));
+        let dev = entry("ltx-2.3-dev");
+        assert_eq!(run_size(dev, Some(736), Some(480)), Ok((736, 480)));
+        let src = production_source();
+        let first_engine = &src[src.find(".arg(\"--model-repo\")").unwrap()..src.find("if let Some(seed) = a.seed").unwrap()];
+        assert!(first_engine.contains(".arg(\"--width\")\n            .arg(width.to_string())\n            .arg(\"--height\")\n            .arg(height.to_string())"));
+
+        let wan = entry("wan21-t2v-1.3b");
+        assert_eq!(run_size(wan, Some(480), Some(832)), Ok((480, 832)));
+        assert_eq!(run_size(wan, Some(624), Some(624)), Ok((624, 624)));
+        assert!(run_size(wan, Some(632), Some(624)).unwrap_err().contains("steps of 16 px"));
+        assert_eq!(run_steps(wan, Some(8)), Ok(Some(8)));
+        assert!(run_steps(wan, Some(0)).is_err() && run_steps(wan, Some(MAX_STEPS + 1)).is_err());
+
+        let ti2v = entry("wan22-ti2v-5b-q8");
+        assert_eq!(run_size(ti2v, Some(704), Some(1280)), Ok((704, 1280)));
+        assert!(run_size(ti2v, Some(720), Some(1280)).unwrap_err().contains("steps of 32 px"));
+
+        // The first engine's LTX takes a square too, on its grid.
+        let first = entry("ltx-2.3-distilled");
+        assert_eq!(run_size(first, Some(512), Some(512)), Ok((512, 512)));
+    }
+
+    #[test]
+    fn the_size_reaches_both_engines_and_is_checked_before_the_process_exists() {
+        let src = production_source();
+        let generate = &src[src.find("pub fn video_generate(").unwrap()..src.find("pub fn video_progress(").unwrap()];
+        let spawn = generate.find(".spawn()").unwrap();
+        assert!(generate.find("run_size(entry, a.width, a.height)").unwrap() < spawn);
+        assert!(generate.find("run_steps(entry, a.steps)").unwrap() < spawn);
+        assert!(generate.contains("(width, height),\n            frames,"), "the second engine takes the run's size");
+        assert!(generate.contains(".arg(\"--width\")\n            .arg(width.to_string())"));
+        assert!(generate.contains(".arg(\"--height\")\n            .arg(height.to_string())"));
+        assert!(!generate.contains("entry.default_width.to_string()"), "no branch passes the entry's size past run_size");
+    }
+
+    #[test]
+    fn every_lora_goes_out_as_one_flag_with_its_strength_before_the_image() {
+        let mut cmd = Command::new("python");
+        lora_args(&mut cmd, &[(PathBuf::from("/l/a.safetensors"), 0.8), (PathBuf::from("/l/b c.safetensors"), -0.5)]);
+        let args: Vec<String> = cmd.get_args().map(|a| a.to_string_lossy().to_string()).collect();
+        assert_eq!(args, ["--lora", "/l/a.safetensors", "0.8", "--lora", "/l/b c.safetensors", "-0.5"]);
+        // `--image` takes one or more values on the second engine, so it
+        // stays the last flag, after the stack.
+        let src = production_source();
+        let generate = &src[src.find("pub fn video_generate(").unwrap()..src.find("pub fn video_progress(").unwrap()];
+        assert!(generate.find("lora_args(&mut cmd, &loras)").unwrap() < generate.find("cmd.arg(\"--image\")").unwrap());
+        // The stack is checked before the process exists.
+        assert!(generate.find("lora_stack(entry").unwrap() < generate.find(".spawn()").unwrap());
+    }
+
     #[cfg(unix)]
     #[test]
     fn a_job_that_ends_without_a_video_says_so() {
@@ -2806,12 +3572,16 @@ mod tests {
         assert_eq!(frame_rate(catalog_lookup("wan22-t2v-a14b").unwrap()), 16);
         assert_eq!(frame_rate(catalog_lookup("wan22-ti2v-5b-q8").unwrap()), 24);
         assert_eq!(frame_rate(catalog_lookup("ltx-2.3-q4").unwrap()), 24);
-        // And the command line agrees: no flag for steps or guidance anywhere.
+        // And the command line agrees: no flag for guidance anywhere, and
+        // steps on Wan alone, the one family whose entry says `steps`.
         let src = include_str!("video.rs");
         let generate = &src[src.find("pub fn video_generate").unwrap()..src.find("pub fn video_progress").unwrap()];
-        for flag in ["--steps", "--cfg", "--guidance", "--stage1-steps"] {
+        for flag in ["--cfg", "--guidance", "--stage1-steps"] {
             assert!(!generate.contains(flag), "video_generate passes {flag}, and the list says the user's sampling reaches no run");
         }
+        assert_eq!(generate.matches("\"--steps\"").count(), 1);
+        let wan = &generate[generate.find("} else if entry.family == \"wan_2\" {").unwrap()..generate.find("cmd.arg(\"--model-repo\")").unwrap()];
+        assert!(wan.contains("cmd.arg(\"--steps\")"), "steps go out on the Wan branch and nowhere else");
         // The negative prompt goes to the models that take one, in one
         // argument, and the length is counted at the engine's rate.
         assert!(generate.contains("format!(\"--negative-prompt={negative}\")"));
@@ -3359,6 +4129,99 @@ mod tests {
         assert!(between("pub fn video_list_models(", "pub fn video_install_mlx(").contains("\"installed\": model_is_usable(c)"));
         // Remove is about files and stays so.
         assert!(!between("fn delete_model_files(", "pub fn video_list_models(").contains("model_is_usable"));
+    }
+
+    /// Talking Character (3.0.8): LTX-2.3 4-bit runs the engine's `a2v` once
+    /// its dev transformer is on disk, a download of its own.
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    #[test]
+    fn talking_character_runs_on_the_4_bit_pack_with_its_own_download() {
+        let _turn = empty_models_root();
+        // The checks below are about the parts, not the memory: a 64 GB Mac.
+        TEST_MEMORY_BYTES.with(|m| m.set(64 * 1_073_741_824));
+        let q4 = entry("ltx-2.3-q4");
+        // Only the entry a real run talked on, and only on the second engine.
+        let talking: Vec<&str> = CATALOG.iter().filter(|c| talks(c)).map(|c| c.id).collect();
+        assert_eq!(talking, ["ltx-2.3-q4"]);
+        assert!(CATALOG.iter().all(|c| c.talking_gb == 0.0 || c.family == ltx2mlx::FAMILY));
+
+        let state = std::mem::ManuallyDrop::new(AppState::new());
+        let row = |id: &str| {
+            let list = video_list_models(&state, &json!({})).unwrap();
+            list.as_array().unwrap().iter().find(|m| m["id"] == id).cloned().unwrap()
+        };
+        assert_eq!(row("ltx-2.3-q4")["talking"], true);
+        assert_eq!(row("ltx-2.3-q4")["talkingGB"].as_f64().map(|g| (g * 10.0).round()), Some(113.0));
+        assert_eq!(row("ltx-2.3-q4")["talkingReady"], false);
+        assert_eq!(row("ltx-2.3-q8")["talking"], false);
+
+        // Not before the model: the download is the model's part.
+        ltx2mlx::set_ready_for_test(true);
+        let part = json!({ "id": "ltx-2.3-q4", "part": "talking" });
+        let err = video_install_model(&state, &part).unwrap_err();
+        assert!(err.contains("Get LTX-2.3 Distilled 4-bit first"), "{err}");
+        let err = video_install_model(&state, &json!({ "id": "ltx-2.3-q8", "part": "talking" })).unwrap_err();
+        assert!(err.contains("cannot run Talking Character"), "{err}");
+        let err = video_install_model(&state, &json!({ "id": "ltx-2.3-q4", "part": "voice" })).unwrap_err();
+        assert!(err.contains("unknown part"), "{err}");
+
+        for f in q4.repo_files {
+            put(model_dir(q4.id).join(f), 1);
+        }
+        put_encoder(q4.text_encoder_repo);
+        assert!(model_is_usable(q4) && !talking_ready(q4));
+
+        // A run with a voice is refused in words before anything loads.
+        let voice = tempfile::NamedTempFile::new().unwrap();
+        let run = |id: &str, audio: &str| video_generate(&state, &json!({ "id": id, "prompt": "p", "audio": audio }));
+        let err = run("ltx-2.3-q4", &voice.path().to_string_lossy()).unwrap_err();
+        assert!(err.contains("needs its own download (11.3 GB)"), "{err}");
+
+        put(model_dir(q4.id).join("transformer-dev.safetensors"), 1);
+        assert!(talking_ready(q4));
+        assert_eq!(row("ltx-2.3-q4")["talkingReady"], true);
+        // With the part there, a second Get finishes at once.
+        assert_eq!(video_install_model(&state, &part).unwrap()["status"], "complete");
+        let err = run("ltx-2.3-q4", "/no/such/voice.wav").unwrap_err();
+        assert!(err.starts_with("audio not found"), "{err}");
+        let err = video_generate(&state, &json!({ "id": "ltx-2.3-q4", "prompt": "p", "audio": voice.path(), "loras": [{ "name": "a.safetensors" }] })).unwrap_err();
+        assert!(err.contains("LoRA"), "{err}");
+        for f in entry("ltx-2.3-q8").repo_files {
+            put(model_dir("ltx-2.3-q8").join(f), 1);
+        }
+        let err = run("ltx-2.3-q8", &voice.path().to_string_lossy()).unwrap_err();
+        assert!(err.contains("cannot run Talking Character"), "{err}");
+
+        // Remove takes the part and keeps the model.
+        let gone = video_delete_model(&state, &part).unwrap();
+        assert_eq!(gone["part"], "talking");
+        assert!(model_is_usable(q4) && !talking_ready(q4));
+        assert!(video_delete_model(&state, &part).is_err(), "nothing left to remove");
+        ltx2mlx::set_ready_for_test(false);
+
+        // The command line: a2v instead of generate --distilled, streamed,
+        // the voice after the flags of the pack, the start image last.
+        let src = production_source();
+        let generate = &src[src.find("pub fn video_generate(").unwrap()..src.find("pub fn video_progress(").unwrap()];
+        assert!(generate.contains("ltx2mlx::A2V_CLI.iter()"));
+        assert!(generate.contains("let low_ram = talking\n            || control.is_some()\n            || ltx2mlx::wants_low_ram("));
+        let voice_at = generate.find("ltx2mlx::talking_args(&mut cmd").unwrap();
+        assert!(generate.find("ltx2mlx::model_args(").unwrap() < voice_at);
+        assert!(voice_at < generate.find("cmd.arg(\"--image\")").unwrap(), "--image takes one or more values and stays last");
+        // The length is the voice's, read by Rust, and the memory check comes
+        // before the process.
+        assert!(generate.contains("ltx2mlx::audio_seconds(") && generate.contains("ltx2mlx::talking_frames(seconds"));
+        assert!(generate.find("talking_needs_more_memory(").unwrap() < generate.find(".spawn()").unwrap());
+    }
+
+    #[test]
+    fn a_talking_run_is_refused_on_a_mac_with_too_little_memory() {
+        const GIB: u64 = 1_073_741_824;
+        let q4 = entry("ltx-2.3-q4");
+        assert!(talking_needs_more_memory(q4, 16 * GIB).unwrap().contains(&format!("needs a Mac with {TALKING_MIN_RAM_GB} GB")));
+        assert!(talking_needs_more_memory(q4, TALKING_MIN_RAM_GB as u64 * GIB).is_none());
+        assert!(talking_needs_more_memory(q4, 48 * GIB).is_none());
+        assert!(talking_needs_more_memory(q4, 0).is_none(), "nothing measured: the run is not refused");
     }
 
     #[test]

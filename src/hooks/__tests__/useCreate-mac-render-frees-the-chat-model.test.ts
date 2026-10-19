@@ -106,14 +106,17 @@ describe('a picture on a Mac', () => {
   })
 })
 
-describe('the two Mac branches in the source', () => {
-  it('both free the memory, and every way out of them restores it', async () => {
+describe('the three Mac branches in the source', () => {
+  it('all free the memory, and every way out of them restores it', async () => {
     const fs = await import('node:fs')
     const path = await import('node:path')
     const src = fs.readFileSync(path.join(__dirname, '..', 'useCreate.ts'), 'utf8')
     const mac = src.slice(src.indexOf('isMlxImageHost() && isMlxImageModel(effImageModel)'), src.indexOf('Everything below is the ComfyUI path'))
-    expect(mac.match(/await freeMacMemoryForRender\(/g)).toHaveLength(2)
-    // One for the picture, three for the clip: failed start, and its finally.
-    expect(mac.match(/restoreChatBackendsAfterRender\(macEviction\)/g)).toHaveLength(3)
+    // The picture, the clip and, since the music engine of the Mac
+    // (commands/music.rs), the track.
+    expect(mac.match(/await freeMacMemoryForRender\(/g)).toHaveLength(3)
+    // One for the picture, two for the clip (a failed start, and its
+    // finally), one for the track, in its finally.
+    expect(mac.match(/restoreChatBackendsAfterRender\(macEviction\)/g)).toHaveLength(4)
   })
 })

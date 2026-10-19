@@ -8,7 +8,10 @@ import type { BundleTileProps, ModelTileProps } from '../ModelTiles'
 import type { LoraManagerProps } from '../LoraManager'
 import type { ModelSkinName } from './which'
 
-export type RailKey = 'text' | 'image' | 'video' | 'lora'
+/** The hover text of the GGUF file button, the same in both faces (D17). */
+export const ADD_GGUF_TITLE = 'Use a GGUF file from your drive as a chat model on the LU Engine'
+
+export type RailKey = 'text' | 'image' | 'video' | 'lora' | 'music'
 export type ModelsTab = 'installed' | 'discover'
 
 export interface RailEntry {
@@ -39,6 +42,8 @@ export interface ManagerFrameProps {
   onRefresh: () => void
   /** Present where there is something to pull into (Ollama, chat lane). */
   onPull?: () => void
+  /** D17: pick a GGUF file from the drive for the LU Engine (chat lane). */
+  onAddFile?: () => void
   children: ReactNode
 }
 

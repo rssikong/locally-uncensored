@@ -127,7 +127,7 @@ export function registerFsRoutes(routes: RouteMount): void {
 
   // API: FS write bytes, one base64 chunk of a BINARY file attached in the
   // chat (3.0.5). Parity port of the `fs_write_bytes` Tauri command: the same
-  // jail, the same 64 MiB ceiling, never over an existing file, and the bytes
+  // jail, the same 256 MiB ceiling, never over an existing file, and the bytes
   // grow in a hidden `.name.lu-part` sibling until the last chunk renames it
   // into place.
   routes.use('/local-api/fs-write-bytes', (req, res) => {

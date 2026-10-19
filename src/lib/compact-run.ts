@@ -54,13 +54,13 @@
  *   - It is not silent. Every compaction leaves a visible block in the
  *     transcript saying what it replaced. The memory extraction it was written
  *     for leaves nothing.
- *   - The consent is already explicit and specific. `/compact` is the user
- *     typing the command; auto-compact only ever runs when the user has set
- *     `autoCompactThreshold` themselves, and that setting exists for nothing
- *     else. Asking a second time through `memoryCloudOptIn` — a switch about
- *     MEMORY — would gate this feature behind an unrelated one, and would
- *     silently make a typed `/compact` do nothing at all on a default cloud
- *     profile.
+ *   - The consent is explicit and specific. `/compact` is the user typing
+ *     the command; auto-compact has its own switch (`autoCompact`, on by
+ *     default since 3.0.7) that exists for nothing else, and it says in the
+ *     transcript every time it ran. Asking a second time through
+ *     `memoryCloudOptIn` — a switch about MEMORY — would gate this feature
+ *     behind an unrelated one, and would silently make a typed `/compact` do
+ *     nothing at all on a default cloud profile.
  *
  * The model is the chat's own, not the cheap catalogue model that
  * `pickSilentCallModel` would choose (owner decision, 2026-09-02). A summary
@@ -76,8 +76,12 @@
 
 import { getProviderForModel } from '../api/providers'
 import { settleThinking } from './thinking-stripper'
+import { estimateTokens } from './context-compaction'
 import {
   buildCompactPrompt,
+  buildMergePrompt,
+  keepVerbatimFromPrevious,
+  renderCompactSummary,
   parseCompactSummary,
   summaryFromLooseText,
   isEmptySummary,
@@ -85,6 +89,7 @@ import {
   summaryCouldEverFit,
   renderTranscript,
   EMPTY_SUMMARY,
+  DEFAULT_TRANSCRIPT_CHARS,
   type CompactSummary,
   type TranscriptTurn,
   type UsabilityResult,
@@ -105,6 +110,9 @@ export const COMPACT_TEMPERATURE = 0.2
 /** Output ceiling. A summary longer than this was not going to be usable. */
 export const COMPACT_MAX_TOKENS = 1200
 
+/** Hard output ceiling for a merged state, however long the old one is. */
+export const MERGE_MAX_TOKENS = 4000
+
 export interface CompactRunInput {
   /** The turns about to be dropped — what the summary must stand in for. */
   turns: TranscriptTurn[]
@@ -112,8 +120,21 @@ export interface CompactRunInput {
   activeModel: string
   /** Optional steer from `/compact <focus>`. */
   focus?: string
+  /**
+   * The structured state of the earlier compactions (issue #151). Given and
+   * not empty, the call merges it with `turns` into one updated state instead
+   * of summarising the turns alone.
+   */
+  previous?: CompactSummary
   /** The turn's abort signal, so Stop reaches this call too. */
   signal?: AbortSignal
+  /**
+   * The model's context window, when known. The summary call is a request of
+   * its own and has to fit into it: on a small window the transcript it is
+   * shown is cut to what fits beside the instructions and the answer
+   * (transcriptCharsFor). Omitted or 0, the fixed default applies.
+   */
+  window?: number
   /** Override the deadline (tests). */
   timeoutMs?: number
 }
@@ -134,6 +155,26 @@ export interface CompactRunResult {
   detail?: string
   /** Present whenever the answer was judged. */
   usability?: UsabilityResult
+  /** True when this result is a merged state of `previous` and the turns. */
+  merged?: boolean
+  /** Entries of `previous` the model dropped and the check put back. */
+  restored?: number
+}
+
+/** Tokens of instructions around the transcript, the merge prompt included. */
+const PROMPT_OVERHEAD_TOKENS = 1000
+
+/**
+ * Characters of transcript the summary call may carry on this window. Three
+ * characters per token rather than four: tool results and code tokenize
+ * denser than prose, and an overflowing summary call is a failed compaction.
+ * Never above DEFAULT_TRANSCRIPT_CHARS, never below a floor that still holds
+ * a few steps.
+ */
+export function transcriptCharsFor(window: number | undefined, previousTokens = 0, outputTokens = COMPACT_MAX_TOKENS): number {
+  if (!(typeof window === 'number' && Number.isFinite(window) && window > 0)) return DEFAULT_TRANSCRIPT_CHARS
+  const room = (window - outputTokens - PROMPT_OVERHEAD_TOKENS - previousTokens) * 3
+  return Math.max(4000, Math.min(DEFAULT_TRANSCRIPT_CHARS, Math.floor(room)))
 }
 
 const fail = (reason: CompactRunReason, detail?: string): CompactRunResult => ({
@@ -157,7 +198,17 @@ export async function runCompactSummary(input: CompactRunInput): Promise<Compact
   // earlier summary already stripped — not against the raw turns. Judging a
   // summary "not smaller" against material that was never sent would reject
   // good summaries of very long histories.
-  const replacedChars = renderTranscript(turns).length
+  const transcript = renderTranscript(turns)
+  const replacedChars = transcript.length
+  const previous = input.previous && !isEmptySummary(input.previous) ? input.previous : undefined
+  const previousChars = previous ? renderCompactSummary(previous).length : 0
+  // Was ein Stand woertlich tragen MUSS und deshalb nicht schrumpfen kann: der
+  // alte Stand und die neuen Bitten des Nutzers (USER REQUESTS verlangt sie
+  // Wort fuer Wort). Beides zaehlt nicht gegen den erlaubten Anteil der neuen
+  // Zuege; gemessen wird nur, was das Modell darueber hinaus schreibt.
+  const verbatimAllowance = previous
+    ? previousChars + renderTranscript(turns.filter((t) => t.role === 'user')).length
+    : 0
 
   // Die Frage vor dem Aufruf, nicht danach: kann eine Zusammenfassung dieser
   // Textmenge ueberhaupt kleiner sein als das, was sie ersetzt? Ist sie es
@@ -170,11 +221,26 @@ export async function runCompactSummary(input: CompactRunInput): Promise<Compact
   // Rechnung bei summaryCouldEverFit) und faengt bewusst nur die Faelle, in
   // denen die Ablehnung SICHER ist. Ein weiteres Tor waere geraten, und
   // geratene Tore lehnen gute Zusammenfassungen ab.
+  //
+  // Gilt auch fuer eine Zusammenfuehrung (Box-Lauf 3, Befund H3): sind die
+  // neuen Zuege so kurz, spart auch ein zusammengefuehrter Stand nichts. Ohne
+  // dieses Tor rief ein zweites /compact direkt nach zwei kurzen Zuegen das
+  // Modell zweimal umsonst auf und meldete danach doch "already short".
   if (!summaryCouldEverFit(replacedChars)) {
     return { ok: false, summary: { ...EMPTY_SUMMARY }, reason: 'unusable', detail: 'not-smaller' }
   }
 
-  const prompt = buildCompactPrompt(turns, { focus: input.focus })
+  // A merged state carries the old record too, so its ceiling grows with it.
+  // Twice the old record plus room for the new part, never past a hard cap: a
+  // cut off merge loses its tail, and the check below only saves the old part.
+  const previousTokens = previous ? estimateTokens(renderCompactSummary(previous)) : 0
+  const maxTokens = previous
+    ? Math.min(MERGE_MAX_TOKENS, Math.max(COMPACT_MAX_TOKENS, previousTokens * 2 + 600))
+    : COMPACT_MAX_TOKENS
+  const maxTranscriptChars = transcriptCharsFor(input.window, previousTokens, maxTokens)
+  const prompt = previous
+    ? buildMergePrompt(previous, turns, { focus: input.focus, maxTranscriptChars })
+    : buildCompactPrompt(turns, { focus: input.focus, maxTranscriptChars })
 
   // One deadline for the whole call, chained to the caller's signal so Stop
   // still wins. AbortSignal.any is not assumed present — a manual link works
@@ -193,7 +259,7 @@ export async function runCompactSummary(input: CompactRunInput): Promise<Compact
     // (hazard 1). No `tools` field at all (hazard 6).
     const stream = provider.chatStream(modelId, [{ role: 'user', content: prompt }], {
       temperature: COMPACT_TEMPERATURE,
-      maxTokens: COMPACT_MAX_TOKENS,
+      maxTokens,
       // Denken AUS, und zwar gemessen (03.09.2026, Qwen3.5-9B, genau diese
       // Werte): das Modell verbrauchte alle 1200 Token im Denk-Kanal — 4553
       // Zeichen Ueberlegung — und schrieb KEINE EINZIGE ZEILE Antwort. In der
@@ -228,11 +294,22 @@ export async function runCompactSummary(input: CompactRunInput): Promise<Compact
     let summary = parseCompactSummary(content)
     if (isEmptySummary(summary)) summary = summaryFromLooseText(content)
 
-    const usability = isUsableSummary({ summary, replacedChars })
+    // Gemessen wird die Antwort des MODELLS, vor dem Wiederanhaengen. Was die
+    // Pruefung danach aus dem alten Stand zurueckholt, stand schon im alten
+    // Stand und ist im erlaubten Anteil enthalten; es doppelt zu zaehlen liess
+    // genau die Staende scheitern, die am treuesten waren.
+    const usability = isUsableSummary({ summary, replacedChars, baseChars: verbatimAllowance })
     if (!usability.usable) {
       return { ok: false, summary, reason: 'unusable', detail: usability.reason, usability }
     }
-    return { ok: true, summary, reason: 'ok', usability }
+
+    let restored: number | undefined
+    if (previous) {
+      const kept = keepVerbatimFromPrevious(previous, summary, transcript)
+      summary = kept.summary
+      restored = kept.restored
+    }
+    return { ok: true, summary, reason: 'ok', usability, ...(previous ? { merged: true, restored } : {}) }
   } catch (err) {
     if (input.signal?.aborted) return fail('aborted')
     const msg = err instanceof Error ? err.message : String(err)

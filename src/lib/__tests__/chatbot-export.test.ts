@@ -4,7 +4,7 @@
 
 import { describe, it, expect } from 'vitest'
 import JSZip from 'jszip'
-import { parseJsonText, parseExportFile, detectPlatform } from '../parsers/chatbot-export'
+import { parseJsonText, parseExportFile, detectPlatform, conversationMarkdown } from '../parsers/chatbot-export'
 
 const chatgptFixture = JSON.stringify([
   {
@@ -90,11 +90,11 @@ describe('parseJsonText — ChatGPT', () => {
     expect(c.title).toBe('Recipes for pasta')
     expect(c.platform).toBe('chatgpt')
     expect(c.messageCount).toBe(2)
-    expect(c.markdown).toContain('# Recipes for pasta')
-    expect(c.markdown).toContain('**You**')
-    expect(c.markdown).toContain('Got pasta recipes?')
-    expect(c.markdown).toContain('**Assistant**')
-    expect(c.markdown).toContain('Carbonara, cacio e pepe, aglio e olio.')
+    expect(conversationMarkdown(c)).toContain('# Recipes for pasta')
+    expect(conversationMarkdown(c)).toContain('**You**')
+    expect(conversationMarkdown(c)).toContain('Got pasta recipes?')
+    expect(conversationMarkdown(c)).toContain('**Assistant**')
+    expect(conversationMarkdown(c)).toContain('Carbonara, cacio e pepe, aglio e olio.')
   })
   it('skips empty mapping conversations', () => {
     const empty = JSON.stringify([{ title: 'empty', mapping: {} }])
@@ -112,8 +112,8 @@ describe('parseJsonText — Claude', () => {
     const c = result.conversations[0]
     expect(c.title).toBe('JS array methods')
     expect(c.messageCount).toBe(2)
-    expect(c.markdown).toContain('Explain map vs forEach')
-    expect(c.markdown).toContain('map returns a new array')
+    expect(conversationMarkdown(c)).toContain('Explain map vs forEach')
+    expect(conversationMarkdown(c)).toContain('map returns a new array')
   })
   it('skips conversations with no messages', () => {
     const empty = JSON.stringify([{ uuid: 'x', name: 'empty', chat_messages: [] }])
@@ -158,25 +158,25 @@ describe('parseJsonText — Claude content[] blocks (modern export)', () => {
     expect(r.conversations).toHaveLength(1)
     const c = r.conversations[0]
     expect(c.messageCount).toBe(2) // would have been 0 before the content[] fix
-    expect(c.markdown).toContain('summarize the attached file')
-    expect(c.markdown).toContain('Revenue grew 12 percent in Q3.')
+    expect(conversationMarkdown(c)).toContain('summarize the attached file')
+    expect(conversationMarkdown(c)).toContain('Revenue grew 12 percent in Q3.')
   })
   it('appends extracted attachment content with its filename', () => {
     const r = parseJsonText(claudeContentBlocksFixture)
-    const md = r.conversations[0].markdown
+    const md = conversationMarkdown(r.conversations[0])
     expect(md).toContain('[attachment: notes.txt]')
     expect(md).toContain('Q3 revenue rose 12 percent.')
   })
   it('skips non-text blocks (thinking / tool_use) without leaking them', () => {
     const r = parseJsonText(claudeContentBlocksFixture)
-    const md = r.conversations[0].markdown
+    const md = conversationMarkdown(r.conversations[0])
     expect(md).not.toContain('internal reasoning')
     expect(md).not.toContain('tool_use')
   })
   it('still handles the legacy flat-text shape', () => {
     const r = parseJsonText(claudeFixture)
     expect(r.conversations[0].messageCount).toBe(2)
-    expect(r.conversations[0].markdown).toContain('Explain map vs forEach')
+    expect(conversationMarkdown(r.conversations[0])).toContain('Explain map vs forEach')
   })
 })
 
@@ -186,9 +186,9 @@ describe('parseJsonText — Gemini', () => {
     expect(result.detectedPlatform).toBe('gemini')
     expect(result.conversations).toHaveLength(1)
     const c = result.conversations[0]
-    expect(c.markdown).toContain('quantum entanglement')
-    expect(c.markdown).toContain('**You**')
-    expect(c.markdown).toContain('**Assistant**')
+    expect(conversationMarkdown(c)).toContain('quantum entanglement')
+    expect(conversationMarkdown(c)).toContain('**You**')
+    expect(conversationMarkdown(c)).toContain('**Assistant**')
   })
 
   // Fehler 1: Gemini-Takeout-Turns, deren Text in `content` als Blockarray
@@ -208,9 +208,9 @@ describe('parseJsonText — Gemini', () => {
       },
     ])
     const c = parseJsonText(raw).conversations[0]
-    expect(c.markdown).not.toContain('[object Object]')
-    expect(c.markdown).toContain('What is a black hole?')
-    expect(c.markdown).toContain('A region where gravity wins.')
+    expect(conversationMarkdown(c)).not.toContain('[object Object]')
+    expect(conversationMarkdown(c)).toContain('What is a black hole?')
+    expect(conversationMarkdown(c)).toContain('A region where gravity wins.')
     expect(c.messageCount).toBe(2)
   })
 
@@ -222,7 +222,7 @@ describe('parseJsonText — Gemini', () => {
         messages: [{ role: 'user', content: { parts: { nested: true } } }],
       },
     ])
-    const md = parseJsonText(raw).conversations.map(c => c.markdown).join('\n')
+    const md = parseJsonText(raw).conversations.map(conversationMarkdown).join('\n')
     expect(md).not.toContain('[object Object]')
   })
 
@@ -230,7 +230,7 @@ describe('parseJsonText — Gemini', () => {
     const raw = JSON.stringify([
       { header: 'Gemini Apps', title: 'Flat', messages: [{ role: 'user', content: 'plain text turn' }] },
     ])
-    expect(parseJsonText(raw).conversations[0].markdown).toContain('plain text turn')
+    expect(conversationMarkdown(parseJsonText(raw).conversations[0])).toContain('plain text turn')
   })
 })
 
@@ -305,26 +305,26 @@ describe('parseJsonText — ChatGPT real-world mapping', () => {
     expect(r.conversations).toHaveLength(1)
     const c = r.conversations[0]
     expect(c.messageCount).toBe(2)
-    expect(c.markdown).toContain('What is 2+2?')
-    expect(c.markdown).toContain('NEW visible answer: four')
-    expect(c.markdown).not.toContain('OLD abandoned answer')
+    expect(conversationMarkdown(c)).toContain('What is 2+2?')
+    expect(conversationMarkdown(c)).toContain('NEW visible answer: four')
+    expect(conversationMarkdown(c)).not.toContain('OLD abandoned answer')
   })
   it('extracts text from multimodal parts (skips image pointers) and code content', () => {
     const r = parseJsonText(chatgptMultimodalFixture)
     expect(r.conversations).toHaveLength(1)
     const c = r.conversations[0]
     expect(c.messageCount).toBe(2)
-    expect(c.markdown).toContain('Describe this image')
-    expect(c.markdown).toContain('It is a sunset over the sea.')
-    expect(c.markdown).not.toContain('asset_pointer')
+    expect(conversationMarkdown(c)).toContain('Describe this image')
+    expect(conversationMarkdown(c)).toContain('It is a sunset over the sea.')
+    expect(conversationMarkdown(c)).not.toContain('asset_pointer')
   })
   it('falls back to the newest (last) child when current_node is absent', () => {
     const r = parseJsonText(chatgptNoCurrentNodeFixture)
     expect(r.conversations).toHaveLength(1)
     const c = r.conversations[0]
     expect(c.messageCount).toBe(2)
-    expect(c.markdown).toContain('second newest')
-    expect(c.markdown).not.toContain('first older')
+    expect(conversationMarkdown(c)).toContain('second newest')
+    expect(conversationMarkdown(c)).not.toContain('first older')
   })
 })
 

@@ -6,10 +6,11 @@ import { cloudModelById, defaultCloudModel } from '../../../stores/cloudCatalogS
 import { classifyModel } from '../../../api/comfyui'
 import { nativeHiresFinalSize, type HiresUpscaleMethod } from '../../../api/hires-fix'
 import { isMlxImageHost } from '../../../api/mlx-image'
+import { macHiresPass } from '../../../lib/mac-hires'
 import { MAC_EDIT_DEAD_SIDE, laneImageModel, macEditSide, runsAtOwnSampling, takesMlxLoras } from '../../../lib/image-engines'
 import { qwenEditResolution } from '../../../api/dynamic-workflow'
 import { openMlxLoraFolder, mlxLoraAlphaNote, mlxLoraRefusal } from '../../../api/mlx-loras'
-import { MLX_VIDEO_MIN_FRAMES, mlxFramesOnGrid, mlxVideoLaneEntry, mlxVideoMaxFrames } from '../../../api/mlx-video'
+import { MLX_VIDEO_MIN_FRAMES, mlxFramesOnGrid, mlxVideoLaneEntry, mlxVideoMaxFrames, mlxVideoRunSize } from '../../../api/mlx-video'
 import { INTENT_MAP } from './intents'
 import { SAMPLERS as SAMPLERS_FALLBACK, SCHEDULERS as SCHEDULERS_FALLBACK } from './badges'
 import { Section } from '../ui/Section'
@@ -22,9 +23,12 @@ import { cn } from '../ui/cn'
 import { HINWEIS_TEXT } from '../../../lib/hinweis'
 import { lorasForRun, loraRows } from '../../../lib/lora-stack'
 import { LoraStrength } from './LoraStrength'
+import { MOTION_OWN_WORKFLOW_NOTE, useMotionOwnWorkflow } from './motionWorkflow'
 import { supportsTransparent } from '../../../lib/transparent-image'
 import { QWEN_ENCODER_HELP, pickQwenEncoder, qwenEncoderOptions, type QwenEncoderVariant } from '../../../lib/render/qwen-text-encoder'
 import { MAX_SHOTS, MAX_SHOT_CHARS, supportsMultishot } from '../../../lib/ltx-multishot'
+import { frameRangeFor, framesOnRange, lengthHint } from '../../../lib/video-length'
+import { useMacMemoryGb } from '../../../lib/mac-memory'
 
 // Video families whose dynamic-workflow strategy actually wires a LoRA node:
 // the generic UNET path (wan/hunyuan/ltx/mochi/cosmos) plus Wan 2.2's dedicated
@@ -62,24 +66,49 @@ export function ParamGroups() {
   // hoeher fuer den MLX-Mac steht; sie war nur nie auf diese Bahn angewandt.
   // Die Wolken-Musikbahn bleibt unberuehrt.
   const isLocalAudio = isAudio && !isCloud
-  // The image model the tab runs: on the Mac, Edit lists the models that take
-  // an image; on a ComfyUI host this is the stored pick, as before.
-  const laneModel = isVideo ? s.videoModel : laneImageModel(s.imageModelList, s.imageModel, meta.id)
+  // The Mac's video model this lane runs: the stored pick where the lane can
+  // run it, else the first one it can (api/mlx-video mlxVideoLaneEntry).
+  const macVideo = isMlxLocal && isVideo
+  const macVideoEntry = macVideo ? mlxVideoLaneEntry(s.videoModelList, s.videoModel, meta.id) : undefined
+  const macClip = macVideoEntry?.mlxVideo
+  // The long LTX clip goes by the Mac's memory (api/mlx-video
+  // mlxVideoMaxFrames); Motion Control has not run so long.
+  const macMemoryGb = useMacMemoryGb(macVideo)
+  const macLengthGb = meta.id === 'motion' ? null : macMemoryGb
+  // The model the tab runs: on the Mac, Edit lists the models that take an
+  // image and a video lane runs the entry above; on a ComfyUI host this is
+  // the stored pick, as before.
+  const laneModel = isVideo ? (macVideoEntry?.name ?? s.videoModel) : laneImageModel(s.imageModelList, s.imageModel, meta.id)
   // The one Expert control the Mac has: the LoRA stack, for a model of its
-  // second image engine (mflux takes `--lora`), in Image and in Edit. The
-  // first engine (diffusers) has no place for a LoRA, and the Mac's video
-  // engine takes none either, so there the section stays away as before.
-  const macLoras = isMlxLocal && (meta.id === 'image' || meta.id === 'edit') && takesMlxLoras(s.imageModelList, laneModel)
-  const showExpert = (!isMlxLocal || macLoras) && !isLocalAudio && (!isCloud || isEdit)
+  // second image engine (mflux takes `--lora`), in Image and in Edit, and
+  // for a video model whose engine takes `--lora` (the quantized LTX packs
+  // and Wan, `loras` of its entry). The first image engine (diffusers) and
+  // the first engine's LTX have no place for a LoRA, so there the section
+  // stays away as before.
+  const macLoras = isMlxLocal && (
+    ((meta.id === 'image' || meta.id === 'edit') && takesMlxLoras(s.imageModelList, laneModel))
+    || (macClip?.loras === true)
+  )
+  // The Mac's Edit has two more: how far the run starts from noise, and the
+  // soft edge of a painted mask (mflux `--strength` and `--mask-image`).
+  const macEdit = isMlxLocal && isEdit
+  const showExpert = (!isMlxLocal || macLoras || macEdit) && !isLocalAudio && (!isCloud || isEdit)
   // LoRA is a local-only knob; for video it's offered only on families whose
   // builder actually applies it (see VIDEO_LORA_FAMILIES). Image always qualifies.
+  // Motion Control and Talking Character build their own graphs from
+  // LocalOpParams, which carries no LoRA (api/dynamic-workflow.ts), so the
+  // stack set nothing there; and VIDEO_LORA_FAMILIES was asked about the
+  // Video tab's model, not the lane's.
+  const laneWithoutLoras = meta.id === 'motion' || meta.id === 'lipsync'
   const loraSupported = isMlxLocal
     ? macLoras
-    : !isCloud && (!isVideo || VIDEO_LORA_FAMILIES.has(classifyModel(s.videoModel)))
+    : !isCloud && !laneWithoutLoras && (!isVideo || VIDEO_LORA_FAMILIES.has(classifyModel(s.videoModel)))
   // GH #146: the count is what a run sends, the same rule useCreate applies.
   const laneType = (isVideo ? s.videoModelList : s.imageModelList).find((m) => m.name === laneModel)?.type ?? classifyModel(laneModel)
   const activeLoras = lorasForRun(s.selectedLoras, loraList, laneType).use.length
   const stackRows = loraRows(loraList, s.selectedLoras, laneType)
+  // Which naming the Mac's video engine reads (api/mlx-loras mlxLoraRefusal).
+  const macVideoEngine = macClip ? (laneType === 'wan' ? 'wan' as const : 'ltx' as const) : undefined
 
   // On cloud the worker only honours steps for images and guidance_scale for
   // the flux family — hide the sliders elsewhere rather than show a dead
@@ -91,12 +120,19 @@ export function ParamGroups() {
   // distilled model, Qwen-Image 2.1 with its Turbo adapter) runs at its own
   // steps and guidance. Neither slider reaches it, so neither is shown.
   const ownSampling = isMlxLocal && !isVideo && runsAtOwnSampling(s.imageModelList, laneModel)
-  // The Mac's video engines take a length and nothing else: steps, guidance
-  // and size are the model's own, and its rate is fixed (api/mlx-video.ts).
-  // So the Mac's video lane shows the length, on the model's grid, and none
-  // of the sliders that set nothing. Without an installed model not even
-  // that: the values would belong to no model.
-  const macVideo = isMlxLocal && isVideo
+  // D4: each local video family has its own clip length (lib/video-length).
+  const frameRange = frameRangeFor(laneType)
+  // Past the length a family holds steady, a line under the slider says so.
+  const framesHint = lengthHint(laneType, framesOnRange(s.frames, frameRange))
+  // The Mac's video engines take a length, and where the model's entry says
+  // so a size on its grid and a step count (api/mlx-video.ts): the quantized
+  // LTX packs and Wan take a size, Wan takes steps. Guidance is the model's
+  // own and its rate is fixed. So the Mac's video lane shows the length and
+  // what the entry offers, and none of the sliders that set nothing. Without
+  // an installed model not even that: the values would belong to no model.
+  const macSize = !!macClip?.sizeGrid
+  const macSteps = !!macClip?.steps
+  const macRunSize = macClip ? mlxVideoRunSize(s.width, s.height, macClip) : null
   // The Mac's Edit scales its images to the pixel budget of the canvas, and
   // never to 1024: the model does not edit there, so the run takes 1056
   // (lib/image-engines). Where the canvas works out to 1024, the settings
@@ -104,16 +140,29 @@ export function ParamGroups() {
   const macEditRuns = isMlxLocal && meta.id === 'edit' && qwenEditResolution(s.width, s.height) === MAC_EDIT_DEAD_SIDE
     ? macEditSide(MAC_EDIT_DEAD_SIDE)
     : null
-  const macClip = macVideo ? mlxVideoLaneEntry(s.videoModelList, s.videoModel, meta.id)?.mlxVideo : undefined
-  const showSteps = !(isCloud && isVideo) && !ownSampling && !macVideo
-  const showCfg = isCloud ? cloudModelById(cloudModelId)?.cfg === true : !ownSampling && !macVideo
+  // The Mac's music engine takes the style, the lyrics, the length and the
+  // seed. Its turbo model runs at its own steps and guidance (music.rs), so
+  // the seed is all that is left here.
+  const macMusic = isMlxLocal && isAudio
+  const showSteps = !(isCloud && isVideo) && !ownSampling && (!macVideo || macSteps) && !macMusic
+  const showSize = !isAudio && (!macVideo || macSize)
+  const showCfg = isCloud ? cloudModelById(cloudModelId)?.cfg === true : !ownSampling && !macVideo && !macMusic
   // Native HiRes rewrites the local ComfyUI text-to-image graph. It has no
-  // cloud, video, Edit or MLX path, so keep the control honest and scoped to
-  // the one lane that can execute it.
-  const showHiresFix = !isCloud && !isVideo && meta.id === 'image' && !isMlxLocal
+  // cloud, video or Edit path, so keep the control honest and scoped to the
+  // lanes that can execute it. On the Mac that is a model that edits
+  // (Qwen-Image 2.1): its second pass is an edit of the finished picture at
+  // the larger size (lib/mac-hires).
+  const macHires = isMlxLocal && meta.id === 'image'
+    && (s.imageModelList.find((m) => m.name === laneModel)?.editImages ?? 0) > 0
+  const showHiresFix = !isCloud && !isVideo && meta.id === 'image' && (!isMlxLocal || macHires)
   let hiresFinal: { width: number; height: number } | null = null
   let hiresSizeError: string | null = null
-  if (showHiresFix && s.hiresFixEnabled) {
+  if (showHiresFix && s.hiresFixEnabled && macHires) {
+    // The Mac's second pass lands on the engine's grid and limit.
+    const pass = macHiresPass(s.width, s.height, { scale: s.hiresScale, steps: s.hiresSteps, denoise: s.hiresDenoise })
+    if (pass) hiresFinal = { width: pass.width, height: pass.height }
+    else hiresSizeError = 'This size is already as large as the engine makes it.'
+  } else if (showHiresFix && s.hiresFixEnabled) {
     try {
       hiresFinal = nativeHiresFinalSize(s.width, s.height, s.hiresScale)
     } catch (error) {
@@ -135,8 +184,14 @@ export function ParamGroups() {
   const activeEncoder = pickQwenEncoder(s.textEncoderList, s.qwenTextEncoder)?.variant
 
   // Shots: LTX 2.5 can cut between several shots in one run, with the same
-  // figure (lib/ltx-multishot.ts). Local text-to-video on that model only.
-  const showShots = !isCloud && meta.id === 'video' && !isMlxLocal && supportsMultishot(laneType)
+  // figure (lib/ltx-multishot.ts). Local text-to-video on that model only; on
+  // a Mac the LTX-2.5 packs, which the video catalogue names (`multishot`).
+  const showShots = !isCloud && meta.id === 'video' && (isMlxLocal ? macClip?.multishot === true : supportsMultishot(laneType))
+
+  // Motion Control with a workflow of the user's own: steps, guidance, size,
+  // length, sampler and scheduler are the workflow's (injectLaneParameters),
+  // its LoRAs too. The real values are in Workflow parameters below.
+  const motionWorkflow = useMotionOwnWorkflow() !== null
 
   const samplers = samplerList.length ? samplerList : SAMPLERS_FALLBACK
   const schedulers = schedulerList.length ? schedulerList : SCHEDULERS_FALLBACK
@@ -145,17 +200,33 @@ export function ParamGroups() {
   return (
     <div className="py-1">
       {/* QUALITY */}
-      {!macVideo && (
+      {motionWorkflow && (
+        <p className="px-1 pb-2 t-body text-gray-500" data-testid="motion-own-workflow-note">{MOTION_OWN_WORKFLOW_NOTE}</p>
+      )}
+      {(!macVideo || macSize || macSteps) && !macMusic && !motionWorkflow && (
       <Section title="Quality" icon={Gauge} defaultOpen
         right={<Button variant="ghost" size="sm" icon={RotateCcw} iconOnly title="Reset to model defaults" onClick={s.resetParamsToModelDefaults} />}
       >
-        {showSteps && <Slider label="Steps" min={1} max={60} step={1} value={s.steps} onChange={s.setSteps} />}
+        {showSteps && <Slider label="Steps" min={1} max={macVideo ? (macClip?.maxSteps ?? 60) : 60} step={1} value={s.steps} onChange={s.setSteps} />}
         {showCfg && <Slider label={isVideo ? 'Guidance' : 'CFG scale'} min={0} max={30} step={0.5} value={s.cfgScale} onChange={s.setCfgScale} format={(v) => v.toFixed(1)} />}
-        {!isAudio && (
+        {showSize && (macSize && macClip ? (
+          // The Mac: the model's grid and bounds. What runs is said below.
+          <div className="grid grid-cols-2 gap-2">
+            <NumberField label="Width" value={s.width} min={macClip.minSide} max={macClip.maxSide} step={macClip.sizeGrid} mono onChange={(v) => s.setSize(v, s.height)} suffix="px" />
+            <NumberField label="Height" value={s.height} min={macClip.minSide} max={macClip.maxSide} step={macClip.sizeGrid} mono onChange={(v) => s.setSize(s.width, v)} suffix="px" />
+          </div>
+        ) : (
         <div className="grid grid-cols-2 gap-2">
           <NumberField label="Width" value={s.width} min={64} max={4096} step={64} mono onChange={(v) => s.setSize(v, s.height)} suffix="px" />
           <NumberField label="Height" value={s.height} min={64} max={4096} step={64} mono onChange={(v) => s.setSize(s.width, v)} suffix="px" />
         </div>
+        ))}
+        {macSize && macClip && macRunSize && (
+          // The size the run makes: the fields on the model's grid and inside
+          // its own pixels (api/mlx-video mlxVideoRunSize, run_size in Rust).
+          <p className="t-micro text-gray-500" data-testid="mac-video-size">
+            Runs at <span className="t-mono">{macRunSize.width}×{macRunSize.height}</span> px. This model takes sizes in steps of {macClip.sizeGrid} px, up to the pixels of its own <span className="t-mono">{macClip.width}×{macClip.height}</span>.
+          </p>
         )}
         {macEditRuns && (
           <p className="t-micro text-gray-500" data-testid="mac-edit-runs-at">
@@ -165,9 +236,11 @@ export function ParamGroups() {
         {/* D#93 (stasicby): Wan's native sizes as one-click chips, an
             orientation flip, and ratio chips that respend the current pixel
             budget. Everything just writes the same width/height fields. */}
-        {!isAudio && (
+        {showSize && (
         <div className="flex flex-wrap items-center gap-1 pt-1">
-          {isVideo && VIDEO_RES_PRESETS.map((p) => (
+          {/* Wan's 720p is more than most Mac models' own size: the Mac
+              offers the flip and the ratios, which keep the pixels. */}
+          {isVideo && !macVideo && VIDEO_RES_PRESETS.map((p) => (
             <button
               key={p.label}
               onClick={() => { const d = presetForOrientation(p, s.height > s.width); s.setSize(d.width, d.height) }}
@@ -210,7 +283,7 @@ export function ParamGroups() {
             >
               <span>
                 <span className="block t-control text-gray-300">Native HiRes</span>
-                <span className="block text-[11px] leading-4 text-gray-600">Latent upscale plus a native refinement pass</span>
+                <span className="block text-[11px] leading-4 text-gray-600">{macHires ? 'A second pass over the picture at a larger size' : 'Latent upscale plus a native refinement pass'}</span>
               </span>
               <span className={cn('t-mono text-xs', s.hiresFixEnabled ? 'text-emerald-400' : 'text-gray-600')}>
                 {s.hiresFixEnabled ? 'on' : 'off'}
@@ -236,7 +309,7 @@ export function ParamGroups() {
                 <Slider label="Upscale" min={1.1} max={3} step={0.1} value={s.hiresScale} onChange={s.setHiresScale} format={(v) => `${v.toFixed(1)}×`} />
                 <Slider label="HiRes steps" min={1} max={40} step={1} value={s.hiresSteps} onChange={s.setHiresSteps} />
                 <Slider label="HiRes denoise" min={0.05} max={1} step={0.05} value={s.hiresDenoise} onChange={s.setHiresDenoise} format={(v) => v.toFixed(2)} />
-                <Field label="Latent upscale method" help="Nearest-exact is the default and preserves hard edges. Bicubic and bilinear provide smoother interpolation; bislerp gives softer latent blending.">
+                {!macHires && <Field label="Latent upscale method" help="Nearest-exact is the default and preserves hard edges. Bicubic and bilinear provide smoother interpolation; bislerp gives softer latent blending.">
                   <Select
                     size="sm"
                     options={[
@@ -249,7 +322,7 @@ export function ParamGroups() {
                     value={s.hiresUpscaleMethod}
                     onChange={(value) => s.setHiresUpscaleMethod(value as HiresUpscaleMethod)}
                   />
-                </Field>
+                </Field>}
               </div>
             )}
           </div>
@@ -280,7 +353,7 @@ export function ParamGroups() {
             </span>
           </button>
         )}
-        {!isVideo && !isCloud && <Slider label="Batch size" min={1} max={8} step={1} value={s.batchSize} onChange={s.setBatchSize} />}
+        {!isVideo && !isCloud && !macMusic && <Slider label="Batch size" min={1} max={8} step={1} value={s.batchSize} onChange={s.setBatchSize} />}
         {showShots && (
           <div className="space-y-2">
             <Slider label="Shots" min={1} max={MAX_SHOTS} step={1} value={1 + s.videoShots.length} onChange={s.setVideoShotCount} />
@@ -304,24 +377,34 @@ export function ParamGroups() {
             </p>
           </div>
         )}
-        {isVideo && !macVideo && (
+        {isVideo && !macVideo && !motionWorkflow && (
           <div className="grid grid-cols-2 gap-2">
-            <Slider label="Frames" min={1} max={120} step={1} value={s.frames} onChange={s.setFrames} />
+            <Slider
+              label="Frames"
+              min={frameRange.min}
+              max={frameRange.max}
+              step={frameRange.step}
+              value={framesOnRange(s.frames, frameRange)}
+              onChange={s.setFrames}
+            />
             <Slider label="FPS" min={1} max={60} step={1} value={s.fps} onChange={s.setFps} />
+            {framesHint && (
+              <p className="col-span-2 t-micro text-gray-500" data-testid="video-length-hint">{framesHint}</p>
+            )}
           </div>
         )}
         {macClip && (
           <Slider
             label="Length"
             min={MLX_VIDEO_MIN_FRAMES}
-            max={mlxVideoMaxFrames(macClip.frameStep)}
+            max={mlxVideoMaxFrames(macClip.frameStep, macLengthGb)}
             step={macClip.frameStep}
-            value={mlxFramesOnGrid(s.frames, macClip.frameStep)}
+            value={mlxFramesOnGrid(s.frames, macClip.frameStep, macLengthGb)}
             onChange={s.setFrames}
             format={(v) => `${v} frames · ${(v / macClip.fps).toFixed(1)}s at ${macClip.fps} fps`}
           />
         )}
-        {macClip && (
+        {macClip && !macSize && (
           // The size is the model's own: the engine takes none from Create.
           <p className="t-micro text-gray-500" data-testid="mac-video-size">
             <span className="t-mono">{macClip.width}×{macClip.height}</span> px, the size this model runs at.
@@ -330,7 +413,7 @@ export function ParamGroups() {
       </Section>
 
       {/* Only render a section with controls the selected backend can use. */}
-      {showExpert && (
+      {showExpert && !motionWorkflow && (
       <Section title="Expert" icon={FlaskConical} open={s.expertOpen} onOpenChange={s.setExpertOpen}>
         {/* Sampler/Scheduler are ComfyUI-only knobs — the hosted
             endpoints don't accept them, so hide them on the cloud backend
@@ -349,7 +432,12 @@ export function ParamGroups() {
         {isEdit && !isMlxLocal && (
           <Slider label="Denoise (raw)" min={0.05} max={1} step={0.05} value={s.denoise} onChange={s.setDenoise} format={(v) => v.toFixed(2)} />
         )}
-        {meta.allowsMask && !isCloud && !isMlxLocal && (
+        {macEdit && (
+          // 1.00 is the edit from the prompt alone, as before. Lower starts
+          // from the image and keeps more of it.
+          <Slider label="Edit strength" min={0.05} max={1} step={0.05} value={s.editStrength} onChange={s.setEditStrength} format={(v) => v.toFixed(2)} />
+        )}
+        {meta.allowsMask && !isCloud && (
           <Slider label="Mask edge feather" min={0} max={64} step={1} value={s.growMaskBy} onChange={s.setGrowMaskBy} unit="px" />
         )}
 
@@ -407,7 +495,7 @@ export function ParamGroups() {
                 // file that is no safetensors). Such a row says so and cannot
                 // be turned on; one that is still on can be turned off, and
                 // reads in the error tone, because its run will fail.
-                const refused = isMlxLocal ? mlxLoraRefusal(loraKeys?.[name], laneType === 'qwenimage') : null
+                const refused = isMlxLocal ? mlxLoraRefusal(loraKeys?.[name], !isVideo && laneType === 'qwenimage', macVideoEngine) : null
                 if (refused) {
                   return (
                     <div key={name} data-testid="lora-stack-refused" className={cn('rounded-md border transition-colors', active ? 'border-white/15 bg-white/[0.06]' : 'border-white/[0.06]')}>

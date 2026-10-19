@@ -31,6 +31,9 @@ export interface TauriMockOptions {
     mfluxEngineInstalled?: boolean
     installedImages?: string[]
     installedVideos?: string[]
+    /** The models whose Talking Character download is on disk (`talking_ready`
+     *  in video.rs). Default: none. */
+    talkingVideos?: string[]
     imageInstallError?: string
     /** The .safetensors files in the LoRA folder of the Mac's image engine
      *  (commands/mlx_loras.rs). A spec can change the folder while the page
@@ -42,8 +45,25 @@ export interface TauriMockOptions {
      *  pixel. A spec that measures the result on the stage hands in a real
      *  size. */
     imageBase64?: string
+    /** What `mlx_enhance_prompt` answers with: the model's whole answer, its
+     *  reasoning closed by `</think>` and the prompt after it, as the
+     *  enhancer writes it on a Mac (commands/mlx_enhancer.rs). */
+    enhancerAnswer?: string
     /** Polls an install takes to finish. Default 2; raise it to act mid-install. */
     installPolls?: number
+    /** The music engine (ACE-Step 1.5, commands/music.rs) with its model.
+     *  Default: not installed, as on a Mac that never got it. */
+    musicInstalled?: boolean
+    /** Polls of `mlx_music_progress` a track takes. Default 1. */
+    musicPolls?: number
+    /** The track ends with this error instead of completing. */
+    musicError?: string
+    /** Polls of `mlx_train_progress` a character training takes. Default 2. */
+    trainPolls?: number
+    /** The training ends with this error instead of completing. */
+    trainError?: string
+    /** `mlx_train_status` says the training adapter is on disk. Default false. */
+    trainAdapterReady?: boolean
     /**
      * A backend that is busy: every MLX media command is taken up this many
      * milliseconds after it was sent, and answers then. This is what the
@@ -443,13 +463,19 @@ export function tauriMockInit(opts: TauriMockOptions) {
     { id: 'qwen-image-2512', name: 'Qwen-Image 2512', repo: 'Qwen/Qwen-Image-2512', sizeGB: 57.7, minRamGB: 64, steps: 40, guidance: 4.0, defaultSize: 1024, unfiltered: false, description: '20B model for complex scenes and long text inside images. For Macs with 64 GB and more.' },
     // The packs of the second engine, mflux (image_mflux.rs).
     { id: 'flux2-klein-4b-4bit', name: 'FLUX.2 klein 4B 4-bit', family: 'mflux', repo: 'mflux-community/flux2-klein-4b-mflux-q4', sizeGB: 4.6, minRamGB: 16, steps: 4, guidance: 1.0, defaultSize: 1024, unfiltered: false, description: 'The small FLUX.2, quantized to 4-bit for the MLX image engine. Four steps and a small download. Experimental: not yet tested in LU.' },
-    { id: 'z-image-turbo-4bit', name: 'Z-Image Turbo 4-bit', family: 'mflux', repo: 'mflux-community/z-image-turbo-mflux-q4', sizeGB: 5.9, minRamGB: 16, steps: 9, guidance: 0.0, defaultSize: 1024, unfiltered: false, description: 'Z-Image Turbo, quantized to 4-bit for the MLX image engine. Nine steps, for Macs from 16 GB. Experimental: not yet tested in LU.' },
+    { id: 'z-image-turbo-4bit', name: 'Z-Image Turbo 4-bit', family: 'mflux', repo: 'mflux-community/z-image-turbo-mflux-q4', sizeGB: 5.9, minRamGB: 16, steps: 9, guidance: 0.0, defaultSize: 1024, unfiltered: false, description: 'Z-Image Turbo, quantized to 4-bit for the MLX image engine. Nine steps, for Macs from 16 GB.' },
     { id: 'qwen-image-2.1-4bit', name: 'Qwen-Image 2.1 4-bit', family: 'mflux', repo: 'OsaurusAI/Qwen-Image-2.1-mflux-4bit', sizeGB: 10.6, minRamGB: 16, steps: 25, guidance: 1.0, defaultSize: 1024, editImages: 10, userSampling: true, unfiltered: false, description: 'Qwen-Image 2.1, quantized to 4-bit for the MLX image engine. Generates from a prompt and edits images from a prompt. Strong at text inside images, for Macs from 16 GB. Research license, non-commercial use only.' },
     { id: 'z-image-turbo-8bit', name: 'Z-Image Turbo 8-bit', family: 'mflux', repo: 'mflux-community/z-image-turbo-mflux-q8', sizeGB: 11.0, minRamGB: 24, steps: 9, guidance: 0.0, defaultSize: 1024, unfiltered: false, description: 'Z-Image Turbo, quantized to 8-bit for the MLX image engine. Closer to the full model than the 4-bit pack. Experimental: not yet tested in LU.' },
     { id: 'qwen-image-2.1-8bit', name: 'Qwen-Image 2.1 8-bit', family: 'mflux', repo: 'OsaurusAI/Qwen-Image-2.1-mflux-8bit', sizeGB: 18.5, minRamGB: 24, steps: 25, guidance: 1.0, defaultSize: 1024, editImages: 10, userSampling: true, unfiltered: false, description: 'Qwen-Image 2.1, quantized to 8-bit for the MLX image engine. Generates from a prompt and edits images from a prompt. Strong at text inside images. Research license, non-commercial use only.' },
     { id: 'qwen-image-2.1-turbo', name: 'Qwen-Image 2.1 Turbo 8-bit', family: 'mflux', repo: 'OsaurusAI/Qwen-Image-2.1-mflux-8bit', sizeGB: 19.9, minRamGB: 24, steps: 6, guidance: 1.0, defaultSize: 1024, editImages: 10, unfiltered: false, description: 'Qwen-Image 2.1 8-bit with the Viggle Turbo LoRA: six steps in place of 25. Generates and edits. Shares its download with the 8-bit model. Research license, non-commercial use only.' },
     { id: 'qwen-image-2512-8bit', name: 'Qwen-Image 2512 8-bit', family: 'mflux', repo: 'mflux-community/qwen-image-2512-mflux-q8', sizeGB: 36.1, minRamGB: 48, steps: 20, guidance: 3.5, defaultSize: 1024, unfiltered: false, description: 'Qwen-Image 2512, the 20B model, quantized to 8-bit for the MLX image engine. For Macs from 48 GB. Experimental: not yet tested in LU.' },
-  ] as Array<{ id: string; name: string; family?: string; editImages?: number; userSampling?: boolean; repo: string; sizeGB: number; minRamGB: number; steps: number; guidance: number; defaultSize: number; unfiltered: boolean; description: string }>
+    // The Qwen-Image 2.1 prompt enhancers (mlx_enhancer.rs). They are listed
+    // with the image models and make no images.
+    { id: 'qwen-image-2.1-pe-t2i-4bit', name: 'Qwen-Image 2.1 Prompt Enhancer 4-bit', family: 'enhancer', enhancer: 't2i', repo: 'prithivMLmods/Qwen-Image-2.1-PE-T2I-MLX', sizeGB: 6.0, minRamGB: 16, steps: 0, guidance: 0, defaultSize: 0, unfiltered: false, description: 'The official Qwen prompt enhancer for Qwen-Image 2.1, quantized to 4-bit for MLX. With Improve my prompt on, it rewrites your prompt into the long description the model was trained on, on this Mac, before the picture starts. Research license, non-commercial use only.' },
+    { id: 'qwen-image-2.1-pe-i2i-4bit', name: 'Qwen-Image 2.1 Edit Prompt Enhancer 4-bit', family: 'enhancer', enhancer: 'i2i', repo: 'prithivMLmods/Qwen-Image-2.1-PE-I2I-MLX', sizeGB: 6.0, minRamGB: 16, steps: 0, guidance: 0, defaultSize: 0, unfiltered: false, description: 'The official Qwen edit prompt enhancer for Qwen-Image 2.1, quantized to 4-bit for MLX. With Improve my prompt on in Edit, it looks at the images and rewrites your instruction before the edit starts. Research license, non-commercial use only.' },
+    // The upscaler of Enhance Image (mlx_upscale): no picture from a prompt.
+    { id: 'seedvr2-3b', name: 'SeedVR2 3B', family: 'mflux', upscaler: true, repo: 'numz/SeedVR2_comfyUI', sizeGB: 7.3, minRamGB: 16, steps: 1, guidance: 1.0, defaultSize: 1024, unfiltered: false, description: 'Enhance Image on a Mac: makes a picture two or four times larger and sharper in one step, without a prompt.' },
+  ] as Array<{ id: string; name: string; family?: string; enhancer?: 't2i' | 'i2i'; upscaler?: boolean; editImages?: number; userSampling?: boolean; repo: string; sizeGB: number; minRamGB: number; steps: number; guidance: number; defaultSize: number; unfiltered: boolean; description: string }>
   // CATALOG in commands/video.rs, in its order. `fps`, the size and
   // `negativePrompt` are what `frame_rate`, the entry and
   // `takes_negative_prompt` say there for each entry, and `userSampling` is
@@ -498,20 +524,34 @@ export function tauriMockInit(opts: TauriMockOptions) {
     mfluxEngineInstalled: opts.mlx?.mfluxEngineInstalled ?? false,
     images: new Set<string>(opts.mlx?.installedImages ?? ['sd-turbo']),
     videos: new Set<string>(opts.mlx?.installedVideos ?? ['wan21-t2v-1.3b']),
+    talking: new Set<string>(opts.mlx?.talkingVideos ?? []),
+    music: opts.mlx?.musicInstalled === true,
   }
+  // The track the music engine is making: its job id and the polls it has
+  // had, or null when none was started.
+  let musicRun: { job: string; polls: number; cancelled: boolean } | null = null
+  let musicRuns = 0
+  // Character training on the Mac (commands/mlx_train.rs): the photos of the
+  // set, and the one run.
+  const trainSets = new Map<string, number>()
+  let trainRun: { job: string; polls: number; cancelled: boolean; trigger: string; steps: number } | null = null
   // One install slot per kind, exactly like the Rust side: null means idle
   // (nothing was ever started), a number counts polls since the install began.
-  const slot: Record<'image' | 'imageEngine' | 'video' | 'videoEngine', number | null> = {
+  const slot: Record<'image' | 'imageEngine' | 'video' | 'videoEngine' | 'music', number | null> = {
     image: null,
     imageEngine: null,
     video: null,
     videoEngine: null,
+    music: null,
   }
   let pendingImageId: string | null = null
   // An image the second engine is at, while `imageGenerateWaits` holds it.
   let imageRunning = false
   let endImageRun: (() => void) | null = null
   let pendingVideoId: string | null = null
+  /** `part` of the running video install: "talking" adds a model's Talking
+   *  Character download, nothing installs the model itself. */
+  let pendingVideoPart: string | null = null
 
   // ── Astra computer use (commands/computer.rs) ─────────────────────────────
   // The same answers Rust gives, from a desktop that exists only here.
@@ -1384,8 +1424,10 @@ export function tauriMockInit(opts: TauriMockOptions) {
           // second engine whether Create's steps and guidance reach it.
           editImages: m.editImages ?? 0,
           userSampling: m.family === 'mflux' ? m.userSampling === true : null,
-          // The second engine takes the LoRA stack, the sidecar does not.
-          loras: m.family === 'mflux',
+          // The second engine takes the LoRA stack, the sidecar does not,
+          // and neither does the upscaler.
+          loras: m.family === 'mflux' && m.upscaler !== true,
+          upscaler: m.upscaler === true,
           installed: mlx.images.has(m.id) && (m.family !== 'mflux' || mlx.mfluxEngineInstalled),
         })))
       // Rust holds the HF token in memory only, so a spec has to be able to
@@ -1502,6 +1544,16 @@ export function tauriMockInit(opts: TauriMockOptions) {
         return Promise.resolve({ trashed: true, missing: false })
       case 'mlx_generate_progress':
         return Promise.resolve(imageRunning ? { running: true, step: 3, steps: 25 } : { running: false, step: 0, steps: 0 })
+      // "Improve my prompt" with the Qwen-Image 2.1 enhancer on a Mac
+      // (commands/mlx_enhancer.rs): the whole answer of the model.
+      case 'mlx_enhance_prompt': {
+        record('__E2E_MLX_CALLS__', { cmd, model: m?.model, prompt: m?.prompt, images: m?.images, seed: m?.seed, run: m?.run })
+        if (!mlx.images.has(m?.model)) return Promise.reject(`${m?.model} is not installed. Install it in the Model Manager first.`)
+        return Promise.resolve({
+          text: opts.mlx?.enhancerAnswer ?? 'The user wants a picture.\n</think>\n\nA rewritten prompt from the enhancer.',
+          model: m?.model,
+        })
+      }
       case 'mlx_generate_cancel': {
         const was = imageRunning
         record('__E2E_MLX_CALLS__', { cmd })
@@ -1522,7 +1574,10 @@ export function tauriMockInit(opts: TauriMockOptions) {
           pythonBin: '/tmp/lu-e2e/venv/bin/python',
           modelsRoot: '/tmp/lu-e2e/mlx-video',
           outputsRoot: '/tmp/lu-e2e/videos',
-          installedModels: [...mlx.videos],
+          // Motion Control's LoRA installs through the same slot under its own
+          // id (`motion::ID` in video.rs), and is no model of the catalogue.
+          installedModels: [...mlx.videos].filter((id) => id !== 'ltx-2.3-motion-control'),
+          motionInstalled: mlx.videos.has('ltx-2.3-motion-control'),
           running: false,
         })
       case 'video_list_models':
@@ -1541,6 +1596,25 @@ export function tauriMockInit(opts: TauriMockOptions) {
           ...(mlxVideoCatalog.some((x) => mlx.videos.has(x.id) && !!x.textEncoderGB && x.textEncoderGB === m.textEncoderGB) ? { textEncoderGB: 0 } : {}),
           acceptsImage: m.requiresImage || m.family === 'ltx_2q'
             || ['wan22-ti2v-5b-q8', 'wan22-ti2v-5b', 'ltx-2-dev', 'ltx-2-distilled'].includes(m.id),
+          // `takes_loras` in video.rs: the second engine and Wan.
+          loras: m.family === 'ltx_2q' || m.family === 'wan_2',
+          // `size_grid`, `max_pixels` and `default_steps` in video.rs: a
+          // size on 64 for the second engine, on 16 for Wan (32 for TI2V
+          // 5B), steps for Wan alone (50 on 2.1, 40 on 2.2).
+          sizeGrid: m.family === 'ltx_2q' ? 64 : m.family === 'ltx_2' ? (m.id.includes('distilled') ? 64 : 32) : m.family === 'wan_2' ? (m.repo.includes('TI2V-5B') ? 32 : 16) : null,
+          maxPixels: m.defaultWidth * m.defaultHeight,
+          minSide: 256,
+          maxSide: 1280,
+          steps: m.family === 'wan_2' ? (m.id.includes('wan21') ? 50 : 40) : null,
+          maxSteps: 60,
+          // `takes_shot_list`: the LTX-2.5 packs of the second engine.
+          multishot: m.family === 'ltx_2q' && m.id.startsWith('ltx-2.5'),
+          // `motion::takes_motion`: the LTX-2.3 packs of the second engine.
+          motion: m.family === 'ltx_2q' && !m.id.startsWith('ltx-2.5'),
+          // `talks` and `talking_ready`: LTX-2.3 4-bit, with its own download.
+          talking: m.id === 'ltx-2.3-q4',
+          talkingGB: m.id === 'ltx-2.3-q4' ? 11.3 : 0,
+          talkingReady: m.id === 'ltx-2.3-q4' && mlx.videos.has(m.id) && mlx.talking.has(m.id),
           installed: mlx.videos.has(m.id),
         })))
       case 'video_install_mlx':
@@ -1555,13 +1629,18 @@ export function tauriMockInit(opts: TauriMockOptions) {
       case 'video_install_model':
         slot.video = 0
         pendingVideoId = m?.id ?? null
+        pendingVideoPart = m?.part ?? null
         // The payload is nested under `args` (invokeMedia) — reading args.id
         // here recorded undefined and let an id assertion pass on nothing.
-        record('__E2E_MLX_CALLS__', { cmd, id: m?.id })
+        record('__E2E_MLX_CALLS__', { cmd, id: m?.id, part: m?.part })
         return Promise.resolve({ ok: true, status: 'installing', id: m?.id })
       case 'video_install_model_status': {
         const s = installStatus('video')
-        if (s.status === 'complete' && pendingVideoId) {
+        if (s.status === 'complete' && pendingVideoId && pendingVideoPart === 'talking') {
+          mlx.talking.add(pendingVideoId)
+          pendingVideoId = null
+          pendingVideoPart = null
+        } else if (s.status === 'complete' && pendingVideoId) {
           mlx.videos.add(pendingVideoId)
           // As in Rust: a quantized LTX pack installs its engine on the way.
           if (mlxVideoCatalog.find((v) => v.id === pendingVideoId)?.family === 'ltx_2q') mlx.ltx2EngineInstalled = true
@@ -1581,20 +1660,166 @@ export function tauriMockInit(opts: TauriMockOptions) {
         record('__E2E_MLX_CALLS__', { cmd, id: m?.id })
         return Promise.resolve({ ok: true, id: m?.id })
       case 'video_generate':
-        record('__E2E_MLX_CALLS__', { cmd, id: m?.id, prompt: m?.prompt, seconds: m?.seconds, fps: m?.fps, init_image: m?.init_image, negative_prompt: m?.negative_prompt })
+        record('__E2E_MLX_CALLS__', { cmd, id: m?.id, prompt: m?.prompt, seconds: m?.seconds, fps: m?.fps, init_image: m?.init_image, negative_prompt: m?.negative_prompt, loras: m?.loras, width: m?.width, height: m?.height, steps: m?.steps, audio: m?.audio, motion_video: m?.motion_video })
         return Promise.resolve({ ok: true, jobId: 'e2e-vid', pid: 4242, output: '/tmp/lu-e2e/videos/e2e-vid.mp4' })
+      case 'mlx_upscale': {
+        // Enhance Image on a Mac: SeedVR2 on the second engine enlarges the
+        // staged picture (commands/mlx.rs mlx_upscale). Never a ComfyUI graph.
+        record('__E2E_MLX_CALLS__', { cmd, image: m?.image, scale: m?.scale, seed: m?.seed, run: m?.run })
+        const factor = Number(m?.scale ?? 2)
+        return Promise.resolve({ image_base64: opts.mlx?.imageBase64 ?? TINY_PNG, width: 512 * factor, height: 512 * factor, steps: 1, output: '/tmp/lu-e2e/images/enhance-e2e.png' })
+      }
+      case 'mlx_cutout':
+        // Remove Background on a Mac: macOS Vision cuts the staged image out
+        // (commands/mlx_cutout.rs). Never a ComfyUI graph.
+        record('__E2E_MLX_CALLS__', { cmd, image: m?.image })
+        return Promise.resolve({ image_base64: opts.mlx?.imageBase64 ?? TINY_PNG, width: 512, height: 512, output: '/tmp/lu-e2e/images/cutout-e2e.png' })
       case 'video_stage_start_image':
         // As in Rust: the bytes land on disk and the answer is their path.
         record('__E2E_MLX_CALLS__', { cmd, bytes: String(m?.data ?? '').length })
         return Promise.resolve({ path: '/tmp/lu-e2e/videos/start-images/e2e-start.png' })
+      case 'video_stage_motion_video':
+        // Motion Control on a Mac: the clip lands on disk the same way.
+        record('__E2E_MLX_CALLS__', { cmd, bytes: String(m?.data ?? '').length })
+        return Promise.resolve({ path: '/tmp/lu-e2e/videos/motion-videos/e2e-motion.mp4' })
+      case 'video_stage_voice':
+        // The voice of a Talking Character run, as the start image above.
+        record('__E2E_MLX_CALLS__', { cmd, bytes: String(m?.data ?? '').length })
+        return Promise.resolve({ path: '/tmp/lu-e2e/videos/voices/e2e-voice.wav' })
       case 'video_progress':
         // Completes on the first poll — specs assert the wiring, not patience.
         return Promise.resolve({ running: false, status: 'complete', logs: ['done'], error: null })
       case 'video_cancel':
         record('__E2E_MLX_CALLS__', { cmd })
         return Promise.resolve({ ok: true })
-      case 'read_media_file':
+
+      // ── The music engine of the Mac (commands/music.rs) ──────────
+      case 'mlx_music_status':
+        return Promise.resolve({
+          available: true, appleSilicon: true,
+          engineInstalled: mlx.music, engineVersion: mlx.music ? '1.5.0' : null,
+          engineCommit: 'ca1e85fe9430179831e6bc6be790c332190a3866',
+          installed: mlx.music, running: !!musicRun && musicRun.polls < (opts.mlx?.musicPolls ?? 1) && !musicRun.cancelled,
+          outputsRoot: '/tmp/lu-e2e/music',
+          model: {
+            id: 'acestep-v15-turbo', name: 'ACE-Step 1.5 Turbo', repo: 'ACE-Step/Ace-Step1.5', sizeGB: 10.1, minRamGB: 48, unfiltered: false,
+            description: 'Songs with vocals or instrumentals from a style prompt and your lyrics, up to four minutes. Runs on Apple Silicon through MLX. The download is the official ACE-Step 1.5 release with its song-writing language model.',
+            installed: mlx.music,
+          },
+        })
+      case 'mlx_music_install':
+        slot.music = 0
+        record('__E2E_MLX_CALLS__', { cmd })
+        return Promise.resolve({ ok: true, status: 'installing', id: 'acestep-v15-turbo' })
+      case 'mlx_music_install_status': {
+        const s = installStatus('music')
+        if (s.status === 'complete') mlx.music = true
+        return Promise.resolve(s)
+      }
+      case 'mlx_music_cancel_install': {
+        const was = slot.music !== null
+        slot.music = null
+        record('__E2E_MLX_CALLS__', { cmd })
+        return Promise.resolve({ ok: true, cancelled: was })
+      }
+      case 'mlx_music_delete':
+        mlx.music = false
+        record('__E2E_MLX_CALLS__', { cmd })
+        return Promise.resolve({ ok: true, id: 'acestep-v15-turbo' })
+      case 'mlx_music_generate': {
+        record('__E2E_MLX_CALLS__', { cmd, prompt: m?.prompt, lyrics: m?.lyrics, seconds: m?.seconds, seed: m?.seed, steps: m?.steps, run: m?.run, negative_prompt: m?.negative_prompt })
+        if (!mlx.music) return Promise.reject('ACE-Step 1.5 Turbo is not installed. Install it in the Model Manager first.')
+        const job = `e2e-music-${++musicRuns}`
+        musicRun = { job, polls: 0, cancelled: false }
+        const seed = typeof m?.seed === 'number' && m.seed >= 0 ? m.seed : 777
+        return Promise.resolve({ ok: true, jobId: job, pid: 4343, output: `/tmp/lu-e2e/music/music-${job}.wav`, seconds: m?.seconds ?? 120, seed, steps: 8 })
+      }
+      case 'mlx_music_progress': {
+        if (!musicRun) return Promise.resolve({ job: null, status: 'idle', phase: '', detail: '', percent: 0, step: 0, steps: 0, error: null, output: null, logs: [], running: false })
+        musicRun.polls += 1
+        const done = musicRun.polls >= (opts.mlx?.musicPolls ?? 1)
+        const status = musicRun.cancelled ? 'cancelled' : !done ? 'running' : opts.mlx?.musicError ? 'error' : 'complete'
+        return Promise.resolve({
+          job: musicRun.job, status, phase: done ? '' : 'Making the track', detail: '', percent: done ? 100 : 40,
+          step: done ? 8 : 4, steps: 8, error: status === 'error' ? opts.mlx?.musicError : status === 'cancelled' ? 'cancelled' : null,
+          output: null, logs: [], running: status === 'running',
+        })
+      }
+      case 'mlx_train_status': {
+        const base = mlx.mfluxEngineInstalled && mlx.images.has('z-image-turbo-4bit') ? 'z-image-turbo-4bit' : null
+        return Promise.resolve({
+          engineReady: mlx.mfluxEngineInstalled, base, adapterReady: opts.mlx?.trainAdapterReady ?? false,
+          adapterBytes: 340_194_488, minRamGB: 24, memoryRefusal: null, running: !!trainRun && !trainRun.cancelled && trainRun.polls < (opts.mlx?.trainPolls ?? 2),
+        })
+      }
+      case 'mlx_train_clear':
+        record('__E2E_MLX_CALLS__', { cmd, set: m?.set })
+        trainSets.set(String(m?.set), 0)
+        return Promise.resolve({ ok: true })
+      case 'mlx_train_stage': {
+        const set = String(m?.set)
+        trainSets.set(set, (trainSets.get(set) ?? 0) + 1)
+        record('__E2E_MLX_CALLS__', { cmd, set, caption: m?.caption, bytes: typeof m?.data === 'string' ? atob(m.data).length : 0 })
+        return Promise.resolve({ staged: `photo-${trainSets.get(set)}.png` })
+      }
+      case 'mlx_train_start': {
+        record('__E2E_MLX_CALLS__', { cmd, set: m?.set, trigger: m?.trigger, steps: m?.steps, run: m?.run })
+        const photos = trainSets.get(String(m?.set)) ?? 0
+        if (photos < 4) return Promise.reject('Add at least 4 photos of your character first.')
+        const steps = Math.ceil((m?.steps ?? 1200) / photos) * photos
+        trainRun = { job: 'e2e-train-1', polls: 0, cancelled: false, trigger: String(m?.trigger), steps }
+        return Promise.resolve({ ok: true, jobId: trainRun.job, pid: 4545, base: 'z-image-turbo-4bit', photos, epochs: steps / photos, steps, output: `/tmp/lu-e2e/loras/char_${trainRun.trigger}_zimage.safetensors` })
+      }
+      case 'mlx_train_progress': {
+        if (!trainRun) return Promise.resolve({ job: null, status: 'idle', phase: '', percent: 0, step: 0, steps: 0, trigger: null, error: null, output: null, logs: [], running: false })
+        trainRun.polls += 1
+        const done = trainRun.polls >= (opts.mlx?.trainPolls ?? 2)
+        const status = trainRun.cancelled ? 'cancelled' : !done ? 'running' : opts.mlx?.trainError ? 'error' : 'complete'
+        if (status === 'complete') {
+          // The character lands in the LoRA folder, where the Use shelf reads it.
+          const w = window as unknown as { __E2E_MLX_LORAS__?: Array<{ name: string }> }
+          w.__E2E_MLX_LORAS__ ??= [...(opts.mlx?.loras ?? [])]
+          const file = `char_${trainRun.trigger}_zimage.safetensors`
+          if (!w.__E2E_MLX_LORAS__.some((l) => l.name === file)) w.__E2E_MLX_LORAS__.push({ name: file })
+        }
+        return Promise.resolve({
+          job: trainRun.job, status, phase: done ? '' : 'Training', percent: done ? 100 : 40,
+          step: done ? trainRun.steps : Math.round(trainRun.steps / 3), steps: trainRun.steps, trigger: trainRun.trigger,
+          error: status === 'error' ? opts.mlx?.trainError : status === 'cancelled' ? 'cancelled' : null,
+          output: status === 'complete' ? `/tmp/lu-e2e/loras/char_${trainRun.trigger}_zimage.safetensors` : null, logs: [], running: status === 'running',
+        })
+      }
+      case 'mlx_train_cancel':
+        record('__E2E_MLX_CALLS__', { cmd, run: m?.run })
+        if (trainRun) trainRun.cancelled = true
+        return Promise.resolve({ ok: true, stopped: !!trainRun })
+      case 'mlx_music_cancel':
+        record('__E2E_MLX_CALLS__', { cmd, run: m?.run })
+        if (musicRun) musicRun.cancelled = true
+        return Promise.resolve({ ok: true, stopped: !!musicRun })
+      case 'read_media_file': {
+        // A file a spec put on the mocked disk, as base64 by its path.
+        const files = (window as unknown as { __E2E_MEDIA_FILES__?: Record<string, string> }).__E2E_MEDIA_FILES__
+        const own = files?.[String(args?.path ?? '')]
+        if (own) return Promise.resolve(own)
+        // A track of the music engine: a tenth of a second of silence as a
+        // real 16-bit WAV, so the result's <audio> element can load it.
+        if (String(args?.path ?? '').endsWith('.wav')) {
+          const rate = 8000
+          const samples = 800
+          const bytes = new Uint8Array(44 + samples * 2)
+          const view = new DataView(bytes.buffer)
+          const text = (at: number, word: string) => { for (let i = 0; i < 4; i++) bytes[at + i] = word.charCodeAt(i) }
+          text(0, 'RIFF'); view.setUint32(4, 36 + samples * 2, true); text(8, 'WAVE')
+          text(12, 'fmt '); view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true)
+          view.setUint32(24, rate, true); view.setUint32(28, rate * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true)
+          text(36, 'data'); view.setUint32(40, samples * 2, true)
+          let binary = ''
+          for (const b of bytes) binary += String.fromCharCode(b)
+          return Promise.resolve(btoa(binary))
+        }
         return Promise.resolve(`data:video/mp4;base64,${TINY_PNG}`)
+      }
 
       // ── chat streaming: drive the onChunk Channel ─────────────────
       case 'proxy_localhost_stream_chunked': {
@@ -1728,7 +1953,11 @@ export function tauriMockInit(opts: TauriMockOptions) {
           // spreads the entry through and the pickers read `details` and
           // `capabilities` off it. `tools` is declared so a chosen model is
           // not additionally judged by the family-name fallback.
-          const models = (opts.ollamaModels || []).map((name: string) => ({
+          // A spec can change what is installed while the page runs (a model
+          // removed, a server closed) through `window.__E2E_OLLAMA_MODELS__`.
+          const listedNow: unknown = Reflect.get(w, '__E2E_OLLAMA_MODELS__')
+          const installed: string[] = Array.isArray(listedNow) ? listedNow.map(String) : (opts.ollamaModels || [])
+          const models = installed.map((name: string) => ({
             name,
             model: name,
             size: 4 * 1024 * 1024 * 1024,

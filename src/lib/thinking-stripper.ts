@@ -18,15 +18,12 @@
  * orphan open-tags without matching close).
  */
 
-// ── Patterns, ordered most specific first ─────────────────────────────
+// ── Patterns ──────────────────────────────────────────────────────────
 //
-// Every pattern must use the `g` (global) flag. `stripInline` loops them
-// across the full content on every emitted chunk.
+// Every pattern must use the `g` (global) flag: they run across the full
+// content on every emitted chunk.
 
 const BLOCK_PATTERNS: RegExp[] = [
-  // Gemma channel tag with full block (open + close, sometimes the close uses
-  // a different pipe shape).
-  /<\|?channel\|?>\s*thought\b[\s\S]*?<\/\|?channel\|?>/gi,
   // Alt thinking-tag names that a small fraction of model cards emit.
   /<thought>[\s\S]*?<\/thought>/gi,
   /<reasoning>[\s\S]*?<\/reasoning>/gi,
@@ -34,44 +31,43 @@ const BLOCK_PATTERNS: RegExp[] = [
   /<deepthink>[\s\S]*?<\/deepthink>/gi,
 ]
 
-// Orphan opening tags — channel tag that never closes in the stream, or an
-// opening `<|channel|>thought` / `<thought>` when the close is still arriving.
-// We remove the opening marker aggressively so the user never sees "thought"
-// mid-stream; if a closing marker later arrives it gets stripped by the
-// BLOCK_PATTERNS on the full-content pass.
-const ORPHAN_OPENERS: RegExp[] = [
-  /<\|?channel\|?>\s*thought\b/gi,
-  /<\|?channel\|?>/gi,
-  /<channel\|>/gi,
-]
+// A Gemma thought: the channel marker, the word `thought`, the reasoning, and
+// the next channel marker of any shape as its closer. Gemma 4 writes
+// `<|channel>thought … <channel|>`, older builds `<|channel|>thought …
+// </channel>`. A thought whose closer has not arrived yet (mid-stream, or a
+// turn cut off) runs to the end of the text, so the half block is never shown
+// and never read aloud as if it were the answer.
+const CHANNEL_THOUGHT = /<\|?channel\|?>?\s*thought\b([\s\S]*?)(?:<\/?\|?channel\|?>|$)/gi
+// A channel marker on its own, with no thought behind it.
+const CHANNEL_MARKER = /<\/?\|?channel\|?>/gi
 
 /**
- * Strip every recognised thinking-tag format from `content`. Safe to call
- * on an in-progress stream buffer — blocks are only removed when both ends
- * are present; orphan openers are removed eagerly so unclosed channel tags
- * don't leak into the UI.
+ * Split the Gemma channel thoughts off `content`.
  *
- * This is the FULL strip — use when thinking is toggled OFF.
+ * Returns the answer without them and the reasoning that was inside, so the
+ * caller can route it into the thinking panel.
  */
-export function stripAllThinkingTags(content: string): string {
-  if (!content) return content
-  let out = content
-  for (const pat of BLOCK_PATTERNS) {
-    out = out.replace(pat, '')
-  }
-  for (const pat of ORPHAN_OPENERS) {
-    out = out.replace(pat, '')
-  }
-  return out
+export function splitChannelThought(content: string): { content: string; thinking: string } {
+  if (!content) return { content, thinking: '' }
+  const thoughts: string[] = []
+  const out = content
+    .replace(CHANNEL_THOUGHT, (_m, inner: string) => {
+      if (inner.trim()) thoughts.push(inner.trim())
+      return ''
+    })
+    .replace(CHANNEL_MARKER, '')
+  return { content: out, thinking: thoughts.join('\n\n') }
 }
 
 /**
- * Strip non-canonical thinking tags (channel tags, alt names, orphan openers)
- * but leave the canonical `<think>…</think>` alone — useChat.ts state-machine
- * handles those char-by-char and needs to see the raw `<think>` marker to
- * detect the transition.
+ * Strip non-canonical thinking tags (channel thoughts, alt names) but leave
+ * the canonical `<think>…</think>` alone: the useChat.ts state-machine handles
+ * those char-by-char and needs to see the raw `<think>` marker to detect the
+ * transition.
  *
- * Use this inside the char-by-char state-machine path.
+ * Safe to call on an in-progress stream buffer. Named blocks are only removed
+ * when both ends are present; a channel thought is removed from its opener on,
+ * closed or not.
  */
 export function stripNonCanonicalTags(content: string): string {
   if (!content) return content
@@ -79,17 +75,9 @@ export function stripNonCanonicalTags(content: string): string {
   for (const pat of BLOCK_PATTERNS) {
     out = out.replace(pat, '')
   }
-  for (const pat of ORPHAN_OPENERS) {
-    out = out.replace(pat, '')
-  }
-  return out
+  return splitChannelThought(out).content
 }
 
-/**
- * Apply a final safety pass on the complete assistant content after the
- * stream finishes. Catches any orphan closing `</think>` that leaked through
- * (e.g. provider restarted mid-stream, first `<think>` lost).
- */
 /**
  * Split off a `<think>` that never got its closer.
  *
@@ -152,9 +140,14 @@ export function splitOrphanCloser(content: string): { content: string; thinking:
   }
 }
 
+/**
+ * Apply a final safety pass on the complete assistant content after the
+ * stream finishes. Catches any orphan closing `</think>` that leaked through
+ * (e.g. provider restarted mid-stream, first `<think>` lost).
+ */
 export function finalStripThinkingTags(content: string, keepCanonicalThink = false): string {
   if (!content) return content
-  let out = stripAllThinkingTags(content)
+  let out = stripNonCanonicalTags(content)
   if (!keepCanonicalThink) {
     // Canonical `<think>` block — strip if still present (shouldn't be,
     // the state-machine handles it, but belt-and-braces).
@@ -165,6 +158,19 @@ export function finalStripThinkingTags(content: string, keepCanonicalThink = fal
     out = out.replace(/<think>/gi, '')
   }
   return out.trim()
+}
+
+/**
+ * `</think>` outside code, removed. Only for text whose thought is already
+ * split off: there a closer closes nothing. Inside a fenced block or an inline
+ * code span it is text the answer means, an example of the tag.
+ */
+export function dropStrayClosers(content: string): string {
+  if (!content || !/<\/think>/i.test(content)) return content
+  return content
+    .split(/(```[\s\S]*?(?:```|$)|`[^`\n]*`)/)
+    .map((part, i) => (i % 2 === 1 ? part : part.replace(/<\/think>(?:[ \t]*\n)?/gi, '')))
+    .join('')
 }
 
 /**
@@ -215,7 +221,16 @@ export function settleThinking(
     out = opener.content
     add(opener.thinking)
   }
-  // Non-canonical markers (Gemma channel tags, <thought>, <reasoning>, …).
+  // A Gemma channel thought, closed or cut off.
+  const channel = splitChannelThought(out)
+  out = channel.content
+  add(channel.thinking)
+  // Closers left over once every block is out. Box run 14.10.2026 (Qwen3.5 9B,
+  // Think on): a model in a loop wrote `</think>` twelve times, the first one
+  // closed the thought and the other eleven stood in the bubble and in the
+  // read-aloud text. A closer in code the answer shows on purpose stays.
+  out = dropStrayClosers(out)
+  // Non-canonical markers (<thought>, <reasoning>, …).
   out = finalStripThinkingTags(out, keepThinking)
   if (!keepThinking) think = ''
   return { content: out, thinking: think }

@@ -48,3 +48,65 @@ export function trainStepsNote(steps: number): string {
   const label = trainPresetLabel(steps)
   return label ? `${label}, ${steps} steps` : `${steps} steps`
 }
+
+/**
+ * 3.0.8 D20: die zwei Rezepte des lokalen Trainers. Die Argumente selbst
+ * baut der Rust-Teil (`TrainPreset` in src-tauri/src/commands/trainer.rs);
+ * hier stehen nur Name, Untergrenze und der Satz dazu.
+ */
+export type TrainVramPreset = 'standard' | 'low-vram'
+
+export const TRAIN_VRAM_PRESETS: { value: TrainVramPreset; label: string }[] = [
+  { value: 'standard', label: 'Normal' },
+  { value: 'low-vram', label: 'Low VRAM' },
+]
+
+export const TRAIN_VRAM_PRESET_DEFAULT: TrainVramPreset = 'standard'
+
+/** Gleiche Zahlen wie `TRAINER_VRAM_FLOOR_MIB_FP8` und
+ *  `TRAINER_VRAM_FLOOR_MIB_LOW_VRAM_FP8` in trainer.rs (ein Test vergleicht
+ *  beide). Low VRAM ist gerechnet, nicht auf einer Karte gemessen. */
+export const TRAIN_VRAM_FLOOR_MIB: Record<TrainVramPreset, number> = {
+  standard: 11 * 1024,
+  'low-vram': 7 * 1024 + 512,
+}
+
+export function isTrainVramPreset(v: unknown): v is TrainVramPreset {
+  return v === 'standard' || v === 'low-vram'
+}
+
+/** Was unter dem Waehler steht, solange Low VRAM gewaehlt ist. */
+export const LOW_VRAM_NOTE =
+  'Low VRAM trains at 512 px and keeps most of the model in system memory. Each step takes clearly longer than Normal, and fine detail comes out softer. Needs about 8 GB on the card.'
+
+function gb(mib: number): string {
+  return `${Math.round(mib / 1024)} GB`
+}
+
+/**
+ * Der Vorschlag zur Karte: null, wenn das gewaehlte Rezept passt oder die
+ * Karte unbekannt ist. `switchTo` ist das Rezept, das der Knopf daneben
+ * waehlt; fehlt es, passt auch Low VRAM nicht.
+ *
+ * `cardGb` ist die Zahl aus `useGraphicsCardGb` (ganze GB der groessten
+ * Karte, auf dem Mac null), dieselbe Karte, die der Trainer ohne Auswahl im
+ * Hardware-Tab nimmt (`choose_trainer_gpu`). Eine andere Auswahl dort
+ * faengt die Pruefung im Rust-Teil ab, deren Meldung ebenfalls Low VRAM nennt.
+ */
+export function trainVramSuggestion(
+  cardGb: number | null,
+  preset: TrainVramPreset,
+): { text: string; switchTo?: TrainVramPreset } | null {
+  if (cardGb === null || cardGb <= 0) return null
+  const cardMib = cardGb * 1024
+  if (cardMib < TRAIN_VRAM_FLOOR_MIB['low-vram']) {
+    return { text: `This card has ${gb(cardMib)}, less than local training needs even with Low VRAM (about 8 GB). Cloud mode trains the same character without this limit.` }
+  }
+  if (preset === 'standard' && cardMib < TRAIN_VRAM_FLOOR_MIB.standard) {
+    return {
+      text: `This card has ${gb(cardMib)}. Normal training needs ${gb(TRAIN_VRAM_FLOOR_MIB.standard)}, Low VRAM is made for cards like this one.`,
+      switchTo: 'low-vram',
+    }
+  }
+  return null
+}

@@ -29,6 +29,7 @@ vi.mock('../loadImage', () => ({
 vi.mock('../../../../api/mlx-image', () => ({ isMlxImageHost: () => ctx.mlx }))
 vi.mock('../../../../api/comfyui', () => ({ classifyModel: () => 'sdxl', isI2VModel: () => false, isT2VCapable: () => true }))
 vi.mock('../../../../api/backend', () => ({ openExternal: vi.fn() }))
+vi.mock('../../../../hooks/useGraphicsMemory', () => ({ useGraphicsCardGb: () => null }))
 vi.mock('../../../../api/cloud/studio', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../../api/cloud/studio')>()),
   studioQuote: ctx.quote,
@@ -285,9 +286,9 @@ describe('Referenzleiste', () => {
     expect(useCreateStore.getState().references).toHaveLength(0)
   })
 
-  it('der Speicher haelt hoechstens vier weitere Fotos', () => {
-    for (let i = 1; i <= 7; i++) useCreateStore.getState().addReference(FOTO(i))
-    expect(useCreateStore.getState().references).toHaveLength(4)
+  it('der Speicher haelt hoechstens neun weitere Fotos (lokal Qwen-Image 2.1), die Cloud zeigt davon nur ihre vier', () => {
+    for (let i = 1; i <= 12; i++) useCreateStore.getState().addReference(FOTO(i))
+    expect(useCreateStore.getState().references).toHaveLength(9)
   })
 
   it('ein Modellwechsel auf eines mit weniger Platz blendet nur aus, was nicht mehr passt', () => {

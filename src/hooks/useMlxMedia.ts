@@ -9,12 +9,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { mlxStatus, listMlxImageModels, deleteMlxImageModel, type MlxStatus, type MlxImageModel } from '../api/mlx-image'
 import { getVideoStatus, listVideoModels, deleteVideoModel, type VideoStatus, type VideoModel } from '../api/mlx-video'
+import { getMusicStatus, deleteMusicModel, musicCatalogModel, type MusicStatus } from '../api/mlx-music'
 import { anyVideoEngineReady } from '../lib/video-engines'
 import { anyImageEngineReady } from '../lib/image-engines'
 import { installMlxEngine, installMlxModel, MlxInstallCancelled } from '../api/mlx-install'
 import { useMlxInstallStore, mlxLaneGeneration, type MlxInstallEntry } from '../stores/mlxInstallStore'
 
-export type MlxKind = 'image' | 'video'
+export type MlxKind = 'image' | 'video' | 'music'
 
 /** The fields both catalogues share, which is all a tile draws. */
 export interface MlxCatalogModel {
@@ -52,10 +53,12 @@ export interface MlxMedia {
   loaded: boolean
   image: MlxLane
   video: MlxLane
+  /** The music engine (ACE-Step 1.5): one model, which brings its engine. */
+  music: MlxLane
   /** What the two engines last reported about themselves: whether the image
    *  engine is running and which model it holds in memory, the video engine's
    *  version and where its files are. Null until read, or when a read failed. */
-  engines: { image: MlxStatus | null; video: VideoStatus | null }
+  engines: { image: MlxStatus | null; video: VideoStatus | null; music: MusicStatus | null }
   /** Install a model. Its tile says so at once, before the backend answers. */
   get: (kind: MlxKind, model: MlxCatalogModel) => void
   setUpEngine: (kind: MlxKind) => void
@@ -77,6 +80,7 @@ interface Seen {
   images: MlxImageModel[]
   video: VideoStatus | null
   videos: VideoModel[]
+  music: MusicStatus | null
 }
 
 /** What the last read of the catalogues said. The Model Manager is mounted
@@ -98,33 +102,36 @@ export function useMlxMedia(enabled: boolean): MlxMedia {
   const [images, setImages] = useState<MlxImageModel[]>(lastSeen?.images ?? [])
   const [video, setVideo] = useState<VideoStatus | null>(lastSeen?.video ?? null)
   const [videos, setVideos] = useState<VideoModel[]>(lastSeen?.videos ?? [])
+  const [music, setMusic] = useState<MusicStatus | null>(lastSeen?.music ?? null)
   const [loaded, setLoaded] = useState(lastSeen !== null)
   // The model a Get waits on, with the count of Stops its lane had then. A
   // Stop since, on the tile or in the download tray, makes it void in the
   // same render, and not a poll later when the run behind it notices.
-  const [queued, setQueued] = useState<Record<MlxKind, { id: string; stops: number } | null>>({ image: null, video: null })
-  const [errors, setErrors] = useState<Record<MlxKind, string | null>>({ image: null, video: null })
+  const [queued, setQueued] = useState<Record<MlxKind, { id: string; stops: number } | null>>({ image: null, video: null, music: null })
+  const [errors, setErrors] = useState<Record<MlxKind, string | null>>({ image: null, video: null, music: null })
   // Models whose Remove was clicked and is not through yet.
-  const [removed, setRemoved] = useState<Record<MlxKind, string[]>>({ image: [], video: [] })
+  const [removed, setRemoved] = useState<Record<MlxKind, string[]>>({ image: [], video: [], music: [] })
   // Which Get of a lane is the current one. A Stop, and the next Get, make
   // the one before it old, and an old one must not clear what a new one set.
-  const run = useRef<Record<MlxKind, number>>({ image: 0, video: 0 })
+  const run = useRef<Record<MlxKind, number>>({ image: 0, video: 0, music: 0 })
   const entries = useMlxInstallStore((s) => s.entries)
   const stopCount = useMlxInstallStore((s) => s.stopCount)
   const queuedId = (kind: MlxKind) => (queued[kind] && queued[kind].stops === stopCount[kind] ? queued[kind].id : null)
 
   const refresh = useCallback(async () => {
-    const [e, i, v, vm] = await Promise.all([
+    const [e, i, v, vm, mu] = await Promise.all([
       mlxStatus().catch(() => null),
       listMlxImageModels().catch(() => [] as MlxImageModel[]),
       getVideoStatus().catch(() => null),
       listVideoModels().catch(() => [] as VideoModel[]),
+      getMusicStatus().catch(() => null),
     ])
-    lastSeen = { engine: e, images: i, video: v, videos: vm }
+    lastSeen = { engine: e, images: i, video: v, videos: vm, music: mu }
     setEngine(e)
     setImages(i)
     setVideo(v)
     setVideos(vm)
+    setMusic(mu)
     setLoaded(true)
   }, [])
 
@@ -139,7 +146,7 @@ export function useMlxMedia(enabled: boolean): MlxMedia {
 
   // A slot that reaches its end changes what is installed: read again. Keyed
   // on the statuses, so progress ticks do not re-read the catalogue.
-  const statusKey = (['image-engine', 'image-model', 'video-engine', 'video-model'] as const)
+  const statusKey = (['image-engine', 'image-model', 'video-engine', 'video-model', 'music-model'] as const)
     .map((k) => entries[k]?.status ?? '-')
     .join('|')
   const lastKey = useRef(statusKey)
@@ -168,6 +175,8 @@ export function useMlxMedia(enabled: boolean): MlxMedia {
   }, [refresh])
 
   const setUpEngine = useCallback((kind: MlxKind) => {
+    // The music engine installs with its model's Get and has no setup alone.
+    if (kind === 'music') return
     setErrors((s) => ({ ...s, [kind]: null }))
     installMlxEngine(kind)
       .catch((e) => fail(kind, e))
@@ -188,6 +197,7 @@ export function useMlxMedia(enabled: boolean): MlxMedia {
     setRemoved((s) => ({ ...s, [kind]: [...s[kind], id] }))
     try {
       if (kind === 'image') await deleteMlxImageModel(id)
+      else if (kind === 'music') await deleteMusicModel()
       else await deleteVideoModel(id)
     } catch (e) {
       fail(kind, e)
@@ -228,10 +238,22 @@ export function useMlxMedia(enabled: boolean): MlxMedia {
       queuedId: queuedId('video'),
       error: errors.video,
     },
-    engines: { image: engine, video },
+    music: {
+      models: withoutRemoved(music ? [musicCatalogModel(music.model)] : [], removed.music),
+      // The engine comes with the model's Get, so there is no setup to offer.
+      engineReady: true,
+      unsupported: music && !music.appleSilicon
+        ? 'Local music needs a Mac with Apple Silicon.'
+        : null,
+      engineInstall: null,
+      modelInstall: running(entries['music-model']),
+      queuedId: queuedId('music'),
+      error: errors.music,
+    },
+    engines: { image: engine, video, music },
     // What the lane last knew about its engine decides which row a Get shows
     // first, the engine's or the model's. The backend is asked right after.
-    get: (kind, model) => get(kind, model, kind === 'image' ? !!engine?.installed : !!video?.mlxInstalled),
+    get: (kind, model) => get(kind, model, kind === 'image' ? !!engine?.installed : kind === 'music' || !!video?.mlxInstalled),
     setUpEngine,
     cancel,
     remove,

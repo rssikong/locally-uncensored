@@ -118,6 +118,15 @@ describe('picking several images at the source surface', () => {
     expect(names()).toEqual(['image 1.png', 'x.png', 'y.png'])
   })
 
+  // How-to recording 12.10.2026: the first image of the list was called
+  // "image 1.jpg" although it came from a file with a name of its own.
+  it('the image that was there first keeps the name of its file', async () => {
+    start('cloud', 'removebg')
+    useCreateStore.getState().setSource({ filename: '', url: 'data:image/png;base64,AA', width: 8, height: 8, name: 'portrait.png' })
+    await addBatchFiles([png('x.png'), png('y.png')])
+    expect(names()).toEqual(['portrait.png', 'x.png', 'y.png'])
+  })
+
   it('a folder picker gives the images of the folder, not of the folders below it', () => {
     const inFolder = (name: string, rel: string) => Object.defineProperty(png(name), 'webkitRelativePath', { value: rel })
     const files = [inFolder('a.png', 'shots/a.png'), inFolder('deep.png', 'shots/old/deep.png'), inFolder('b.png', 'shots/b.png')]
@@ -171,6 +180,20 @@ describe('the list under the source', () => {
     ctx.quota.remaining.credits = perImage * 2 + 1
     render(<BatchStrip />)
     expect(screen.getByTestId('batch-price').textContent).toContain('Your credits cover 2 of them. The rest will not run and is not charged.')
+  })
+
+  it('a price the app does not know is not shown as 0 credits', async () => {
+    const before = { ...ctx.quota.costs }
+    ctx.quota.costs = { image: 0, video: 0 }
+    try {
+      start('cloud', 'removebg')
+      await addBatchFiles([png('a.png'), png('b.png')])
+      render(<BatchStrip />)
+      expect(screen.getByTestId('batch-count').textContent).toContain('2 images.')
+      expect(screen.queryByTestId('batch-price')).toBeNull()
+    } finally {
+      ctx.quota.costs = before
+    }
   })
 
   it('a local list shows no price', async () => {

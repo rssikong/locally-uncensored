@@ -120,7 +120,9 @@ export function BatchStrip() {
           {full ? ` That is the most one list takes.` : ''}
         </p>
       )}
-      {on && perImage !== null && (
+      {/* A cost of 0 is a price the app does not know (quota.costs 0), not a
+          free run: "0 credits per image" would state a price nobody set. */}
+      {on && perImage !== null && perImage > 0 && (
         <p className="t-body text-gray-400 text-center max-w-sm" data-testid="batch-price">
           {num(perImage)} credits per image, {num(perImage * batch.length)} credits for all {batch.length}.
           {covered < batch.length

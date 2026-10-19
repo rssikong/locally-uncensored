@@ -63,8 +63,9 @@ async function instruct(page: Page, text: string) {
   await expect(page.getByRole('button', { name: 'Send message' })).toBeVisible({ timeout: 20_000 })
 
   // And then verify the instruction actually went in. ChatInput drops a send
-  // in silence in more than one situation (a 700 ms double-fire lock, a view
-  // that has not finished wiring its model), leaving the text sitting in the
+  // in silence in more than one situation (the 700 ms double-fire lock, which
+  // since 3.0.7 holds only for the same message, a view that has not
+  // finished wiring its model), leaving the text sitting in the
   // composer with no error anywhere. Without this check the drop surfaces
   // twenty seconds later as "the answer never appeared", which points at the
   // wrong half of the app.

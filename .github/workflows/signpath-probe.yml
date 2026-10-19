@@ -1,26 +1,49 @@
 name: SignPath signing probe (Windows)
 
-# Runs the SignPath signing lane of release.yml once, by hand, so that the
-# setup can be tried and shown to SignPath before a release depends on it.
+# Runs the three SignPath stages of a release by hand, with the test policy,
+# so that the lane can be tried and shown to SignPath before a release depends
+# on it. The stages are the same actions a release uses
+# (.github/actions/windows-signpath, -installers, -finish); their order is in
+# the header of the first.
 #
-# It builds the commit it is started on, sends the same two signing requests
-# a release sends (.github/actions/windows-signpath), verifies the result and
-# keeps the signed installers as a workflow artifact for 7 days.
+#   stage build       builds the commit the run is started on and submits the
+#                     app binary. The run page names the label of this probe,
+#                     probe-<run id>.
+#   stage installers  with that label: packs the installers around the signed
+#                     binary and submits them.
+#   stage finish      with that label: fetches the signed installers, writes
+#                     updater files with a key made in the run, verifies, and
+#                     keeps the result as a workflow artifact for 7 days.
+#
+# Each stage is started by hand; the watcher of windows-signpath.yml looks at
+# release tags only. A stage started twice does its work once (see
+# scripts/signpath-stages.mjs).
 #
 # What it never does: it creates no release, attaches nothing to one, and
-# does not read or write latest.json. The updater signatures it writes are
-# made with a key generated in the run and thrown away with it, so the release
-# updater key is not used here and no installed app would accept these files
-# as an update.
+# does not read or write the update manifest. The updater signatures it
+# writes are made with a key generated in the run and thrown away with it, so
+# the release updater key is not used here and no installed app would accept
+# these files as an update. Its token reads, it does not write.
 #
-# The default signing policy is test-signing, whose certificate is
-# self-signed. Windows does not trust it, and the probe accepts exactly that.
-# To try the production certificate, start it with the release policy and
-# switch "allow-test-certificate" off.
+# Only the test policy signs here. Its certificate is self-signed; Windows
+# does not trust it, and the probe accepts exactly that. A certificate Windows
+# trusts is issued for release tags only (refs/tags/vX.Y.Z), through
+# release.yml and windows-signpath.yml.
+
+run-name: ${{ format('SignPath probe {0} {1}', inputs.stage, inputs.label || format('probe-{0}', github.run_id)) }}
 
 on:
   workflow_dispatch:
     inputs:
+      stage:
+        description: 'build: build and submit the app binary. installers, finish: the next stage of the probe named in label.'
+        type: choice
+        options: [build, installers, finish]
+        default: build
+      label:
+        description: 'For installers and finish: the label the build stage printed (probe-<run id>).'
+        required: false
+        default: ''
       signing-policy-slug:
         description: 'SignPath signing policy slug'
         required: true
@@ -41,19 +64,51 @@ permissions:
 env:
   # Same pin as release.yml and sidecar-windows.yml; bump the three together.
   VULKAN_SDK_VERSION: '1.4.313.2'
+  # sha256 of the Windows installer of exactly that version. The installer is
+  # run on the build machine, so it is checked before it starts. Read from
+  # the publisher's own list on 2026-10-10:
+  #   https://sdk.lunarg.com/sdk/sha/1.4.313.2/windows/vulkansdk-windows-X64-1.4.313.2.exe.txt
+  # Bump it with the version, in the same three files.
+  VULKAN_SDK_SHA256: '34a921d951858274ca8e470e9d0a3b7624db41216b3908ccea9f73c8a1b7500e'
+  LABEL: ${{ inputs.label || format('probe-{0}', github.run_id) }}
 
 jobs:
-  probe:
+  # Before anything is checked out or any secret is read.
+  lock:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Only the test policy signs in the probe
+        if: ${{ inputs.signing-policy-slug != 'test-signing' }}
+        shell: bash
+        run: |
+          echo "::error::The probe signs with the policy test-signing only. A release is signed on its tag, by release.yml and windows-signpath.yml."
+          exit 1
+
+      - name: A later stage names the probe it continues
+        if: ${{ inputs.stage != 'build' }}
+        shell: bash
+        env:
+          GIVEN: ${{ inputs.label }}
+          STAGE: ${{ inputs.stage }}
+        run: |
+          if [[ ! "$GIVEN" =~ ^probe-[0-9]+$ ]]; then
+            echo "::error::Stage $STAGE continues a probe: give the label its build stage printed, probe-<run id>."
+            exit 1
+          fi
+
+  build:
+    needs: lock
+    if: ${{ inputs.stage == 'build' }}
     # SignPath accepts builds from GitHub-hosted runners only.
     runs-on: windows-latest
-    # Long enough for a policy with manual approval: two requests, each may
-    # wait two hours for a person.
-    timeout-minutes: 360
+    timeout-minutes: 120
     env:
       SIDECAR_TRIPLE: x86_64-pc-windows-msvc
     steps:
       - name: Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
 
       - name: Which SignPath values are present
         id: signcfg
@@ -80,26 +135,24 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
+      # Dependencies only: the cache drops the app's own build before it
+      # saves (swatinem/rust-cache, src/save.ts and src/cleanup.ts).
       - name: Rust cache
         uses: swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: './src-tauri -> target'
 
       # The bundled llama.cpp server has to exist before the app builds
-      # (tauri-build fails on a missing externalBin). Same steps and the same
-      # cache key as the Windows leg of release.yml.
-      - name: Sidecar build cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: D:/lb
-          key: llama-${{ hashFiles('scripts/build-llama.sh') }}-${{ env.SIDECAR_TRIPLE }}-v1
-
+      # (tauri-build fails on a missing externalBin). Built from source, as on
+      # the signed release leg: no sidecar cache.
       - name: Install Vulkan SDK
         shell: pwsh
         run: |
           curl.exe -fL --retry 3 -o "$env:RUNNER_TEMP\VulkanSDK-Installer.exe" `
             "https://sdk.lunarg.com/sdk/download/${env:VULKAN_SDK_VERSION}/windows/vulkansdk-windows-X64-${env:VULKAN_SDK_VERSION}.exe"
           if ($LASTEXITCODE -ne 0) { throw "Vulkan SDK download failed" }
+          $got = (Get-FileHash -Algorithm SHA256 "$env:RUNNER_TEMP\VulkanSDK-Installer.exe").Hash.ToLower()
+          if ($got -ne $env:VULKAN_SDK_SHA256) { throw "Vulkan SDK installer has sha256 $got, expected $env:VULKAN_SDK_SHA256. It was not run." }
           & "$env:RUNNER_TEMP\VulkanSDK-Installer.exe" --accept-licenses --default-answer --confirm-command install
           Add-Content $env:GITHUB_ENV "VULKAN_SDK=C:\VulkanSDK\${env:VULKAN_SDK_VERSION}"
 
@@ -117,9 +170,95 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
+      - name: Build the app and submit it to SignPath (stage 1)
+        id: signpath
+        uses: ./.github/actions/windows-signpath
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ inputs.signing-policy-slug }}
+          label: ${{ env.LABEL }}
+
+  installers:
+    needs: lock
+    if: ${{ inputs.stage == 'installers' }}
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - name: Is the app binary signed, and the installers not yet submitted
+        id: plan
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+          SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+        run: node scripts/signpath-stages.mjs plan installers "$LABEL"
+
+      - name: Install Rust stable
+        if: steps.plan.outputs.run == 'true'
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      - name: Install npm dependencies
+        if: steps.plan.outputs.run == 'true'
+        run: npm ci
+
+      - name: Pack the installers around the signed app binary and submit them
+        if: steps.plan.outputs.run == 'true'
+        uses: ./.github/actions/windows-signpath-installers
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ inputs.signing-policy-slug }}
+          label: ${{ env.LABEL }}
+          app-request-id: ${{ steps.plan.outputs.app-request-id }}
+          build-run-id: ${{ steps.plan.outputs.build-run-id }}
+          version: ${{ steps.plan.outputs.version }}
+
+  finish:
+    needs: lock
+    if: ${{ inputs.stage == 'finish' }}
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - name: Are the installers signed, and the probe not yet finished
+        id: plan
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+          SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+        run: node scripts/signpath-stages.mjs plan publish "$LABEL" "$RUNNER_TEMP/signpath/chain"
+
+      - name: Install npm dependencies
+        if: steps.plan.outputs.run == 'true'
+        run: npm ci
+
       # Not the release key: one that exists for this run only.
       - name: Generate a throwaway updater key
         id: probe-key
+        if: steps.plan.outputs.run == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -128,19 +267,27 @@ jobs:
           echo "::add-mask::$key"
           echo "key=$key" >> "$GITHUB_OUTPUT"
 
-      - name: Build and sign the Windows installers (SignPath)
+      - name: Fetch the signed installers and write their updater files
         id: signpath
-        uses: ./.github/actions/windows-signpath
+        if: steps.plan.outputs.run == 'true'
+        uses: ./.github/actions/windows-signpath-finish
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
-          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
-          signing-policy-slug: ${{ inputs.signing-policy-slug }}
+          installers-request-id: ${{ steps.plan.outputs.installers-request-id }}
           expected-publisher: ${{ inputs.expected-publisher }}
           allow-test-certificate: ${{ inputs.allow-test-certificate }}
           updater-private-key: ${{ steps.probe-key.outputs.key }}
 
+      - name: Put the llama.cpp provenance record next to the installers
+        if: steps.plan.outputs.run == 'true'
+        shell: bash
+        env:
+          DIST: ${{ steps.signpath.outputs.dist }}
+        run: cp "$RUNNER_TEMP/signpath/chain/installers/llama-cpp-provenance.json" "$DIST/"
+
       - name: Keep the signed installers as a workflow artifact
+        if: steps.plan.outputs.run == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: windows-signpath-probe
@@ -148,16 +295,37 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Write the state of the last stage
+        id: state
+        if: steps.plan.outputs.run == 'true'
+        shell: bash
+        env:
+          INSTALLERS_REQUEST_ID: ${{ steps.plan.outputs.installers-request-id }}
+          PUBLISHER: ${{ steps.signpath.outputs.publisher }}
+        run: |
+          node scripts/signpath-stages.mjs write-state "$RUNNER_TEMP/signpath/state-published" "$LABEL" published \
+            "installersRequestId=$INSTALLERS_REQUEST_ID" "publisher=$PUBLISHER"
+
+      - name: Keep the state of the last stage
+        if: steps.plan.outputs.run == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ steps.state.outputs.name }}
+          path: ${{ steps.state.outputs.dir }}
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Say on the run page what was signed
+        if: steps.plan.outputs.run == 'true'
         shell: bash
         env:
           POLICY: ${{ inputs.signing-policy-slug }}
           PUBLISHER: ${{ steps.signpath.outputs.publisher }}
-          APP_REQUEST: ${{ steps.signpath.outputs.app-signing-request }}
-          INSTALLERS_REQUEST: ${{ steps.signpath.outputs.installers-signing-request }}
+          APP_REQUEST: ${{ steps.plan.outputs.app-request-url }}
+          INSTALLERS_REQUEST: ${{ steps.plan.outputs.installers-request-url }}
         run: |
           {
-            echo "SignPath probe with signing policy \`$POLICY\`: both requests completed, publisher \`$PUBLISHER\`."
+            echo "SignPath probe $LABEL with signing policy \`$POLICY\`: both requests completed, publisher \`$PUBLISHER\`."
             echo "Signing requests: [app binary]($APP_REQUEST), [installers]($INSTALLERS_REQUEST)."
             echo "Nothing was published. The signed installers are in the workflow artifact \`windows-signpath-probe\`."
           } >> "$GITHUB_STEP_SUMMARY"

@@ -147,10 +147,12 @@ const TABS: SettingsTab[] = ['general', 'backends', 'agent', 'voice-remote']
 const ALL_ON: SettingsSectionFlags = {
   gpuPicker: true, builtinExpert: true, comfyui: true, agentMode: true, agentWorkflows: true,
   mediaTimeouts: true,
+  chatTimeout: true,
 }
 const ALL_OFF: SettingsSectionFlags = {
   gpuPicker: false, builtinExpert: false, comfyui: false, agentMode: false, agentWorkflows: false,
   mediaTimeouts: false,
+  chatTimeout: false,
 }
 
 /** Der JSX-Zweig eines Tabs, von seinem Guard bis zum naechsten. */

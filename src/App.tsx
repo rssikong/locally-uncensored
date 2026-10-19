@@ -40,6 +40,10 @@ function App() {
       // The download speed limit sits in Rust and starts at none on every
       // launch (lib/download-limit.ts).
       void import('./lib/download-limit').then(({ startDownloadLimitSync }) => startDownloadLimitSync())
+
+      // The phone's tab name (GitHub #19) sits in Rust the same way
+      // (lib/remote-page-title.ts).
+      void import('./lib/remote-page-title').then(({ startRemotePageTitleSync }) => startRemotePageTitleSync())
     }
 
     // Probe local Whisper (STT) once at boot and push the result into the voice

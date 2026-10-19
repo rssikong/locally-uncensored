@@ -9,6 +9,7 @@
 // support for multi-speaker roles.
 import type { Message } from '../types/chat'
 import type { AIModel } from '../types/models'
+import { substituteMacros, DEFAULT_USER_NAME } from './character-card'
 
 export const GROUP_CHAT_MIN = 2
 export const GROUP_CHAT_MAX = 4
@@ -28,6 +29,78 @@ export const GROUP_CHAT_MAX = 4
  */
 export function groupChatCandidates(models: AIModel[], selected: string[] = []): AIModel[] {
   return models.filter((m) => m.type === 'text' || selected.includes(m.name))
+}
+
+/**
+ * GH #165: the members whose model is not in the model list right now.
+ *
+ * Such a member used to stay in the group invisibly: it was counted, it kept
+ * its turn in every round, and the request under its name was answered by
+ * whatever model the backend had loaded, so one model spoke twice per round
+ * under two names. It now sits out until its model is listed again, and the
+ * group menu shows it as unavailable so it can be removed.
+ *
+ * A list that has not landed yet, or a refresh in which every backend failed
+ * (an empty list, see modelStore.setModels), says nothing about any one
+ * model, so nobody is judged on it.
+ */
+export function unavailableGroupMembers(
+  members: readonly string[],
+  models: readonly Pick<AIModel, 'name'>[],
+  inventoryLoaded: boolean,
+): string[] {
+  if (!inventoryLoaded || models.length === 0) return []
+  const listed = new Set(models.map((m) => m.name))
+  return members.filter((m) => !listed.has(m))
+}
+
+/** The members that take a turn in the next round, in their order. */
+export function availableGroupMembers(
+  members: readonly string[],
+  models: readonly Pick<AIModel, 'name'>[],
+  inventoryLoaded: boolean,
+): string[] {
+  const missing = unavailableGroupMembers(members, models, inventoryLoaded)
+  return members.filter((m) => !missing.includes(m))
+}
+
+export interface GroupChatRow {
+  name: string
+  /** A member whose model is not in the model list right now (GH #165). */
+  unavailable: boolean
+  /** The additional OpenAI-compatible backend the model comes from, with its
+   *  name, so the same model on two servers reads as two choices (GH #173). */
+  providerEntry?: string
+  providerName?: string
+}
+
+/**
+ * The rows of the group menu: every model that may sit at the table, once
+ * each, and after them every member whose model left the list, so it stays
+ * visible and can be taken out of the group without bringing the model back.
+ *
+ * Once each, because a server can report the same model twice (KoboldCpp in
+ * Ollama mode, GH #165). The selection is keyed by name, so two rows of one
+ * name ticked together and the header counted the model twice.
+ */
+export function groupChatRows(models: AIModel[], selected: string[], inventoryLoaded: boolean): GroupChatRow[] {
+  const missing = new Set(unavailableGroupMembers(selected, models, inventoryLoaded))
+  const seen = new Set<string>()
+  const rows: GroupChatRow[] = []
+  for (const m of groupChatCandidates(models, selected)) {
+    if (seen.has(m.name)) continue
+    seen.add(m.name)
+    const entry = 'providerEntry' in m && typeof m.providerEntry === 'string' ? m.providerEntry : undefined
+    rows.push(entry
+      ? { name: m.name, unavailable: false, providerEntry: entry, providerName: 'providerName' in m && typeof m.providerName === 'string' ? m.providerName : undefined }
+      : { name: m.name, unavailable: false })
+  }
+  for (const name of selected) {
+    if (seen.has(name)) continue
+    seen.add(name)
+    rows.push({ name, unavailable: missing.has(name) })
+  }
+  return rows
 }
 
 /** True when this conversation runs as a group. */
@@ -54,12 +127,14 @@ export interface GroupSpeaker {
   name: string
   /** Its own persona prompt, absent when it follows the chat's setting. */
   personaPrompt?: string
+  /** The id of its own persona, absent when it follows the chat's setting. */
+  personaId?: string
 }
 
 export function groupSpeakers(
   models: readonly string[],
   groupPersonas: Readonly<Record<string, string>> | undefined,
-  personas: readonly { id: string; name: string; systemPrompt: string }[],
+  personas: readonly { id: string; name: string; systemPrompt: string; card?: unknown }[],
 ): Record<string, GroupSpeaker> {
   const picked = models.map((model) => {
     const id = groupPersonas?.[model]
@@ -76,7 +151,12 @@ export function groupSpeakers(
     const shared = picked.filter((other) => other.persona?.name === persona.name).length > 1
     speakers[model] = {
       name: shared ? `${persona.name} (${model})` : persona.name,
-      personaPrompt: persona.systemPrompt,
+      personaId: persona.id,
+      // A character card persona keeps `{{char}}` / `{{user}}` in its
+      // prompt; fill them in here like a role play chat does.
+      personaPrompt: persona.card
+        ? substituteMacros(persona.systemPrompt, persona.name, DEFAULT_USER_NAME)
+        : persona.systemPrompt,
     }
   }
   return speakers
@@ -170,15 +250,153 @@ export function groupHistory(
   /** From `groupSpeakers`: a participant with its own persona is tagged with
    *  that name, everyone else with the model name as before. */
   speakers?: Readonly<Record<string, GroupSpeaker>>,
+  /** Who played which persona, for turns that carry no persona of their own
+   *  (see `groupTurnAuthor`). */
+  authors?: GroupAuthors,
 ): GroupWireMessage[] {
+  const self = speakerKey(model, speakers)
   return messages
     .filter((m) => m.role !== 'system' && m.content.trim() !== '')
     .map((m) => {
-      const foreign = m.role === 'assistant' && !!m.modelId && m.modelId !== model
+      const author = m.role === 'assistant' ? groupTurnAuthor(m, speakers, authors) : null
+      const foreign = !!author && author.key !== self
       return {
         role: (foreign ? 'user' : m.role) as GroupWireMessage['role'],
-        content: foreign ? `[${speakers?.[m.modelId!]?.name ?? m.modelId}] ${m.content}` : m.content,
+        content: foreign ? `[${author.name}] ${m.content}` : m.content,
         ...(m.images?.length ? { images: m.images.map((i) => ({ data: i.data, mimeType: i.mimeType })) } : {}),
       }
     })
 }
+
+/** What `groupTurnAuthor` needs besides the current speakers. */
+export interface GroupAuthors {
+  /** The conversation's persona picks, model name to persona id. Also covers
+   *  a member that sits out because its model left the list. */
+  groupPersonas?: Readonly<Record<string, string>>
+  /** Every persona, to name one that no current member plays. */
+  personas?: readonly { id: string; name: string }[]
+}
+
+/** Who a speaker is, for deciding which turns are its own: its persona when
+ *  it is the only one playing it, otherwise its model. */
+function speakerKey(model: string, speakers: Readonly<Record<string, GroupSpeaker>> | undefined): string {
+  const personaId = speakers?.[model]?.personaId
+  if (!personaId) return `model:${model}`
+  const players = Object.values(speakers ?? {}).filter((s) => s.personaId === personaId).length
+  return players === 1 ? `persona:${personaId}` : `model:${model}`
+}
+
+/**
+ * The persona a group turn was written as, by the same fallbacks
+ * `groupTurnAuthor` uses: the one recorded on the turn, else the one its
+ * model plays now, else the one it played when it left the group or changed
+ * persona. Undefined when the model played none.
+ */
+export function groupTurnPersonaId(
+  m: Pick<Message, 'modelId' | 'groupPersonaId' | 'noGroupPersona'>,
+  speakers: Readonly<Record<string, GroupSpeaker>> | undefined,
+  authors?: GroupAuthors,
+): string | undefined {
+  if (!m.modelId || m.noGroupPersona) return undefined
+  return m.groupPersonaId ?? speakers?.[m.modelId]?.personaId ?? authors?.groupPersonas?.[m.modelId]
+}
+
+/**
+ * GH #169: who wrote a group turn. The persona decides, not the model.
+ *
+ * Turns used to be attributed by model id alone. After a persona moved to
+ * another model (untick X, tick Z, give Z the persona), X's turns reached the
+ * other participants as "[provider::X] ..." from a stranger, and Z received
+ * the persona's own earlier lines as somebody else's.
+ *
+ * A turn written since 3.0.7 carries the persona it was written as
+ * (`groupPersonaId`). An older turn falls back to the persona its model plays
+ * now, or played when it left the group (chatStore stamps that on the way
+ * out). The persona then belongs to whichever current member plays it.
+ * Without any persona the model is the author, exactly as before.
+ *
+ * `key` says whose turn it is (compare with the speaker's own key), `name` is
+ * the tag the others read.
+ */
+export function groupTurnAuthor(
+  m: Pick<Message, 'modelId' | 'groupPersonaId' | 'groupSpeakerName' | 'noGroupPersona'>,
+  speakers: Readonly<Record<string, GroupSpeaker>> | undefined,
+  authors?: GroupAuthors,
+): { key: string; name: string } | null {
+  if (!m.modelId) return null
+  // GH #180: written outside the group by the model as itself, so it goes by
+  // the model's name, not by a persona the model plays today.
+  if (m.noGroupPersona) return { key: `model:${m.modelId}`, name: m.modelId }
+  const member = speakers?.[m.modelId]
+  const personaId = groupTurnPersonaId(m, speakers, authors)
+  if (!personaId) return { key: `model:${m.modelId}`, name: member?.name ?? m.modelId }
+  const players = Object.entries(speakers ?? {}).filter(([, s]) => s.personaId === personaId)
+  if (players.length === 1) {
+    const [model, speaker] = players[0]
+    return { key: speakerKey(model, speakers), name: speaker.name }
+  }
+  // Several current members play it: the one that wrote the turn, if it is
+  // still one of them, keeps it under its own two part name.
+  const writer = players.find(([model]) => model === m.modelId)
+  if (writer) return { key: `model:${writer[0]}`, name: writer[1].name }
+  const persona = authors?.personas?.find((p) => p.id === personaId)
+  return { key: `persona:${personaId}`, name: persona?.name ?? m.groupSpeakerName ?? m.modelId }
+}
+
+/**
+ * GH #180: a conversation that is, or has been, a group. Turning group chat
+ * off leaves `groupModels` as an empty list (a chat that never was a group has
+ * none), and a turn that names its persona was written in one.
+ */
+export function hasGroupHistory(conv: { groupModels?: readonly string[]; messages: readonly Pick<Message, 'groupPersonaId'>[] }): boolean {
+  return Array.isArray(conv.groupModels) || conv.messages.some((m) => !!m.groupPersonaId)
+}
+
+/** The one speaker of a plain chat, in the shape `groupTurnAuthor` reads:
+ *  the chat's own persona when one is on, otherwise the model itself. */
+export function soloSpeakers(model: string, persona?: { id: string; name: string }): Record<string, GroupSpeaker> {
+  return { [model]: persona ? { name: persona.name, personaId: persona.id } : { name: model } }
+}
+
+/** What a new plain turn in a thread with group history records about its
+ *  author, so the turn keeps it when group chat is turned on again. */
+export function soloTurnAuthorFields(persona?: { id: string; name: string }): Pick<Message, 'groupPersonaId' | 'groupSpeakerName' | 'noGroupPersona'> {
+  return persona ? { groupPersonaId: persona.id, groupSpeakerName: persona.name } : { noGroupPersona: true }
+}
+
+/**
+ * GH #180: the tag a stored turn carries in a PLAIN chat payload, or null
+ * when it goes out as it is.
+ *
+ * With group chat off, every earlier turn of every speaker used to go out as
+ * the current model's own assistant turn, so the model took the other
+ * characters' lines for its own and carried on in their voice. In a thread
+ * with group history the other speakers now arrive exactly as `groupHistory`
+ * sends them: a user turn tagged "[name]". Who the current speaker is follows
+ * `groupTurnAuthor`, with the chat's own persona standing in for a group pick;
+ * without one, the model's own turns are its own whatever persona it played.
+ *
+ * An assistant turn that called tools stays as it is: the tool results after
+ * it answer that call, and a user turn cannot carry one.
+ */
+export function soloHistoryTag(
+  m: Pick<Message, 'role' | 'modelId' | 'groupPersonaId' | 'groupSpeakerName' | 'noGroupPersona' | 'tool_calls'>,
+  model: string,
+  speakers: Readonly<Record<string, GroupSpeaker>>,
+  authors?: GroupAuthors,
+): string | null {
+  if (m.role !== 'assistant' || m.tool_calls?.length) return null
+  // A model speaking as itself keeps every turn it wrote, under any persona:
+  // nobody else in this chat could own them.
+  if (!speakers[model]?.personaId && m.modelId === model) return null
+  const author = groupTurnAuthor(m, speakers, authors)
+  if (!author || author.key === speakerKey(model, speakers)) return null
+  return author.name
+}
+
+/** The system line that tells a plain chat model what the tags mean. Only
+ *  sent when the payload carries at least one tagged turn. */
+export const SOLO_HISTORY_LINE =
+  'Earlier turns of this conversation were written by other participants. ' +
+  'What they said arrives as user messages that start with a [name] tag; the assistant messages are your own earlier turns. ' +
+  'Stay in your own role and never write their lines.'

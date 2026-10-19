@@ -528,19 +528,17 @@ pub fn install_comfyui(
             // torch (Nachbesserung 6).
             // No existing venv yet: `create_comfyui_venv` below builds one
             // from this exact interpreter, so the strict probe applies.
-            let chosen_python = match super::torch::choose_torch_python(&python_bin, torch_index.as_deref(), &torch_package_refs, "press Install ComfyUI again", true) {
-                super::torch::TorchPythonDecision::Proceed => python_bin.clone(),
-                super::torch::TorchPythonDecision::UseInstead { path, .. } => {
-                    update(
-                        "installing",
-                        &format!(
-                            "The default Python ({python_bin}) does not have a PyTorch wheel for \
-                             this machine yet; using {path} instead, found on this machine already."
-                        ),
-                    );
-                    path
+            // Nothing on the machine fits: LU's own Python 3.12 instead of a
+            // dead end (Discord 14.10.2026, a machine with only 3.15).
+            let decision = super::torch::choose_torch_python(&python_bin, torch_index.as_deref(), &torch_package_refs, "press Install ComfyUI again", true);
+            let progress = crate::private_python::StatusProgress { status: &install_status, cancel: &cancel_flag };
+            let chosen_python = match super::torch::base_for_new_venv(decision, &python_bin, &progress, &|line| update("installing", line)) {
+                Ok(path) => path,
+                Err(e) if e == "cancelled" => {
+                    update("cancelled", "Install cancelled while LU's own Python was being set up.");
+                    return;
                 }
-                super::torch::TorchPythonDecision::Blocked(msg) => {
+                Err(msg) => {
                     update("error", &msg);
                     return;
                 }

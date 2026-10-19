@@ -19,7 +19,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 const src = fs.readFileSync(path.join(__dirname, '..', 'useCreate.ts'), 'utf8')
-const training = src.slice(src.indexOf('const runCharacterTraining = useCallback('), src.indexOf('const generateInner = useCallback('))
+const training = src.slice(src.indexOf('const runCharacterTraining = useCallback('), src.indexOf('const runOnce = useCallback('))
 const cancel = src.slice(src.indexOf('const cancel = useCallback('), src.indexOf('return {', src.indexOf('const cancel = useCallback(')))
 
 describe('a Stop during the training holds', () => {

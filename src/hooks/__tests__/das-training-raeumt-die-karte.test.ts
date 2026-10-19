@@ -17,7 +17,7 @@ import path from 'node:path'
 
 const src = fs.readFileSync(path.join(__dirname, '..', 'useCreate.ts'), 'utf8')
 const start = src.indexOf('const runCharacterTraining = useCallback(')
-const end = src.indexOf('const generateInner = useCallback(')
+const end = src.indexOf('const runOnce = useCallback(')
 const training = src.slice(start, end)
 
 describe('the training run frees the card and gives it back', () => {

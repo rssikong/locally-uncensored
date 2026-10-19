@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * Edit / Image to Image on the Mac (08.10.2026). Windows edits with
- * Qwen-Image 2.1: the image on the Stage, up to three references under it and
+ * Qwen-Image 2.1: the image on the Stage, up to nine references under it and
  * a prompt, no mask. The Mac runs the same model on its second image engine,
  * so it gets the same tab with the same surface. What these cases hold:
  *
@@ -66,8 +66,9 @@ describe('Edit is a local tab on the Mac while a model takes an image', () => {
     expect(isIntentLocked(INTENT_MAP.edit, 'local', true, false, false)).toBe(true)
     expect(isIntentAvailable('edit', 'local', true, false, true)).toBe(true)
     expect(isIntentAvailable('edit', 'local', true, false, false)).toBe(false)
-    // The cutout has no engine on the Mac, with or without it.
-    expect(ids(true)).not.toContain('removebg')
+    // The cutout runs on Vision on every Mac, with or without it.
+    expect(ids(true)).toContain('removebg')
+    expect(ids(false)).toContain('removebg')
     // Windows and Linux do not ask: the tab is always there.
     expect(visibleIntents('local', false, true).map((m) => m.id)).toContain('edit')
     expect(isIntentAvailable('edit', 'local', false)).toBe(true)
@@ -153,23 +154,26 @@ describe('the surface of the Mac\'s Edit is the one Windows has, less what the e
     useCreateStore.setState({ source: BILD } as never)
   }
 
-  it('offers the reference strip with three more images, as for Qwen-Image 2.1 on Windows', () => {
+  it('offers the reference strip with nine more images, as for Qwen-Image 2.1 on Windows (mflux reads ten)', () => {
     onEdit(QWEN)
     render(<ReferenceStrip />)
     expect(screen.getByTestId('reference-strip')).toBeTruthy()
-    useCreateStore.setState({ references: [BILD, BILD, BILD] } as never)
+    useCreateStore.setState({ references: Array(9).fill(BILD) } as never)
     cleanup()
     render(<ReferenceStrip />)
-    // Three are in: no room for a fourth.
-    expect(screen.getByTestId('reference-strip').querySelectorAll('img')).toHaveLength(3)
+    // Nine are in: no room for a tenth.
+    expect(screen.getByTestId('reference-strip').querySelectorAll('img')).toHaveLength(9)
     expect(screen.queryByText(/Reference/)).toBeNull()
+    // The Mac keeps its canvas, so it does not say the edit comes out smaller.
+    expect(screen.getByText('Name them in the prompt as image 2 to image 10. With this many images, say what each one brings, for example "the scarf from image 3".')).toBeTruthy()
   })
 
-  it('has no mask and asks for no ComfyUI node: no button, no install card, and the hint says so', () => {
+  it('takes a painted mask and asks for no ComfyUI node: the button is there, no install card', () => {
     onEdit(QWEN)
     render(<Stage displayed={undefined} onOpenMaskEditor={vi.fn()} onEditResult={vi.fn()} onAnimateResult={vi.fn()} onFullscreen={vi.fn()} />)
-    expect(screen.queryByText('Paint mask')).toBeNull()
-    expect(screen.getByText(/needs no mask/)).toBeTruthy()
+    // mflux 0.22.0 paints under a mask over the first image (--mask-image).
+    expect(screen.getByText('Paint mask')).toBeTruthy()
+    expect(screen.queryByText(/needs no mask/)).toBeNull()
     expect(screen.queryByText(/ComfyUI/)).toBeNull()
   })
 

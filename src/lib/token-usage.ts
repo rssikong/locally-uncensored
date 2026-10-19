@@ -29,6 +29,8 @@ export interface FillMessage {
   toolCallSummary?: string
   /** Written by an agent run, not by the user. See computeContextFill. */
   hidden?: boolean
+  /** The group speaker that wrote this turn. See FillOptions.anchorModelId. */
+  modelId?: string
   usage?: {
     promptTokens: number
     completionTokens: number
@@ -89,9 +91,20 @@ function kostetEtwas(m: FillMessage): boolean {
   return m.role !== 'system'
 }
 
+export interface FillOptions {
+  /**
+   * Group chat (GH #167): anchor only on a usage report this model wrote.
+   * Every speaker sends its own prompt into its own window, so another
+   * speaker's promptTokens says nothing about this one's next request. The
+   * other speakers' lines still count, as visible text that joins its prompt.
+   */
+  anchorModelId?: string
+}
+
 export function computeContextFill(
   messages: FillMessage[],
   built?: BuiltRequestAnchor,
+  opts?: FillOptions,
 ): ContextFill {
   // A real built request wins: it already contains the system prompt, the tool
   // catalogue, the decayed results and whatever compaction dropped, none of
@@ -118,6 +131,7 @@ export function computeContextFill(
   let anchorIdx = -1
   for (let i = messages.length - 1; i >= 0; i--) {
     const u = messages[i].usage
+    if (opts?.anchorModelId && messages[i].modelId !== opts.anchorModelId) continue
     if (u && u.totalTokens > 0) { anchorIdx = i; break }
   }
 

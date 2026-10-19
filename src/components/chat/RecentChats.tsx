@@ -34,6 +34,15 @@ const EMPTY: Record<string, string> = {
   remote: 'No remote chats yet.',
   openclaw: 'No agent chats yet.',
 }
+/** The open chat is the only one of its mode: there IS a chat, it is just
+ *  not listed (it is where the user already is). "No chats yet" above the
+ *  composer of that very chat read as wrong (how-it-works session, 3.0.7). */
+const NO_OTHER: Record<string, string> = {
+  lu: 'No other chats yet.',
+  codex: 'No other code chats yet.',
+  remote: 'No other remote chats yet.',
+  openclaw: 'No other agent chats yet.',
+}
 
 export function RecentChats() {
   const conversations = useChatStore((s) => s.conversations)
@@ -59,9 +68,11 @@ export function RecentChats() {
   }
 
   if (recents.length === 0) {
+    const openOneOnly = conversations.some((c) => c.id === activeConversationId && conversationMode(c) === chatMode)
+    const line = openOneOnly ? (NO_OTHER[chatMode] ?? NO_OTHER.lu) : (EMPTY[chatMode] ?? EMPTY.lu)
     return (
       <p data-testid="home-recent-chats" className="t-micro text-gray-400 dark:text-gray-500">
-        {EMPTY[chatMode] ?? EMPTY.lu}
+        {line}
       </p>
     )
   }

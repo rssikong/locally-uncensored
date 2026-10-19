@@ -4,6 +4,7 @@ import { safeJSONStorage } from "../lib/storage-quota"
 import type { DocumentMeta, TextChunk } from "../types/rag"
 import { saveChunks, loadChunks, deleteChunks } from "../lib/ragDB"
 import { log } from "../lib/logger"
+import { v4 as uuid } from "uuid"
 
 interface RAGState {
   documents: Record<string, DocumentMeta[]>
@@ -52,6 +53,9 @@ interface RAGState {
    *  vectors would keep being exported to rag_chunks_backup.json every 30 s for
    *  the lifetime of the installation. */
   removeConversation: (conversationId: string) => void
+  /** GH #174: give a duplicated chat its own copy of the documents, with new
+   *  ids, so deleting either chat never takes the other's chunks along. */
+  copyConversation: (fromId: string, toId: string) => Promise<void>
   setLastRetrievedChunks: (chunks: { chunk: TextChunk; score: number }[]) => void
   setContextWarning: (warning: string | null) => void
   setRetrievalError: (message: string | null) => void
@@ -213,6 +217,32 @@ export const useRAGStore = create<RAGState>()(
               : state.chunks,
           }
         })
+      },
+
+      copyConversation: async (fromId, toId) => {
+        const docs = get().documents[fromId] || []
+        const enabled = get().ragEnabled[fromId]
+        if (docs.length === 0 && enabled === undefined) return
+        const pairs = docs.map((from) => ({ from, to: { ...from, id: uuid() } }))
+        set((state) => ({
+          documents: pairs.length > 0
+            ? { ...state.documents, [toId]: pairs.map((p) => p.to) }
+            : state.documents,
+          ragEnabled: enabled === undefined ? state.ragEnabled : { ...state.ragEnabled, [toId]: enabled },
+        }))
+        for (const { from, to } of pairs) {
+          let source = get().chunks.filter((c) => c.documentId === from.id)
+          if (source.length === 0) {
+            try {
+              source = await loadChunks([from.id])
+            } catch (err) {
+              log.error("Failed to read chunks for a chat copy", { err })
+              continue
+            }
+          }
+          const copies = source.map((c) => ({ ...c, id: uuid(), documentId: to.id }))
+          if (copies.length > 0) get().addChunks(copies)
+        }
       },
 
       setLastRetrievedChunks: (chunks) => set({ lastRetrievedChunks: chunks }),

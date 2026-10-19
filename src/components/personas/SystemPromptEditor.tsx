@@ -2,6 +2,58 @@ import { useState } from 'react'
 import { v4 as uuid } from 'uuid'
 import { GlowButton } from '../ui/GlowButton'
 import { useSettingsStore } from '../../stores/settingsStore'
+import type { SamplerValues } from '../../types/settings'
+import { clampSampling } from '../../lib/sampling'
+import { DEFAULT_NOTE_DEPTH, MAX_NOTE_DEPTH, clampNoteDepth } from '../../lib/persona-note'
+
+/**
+ * GH #175: the sampling values a persona brings along. An empty field is not
+ * set: the chat then follows the Settings page for it, as before. Each value
+ * reaches only a backend that reads it (api/providers/sampler-fields.ts), and
+ * the Sampling popup in the chat says which ones do for the current model.
+ */
+export const PERSONA_SAMPLING_FIELDS: { key: keyof SamplerValues; label: string; step: number; min: number; max: number }[] = [
+  { key: 'temperature', label: 'Temperature', step: 0.05, min: 0, max: 2 },
+  { key: 'topP', label: 'Top P', step: 0.01, min: 0, max: 1 },
+  { key: 'topK', label: 'Top K', step: 1, min: 0, max: 1000 },
+  { key: 'minP', label: 'Min P', step: 0.01, min: 0, max: 1 },
+  { key: 'maxTokens', label: 'Max tokens', step: 128, min: 0, max: 1_000_000 },
+  { key: 'repeatPenalty', label: 'Repeat penalty', step: 0.01, min: 0, max: 2 },
+  { key: 'presencePenalty', label: 'Presence penalty', step: 0.05, min: -2, max: 2 },
+  { key: 'frequencyPenalty', label: 'Frequency penalty', step: 0.05, min: -2, max: 2 },
+  { key: 'dryMultiplier', label: 'DRY multiplier', step: 0.05, min: 0, max: 5 },
+]
+
+type SamplingDraft = Partial<Record<keyof SamplerValues, string>>
+
+function draftOf(values?: SamplerValues): SamplingDraft {
+  const out: SamplingDraft = {}
+  for (const f of PERSONA_SAMPLING_FIELDS) {
+    const v = values?.[f.key]
+    if (v !== undefined) out[f.key] = String(v)
+  }
+  return out
+}
+
+/** The typed fields as values: empty boxes are left out, the rest clamped. */
+export function samplingFromDraft(draft: SamplingDraft): SamplerValues | undefined {
+  const raw: SamplerValues = {}
+  for (const f of PERSONA_SAMPLING_FIELDS) {
+    const text = draft[f.key]?.trim()
+    if (!text) continue
+    const n = Number(text)
+    if (Number.isFinite(n)) raw[f.key] = f.key === 'topK' || f.key === 'maxTokens' ? Math.trunc(n) : n
+  }
+  const clamped = clampSampling(raw)
+  return Object.keys(clamped).length > 0 ? clamped : undefined
+}
+
+/** GH #181: the typed reminder as persona fields. Whitespace only is none. */
+export function noteFromDraft(text: string, depth: string): { note?: string; noteDepth?: number } {
+  const note = text.trim()
+  if (!note) return { note: undefined, noteDepth: undefined }
+  return { note, noteDepth: clampNoteDepth(depth.trim() === '' ? undefined : Number(depth)) }
+}
 
 interface SystemPromptEditorProps {
   /** When set, the editor updates this persona in place instead of adding a
@@ -10,6 +62,11 @@ interface SystemPromptEditorProps {
   editingId?: string | null
   initialName?: string
   initialPrompt?: string
+  /** GH #175: the persona's sampling values, when editing one. */
+  initialSampling?: SamplerValues
+  /** GH #181: the persona's reminder and its depth, when editing one. */
+  initialNote?: string
+  initialNoteDepth?: number
   /** Called after a successful save/update or a cancel, so the parent can
    *  close the editor. */
   onDone?: () => void
@@ -19,18 +76,26 @@ export function SystemPromptEditor({
   editingId,
   initialName = '',
   initialPrompt = '',
+  initialSampling,
+  initialNote = '',
+  initialNoteDepth,
   onDone,
 }: SystemPromptEditorProps) {
   const { addPersona, updatePersona } = useSettingsStore()
   const [name, setName] = useState(initialName)
   const [prompt, setPrompt] = useState(initialPrompt)
+  const [sampling, setSampling] = useState<SamplingDraft>(() => draftOf(initialSampling))
+  const [note, setNote] = useState(initialNote)
+  const [noteDepth, setNoteDepth] = useState(String(initialNoteDepth ?? DEFAULT_NOTE_DEPTH))
   const isEditing = !!editingId
 
   const handleSave = () => {
     if (!name.trim() || !prompt.trim()) return
+    // GH #181: an empty reminder is no reminder, and then no depth either.
+    const reminder = noteFromDraft(note, noteDepth)
     if (isEditing) {
       // Only the user-editable fields — keep id/icon/isBuiltIn untouched.
-      updatePersona(editingId!, { name: name.trim(), systemPrompt: prompt.trim() })
+      updatePersona(editingId!, { name: name.trim(), systemPrompt: prompt.trim(), sampling: samplingFromDraft(sampling), note: reminder.note, noteDepth: reminder.noteDepth })
     } else {
       addPersona({
         id: uuid(),
@@ -38,9 +103,14 @@ export function SystemPromptEditor({
         icon: 'User',
         systemPrompt: prompt.trim(),
         isBuiltIn: false,
+        ...(samplingFromDraft(sampling) ? { sampling: samplingFromDraft(sampling) } : {}),
+        ...(reminder.note ? reminder : {}),
       })
       setName('')
       setPrompt('')
+      setSampling({})
+      setNote('')
+      setNoteDepth(String(DEFAULT_NOTE_DEPTH))
     }
     onDone?.()
   }
@@ -60,6 +130,59 @@ export function SystemPromptEditor({
         rows={4}
         className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-white/20 text-sm resize-none"
       />
+      <fieldset data-testid="persona-sampling" className="rounded-lg border border-white/10 px-3 pb-2 pt-1">
+        <legend className="px-1 text-[0.6rem] text-gray-400">Sampling for this persona</legend>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-1.5">
+          {PERSONA_SAMPLING_FIELDS.map((f) => (
+            <label key={f.key} className="flex flex-col gap-0.5 text-[0.6rem] text-gray-400">
+              <span>{f.label}</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                aria-label={f.label}
+                step={f.step}
+                min={f.min}
+                max={f.max}
+                placeholder="chat default"
+                value={sampling[f.key] ?? ''}
+                onChange={(e) => setSampling((d) => ({ ...d, [f.key]: e.target.value }))}
+                className="w-full px-2 py-1 rounded bg-white/5 border border-white/10 text-white placeholder-gray-600 focus:outline-none focus:border-white/20 text-xs"
+              />
+            </label>
+          ))}
+        </div>
+        <p className="mt-1.5 text-[0.55rem] text-gray-500">
+          Empty fields follow the chat. A value moved in the chat's Sampling popup still wins. Each value only reaches a backend that reads it.
+        </p>
+      </fieldset>
+      <fieldset data-testid="persona-note" className="rounded-lg border border-white/10 px-3 pb-2 pt-1">
+        <legend className="px-1 t-micro text-gray-400">Reminder</legend>
+        <textarea
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          aria-label="Reminder"
+          placeholder="Short rules to keep in mind, e.g. speech style or status block format..."
+          rows={2}
+          className="w-full px-2 py-1 rounded bg-white/5 border border-white/10 text-white placeholder-gray-600 focus:outline-none focus:border-white/20 text-xs resize-none"
+        />
+        <label className="mt-1.5 flex items-center gap-2 t-micro text-gray-400">
+          <span>Messages from the end</span>
+          <input
+            type="number"
+            inputMode="numeric"
+            aria-label="Reminder depth"
+            step={1}
+            min={0}
+            max={MAX_NOTE_DEPTH}
+            value={noteDepth}
+            onChange={(e) => setNoteDepth(e.target.value)}
+            className="w-16 px-2 py-1 rounded bg-white/5 border border-white/10 text-white focus:outline-none focus:border-white/20 text-xs"
+          />
+        </label>
+        <p className="mt-1.5 t-micro text-gray-500">
+          Sent with every reply this persona writes, also in group chats, close to the end of the chat. 0 is the latest message. It is not saved in the chat.
+        </p>
+      </fieldset>
       <div className="flex gap-2">
         <GlowButton onClick={handleSave} disabled={!name.trim() || !prompt.trim()} className="flex-1">
           {isEditing ? 'Update Persona' : 'Save Persona'}

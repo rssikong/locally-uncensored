@@ -1,24 +1,28 @@
 import { itemHasAlpha } from '../../../lib/transparent-image'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Sparkles, UserRoundPlus } from 'lucide-react'
+import { X, Sparkles, UserRoundPlus, FolderInput } from 'lucide-react'
 import { useCreateStore, type GalleryItem } from '../../../stores/createStore'
 import { runCredits } from '../../../stores/cloudCatalogStore'
 import { useCreateExp } from './CreateContext'
 import { useComfyMedia } from './useComfyMedia'
 import { PromptDetails } from './PromptDetails'
 import { cn } from '../ui/cn'
+import { MoveToFolderModal } from './GalleryFolders'
 
 export function Lightbox({ item, onClose, onSaveCharacter }: {
   item: GalleryItem | null
   onClose: () => void
-  /** Pick frames of this video and save them as a character. */
+  /** Take frames of this video for a character: a training set or a saved character. */
   onSaveCharacter?: (item: GalleryItem) => void
 }) {
   const backend = useCreateStore((s) => s.backend)
   const isGenerating = useCreateStore((s) => s.isGenerating)
   const { enhanceVideo, quota } = useCreateExp()
   const { src: mediaUrl, onError: onMediaError } = useComfyMedia(item)
+  // D3: "Move to folder" from the large view. Keyed by the entry, so the
+  // dialog never comes back up for another one.
+  const [movingId, setMovingId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!item) return
@@ -82,15 +86,27 @@ export function Lightbox({ item, onClose, onSaveCharacter }: {
                 onClose()
                 onSaveCharacter(item)
               }}
-              title="Pick frames of this video and save them as a character"
+              title="Take frames of this video for a training set or a saved character"
               className={cn(
                 'absolute top-4 h-9 px-3 flex items-center gap-1.5 rounded-lg t-control bg-white/10 text-gray-200 hover:bg-white/20',
                 canEnhance ? 'right-[10.5rem]' : 'right-16',
               )}
             >
-              <UserRoundPlus size={13} /> Save character
+              <UserRoundPlus size={13} /> Use frames for a character
             </button>
           )}
+          <button
+            onClick={(e) => { e.stopPropagation(); setMovingId(item.id) }}
+            title="Move to folder"
+            className="absolute top-4 left-4 h-9 px-3 flex items-center gap-1.5 rounded-lg t-control bg-white/10 text-gray-200 hover:bg-white/20"
+          >
+            <FolderInput size={13} /> Move to folder
+          </button>
+          {/* The dialog sits inside the large view, so a click in it must not
+              reach the backdrop that closes the view. */}
+          <div className="contents" onClick={(e) => e.stopPropagation()}>
+            <MoveToFolderModal ids={movingId === item.id ? [item.id] : []} onClose={() => setMovingId(null)} />
+          </div>
           {item.type === 'audio' ? (
             <motion.div
               initial={{ scale: 0.95 }}

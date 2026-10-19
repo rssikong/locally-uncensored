@@ -37,9 +37,12 @@ pub(crate) fn crash_line(when: &str, thread: &str, location: &str, payload: &str
     // a single space, otherwise a CRLF payload leaves double gaps and the line
     // reads worse than the panic it reports.
     let flat = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
+    // The version, because crash.log is appended across updates: a death of
+    // the build before must not read as one of the build installed now.
     format!(
-        "{} FATAL thread={} at={} panic: {}\n",
+        "{} FATAL version={} thread={} at={} panic: {}\n",
         flat(when),
+        crate::app_identity::APP_VERSION,
         flat(thread),
         flat(location),
         flat(payload)
@@ -134,6 +137,7 @@ mod tests {
         assert!(line.ends_with('\n'));
         assert_eq!(line.matches('\n').count(), 1);
         assert!(line.contains("FATAL"));
+        assert!(line.contains(&format!("version={}", crate::app_identity::APP_VERSION)));
         assert!(line.contains("thread=backup-ring"));
         assert!(line.contains("at=src/commands/system.rs:42:9"));
         assert!(line.contains("index out of bounds"));

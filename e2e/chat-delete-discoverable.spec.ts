@@ -183,6 +183,9 @@ test('the row buttons are reachable by keyboard alone', async ({ page }) => {
   await expect(page.getByRole('option').first()).toBeFocused()
   await page.keyboard.press('Tab')
   await expect(page.getByRole('button', { name: 'Rename chat' }).first()).toBeFocused()
+  // GH #174: Duplicate sits between Rename and Delete.
+  await page.keyboard.press('Tab')
+  await expect(page.getByRole('button', { name: 'Duplicate chat' }).first()).toBeFocused()
   await page.keyboard.press('Tab')
 
   const del = page.getByRole('button', { name: 'Delete chat' }).first()
@@ -241,12 +244,16 @@ test('KF-8: Tab erreicht die Chatzeilen, und zwar vor ihren Knoepfen', async ({ 
   await expect(page.getByRole('option')).toHaveCount(2)
   await expect(page.getByRole('option').first()).toHaveAttribute('aria-selected', 'true')
 
-  expect(await tabOrder(page, 7)).toEqual([
+  // "Duplicate chat" (GH #174) sits between the two, so one Enter too many
+  // after Rename no longer lands on Delete.
+  expect(await tabOrder(page, 9)).toEqual([
     'option:New Chat',
     'button:Rename chat',
+    'button:Duplicate chat',
     'button:Delete chat',
     'option:first chat',
     'button:Rename chat',
+    'button:Duplicate chat',
     'button:Delete chat',
     'button:New Chat',
   ])
@@ -258,9 +265,9 @@ test('KF-8: Enter und Leertaste oeffnen den Chat, den Tab erreicht hat', async (
   const zweite = page.getByRole('option').nth(1)
   await expect(zweite).toHaveAttribute('aria-selected', 'false')
 
-  // Vier Tabs ab dem Suchfeld: Zeile 1, Umbenennen, Loeschen, Zeile 2.
+  // Fuenf Tabs ab dem Suchfeld: Zeile 1, Umbenennen, Duplizieren, Loeschen, Zeile 2.
   await page.locator('input[placeholder="Search..."]').focus()
-  for (let i = 0; i < 4; i++) await page.keyboard.press('Tab')
+  for (let i = 0; i < 5; i++) await page.keyboard.press('Tab')
   await expect(zweite).toBeFocused()
 
   await page.keyboard.press('Enter')

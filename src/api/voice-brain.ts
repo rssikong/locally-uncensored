@@ -21,6 +21,7 @@ import { hostnameOf, isPrivateOrLanHost } from './backend'
 import { ensureBuiltinAgentCtx, ensureBuiltinEngineAlive } from './builtin-ensure'
 import { CLOUD_BASE } from './cloud/config'
 import { getAccessToken } from './cloud/supabase'
+import { backendCall } from './backend'
 import { ollamaNumCtx } from './ollama'
 import { displayModelName } from './providers/model-name'
 
@@ -139,11 +140,16 @@ export function voiceThinkingExtra(input: VoiceThinkingInput): Record<string, un
  */
 export function voiceThinkingOnExtra(input: VoiceThinkingInput): Record<string, unknown> {
   if (input.thinkMode === 'never') return {}
+  // Local models have rungs too since issue 176. The template switch must
+  // still ride along there, or a rung would cost the local model its thought.
+  if (input.providerId === 'openai' && input.local && (input.thinkMode === 'toggle' || input.reasons)) {
+    const on = { extra_body: { chat_template_kwargs: { enable_thinking: true } } }
+    return hasEffortLadder(input.effortLevels)
+      ? { reasoning_effort: clampEffort(input.effortLevels, 'low', input.effortDefault), ...on }
+      : on
+  }
   if (hasEffortLadder(input.effortLevels)) {
     return { reasoning_effort: clampEffort(input.effortLevels, 'low', input.effortDefault) }
-  }
-  if (input.providerId === 'openai' && input.local && (input.thinkMode === 'toggle' || input.reasons)) {
-    return { extra_body: { chat_template_kwargs: { enable_thinking: true } } }
   }
   return {}
 }
@@ -194,9 +200,12 @@ export async function resolveVoiceBrain(activeModel: string | null | undefined, 
   const { strategy, modelToUse, providerId } = await resolveToolCallingStrategy(activeModel)
   const meta = useModelStore.getState().models.find((m) => m.name === activeModel)
   const thinkMode = meta && 'thinkMode' in meta ? meta.thinkMode : undefined
-  const effortLevels = meta && 'effortLevels' in meta ? meta.effortLevels : undefined
-  const effortDefault = meta && 'effortDefault' in meta ? meta.effortDefault : undefined
   const settings = useSettingsStore.getState().settings
+  // A ladder read from a local server waits for the user's own pick there
+  // (3.0.7, after issue 176); until then voice asks the way it did before.
+  const localWaits = !!meta && 'effortLocal' in meta && meta.effortLocal === true && settings.localEffortChosen !== true
+  const effortLevels = meta && 'effortLevels' in meta && !localWaits ? meta.effortLevels : undefined
+  const effortDefault = meta && 'effortDefault' in meta ? meta.effortDefault : undefined
 
   let baseUrl: string
   let apiKey: string | undefined
@@ -246,6 +255,12 @@ export async function resolveVoiceBrain(activeModel: string | null | undefined, 
     const state = useProviderStore.getState()
     baseUrl = trimSlashes(state.providers.openai.baseUrl)
     apiKey = state.getProviderApiKey('openai') || undefined
+    // The LU Engine answers to its own key only (src-tauri engine_key.rs), and
+    // the voice service talks to it directly. The Rust side hands it out for an
+    // address that is one of its engines and for nothing else.
+    if (state.providers.openai.managed === true) {
+      apiKey = (await backendCall<string | null>('engine_key_for', { url: `${baseUrl}/chat/completions` }).catch(() => null)) ?? apiKey
+    }
     local = state.providers.openai.isLocal === true || isPrivateOrLanHost(hostnameOf(baseUrl))
   } else {
     throw new VoiceBrainError(

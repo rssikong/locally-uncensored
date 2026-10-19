@@ -269,8 +269,75 @@ function alternateRoles<T extends ContractMessage>(messages: T[]): T[] {
 }
 
 /**
+ * Two plain user turns in a row, or two plain assistant turns, become one.
+ * Applies to EVERY request, not only where `alternate` is on.
+ *
+ * Why (3.0.7, Discord): a Mistral or Devstral template raises on two
+ * consecutive turns of the same role, and those come up in an ordinary chat
+ * (a send while the last answer was cut, a group speaker's own turns in a
+ * row). `alternate` merged them only for a request without tools, and since
+ * Chat Tools are always on most requests carry tools. Merging is lossless:
+ * both texts stay, in order, with the speaker tags a group turn carries. A
+ * turn with tool calls, a tool result and a non text content are left as
+ * they are; the tool channel has its own pairing and alternation keeps its
+ * bridges for the rest.
+ */
+export function mergeSameRoleTurns<T extends ContractMessage>(messages: T[]): T[] {
+  const out: T[] = []
+  let changed = false
+  const plain = (m: T | undefined) =>
+    !!m && (m.role === 'user' || m.role === 'assistant')
+    && !m.tool_calls?.length && !m.tool_call_id && textOf(m.content) !== null
+  for (const m of messages) {
+    const prev = out[out.length - 1]
+    if (plain(prev) && plain(m) && prev!.role === m.role) {
+      const a = textOf(prev!.content) ?? ''
+      const b = textOf(m.content) ?? ''
+      const merged = { ...prev!, content: a && b ? `${a}\n\n${b}` : a || b } as T
+      const images = [
+        ...(Array.isArray(prev!.images) ? prev!.images : []),
+        ...(Array.isArray(m.images) ? m.images : []),
+      ]
+      if (images.length) (merged as ContractMessage).images = images
+      out[out.length - 1] = merged
+      changed = true
+      continue
+    }
+    out.push(m)
+  }
+  return changed ? out : messages
+}
+
+/**
+ * A user turn first, behind the optional system message. Applies to EVERY
+ * endpoint, not only to the ones that render a template.
+ *
+ * Why (3.0.7, character cards): a role play chat opens with the character's
+ * greeting as an assistant message, before the user has said anything. Gemma
+ * and Mistral style templates raise on a conversation that does not start
+ * with a user turn, and that includes runs carrying a native `tools` payload,
+ * where `alternate` is off. Anthropic's API wants a user turn first as well.
+ * The fix is the bridge turn the alternation rule already uses for the same
+ * case, so a template sees the greeting as an answer to a short user line;
+ * the transcript on screen is untouched.
+ *
+ * Returns the SAME array reference when the payload already opens on a user
+ * turn (or has no turn at all), which is every chat without a greeting.
+ */
+export function userTurnFirst<T extends RoledMessage>(messages: T[]): T[] {
+  const lead = messages.findIndex((m) => m?.role !== 'system')
+  if (lead < 0 || messages[lead]?.role !== 'assistant') return messages
+  return [
+    ...messages.slice(0, lead),
+    { role: 'user', content: BRIDGE_USER } as unknown as T,
+    ...messages.slice(lead),
+  ]
+}
+
+/**
  * The whole contract, in the order the rules depend on each other: system
- * first (round 1), then the tool channel, then alternation, because turning
+ * first (round 1), then the tool channel, then the merge of same role turns,
+ * then alternation, because turning
  * a tool result into a user turn is what creates most of the consecutive
  * user turns alternation then has to merge.
  *
@@ -282,8 +349,9 @@ export function applyTemplateContract<T extends ContractMessage>(
   messages: T[],
   contract: TemplateContract,
 ): T[] {
-  let out = normalizeSystemMessages(messages)
+  let out = userTurnFirst(normalizeSystemMessages(messages))
   if (contract.toolRole === 'text') out = toolRoleAsText(out)
+  out = mergeSameRoleTurns(out)
   if (contract.alternate) out = alternateRoles(out)
   return out
 }

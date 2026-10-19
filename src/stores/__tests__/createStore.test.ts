@@ -389,9 +389,11 @@ describe('createStore', () => {
       expect(useCreateStore.getState().frames).toBe(1)
     })
 
-    it('clamps to maximum of 120', () => {
-      useCreateStore.getState().setFrames(200)
-      expect(useCreateStore.getState().frames).toBe(120)
+    // D4: the bound is the longest local family now (MiniMax H3, 362), the
+    // slider of each family keeps its own range (lib/video-length).
+    it('clamps to the longest local clip, 362 frames', () => {
+      useCreateStore.getState().setFrames(500)
+      expect(useCreateStore.getState().frames).toBe(362)
     })
 
     it('floors fractional values', () => {
@@ -867,15 +869,19 @@ describe('createStore', () => {
   describe('setBackend local-flip clears cloud-only intents', () => {
     const ref = { filename: 'src.png', url: 'data:image/png;base64,x', width: 8, height: 8 }
 
-    it('clears a utility op (upscale) with its mask', () => {
+    // Until 3.0.7 this case was upscale. Enhance runs on local ComfyUI now
+    // (local-upscale-store.test.ts), so Erase is the hosted-only tool.
+    it('clears a utility op (eraser) with its mask', () => {
       const s = useCreateStore.getState()
       s.setBackend('cloud')
-      s.setIntent('upscale')
+      s.setIntent('eraser')
       s.setSource(ref)
+      s.setMask(ref)
       useCreateStore.getState().setBackend('local')
       const after = useCreateStore.getState()
       expect(after.utilityOp).toBeNull()
-      expect(after.intent()).not.toBe('upscale')
+      expect(after.mask).toBeNull()
+      expect(after.intent()).not.toBe('eraser')
     })
 
     it('keeps edit — it has a local lane via checkpoint inpaint (2.5.7)', () => {

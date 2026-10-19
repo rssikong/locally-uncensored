@@ -32,7 +32,7 @@ describe('the Mac sentences', () => {
 })
 
 describe('generate in useCreate', () => {
-  const generate = hook.slice(hook.indexOf('const generateInner = useCallback('), hook.indexOf('const generate = useCallback('))
+  const generate = hook.slice(hook.indexOf('const runOnce = useCallback('), hook.indexOf('const generate = useCallback('))
   const macEnd = generate.indexOf('setError(macNoLocalLaneLine(mode, laneList.length > 0))')
 
   it('ends a Mac run before the first sentence of the ComfyUI path', () => {
@@ -56,14 +56,16 @@ describe('generate in useCreate', () => {
   })
 
   it('the two MLX branches come before it, so a working Mac run never meets it', () => {
-    const image = generate.indexOf('if ((intent === \'image\' || mlxEdit) && isMlxImageHost() && isMlxImageModel(effImageModel)) {')
-    const video = generate.indexOf("if ((intent === 'video' || intent === 'animate') && isMlxImageHost()) {")
+    const image = generate.indexOf('if ((intent === \'image\' || mlxEdit || macCharacter) && isMlxImageHost() && isMlxImageModel(effImageModel)) {')
+    // Extend Video joined the video branch on 14.10.2026 (M1), Motion Control
+    // and Talking Character in 3.0.8.
+    const video = generate.indexOf("if ((intent === 'video' || intent === 'animate' || intent === 'extend' || intent === 'motion' || talking) && isMlxImageHost()) {")
     expect(image).toBeGreaterThan(0)
     expect(video).toBeGreaterThan(image)
     expect(macEnd).toBeGreaterThan(video)
   })
 
   it('an empty video picker is not answered with "pick one from the model picker"', () => {
-    expect(generate).toContain("setError(state.videoModelList.length === 0 ? macNoModelLine('video') : 'No local video model selected. Pick one from the model picker.')")
+    expect(generate).toContain(": state.videoModelList.length === 0 ? macNoModelLine('video') : 'No local video model selected. Pick one from the model picker.')")
   })
 })

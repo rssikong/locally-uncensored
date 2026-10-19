@@ -1,0 +1,98 @@
+name: SignPath stage 3, the signed installers and their updater files
+description: >-
+  Fetches the installers SignPath signed, writes the updater archives and
+  their signatures over them, and verifies the Authenticode signatures.
+  Publishes nothing; the caller attaches the result or keeps it.
+
+# The order of all three stages is in the header of
+# .github/actions/windows-signpath/action.yml.
+#
+# The updater signature has to cover the file a user downloads. That file
+# exists only now, so the .sig files are written here and not by the bundler.
+#
+# The caller must have checked out the tag, installed Node and the npm
+# dependencies, and asked `scripts/signpath-stages.mjs plan publish` (or
+# `plan finish` for the probe) whether this stage runs. Runs on Windows: the
+# signatures are checked with the Windows trust policy.
+
+inputs:
+  api-token:
+    description: API token of the SignPath CI user.
+    required: true
+  organization-id:
+    description: SignPath organization ID.
+    required: true
+  installers-request-id:
+    description: The completed signing request of the installers.
+    required: true
+  expected-publisher:
+    description: Text the subject of the signing certificate must contain. Empty skips the check.
+    default: ''
+  allow-test-certificate:
+    description: Accept a self-signed certificate that Windows does not trust. Only for the test-signing policy.
+    default: 'false'
+  updater-private-key:
+    description: Tauri updater private key (minisign) that signs the updater files.
+    required: true
+  updater-private-key-password:
+    description: Password of the updater private key.
+    default: ''
+
+outputs:
+  dist:
+    description: Directory with the signed installers, the updater archives and their .sig files, under their release asset names.
+    value: ${{ steps.updater.outputs.dir }}
+  publisher:
+    description: Subject of the certificate that signed the installers.
+    value: ${{ steps.verify.outputs.publisher }}
+
+runs:
+  using: composite
+  steps:
+    - name: Fetch the signed installers from SignPath
+      shell: bash
+      env:
+        SIGNPATH_API_TOKEN: ${{ inputs.api-token }}
+        SIGNPATH_ORGANIZATION_ID: ${{ inputs.organization-id }}
+        REQUEST_ID: ${{ inputs.installers-request-id }}
+      run: node scripts/signpath-stages.mjs download-signed "$REQUEST_ID" "$RUNNER_TEMP/signpath/installers-signed"
+
+    - name: Write the updater archives and signatures over the signed installers
+      id: updater
+      shell: pwsh
+      env:
+        TAURI_SIGNING_PRIVATE_KEY: ${{ inputs.updater-private-key }}
+        TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ inputs.updater-private-key-password }}
+      run: |
+        $signed = Join-Path $env:RUNNER_TEMP 'signpath/installers-signed'
+        $dist = Join-Path $env:RUNNER_TEMP 'signpath/dist'
+        node scripts/windows-signpath.mjs updater-artifacts $signed $dist
+        if ($LASTEXITCODE -ne 0) { throw "the updater archives could not be written" }
+        foreach ($file in @(Get-ChildItem -File -Path $dist)) {
+          npx tauri signer sign $file.FullName | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "tauri signer sign failed for $($file.Name)" }
+          if (-not (Test-Path "$($file.FullName).sig")) { throw "no updater signature was written for $($file.Name)" }
+        }
+        Get-ChildItem -File -Path $dist | Format-Table Name, Length
+
+    - name: Name the app binary inside the installers
+      id: binary
+      shell: bash
+      run: node scripts/windows-signpath.mjs app-binary
+
+    - name: Verify the signatures
+      id: verify
+      shell: pwsh
+      env:
+        DIST: ${{ steps.updater.outputs.dir }}
+        EXPECTED_PUBLISHER: ${{ inputs.expected-publisher }}
+        ALLOW_TEST_CERTIFICATE: ${{ inputs.allow-test-certificate }}
+        APP_BINARY: ${{ steps.binary.outputs.binary }}
+      run: |
+        $arguments = @{
+          BundleRoot = $env:DIST
+          ExpectedPublisher = $env:EXPECTED_PUBLISHER
+          SignedExecutables = @($env:APP_BINARY)
+        }
+        if ($env:ALLOW_TEST_CERTIFICATE -eq 'true') { $arguments.AllowTestCertificate = $true }
+        ./scripts/windows-signing-verify.ps1 @arguments

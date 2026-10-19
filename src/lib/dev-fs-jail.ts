@@ -49,7 +49,7 @@ export const DEV_READ_BYTES_CAP = 16 * 1024 * 1024
 
 /** The largest binary a chat attachment may be, the same number as
  *  `WRITE_BYTES_CAP` in src-tauri/src/commands/filesystem.rs. */
-export const DEV_WRITE_BYTES_CAP = 64 * 1024 * 1024
+export const DEV_WRITE_BYTES_CAP = 256 * 1024 * 1024
 
 /**
  * Strip duplicate drive-letter prefixes (`D:/a/D:/a/f.txt` → `D:/a/f.txt`),

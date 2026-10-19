@@ -32,10 +32,16 @@ describe('the hint only exists while a line-up is active', () => {
     expect(source).toMatch(/if \(!isGroupChat\(groupModels\)\) return null/)
   })
 
-  it('negative control: it does not read a global model list', () => {
+  it('negative control: the line-up comes from the conversation, the model list only narrows it', () => {
     // The line-up lives on the conversation. Reading the model store instead
-    // would show the hint in every chat.
-    expect(source).not.toMatch(/useModelStore/)
+    // would show the hint in every chat. Since GH #165 the model list is read
+    // for one thing only: which members of THIS line-up are listed and answer.
     expect(source).toMatch(/s\.conversations\.find/)
+    expect(source).toMatch(/availableGroupMembers\(groupModels, models, inventoryLoaded\)/)
+  })
+
+  it('GH #165: a member that sits out is not counted as an answer', () => {
+    expect(groupCostHintText(2, 0, 1)).toBe('1 round = 2 answers = 2x the cost (1 unavailable model sits out)')
+    expect(groupCostHintText(1, 0, 2)).toBe('1 round = 1 answer = 1x the cost (2 unavailable models sit out)')
   })
 })

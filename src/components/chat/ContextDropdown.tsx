@@ -18,6 +18,7 @@ import { formatContextWindow } from '../../lib/formatters'
 import { DEFAULT_SEND_WINDOW_TOKENS } from '../../lib/send-window'
 import { ENGINE_DEFAULT_CTX } from '../../lib/builtin-ctx'
 import { SOURCE_LABEL, withStoredWindow } from '../../lib/context-source'
+import { savedLmStudioContext, withLmStudioPick } from '../../lib/lmstudio-context-pick'
 import { usePopoverPlatz } from '../../hooks/usePopoverPlatz'
 
 const PRESETS = [4096, 8192, 16384, 32768, 65536, 131072]
@@ -130,7 +131,11 @@ export function ContextDropdown({ children }: { children?: ReactNode }) {
       ? (ctx.windowKey ? byModel?.[ctx.windowKey] ?? 0 : 0)
       : cloud
         ? (ctx.windowKey ? cloudPicks?.[ctx.windowKey] ?? 0 : 0)
-        : override
+        // GH #168: LM Studio's pick is saved per model, see
+        // lib/lmstudio-context-pick. Ollama keeps the one shared num_ctx.
+        : ctx.provider === 'lmstudio'
+          ? (activeModel ? savedLmStudioContext({ contextWindowByModel: byModel }, activeModel) : 0)
+          : override
   // Gibt es ueberhaupt einen Fuellstand zu zeigen? Genau die Bedingung, unter
   // der `TokenCounter` `null` zurueckgibt. Bewusst ein BOOLEAN als Selektor:
   // ein Abo auf `s.conversations` wuerde diesen Knopf bei jedem Streaming-Flush
@@ -160,7 +165,17 @@ export function ContextDropdown({ children }: { children?: ReactNode }) {
   // A cloud step carries the system prompt and the tool catalogue before any
   // history (about 5k to 8k tokens), so the two smallest rungs could not hold
   // a single turn there.
-  const options = PRESETS.filter((p) => (cap > 0 ? p < cap : true) && (!cloud || p >= 16384))
+  const presets = PRESETS.filter((p) => (cap > 0 ? p < cap : true) && (!cloud || p >= 16384))
+  /*
+   * GH #166: no source named this Ollama model's maximum, so the list has no
+   * ceiling and no `· max`. A value set in Settings that is none of the
+   * presets (262144 for a KoboldCpp started that large) still gets its own
+   * row, or the check mark would sit on nothing.
+   */
+  const unknownMax = ctx.provider === 'ollama' && ctx.maxUnknown === true
+  const options = unknownMax && selected > 0 && !presets.includes(selected)
+    ? [...presets, selected].sort((a, b) => a - b)
+    : presets
   const showMax = cap > 0
   /*
    * Der Haken sitzt auf dem, was WIRKLICH gilt. Eine gespeicherte Wahl ueber
@@ -228,10 +243,17 @@ export function ContextDropdown({ children }: { children?: ReactNode }) {
       }
       return
     }
-    if (value === override) return
+    if (value === selected) return
     setBusy(true)
     setApplyError(null)
-    updateSettings({ contextWindowOverride: value }) // 0 = Auto
+    if (ctx.provider === 'lmstudio') {
+      // Saved for this model only (GH #168): the next load LU starts on its
+      // own, after a switch away and back, asks for the same size.
+      const current = useSettingsStore.getState().settings.contextWindowByModel
+      updateSettings({ contextWindowByModel: withLmStudioPick(current, activeModel, value) })
+    } else {
+      updateSettings({ contextWindowOverride: value }) // 0 = Auto
+    }
     try {
       const providerId = getProviderIdFromModel(activeModel)
       if (providerId === 'ollama') {
@@ -339,7 +361,7 @@ export function ContextDropdown({ children }: { children?: ReactNode }) {
             }`}
           >
             <button onClick={() => apply(0)} className={rowCls(selectedNow === 0)}>
-              <span>Auto{ctx.provider === 'ollama' ? ` · ${formatContextWindow(ollamaWindowFor(windowUse, ctx.modelMax))}` : ctx.provider === 'builtin' ? ` · ${formatContextWindow(ENGINE_DEFAULT_CTX)}` : ctx.provider === 'custom' && ctx.source !== 'user' ? ` · ${formatContextWindow(ctx.contextWindow)}` : cloud ? ` · ${formatContextWindow(globalSendWindow)}` : ''}</span>
+              <span>Auto{ctx.provider === 'ollama' ? ` · ${formatContextWindow(ctx.autoWindow ?? ollamaWindowFor(windowUse, ctx.modelMax))}` : ctx.provider === 'builtin' ? ` · ${formatContextWindow(ENGINE_DEFAULT_CTX)}` : ctx.provider === 'custom' && ctx.source !== 'user' ? ` · ${formatContextWindow(ctx.contextWindow)}` : cloud ? ` · ${formatContextWindow(globalSendWindow)}` : ''}</span>
               {selectedNow === 0 && <Check size={10} />}
             </button>
             {options.map((p) => (
@@ -368,6 +390,8 @@ export function ContextDropdown({ children }: { children?: ReactNode }) {
                 ? <span className="flex items-start gap-1"><AlertTriangle size={9} className="shrink-0 mt-px" />Once the chat is longer than {formatContextWindow(DEFAULT_SEND_WINDOW_TOKENS)}, every message sends more and costs more credits.</span>
                 : cloud
                 ? 'How much of the chat each message sends. Saved for this model.'
+                : unknownMax
+                ? "This server did not report the model's context length, so LU cannot check these sizes. Pick the size the server runs with. Reloads the model on change."
                 : ctx.provider !== 'custom'
                 ? 'Reloads the model on change.'
                 : (ctx.clampedFrom ?? 0) > 0

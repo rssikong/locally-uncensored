@@ -44,7 +44,9 @@ const modelSelector = read('src/components/models/ModelSelector.tsx')
 const chatInput = read('src/components/chat/ChatInput.tsx')
 /** The effort button's OWN tooltip, pulled out of the shipped markup. */
 const effortTip =
-  chatInput.match(/data-testid="effort-toggle"[\s\S]{0,600}?title=\{`([^`]*)`\}/)?.[1] ?? ''
+  chatInput.match(/const effortHint = [\s\S]{0,400}?: `([^`]*)`/)?.[1] ?? ''
+/** And the one it shows while a local model still runs on its own default. */
+const effortWaitTip = chatInput.match(/const effortHint = effortWaits\s*\? '([^']*)'/)?.[1] ?? ''
 const remoteRs = read('src-tauri/src/commands/remote.rs')
 // 01.09.2026 (T-75): the mobile drawer moved out of the Rust string it used to
 // live in. The refusal text is still Rust; the controls it names are in the
@@ -112,17 +114,27 @@ describe('the two the sweep turned up', () => {
     expect(settingsPage).toMatch(/await handleStop\(\); setTimeout\(handleStart, 2000\)[\s\S]{0,300}Restart/)
   })
 
-  it('the remote permission refusal drops the gear that is a sliders glyph', () => {
+  // 3.0.7: the refusal used to send the phone to its own Settings sheet, and
+  // that sheet only reads the permissions (the server ignores a write from a
+  // paired device). The switch is on the desktop.
+  it('the remote permission refusal sends the user to the desktop switch', () => {
     expect(remoteRs).not.toMatch(/gear icon/)
+    expect(remoteRs).not.toMatch(/turn it on under Remote Permissions/)
     expect(remoteRs).toMatch(
-      /Open the Menu, tap Settings, and turn it on under Remote Permissions\./,
+      /Turn it on in the LU desktop app under Settings, Voice & Remote, Remote Access, Permissions\./,
     )
   })
 
-  it('and the mobile drawer really spells it Menu, Settings, Remote Permissions', () => {
-    expect(mobileClient).toMatch(/window\._toggleDrawer\(\)" aria-label="Menu"/)
-    expect(mobileClient).toMatch(/window\._openSettingsSheet\(\)[\s\S]{0,200}svgIcon\('tune'\)\+'<\/span>Settings'/)
-    expect(mobileClient).toMatch(/settings-section-label">Remote Permissions</)
+  it('and the desktop really spells it Voice & Remote, Remote Access, Permissions, with the switches there', () => {
+    expect(settingsPage).toMatch(/label: 'Voice & Remote'/)
+    expect(settingsPage).toMatch(/<Section title="Remote Access">\s*<RemoteAccessSettings \/>/)
+    const remoteAccess = read('src/components/settings/RemoteAccessSettings.tsx')
+    expect(remoteAccess).toMatch(/>Permissions<\/span>/)
+    expect(remoteAccess).toMatch(/setPermissions\(\{ \.\.\.permissions, \[key\]: !permissions\[key\] \}\)/)
+  })
+
+  it('and the phone sheet only reads them, so pointing there was wrong', () => {
+    expect(mobileClient).toMatch(/READS \/remote-api\/permissions; it cannot write/)
   })
 
   it('the LM Studio load error names the label the row shows, not an icon name', () => {
@@ -150,19 +162,26 @@ describe('the effort control in the composer says what it is and what it costs',
     expect(chatInput).toMatch(
       /Click to cycle\. Higher effort spends more output tokens\./,
     )
+    expect(chatInput).toMatch(/title=\{effortHint\}/)
+  })
+
+  it('a local model nobody picked a rung for says Default, not a rung that is not sent', () => {
+    expect(effortWaitTip).toBe(
+      'Reasoning effort: Default, the model decides. Click to pick a level. Higher effort spends more output tokens.',
+    )
+    expect(chatInput).toMatch(/const effortText = effortWaits \? 'Default' : effortLabel\(effortNow\)/)
   })
 
   it('and "click to cycle" is what the button really does', () => {
-    expect(chatInput).toMatch(
-      /onClick=\{\(\) => updateSettings\(\{ reasoningEffort: nextEffort\(effortLevels, effortNow\) \}\)\}/,
-    )
+    expect(chatInput).toMatch(/onClick=\{cycleEffort\}/)
+    expect(chatInput).toMatch(/updateSettings\(\{ reasoningEffort: nextEffort\(effortLevels, effortNow\) \}\)/)
   })
 
   it('the label is the rung that actually goes on the wire, the clamped one', () => {
     // Showing Max while sending high would be a control that lies, on the one
     // axis where the user is paying attention because it costs money.
     expect(chatInput).toMatch(/const effortNow = clampEffort\(effortLevels, /)
-    expect(chatInput).toMatch(/<span>\{effortLabel\(effortNow\)\}<\/span>/)
+    expect(chatInput).toMatch(/<span>\{effortText\}<\/span>/)
   })
 
   it('it is drawn only where it is true: a declared ladder and thinking really on', () => {

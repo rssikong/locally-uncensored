@@ -79,12 +79,18 @@ describe('Multishot: was ein lokaler Lauf schickt', () => {
     expect(scenePromptFor(run)).toBe(composed)
   })
 
-  it('jedes andere Modell, jede andere Spur und der Mac schicken den Prompt wie getippt', async () => {
+  it('jedes andere Modell, jede andere Spur und ein Mac ohne LTX-2.5-Paket schicken den Prompt wie getippt', async () => {
     const { scenePromptFor } = await import('../ltx-multishot')
     expect(scenePromptFor({ ...run, modelType: 'wan22' })).toBe('one')
     expect(scenePromptFor({ ...run, intent: 'animate' })).toBe('one')
     expect(scenePromptFor({ ...run, intent: 'image', mode: 'image' })).toBe('one')
+    // A Mac takes the list where its video catalogue says so (the LTX-2.5
+    // packs, M8 14.10.2026), and the model type of a ComfyUI file says
+    // nothing there. Changed on purpose: the Mac used to take none.
     expect(scenePromptFor({ ...run, onMlxHost: true })).toBe('one')
+    expect(scenePromptFor({ ...run, onMlxHost: true, macMultishot: false })).toBe('one')
+    expect(scenePromptFor({ ...run, onMlxHost: true, macMultishot: true, modelType: 'ltx' })).toBe(composed)
+    expect(scenePromptFor({ ...run, onMlxHost: true, macMultishot: true, intent: 'animate' })).toBe('one')
     expect(scenePromptFor({ ...run, shots: [] })).toBe('one')
   })
 })

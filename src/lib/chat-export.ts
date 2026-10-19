@@ -6,12 +6,51 @@
  * blob-download.
  */
 
-import type { Conversation } from '../types/chat'
+import type { Conversation, Message } from '../types/chat'
 import { isTauri, backendCall } from '../api/backend'
+import { displayModelName } from '../api/providers/model-name'
 import { originalAttachment } from './chat-attachments'
 import { conversationModelOf } from './conversation-model'
+import { groupSpeakers, groupTurnPersonaId, isGroupChat } from './group-chat'
 
-export function exportAsMarkdown(conversation: Conversation): string {
+/** What an export needs of a persona: its id and the name it goes by. */
+export type ExportPersona = { id: string; name: string }
+
+/**
+ * The persona name a group turn was written as (GH #171), from the record
+ * the group chat keeps on each turn (GH #169, groupTurnPersonaId): the
+ * persona's current name, or the name it had then when it has been deleted
+ * since. Undefined when the turn's model played no persona.
+ */
+function groupPersonaOf(conversation: Conversation, msg: Message, personas: readonly ExportPersona[]): string | undefined {
+  if (!msg.modelId) return undefined
+  const speakers = groupSpeakers(conversation.groupModels ?? [], conversation.groupPersonas, personas.map((p) => ({ systemPrompt: '', ...p })))
+  const personaId = groupTurnPersonaId(msg, speakers, { groupPersonas: conversation.groupPersonas, personas })
+  if (!personaId) return undefined
+  const known = personas.find((p) => p.id === personaId)?.name
+  if (known) return known
+  // The recorded name carries the model when two members shared the persona.
+  const recorded = msg.groupSpeakerName
+  const shared = ` (${msg.modelId})`
+  return recorded?.endsWith(shared) ? recorded.slice(0, -shared.length) : recorded
+}
+
+/**
+ * The heading of one turn. A group chat used to head every model turn
+ * "Assistant", so who said what was lost on export (GH #171); there each
+ * model turn is headed by its persona and its model, or by its model alone.
+ */
+function turnHeading(conversation: Conversation, msg: Message, personas: readonly ExportPersona[]): string {
+  if (msg.role === 'user') return 'You'
+  if (msg.role === 'assistant' && msg.modelId && isGroupChat(conversation.groupModels)) {
+    const model = displayModelName(msg.modelId)
+    const persona = groupPersonaOf(conversation, msg, personas)
+    return persona ? `${persona} (${model})` : model
+  }
+  return msg.role === 'assistant' ? 'Assistant' : msg.role
+}
+
+export function exportAsMarkdown(conversation: Conversation, personas: readonly ExportPersona[] = []): string {
   const lines: string[] = []
   lines.push(`# ${conversation.title}`)
   // The model of the last answer, not the conversation field. That field is
@@ -36,8 +75,7 @@ export function exportAsMarkdown(conversation: Conversation): string {
   lines.push('')
 
   for (const msg of conversation.messages) {
-    const role = msg.role === 'user' ? 'You' : msg.role === 'assistant' ? 'Assistant' : msg.role
-    lines.push(`### ${role}`)
+    lines.push(`### ${turnHeading(conversation, msg, personas)}`)
 
     if (msg.thinking) {
       lines.push('')
@@ -72,11 +110,27 @@ export function exportAsMarkdown(conversation: Conversation): string {
   return lines.join('\n')
 }
 
-export function exportAsJSON(conversation: Conversation): string {
+export function exportAsJSON(conversation: Conversation, personas: readonly ExportPersona[] = []): string {
+  const named = withGroupPersonas(conversation, personas)
   // Same rule as the Markdown header: no model, no model field.
-  if (conversation.model?.trim()) return JSON.stringify(conversation, null, 2)
-  const { model: _none, ...withoutModel } = conversation
+  if (named.model?.trim()) return JSON.stringify(named, null, 2)
+  const { model: _none, ...withoutModel } = named
   return JSON.stringify(withoutModel, null, 2)
+}
+
+/** A group chat with the persona name on every model turn that had one,
+ *  as `speakerPersona` next to the model it already carries (GH #171), so a
+ *  reader of the file needs no persona list. Any other chat comes back as is. */
+function withGroupPersonas(conversation: Conversation, personas: readonly ExportPersona[]): Conversation {
+  if (!isGroupChat(conversation.groupModels)) return conversation
+  return {
+    ...conversation,
+    messages: conversation.messages.map((msg) => {
+      if (msg.role !== 'assistant' || !msg.modelId) return msg
+      const speakerPersona = groupPersonaOf(conversation, msg, personas)
+      return speakerPersona ? { ...msg, speakerPersona } : msg
+    }),
+  }
 }
 
 export function downloadFile(content: string, filename: string, type: string) {
@@ -100,6 +154,7 @@ export function downloadFile(content: string, filename: string, type: string) {
 export async function exportConversation(
   conversation: Conversation,
   format: 'markdown' | 'json',
+  personas: readonly ExportPersona[] = [],
 ): Promise<{ status: 'saved' | 'cancelled' | 'downloaded' | 'error'; path?: string; error?: string; missing?: number }> {
   const safeTitle = conversation.title.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 50)
   const ext = format === 'markdown' ? 'md' : 'json'
@@ -112,8 +167,8 @@ export async function exportConversation(
   // bytes back while it streams to the file (export_chats_dialog), so the
   // WebView never holds the full export.
   if (isTauri()) {
-    if (format === 'json') return saveNativeExport(exportAsJSON(conversation), filename)
-    const content = exportAsMarkdown(conversation)
+    if (format === 'json') return saveNativeExport(exportAsJSON(conversation, personas), filename)
+    const content = exportAsMarkdown(conversation, personas)
     try {
       const chosenPath = await backendCall<string | null>('save_text_file_dialog', {
         content,
@@ -131,7 +186,7 @@ export async function exportConversation(
   }
 
   // Plain browser fallback
-  const content = format === 'markdown' ? exportAsMarkdown(conversation) : exportAsJSON(await portableConversation(conversation))
+  const content = format === 'markdown' ? exportAsMarkdown(conversation, personas) : exportAsJSON(await portableConversation(conversation), personas)
   downloadFile(content, filename, mime)
   return { status: 'downloaded' }
 }

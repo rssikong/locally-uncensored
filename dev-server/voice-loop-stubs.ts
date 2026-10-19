@@ -27,6 +27,9 @@ export function registerVoiceLoopStubs(routes: RouteMount): void {
     '/local-api/voice-loop-set-voice',
     '/local-api/voice-loop-stop',
     '/local-api/voice-loop-uninstall',
+    // The key of the LU Engine lives in the Rust process (engine_key.rs);
+    // only the voice service asks for it.
+    '/local-api/engine-key-for',
     // The grant that lets a voice session leave its folder is given by the
     // Rust file jail after a native question. No Rust process, no grant.
     '/local-api/fs-whole-computer',

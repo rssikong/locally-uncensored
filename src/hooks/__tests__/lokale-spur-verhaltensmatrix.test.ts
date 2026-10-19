@@ -87,7 +87,7 @@ beforeEach(() => {
   useGenerationStore.setState({ generating: {}, aborters: {}, runs: {} })
   useModelStore.setState({ models: [], activeModel: LOCAL_MODEL })
   useSettingsStore.setState({
-    settings: { ...DEFAULT_SETTINGS, appMode: 'local', cavemanMode: 'off', chatToolsEnabled: false },
+    settings: { ...DEFAULT_SETTINGS, appMode: 'local', cavemanMode: 'off' },
   })
   useProviderStore.setState((s) => ({
     providers: { ...s.providers, openai: { ...s.providers.openai, enabled: true } },
@@ -258,7 +258,7 @@ describe('die lokale Spur: die volle Verhaltensmatrix aus Schritt 6', () => {
 
   it('4) zwei Cloud-Unterhaltungen laufen echt gleichzeitig, keine Schlange', async () => {
     useSettingsStore.setState({
-      settings: { ...DEFAULT_SETTINGS, appMode: 'cloud', cavemanMode: 'off', chatToolsEnabled: false },
+      settings: { ...DEFAULT_SETTINGS, appMode: 'cloud', cavemanMode: 'off' },
     })
     useProviderStore.setState((s) => ({
       providers: { ...s.providers, 'lu-cloud': { ...s.providers['lu-cloud'], enabled: true } },

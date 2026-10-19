@@ -132,7 +132,11 @@ describe('Agent mode: the file is in the working folder before the model is aske
     expect(modelRequests.length).toBeGreaterThan(0)
     expect(modelRequests[0]).toContain('[Attached file: mario.nes]')
     expect(modelRequests[0]).toContain('Path in your working folder: mario.nes')
-    expect(modelRequests[0]).toContain('SUMMARY-MARKER')
+    // A binary in the folder: the facts and the path, no dump. The tools read
+    // the bytes, and nothing is run without being asked (3.0.7).
+    expect(modelRequests[0]).toContain('SHA-256: ')
+    expect(modelRequests[0]).toContain('Do not run the file or open it as a program unless the user asks you to.')
+    expect(modelRequests[0]).not.toContain('SUMMARY-MARKER')
 
     const stored = userMessage(convId)
     expect(stored.displayContent).toBe('what is this file?')

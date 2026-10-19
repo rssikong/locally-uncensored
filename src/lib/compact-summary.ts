@@ -76,6 +76,13 @@ export interface CompactSummary {
   progress: string
   /** Decisions taken and the reason, so they are not re-litigated. */
   decisions: string
+  /**
+   * Files read, created or changed, and commands run, each with its exact
+   * path (3.0.7). A long run stands on its files more than on anything else:
+   * without them the next step reads the same file again, or edits one it
+   * never saw.
+   */
+  files: string
   /** Facts found that later turns still depend on (paths, names, values). */
   facts: string
   /** What is still open. */
@@ -85,7 +92,7 @@ export interface CompactSummary {
 }
 
 export const EMPTY_SUMMARY: CompactSummary = {
-  task: '', requests: '', progress: '', decisions: '', facts: '', open: '', rest: '',
+  task: '', requests: '', progress: '', decisions: '', files: '', facts: '', open: '', rest: '',
 }
 
 /**
@@ -97,6 +104,7 @@ export const SECTIONS: ReadonlyArray<{ key: keyof CompactSummary; heading: strin
   { key: 'requests', heading: 'USER REQUESTS' },
   { key: 'progress', heading: 'PROGRESS' },
   { key: 'decisions', heading: 'DECISIONS' },
+  { key: 'files', heading: 'FILES' },
   { key: 'facts', heading: 'FACTS' },
   { key: 'open', heading: 'OPEN' },
 ]
@@ -182,6 +190,36 @@ export function renderTranscript(turns: TranscriptTurn[], maxChars = DEFAULT_TRA
 }
 
 /**
+ * The seven headings and what goes under each, shared by the first summary and
+ * by the merge. One text for both, so a merged state can never drift into a
+ * different shape than the record it replaces.
+ */
+const SECTION_GUIDE = `Use exactly these seven headings, each on its own line:
+
+TASK
+What the person originally asked for, in one or two sentences.
+
+USER REQUESTS
+Every instruction the person gave, in their own words, quoted exactly, one per line, in order. Do not shorten, translate or tidy them. Include the conditions and exceptions they attached ("but never more than", "except in"). This is the only part of the record that cannot be reconstructed from anywhere else.
+
+PROGRESS
+What has already been done, in order. Name the concrete results.
+
+DECISIONS
+Choices that were made and the reason for each, so they are not made again differently.
+
+FILES
+Every file that was read, created or changed, with its exact path and one line on what is in it or what changed. Then every command that was run and its outcome. One per line.
+
+FACTS
+Specific things discovered that later steps depend on: function names, values, numbers, IDs, hashes, URLs, error messages, versions. Copy every ID and number exactly; a wrong digit cannot be noticed later.
+
+OPEN
+Every task that is still unfinished or unanswered, one per line, and the very next step that was about to happen.
+
+Write "none" under a heading that has nothing. Never write "none" under USER REQUESTS if the person said anything at all.`
+
+/**
  * The summarisation request.
  *
  * Written as ONE user message on purpose. A system message would be the
@@ -209,31 +247,62 @@ Write the whole summary in the language the conversation is in. A record that ch
 
 Count nothing you have not written down. If the person marked five things to remember and you can only find four, record the four and say the fifth is missing. A list that promises five and delivers four makes the next assistant shift the values into the wrong slots — which is worse than a gap, because a gap gets asked about.
 
-Use exactly these six headings, each on its own line:
-
-TASK
-What the person originally asked for, in one or two sentences.
-
-USER REQUESTS
-Every instruction the person gave, in their own words, quoted exactly, one per line, in order. Do not shorten, translate or tidy them. Include the conditions and exceptions they attached ("but never more than", "except in"). This is the only part of the record that cannot be reconstructed from anywhere else.
-
-PROGRESS
-What has already been done, in order. Name the concrete results.
-
-DECISIONS
-Choices that were made and the reason for each, so they are not made again differently.
-
-FACTS
-Specific things discovered that later steps depend on: file paths, function names, values, error messages, versions.
-
-OPEN
-What is still unfinished or unanswered.
-
-Write "none" under a heading that has nothing. Never write "none" under USER REQUESTS if the person said anything at all.${focusLine}
+${SECTION_GUIDE}${focusLine}
 
 --- TRANSCRIPT ---
 ${transcript}
 --- END TRANSCRIPT ---`
+}
+
+/**
+ * The merge request: one updated record from the previous record plus the
+ * turns that came after it (issue #151).
+ *
+ * Before this, every compaction added a record of its own and the payload
+ * carried the whole chain, oldest first. Nothing was lost that way, but a long
+ * chat sent five summaries that each described a different stretch, with the
+ * same task written five times and an OPEN list from the first stretch that the
+ * third had long since closed. The merge folds all of it into one current
+ * state under the same seven headings.
+ *
+ * The danger of a merge is the one this module was built against: a summary of
+ * a summary loses detail every round. So the prompt says plainly what may not
+ * be rewritten, and `keepVerbatimFromPrevious` checks the answer afterwards
+ * rather than trusting it.
+ */
+export function buildMergePrompt(
+  previous: CompactSummary,
+  turns: TranscriptTurn[],
+  opts: CompactPromptOptions = {},
+): string {
+  const transcript = renderTranscript(turns, opts.maxTranscriptChars)
+  const record = summaryParts(previous).join('\n\n')
+  const focus = opts.focus?.trim()
+  const focusLine = focus
+    ? `\n\nThe person asked you to pay particular attention to: ${focus}\nCover it in more detail than the rest, but still fill in every section below.`
+    : ''
+  return `Below is the record of an earlier part of a conversation, followed by the turns that came after it. Both are about to be removed to free up context. Write ONE updated record that replaces the old one and covers everything: the old record and the new turns together.
+
+Write for the assistant that has to carry on, not for a human reader. Facts over prose. Do not add anything that is in neither the record nor the turns, and do not offer to help; this is a record, not a reply.
+
+How to treat the old record:
+- USER REQUESTS: copy every line of the old record word for word, then add the new requests from the turns below it, in order.
+- FILES: keep every path and command from the old record. Add the files and commands of the new turns. Update a line only when the new turns changed that file again.
+- FACTS: keep every path, file name, number, value, command and identifier from the old record exactly as written. Change one only when the new turns replace it with a different value, and then write the new value.
+- OPEN: keep every item that is still open. Remove an item only when the new turns show it was finished, and move it to PROGRESS. Add new open items.
+- TASK, PROGRESS and DECISIONS: keep what still holds and add what the turns add. Shorten wording if you must, never values.
+
+Write the whole record in the language the conversation is in. Never translate, convert or reformat a value: not currency, not dates, not times, not units, not decimal marks. Copy them character for character.
+
+${SECTION_GUIDE}${focusLine}
+
+--- PREVIOUS RECORD ---
+${record}
+--- END PREVIOUS RECORD ---
+
+--- NEW TURNS ---
+${transcript}
+--- END NEW TURNS ---`
 }
 
 /** Escape a string for use inside a RegExp. */
@@ -350,7 +419,7 @@ export function summaryFromLooseText(text: string): CompactSummary {
 
 /** True when the summary carries nothing at all. */
 export function isEmptySummary(s: CompactSummary): boolean {
-  return SECTIONS.every((sec) => !s[sec.key].trim()) && !s.rest.trim()
+  return SECTIONS.every((sec) => !(s[sec.key] ?? '').trim()) && !s.rest.trim()
 }
 
 /**
@@ -372,14 +441,20 @@ export function isEmptySummary(s: CompactSummary): boolean {
 export const COMPACT_PREAMBLE =
   'Earlier turns in this conversation were summarised to free up context. This is that summary; treat it as the record of what happened, and carry on from it rather than starting over.'
 
-export function renderCompactSummary(s: CompactSummary): string {
+/** The sections with their headings, empty ones left out. No marker, no preamble. */
+function summaryParts(s: CompactSummary): string[] {
   const parts: string[] = []
   for (const sec of SECTIONS) {
-    const body = s[sec.key].trim()
+    const body = (s[sec.key] ?? '').trim()
     if (body) parts.push(`${sec.heading}\n${body}`)
   }
   const rest = s.rest.trim()
   if (rest) parts.push(parts.length ? `${REST_HEADING}\n${rest}` : rest)
+  return parts
+}
+
+export function renderCompactSummary(s: CompactSummary): string {
+  const parts = summaryParts(s)
   if (!parts.length) return ''
   return `${COMPACT_OPEN}\n${COMPACT_PREAMBLE}\n\n${parts.join('\n\n')}\n${COMPACT_CLOSE}`
 }
@@ -409,6 +484,14 @@ export interface UsabilityInput {
   summary: CompactSummary
   /** Characters of transcript the summary is meant to replace. */
   replacedChars: number
+  /**
+   * Rendered length of a previous record the summary absorbs, for a merge.
+   * The chain it replaces would carry that record AND a new summary of at most
+   * MAX_SUMMARY_SHARE of the turns, so a merged state may cost as much as that
+   * and no more. Without this allowance a long running state would fail the
+   * size rule against a handful of new turns on every merge.
+   */
+  baseChars?: number
 }
 
 export interface UsabilityResult {
@@ -422,7 +505,7 @@ export interface UsabilityResult {
 
 /** The summary's own words, with no preamble and no headings. */
 export function summaryContentChars(s: CompactSummary): number {
-  return SECTIONS.reduce((n, sec) => n + s[sec.key].trim().length, 0) + s.rest.trim().length
+  return SECTIONS.reduce((n, sec) => n + (s[sec.key] ?? '').trim().length, 0) + s.rest.trim().length
 }
 
 /**
@@ -486,7 +569,8 @@ export function isUsableSummary(input: UsabilityInput): UsabilityResult {
   // A "summary" the size of its source is a copy with a bill attached. This
   // one measures the RENDERED length, because that is what every future
   // request actually pays for.
-  if (input.replacedChars > 0 && renderedChars > input.replacedChars * MAX_SUMMARY_SHARE) {
+  const base = Math.max(0, input.baseChars ?? 0)
+  if (input.replacedChars > 0 && renderedChars > base + input.replacedChars * MAX_SUMMARY_SHARE) {
     return { usable: false, reason: 'not-smaller', renderedChars, contentChars }
   }
   return { usable: true, reason: 'ok', renderedChars, contentChars }
@@ -607,6 +691,160 @@ function spliceSummary<T extends { role: string; content?: unknown }>(
 export interface StoredCompaction {
   summary: string
   upToMessageId: string
+  /**
+   * True when this summary is a merged state: it stands for everything from
+   * the start of the chat up to its anchor, not only for the turns since the
+   * record before it. Absent on every record written before 3.0.7, which is
+   * what makes old chats keep sending their chain.
+   */
+  merged?: boolean
+}
+
+/**
+ * The records the payload carries, given the last one whose anchor still
+ * stands: from the newest merged state up to it, or the whole chain when there
+ * is no merged state among them.
+ *
+ * A merged record already holds everything before it, so the records in front
+ * of it would send the same material twice. The ones after it are plain chain
+ * links (a merge that failed falls back to one) and still have to go out. Old
+ * chats have no merged record at all and keep sending the full chain, exactly
+ * as they did.
+ */
+export function chainToSend<R extends StoredCompaction>(records: readonly R[], upTo: number): R[] {
+  if (upTo < 0 || upTo >= records.length) return []
+  let start = 0
+  for (let i = upTo; i >= 0; i--) {
+    if (records[i].merged) { start = i; break }
+  }
+  return records.slice(start, upTo + 1)
+}
+
+/**
+ * The structured state a list of stored summaries stands for, one section per
+ * heading. Several chain links are joined section by section, oldest first, so
+ * a merge sees one record and not five.
+ */
+export function stateFromStored(records: readonly StoredCompaction[]): CompactSummary {
+  const out: CompactSummary = { ...EMPTY_SUMMARY }
+  const keys = [...SECTIONS.map((sec) => sec.key), 'rest'] as const
+  for (const r of records) {
+    const inner = compactSummaryBody(r.summary)
+    if (!inner) continue
+    let parsed = parseCompactSummary(inner)
+    if (isEmptySummary(parsed)) parsed = summaryFromLooseText(inner)
+    for (const key of keys) {
+      const body = (parsed[key] ?? '').trim()
+      if (body) out[key] = out[key] ? `${out[key]}\n${body}` : body
+    }
+  }
+  return out
+}
+
+// ── Was eine Zusammenfuehrung nicht verlieren darf ─────────────────────────
+
+/** One entry of a section: a line, or a whole fenced block. */
+function sectionEntries(body: string): string[] {
+  const out: string[] = []
+  let block: string[] | null = null
+  let fenceChar = ''
+  for (const line of body.split('\n')) {
+    const marker = line.match(/^ {0,3}(`{3,}|~{3,})/)
+    if (block) {
+      block.push(line)
+      if (marker && marker[1][0] === fenceChar) { out.push(block.join('\n')); block = null }
+      continue
+    }
+    if (marker) { block = [line]; fenceChar = marker[1][0]; continue }
+    if (line.trim()) out.push(line)
+  }
+  if (block) out.push(block.join('\n'))
+  return out
+}
+
+const norm = (t: string) => t.replace(/^[\s>*\-+•]+/, '').replace(/\s+/g, ' ').trim().toLowerCase()
+
+/**
+ * The literal values of an entry: code spans, paths, file names and anything
+ * with a digit in it. These are what a reworded summary loses first and what
+ * nobody can look up again once the turns are gone.
+ */
+export function literalTokens(entry: string): string[] {
+  const found = new Set<string>()
+  for (const m of entry.matchAll(/`([^`\n]+)`/g)) found.add(m[1].trim())
+  for (const raw of entry.replace(/`[^`\n]*`/g, ' ').split(/\s+/)) {
+    const t = raw.replace(/^[("'[{<]+/, '').replace(/[)"'\]}>.,;:!?]+$/, '')
+    if (!t) continue
+    if (/\d/.test(t) || /[\\/]/.test(t) || /^[\w-]+\.[A-Za-z][\w]{0,5}$/.test(t)) found.add(t)
+  }
+  return [...found].filter((t) => t.length > 0)
+}
+
+/**
+ * Does the new material talk about this open item? Then the model may have
+ * closed it on purpose, and putting it back would reopen finished work.
+ */
+function mentionedIn(entry: string, text: string): boolean {
+  const words = norm(entry).split(/[^\p{L}\p{N}_./-]+/u)
+    .map((w) => w.replace(/^[./-]+|[./-]+$/g, ''))
+    .filter((w) => w.length >= 4)
+  if (words.length === 0) return false
+  const hits = words.filter((w) => text.includes(w)).length
+  return hits * 2 >= words.length
+}
+
+export interface KeepVerbatimResult {
+  summary: CompactSummary
+  /** How many entries of the old record were put back. */
+  restored: number
+}
+
+/**
+ * Put back what the merge dropped from the old record.
+ *
+ * A model asked to merge will shorten, and some shortening is the point. Three
+ * kinds of entry may not go, and this checks for each of them after the run
+ * instead of trusting the prompt:
+ *
+ *  - USER REQUESTS lines. They are the person's own words and have no second
+ *    source. A missing one is appended to USER REQUESTS as it was.
+ *  - OPEN items the new turns do not talk about. Nothing can have finished
+ *    them, so a missing one was dropped, not closed. An item the new turns do
+ *    talk about is left to the model, which may have moved it to PROGRESS.
+ *  - Any other entry carrying a literal value (a path, a number, a command in
+ *    backticks) where that value no longer appears anywhere in the merged
+ *    state. The entry goes back under its old heading. When the new turns
+ *    replaced a value, the old line comes back next to the new one; a stale
+ *    value with a newer one beside it is a smaller harm than a value gone.
+ */
+export function keepVerbatimFromPrevious(
+  previous: CompactSummary,
+  merged: CompactSummary,
+  newTurnsText: string,
+): KeepVerbatimResult {
+  const out: CompactSummary = { ...merged }
+  const keys = [...SECTIONS.map((sec) => sec.key), 'rest'] as const
+  const haystack = () => keys.map((k) => out[k]).join('\n')
+  const haystackNorm = () => norm(haystack().replace(/\n/g, ' '))
+  const turns = newTurnsText.toLowerCase()
+  let restored = 0
+
+  for (const key of keys) {
+    for (const entry of sectionEntries(previous[key] ?? '')) {
+      if (haystackNorm().includes(norm(entry))) continue
+      let putBack = false
+      if (key === 'requests') putBack = true
+      else if (key === 'open') putBack = !mentionedIn(entry, turns)
+      else {
+        const text = haystack()
+        putBack = literalTokens(entry).some((t) => !text.includes(t))
+      }
+      if (!putBack) continue
+      out[key] = (out[key] ?? '').trim() ? `${(out[key] ?? '').trimEnd()}\n${entry}` : entry
+      restored++
+    }
+  }
+  return { summary: out, restored }
 }
 
 /** The message shape this module needs to find the cut. */
@@ -660,7 +898,9 @@ export function applyStoredCompaction<T extends IdentifiedMessage>(
   }
   if (letzter < 0) return { messages, replaced: 0, rendered: '' }
 
-  const rendered = kette.slice(0, letzter + 1).map((r) => r.summary).join('\n\n')
+  // Seit 3.0.7: ab dem neuesten zusammengefuehrten Stand, nicht mehr immer ab
+  // dem ersten Datensatz. Alte Chats ohne einen solchen schicken die Kette.
+  const rendered = chainToSend(kette, letzter).map((r) => r.summary).join('\n\n')
   return spliceSummary(
     messages as unknown as Array<T & { role: string }>,
     schnitt + 1,
@@ -728,7 +968,7 @@ export function summarySections(rendered: string): SummarySection[] {
   const parsed = parseCompactSummary(inner)
   const out: SummarySection[] = []
   for (const sec of SECTIONS) {
-    const body = parsed[sec.key].trim()
+    const body = (parsed[sec.key] ?? '').trim()
     if (body) out.push({ heading: sec.heading, body })
   }
   // Kein Nachschneiden mehr: seit parseCompactSummary REST_HEADING kennt,

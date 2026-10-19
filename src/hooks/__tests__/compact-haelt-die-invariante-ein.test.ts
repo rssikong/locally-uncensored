@@ -43,6 +43,8 @@ vi.mock('../../lib/run-compact-command', () => ({
   runCompactForConversation: () => runCompactForConversationMock(),
   compactOutcomeMessage: (outcome: { ok: boolean; reason?: string }) =>
     outcome.ok ? 'summary-ok' : `not-ok:${outcome.reason}`,
+  // Auto-compact is on by default since 3.0.7, so the send path asks it.
+  maybeAutoCompact: async () => null,
 }))
 
 import { useChat, __activeChatRunConvIdsForTests } from '../useChat'
@@ -87,7 +89,7 @@ beforeEach(() => {
   useGenerationStore.setState({ generating: {}, aborters: {}, runs: {} })
   useModelStore.setState({ models: [], activeModel: CLOUD_MODEL })
   useSettingsStore.setState({
-    settings: { ...DEFAULT_SETTINGS, appMode: 'cloud', cavemanMode: 'off', chatToolsEnabled: false },
+    settings: { ...DEFAULT_SETTINGS, appMode: 'cloud', cavemanMode: 'off' },
   })
   useProviderStore.setState((s) => ({
     providers: {
@@ -122,7 +124,7 @@ describe('/compact reiht sich in die activeChatRuns-Invariante ein', () => {
     // und liest hier nichts mehr nach.
     useModelStore.setState({ activeModel: LOCAL_MODEL })
     useSettingsStore.setState({
-      settings: { ...DEFAULT_SETTINGS, appMode: 'local', cavemanMode: 'off', chatToolsEnabled: false },
+      settings: { ...DEFAULT_SETTINGS, appMode: 'local', cavemanMode: 'off' },
     })
     const convB = seed(LOCAL_MODEL)
     let compactCall!: Promise<void>
@@ -157,7 +159,7 @@ describe('/compact reiht sich in die activeChatRuns-Invariante ein', () => {
     const { result } = renderHook(() => useChat())
     useModelStore.setState({ activeModel: LOCAL_MODEL })
     useSettingsStore.setState({
-      settings: { ...DEFAULT_SETTINGS, appMode: 'local', cavemanMode: 'off', chatToolsEnabled: false },
+      settings: { ...DEFAULT_SETTINGS, appMode: 'local', cavemanMode: 'off' },
     })
     seed(LOCAL_MODEL)
 

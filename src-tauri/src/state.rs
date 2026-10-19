@@ -404,6 +404,9 @@ pub struct AppState {
     pub install_mlx_video: crate::install_state::InstallSlot,
     /// Install progress for a single MLX video-catalog model download/convert.
     pub install_video_model: crate::install_state::InstallSlot,
+    /// Install progress of the Mac's music engine and its weights
+    /// (`commands::music`), one slot for both.
+    pub install_music: crate::install_state::InstallSlot,
     /// Live progress/log of the currently running (or last) video generation.
     pub video_progress: crate::install_state::InstallSlot,
     /// Handle to the running `mlx_video.*.generate` subprocess, if any. `Arc`-
@@ -495,6 +498,7 @@ impl AppState {
             install_mlx_image_model: crate::install_state::InstallSlot::default(),
             install_mlx_video: crate::install_state::InstallSlot::default(),
             install_video_model: crate::install_state::InstallSlot::default(),
+            install_music: crate::install_state::InstallSlot::default(),
             video_progress: crate::install_state::InstallSlot::default(),
             video_process: Arc::new(Mutex::new(None)),
         }
@@ -517,6 +521,9 @@ impl AppState {
     }
     pub fn install_video_model(&self) -> crate::install_state::InstallSlot {
         self.install_video_model.clone()
+    }
+    pub fn install_music(&self) -> crate::install_state::InstallSlot {
+        self.install_music.clone()
     }
     pub fn video_progress(&self) -> crate::install_state::InstallSlot {
         self.video_progress.clone()
@@ -553,6 +560,7 @@ impl AppState {
             &self.install_mlx_image_model,
             &self.install_mlx_video,
             &self.install_video_model,
+            &self.install_music,
         ]
         .into_iter()
         .filter(|slot| slot.cancel())
@@ -694,6 +702,11 @@ impl AppState {
         // only found: a sidecar left behind by a run that ended hard.
         crate::commands::mlx::stop_sidecar();
         crate::commands::mlx::stop_mflux();
+        // A track holds its models as a process of its own, like an image of
+        // the second engine.
+        crate::commands::music::stop();
+        // And a character training, the same way.
+        crate::commands::mlx::train::stop();
         #[cfg(target_os = "macos")]
         {
             crate::process_util::kill_listeners_on_port(crate::commands::mlx::MLX_PORT);

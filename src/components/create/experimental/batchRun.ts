@@ -52,7 +52,9 @@ function fileOf(ref: MediaRef): File {
 function sourceAsEntry(source: ImageRef): MediaRef {
   const blob = dataUrlToBlob(source.url)
   const ext = blob.type === 'image/jpeg' ? 'jpg' : blob.type === 'image/webp' ? 'webp' : 'png'
-  return mediaRefFrom(new File([blob], `image 1.${ext}`, { type: blob.type || 'image/png' }))
+  // The image keeps the name of its file. One that came without a file (a
+  // result sent to the tool) has none.
+  return mediaRefFrom(new File([blob], source.name || `image 1.${ext}`, { type: blob.type || 'image/png' }))
 }
 
 const sameFile = (a: MediaRef, b: MediaRef) => a.name === b.name && a.blob.size === b.blob.size

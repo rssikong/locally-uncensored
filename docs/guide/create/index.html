@@ -15,7 +15,7 @@
 <meta property="og:image" content="https://locallyuncensored.com/social-preview.png">
 <meta name="twitter:card" content="summary_large_image">
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"TechArticle","headline":"Create in Locally Uncensored: Image, Video, Audio, Character Studio and Trainer","description":"How the Create tab works in Locally Uncensored: image generation and editing, video, music and speech, the Character Studio and the LoRA trainer, with local requirements and the hosted alternative.","url":"https://locallyuncensored.com/guide/create/","dateModified":"2026-09-22","inLanguage":"en","author":{"@type":"Person","name":"PurpleDoubleD","url":"https://github.com/PurpleDoubleD"},"publisher":{"@type":"Organization","name":"Locally Uncensored","url":"https://locallyuncensored.com/"},"mainEntityOfPage":{"@type":"WebPage","@id":"https://locallyuncensored.com/guide/create/"},"isPartOf":{"@type":"WebPage","name":"Locally Uncensored Handbook: Install, Chat, Agent, Code, Create, Cloud","url":"https://locallyuncensored.com/guide/"},"about":{"@type":"SoftwareApplication","name":"Locally Uncensored","operatingSystem":"Windows, Linux, macOS","applicationCategory":"UtilitiesApplication"}}
+{"@context":"https://schema.org","@type":"TechArticle","headline":"Create in Locally Uncensored: Image, Video, Audio, Character Studio and Trainer","description":"How the Create tab works in Locally Uncensored: image generation and editing, video, music and speech, the Character Studio and the LoRA trainer, with local requirements and the hosted alternative.","url":"https://locallyuncensored.com/guide/create/","dateModified":"2026-10-15","inLanguage":"en","author":{"@type":"Person","name":"PurpleDoubleD","url":"https://github.com/PurpleDoubleD"},"publisher":{"@type":"Organization","name":"Locally Uncensored","url":"https://locallyuncensored.com/"},"mainEntityOfPage":{"@type":"WebPage","@id":"https://locallyuncensored.com/guide/create/"},"isPartOf":{"@type":"WebPage","name":"Locally Uncensored Handbook: Install, Chat, Agent, Code, Create, Cloud","url":"https://locallyuncensored.com/guide/"},"about":{"@type":"SoftwareApplication","name":"Locally Uncensored","operatingSystem":"Windows, Linux, macOS","applicationCategory":"UtilitiesApplication"}}
 </script>
 <link rel="icon" href="/favicon.png">
 <script type="application/ld+json">
@@ -66,6 +66,7 @@
 <a href="#music">Music</a>
 <a href="#character">Character Studio and the trainer</a>
 <a href="#advanced">Advanced settings and LoRAs</a>
+<a href="#workflows">Your own ComfyUI workflows</a>
 <a href="#gallery">The gallery</a>
 <a href="#wrong">When it goes wrong</a>
 </nav>
@@ -83,7 +84,7 @@
 <tr><td>Erase (Erase Object)</td><td>Removes a painted area and fills it in.</td><td>Hosted only</td></tr>
 <tr><td>Video</td><td>A short clip from a text prompt.</td><td>Local and hosted</td></tr>
 <tr><td>Animate (Animate Image)</td><td>Turns a still picture into a clip.</td><td>Local and hosted</td></tr>
-<tr><td>Character (Character Studio)</td><td>Trains a character from photos, then uses it in prompts.</td><td>Local (12 GB card) and hosted</td></tr>
+<tr><td>Character (Character Studio)</td><td>Trains a character from photos, then uses it in prompts.</td><td>Local (12 GB card, or a Mac with 24 GB) and hosted</td></tr>
 <tr><td>Lipsync (Talking Character)</td><td>A face that speaks an audio clip.</td><td>Local and hosted</td></tr>
 <tr><td>Music</td><td>A track from a description, with optional lyrics.</td><td>Local and hosted</td></tr>
 <tr><td>Extend (Extend Video)</td><td>Continues a clip.</td><td>Local and hosted</td></tr>
@@ -94,7 +95,7 @@
 
 <h2 id="comfyui">ComfyUI, the program behind the lanes</h2>
 
-<p>Every local lane runs on ComfyUI, an open source image and video program that the app installs, starts, repairs and updates for you. You never see its node graphs; the app builds them. If you skipped it in the wizard, the first local lane you open shows a setup card, and Settings, AI Backends, ComfyUI (Image &amp; Video) has the buttons "Install ComfyUI", "Start", "Stop", "Restart", "Repair environment" and "Update ComfyUI".</p>
+<p>Every local lane runs on ComfyUI, an open source image and video program that the app installs, starts, repairs and updates for you. You never have to see its node graphs; the app builds them. If you have a ComfyUI workflow of your own, you can import it and run it from Create, as the section <a href="#workflows">Your own ComfyUI workflows</a> below describes. If you skipped it in the wizard, the first local lane you open shows a setup card, and Settings, AI Backends, ComfyUI (Image &amp; Video) has the buttons "Install ComfyUI", "Start", "Stop", "Restart", "Repair environment" and "Update ComfyUI".</p>
 
 <p>What "Install ComfyUI" does, in the order the status line shows it: it checks for Python (on Windows it installs Python 3.12 through winget if there is none), then "Step 1/4: Downloading ComfyUI repository...", "Step 2/4" downloads PyTorch built for your graphics card ("Downloading PyTorch + Torchvision + Torchaudio (~2 GB total)", which the status line says takes ten to fifteen minutes on a typical home connection, with the live pip output below it), "Step 3/4: Installing ComfyUI dependencies", and "Step 4/4: Checking that the environment really starts...". At the end: "Install finished. ComfyUI is ready to start." The whole install needs about 5 GB of disk. ComfyUI itself listens on port 8188 on your machine.</p>
 
@@ -171,7 +172,7 @@
 
 <h2 id="character">Character Studio and the trainer</h2>
 
-<p>The Character Studio trains a LoRA, a small add-on file for the image model that knows one person or character, from your photos. Afterwards a trigger word in a prompt summons that character. The lane has two tabs: "Train new" and "Use character".</p>
+<p>The Character Studio trains a LoRA, a small add-on file for the image model that knows one person or character, from your photos. Afterwards a trigger word in a prompt summons that character. The lane has two tabs: "Train new" and "Use character". The steps below are for Windows and Linux. A Mac with 24 GB of memory or more trains with its own engine and needs no trainer setup; the <a href="/guide/character-studio/#train-mac">Character Studio guide</a> has the Mac steps, the Low VRAM setting and the text field under each photo.</p>
 
 <div class="step">
 <span class="step-num">1</span>
@@ -205,7 +206,7 @@
 <span class="step-num">4</span>
 <span class="step-title">Use the character</span>
 <div class="step-body">
-<p>The "Use character" tab lists your characters as chips with the trigger word ("Trigger word: davechar" on hover). Pick one; the footer reads "Put "davechar" in your prompt. Works best with a Z Image base model." Then switch to the Image lane, keep the LoRA active in the LoRA stack under the advanced settings, and write a prompt that contains the trigger word. Trained characters land in ComfyUI's <code>models/loras</code> folder as <code>char_&lt;trigger&gt;_zimage.safetensors</code>.</p>
+<p>The "Use character" tab lists your characters as chips with the trigger word ("Trigger word: davechar" on hover). Pick one: its LoRA is switched on, and the Z Image model it was trained for is selected when one is installed. The footer reads "Put "davechar" in your prompt and describe the key features too. The trigger word alone often does not hold the look." Then switch to the Image lane and write a prompt that contains the trigger word. The Image, Edit and video lanes also have a character chip next to the model chip, which picks the character right there. Trained characters land in ComfyUI's <code>models/loras</code> folder as <code>char_&lt;trigger&gt;_zimage.safetensors</code>.</p>
 </div>
 </div>
 
@@ -213,7 +214,56 @@
 
 <p>"Advanced settings" under the composer opens the controls the Quality preset hides: Steps, CFG scale (or Guidance), Width and Height, Seed (-1 = random; the gallery shows the seed a picture used, so you can repeat it), Batch size, and for video Frames and FPS. An Expert group has Sampler, Scheduler, Denoise, Mask edge feather, VAE and Skip CLIP layers. Leave those alone until you know what they do; the presets are tuned.</p>
 
-<p>The LoRA stack lists the add-on files in ComfyUI's <code>models/loras</code> folder, each with a strength. Empty, it reads "No LoRAs found yet. Drop .safetensors files into ComfyUI's models/loras folder and hit Rescan. Characters trained in Character Studio land there automatically." Models has a LoRAs tab of its own: "Get new" searches CivitAI for LoRAs and downloads what you pick straight into that folder, "Installed" lists what is there with its size and deletes a file you no longer want. A LoRA from Hugging Face still goes into the folder by hand. The CivitAI API key and the Hugging Face token under Settings, AI Backends unlock downloads those sites gate behind a login.</p>
+<p>The LoRA stack lists the add-on files in ComfyUI's <code>models/loras</code> folder, each with a strength. Empty, it reads "No LoRAs found yet. Drop .safetensors files into ComfyUI's models/loras folder and hit Rescan. Characters trained in Character Studio land there automatically." Models has a LoRAs tab of its own: "Get new" searches CivitAI for LoRAs and downloads what you pick straight into that folder, "Installed" lists what is there with its size and deletes a file you no longer want. The card "Add a LoRA from a link" in Get new takes a CivitAI model link or a Hugging Face link to a .safetensors file: "Check link" reads the file name, base model and size before anything is downloaded, and a file that is not a LoRA is refused. The CivitAI API key and the Hugging Face token under Settings, AI Backends unlock downloads those sites gate behind a login.</p>
+
+<h2 id="workflows">Your own ComfyUI workflows</h2>
+
+<p>If a workflow already does what you want in ComfyUI, you can import it and run it from Create without opening the node graph. This runs on Windows and Linux, in Local mode; a Mac runs no ComfyUI workflows.</p>
+
+<div class="step">
+<span class="step-num">1</span>
+<span class="step-title">Save it in ComfyUI</span>
+<div class="step-body">
+<p>Use "Save", "Export" or "Save (API Format)" in ComfyUI. The regular save format is converted with the node definitions of the running ComfyUI, so ComfyUI has to be started while you import. If it is not, the import says "ComfyUI has to be running to import a workflow saved in the regular format, because the node settings are read from it."</p>
+<p>Reroute and Primitive nodes are resolved, notes and muted nodes are left out, and bypassed nodes pass their input through. Subgraphs are unpacked the way ComfyUI unpacks them when it runs a workflow, nested ones and ones used more than once included, so the stock templates built on subgraphs can be imported. A workflow with the older group nodes is turned down: export it with "Save (API Format)" instead.</p>
+</div>
+</div>
+
+<div class="step">
+<span class="step-num">2</span>
+<span class="step-title">Import one file or a folder</span>
+<div class="step-body">
+<p>In Create, the workflow button sits among the controls of the lane. On Video, Animate and Motion Control it reads "Use your own ComfyUI workflow"; on the other lanes it is a small icon named "Workflows and tags". It opens the window "Workflows &amp; tags". Under "Install a workflow", "Choose files" picks one or several .json files, "Choose folder" imports every .json in a folder, and the box "Or paste the workflow JSON here" with "Install pasted workflow" takes pasted JSON.</p>
+<p>A workflow from a file is named after the file. With several files, each one gets its own result line under a count such as "Imported 3 of 4". A converted file says so, for example "Converted from the regular ComfyUI format (2 subgraphs unpacked)". Importing again under the same name updates the workflow in place and keeps its tags.</p>
+</div>
+</div>
+
+<div class="step">
+<span class="step-num">3</span>
+<span class="step-title">Install the node packs it needs</span>
+<div class="step-body">
+<p>When ComfyUI does not know a node of the workflow, the import names it, and a box "Missing node packs" appears. For a node whose pack LU knows, it offers the install right there; for any other, it points you to Settings, AI Backends, ComfyUI node packs, where you paste the pack's link. LU says before the install that a node pack is code that runs inside ComfyUI with the same access to your computer as ComfyUI itself. Install only packs you trust. Then press "Restart ComfyUI" and import the workflow again.</p>
+<p>The section ComfyUI node packs (Windows and Linux) lists every pack in the custom_nodes folder with where it came from, its branch, commit and date. It installs a pack from an https link to a repository on github.com, gitlab.com or codeberg.org, updates it, and removes it to the trash. A ComfyUI on another machine is not managed from here.</p>
+</div>
+</div>
+
+<div class="step">
+<span class="step-num">4</span>
+<span class="step-title">Pair it with a model and pick it</span>
+<div class="step-body">
+<p>A tag pairs a workflow with a model. Create one on the Tags view of the same window, for example the model family the workflow was built for, and give it to the workflow on the Workflows view and to a model on the Models view. Then open "Advanced settings" in Create. The Workflow selector lists every workflow whose tags match the current model. Pick yours instead of Auto and the next render runs through your graph. Your prompt, size, steps and seed still go in. On Motion Control only the model, prompt, seed, character picture and driving video are filled in; the rest runs as you saved it. Set the selector back to Auto for the built-in graph.</p>
+</div>
+</div>
+
+<div class="step">
+<span class="step-num">5</span>
+<span class="step-title">Change any setting of the workflow</span>
+<div class="step-body">
+<p>With your workflow picked, "Advanced settings" shows "Workflow parameters": each node with its values, such as the VAE, CLIP skip, LoRA strength, denoise or a value of a custom node. Numbers keep the limits ComfyUI states, and lists offer the choices ComfyUI has. What LU sets on its own (prompt, seed, size, steps, CFG, sampler, scheduler, model) is named on its node and not offered twice. Nodes fold, and "Search by name" finds a setting. Changes are kept per workflow and go into every run; "Reset" goes back to the values in the file.</p>
+</div>
+</div>
+
+<p>What has run: on Windows, stock templates without subgraphs were imported in the app, one by file and several from a folder, and one of them made a picture. Subgraphs have run in automated tests only, not yet against a running ComfyUI.</p>
 
 <h2 id="gallery">The gallery</h2>
 

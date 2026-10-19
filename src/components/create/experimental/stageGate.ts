@@ -1,5 +1,5 @@
 import type { CreateBackend, CreateIntent } from '../../../stores/createStore'
-import { videoLaneModels } from '../../../api/comfyui'
+import { runnableVideoLaneModels } from '../../../api/comfyui'
 import { imageLaneModels } from '../../../lib/image-engines'
 import type { IntentMeta } from './intents'
 
@@ -79,7 +79,10 @@ export function stageShowsSetupCard(i: StageGateInput): boolean {
     i.backend === 'local' && !!i.mlxMissing &&
     (i.requiresModels === 'image' ? i.mlxMissing.image
       : i.requiresModels === 'video' ? i.mlxMissing.video || (i.modelsLoaded && i.laneModelCount === 0)
-        : false)
+        // Motion Control (3.0.8): the tab is there while an LTX-2.3 pack is,
+        // and its list stays empty until the LoRA is installed.
+        : i.requiresModels === 'motion' ? i.modelsLoaded && i.laneModelCount === 0
+          : false)
   if (macMissing) return true
   return (
     i.mlxMissing === null && i.backend === 'local' && !!i.requiresModels && (
@@ -111,12 +114,15 @@ export function laneModelCount(
     audio: unknown[]
     lipsync: unknown[]
     motion: unknown[]
+    /** Enhance Image: the files in models/upscale_models. Optional so the
+     *  callers that never ask about it (the Mac setup gate) can leave it out. */
+    upscale?: unknown[]
   },
 ): number {
   if (!requiresModels) return 0
-  if (requiresModels === 'video') return videoLaneModels(lists.video as never, intent).length
+  if (requiresModels === 'video') return runnableVideoLaneModels(lists.video as never, intent).length
   // Dasselbe fuer Edit auf dem Mac: dort zaehlen nur die Modelle, die ein Bild
   // nehmen. Eine ComfyUI-Liste bleibt, wie sie ist.
   if (requiresModels === 'image') return imageLaneModels(lists.image as never, intent).length
-  return lists[requiresModels].length
+  return (lists[requiresModels] ?? []).length
 }

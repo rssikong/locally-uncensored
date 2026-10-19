@@ -25,7 +25,11 @@
 
 import type { ProviderId } from '../api/providers/types'
 
-type DarkenedSlotsListener = (darkened: readonly ProviderId[]) => void
+/** A fixed slot, or `openai:<entry>` for an additional OpenAI-compatible
+ *  entry (GitHub #173). Same key `modelBackendKey` answers for a pick. */
+export type BackendKey = ProviderId | `openai:${string}`
+
+type DarkenedSlotsListener = (darkened: readonly BackendKey[]) => void
 
 /**
  * Genau ein Zuhörer. Es gibt genau einen Modell-Store; eine Liste würde nur
@@ -54,7 +58,7 @@ export function onProviderSlotsDarkened(fn: DarkenedSlotsListener): void {
  * Eine im Voraus eingefrorene Liste räumt dann eine Wahl, deren Backend wieder
  * läuft.
  */
-export function announceDarkenedSlots(stillDarkened: () => readonly ProviderId[]): void {
+export function announceDarkenedSlots(stillDarkened: () => readonly BackendKey[]): void {
   const fn = listener
   if (!fn) return
   void Promise.resolve().then(() => {

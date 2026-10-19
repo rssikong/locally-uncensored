@@ -24,6 +24,9 @@ import { resolve } from 'node:path'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 
 const backendCall = vi.fn(async () => ({ status: 'ok' }))
+// 3.0.8 D20: the Train tab reads the card's memory for the Low VRAM hint;
+// this file is about the trainer setup, so no card is reported.
+vi.mock('../../../../hooks/useGraphicsMemory', () => ({ useGraphicsCardGb: () => null }))
 vi.mock('../../../../api/backend', () => ({
   isTauri: () => true,
   isMacOS: () => false,

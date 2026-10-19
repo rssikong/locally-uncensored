@@ -1,5 +1,5 @@
 import { Workflow } from 'lucide-react'
-import { isVideoModelType, type ModelType } from '../../api/comfyui'
+import { isInstalledVideoType, type ModelType } from '../../api/comfyui'
 import { useWorkflowStore } from '../../stores/workflowStore'
 import { Select } from './ui/Select'
 
@@ -19,7 +19,9 @@ export function WorkflowFinder({ modelName, modelType }: Props) {
     unassignModelType,
   } = useWorkflowStore()
 
-  const mode = isVideoModelType(modelType) ? 'video' : 'image'
+  // The Models view of the Workflows window files a Motion Control or Talking
+  // Character model under Video (the inventory does), so its tags live there.
+  const mode = isInstalledVideoType(modelType) ? 'video' : 'image'
   const matchingWorkflows = getMatchingWorkflows(modelName, mode)
   const activeWorkflow = getWorkflowForModel(modelName, modelType)
 

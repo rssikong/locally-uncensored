@@ -39,11 +39,15 @@ const SEITEN = ['docs/index.html', 'docs/cloud/index.html', 'docs/pricing/index.
  * vierzehn umschreibt, faelscht eine Versionsnotiz. Gehalten wird deshalb der
  * neueste Abschnitt, also der, in dem die heute gueltige Zahl steht. Aeltere
  * Abschnitte duerfen "six" und "ten" sagen, sie beschreiben aeltere Kataloge.
+ *
+ * Ein Kopf "## [Unreleased]" ist kein Versionsabschnitt: dort sammeln sich
+ * einzelne Korrekturen bis zum naechsten Release, die Katalogzahl steht dort
+ * nicht. Gehalten wird der oberste Abschnitt mit einer Versionsnummer.
  */
 const CHANGELOG = 'CHANGELOG.md'
 const neuesterAbschnitt = () => {
   const text = lies(CHANGELOG)
-  const start = text.indexOf('\n## [')
+  const start = text.search(/\n## \[\d/)
   expect(start, 'im CHANGELOG fehlt jeder Versionsabschnitt').toBeGreaterThanOrEqual(0)
   const ende = text.indexOf('\n## [', start + 1)
   return ende === -1 ? text.slice(start) : text.slice(start, ende)

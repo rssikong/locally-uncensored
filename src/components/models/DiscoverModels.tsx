@@ -17,11 +17,13 @@ import {
 import { startPlannedDownload } from '../../api/model-download'
 import { asOneDownload, downloadSizeGB, gbOf, imagePartFileName, includeImageInputLabel, isImagePartFile } from '../../lib/image-part'
 import { sortByTier, tierGroup } from '../../lib/render/model-tier'
+import { bundlesForTabAndSearch } from '../../lib/discover-bundle-search'
 import { getTotalRamGb } from '../../lib/hardware'
 import { vramFit } from '../../lib/vram-fit'
 import { chatModelBudgetGb, sharedMemoryWording } from '../../lib/shared-memory-wording'
 import { useGraphicsMemoryGb } from '../../hooks/useGraphicsMemory'
 import { openExternal, isMacOS } from '../../api/backend'
+import { bundleCloudTask } from '../../lib/cloud-offer'
 import { forThisPlatform } from '../../lib/mlx-only-builds'
 import { useModels } from '../../hooks/useModels'
 import { useDownloadStore } from '../../stores/downloadStore'
@@ -50,6 +52,8 @@ import { groupModels, pickDefaultVariant, computeFit, modelFootprintGb } from '.
 import { modelSkin } from './skin'
 import { ICON_SM } from '../ui/icon-size'
 import { CivitaiSearchPanel } from './CivitaiSearchPanel'
+import { ModelFileCheck, type FileCheckSubject } from './ModelFileCheck'
+import { bundleCheckTargets, chatModelCheckTargets, chatModelCheckable } from '../../lib/model-file-check'
 
 interface Props {
   category: ModelCategory
@@ -357,7 +361,9 @@ export function DiscoverModels({ category, search = '', searchSubmitToken = 0 }:
     return parseVRAM(a) - parseVRAM(b)
   }))
 
-  const tabFilteredBundles = sortedBundles.filter(b => subTab === 'uncensored' ? b.uncensored : !b.uncensored)
+  // A typed search looks in both tabs (lib/discover-bundle-search: FramePack,
+  // filed under Unfiltered, was not found from Mainstream, Discord 15.10.2026).
+  const tabFilteredBundles = bundlesForTabAndSearch(sortedBundles, subTab, search)
 
   // VRAM tier filtering for bundles
   const vramFilteredBundles = tabFilteredBundles.filter(b => {
@@ -370,9 +376,7 @@ export function DiscoverModels({ category, search = '', searchSubmitToken = 0 }:
     return vram > 20 // highend (open-ended)
   })
 
-  const filteredBundles = search
-    ? vramFilteredBundles.filter((b) => b.name.toLowerCase().includes(search.toLowerCase()) || b.description.toLowerCase().includes(search.toLowerCase()))
-    : vramFilteredBundles
+  const filteredBundles = vramFilteredBundles
 
   // Which model the Use button is currently loading. A GGUF start blocks for
   // seconds to minutes, and without this the button stayed live and a second
@@ -393,6 +397,28 @@ export function DiscoverModels({ category, search = '', searchSubmitToken = 0 }:
     findInstalledForDiscoverModel(model, downloads, installedModels as unknown as InstalledModelLike[])
 
   const isModelFullyInstalled = (model: DiscoverModel) => installedEntryFor(model) !== null
+
+  // Check files and Repair (GH #113). One dialog for the page; a bundle or a
+  // chat model opens it with its files.
+  const [checkSubject, setCheckSubject] = useState<FileCheckSubject | null>(null)
+  const canCheckModel = (model: DiscoverModel) => {
+    const entry = installedEntryFor(model)
+    return chatModelCheckable(model, entry, isBuiltinEngineEntry(entry))
+  }
+  const checkModel = (model: DiscoverModel) => setCheckSubject({
+    name: model.name,
+    groupName: model.group || model.name,
+    load: async () => {
+      const dir = await luEngineDownloadDir()
+      if (!dir) throw new Error('Could not find the model folder of the LU Engine.')
+      return chatModelCheckTargets(model, dir)
+    },
+  })
+  const checkBundle = (bundle: ModelBundle) => setCheckSubject({
+    name: bundle.name,
+    groupName: bundle.name,
+    load: async () => bundleCheckTargets(bundle.files),
+  })
 
   /** Can the Use button do anything for this row: is the local model behind it
    *  known by its picker id. A download that finished in this session is on the
@@ -943,6 +969,8 @@ export function DiscoverModels({ category, search = '', searchSubmitToken = 0 }:
         onUse={handleUseInstalled}
         canUse={canUseInstalled}
         isUsing={(m) => installedEntryFor(m)?.name === usingModel && usingModel !== null}
+        onCheck={checkModel}
+        canCheck={canCheckModel}
         onInfo={openInfo}
         withImagePart={wantsImagePart}
         onOpenUrl={(u) => openExternal(u)}
@@ -1056,6 +1084,7 @@ export function DiscoverModels({ category, search = '', searchSubmitToken = 0 }:
               <skin.BundleTile
                 bundle={bundle}
                 lane={laneOf.get(bundle.name)}
+                cloudTask={bundleCloudTask(isImage ? 'image' : 'video', bundle, laneOf.get(bundle.name))}
                 vramGb={systemVRAM}
                 sharedMemory={isMacOS()}
                 complete={isBundleComplete(bundle)}
@@ -1065,6 +1094,7 @@ export function DiscoverModels({ category, search = '', searchSubmitToken = 0 }:
                 onInstall={() => handleBundleInstall(bundle)}
                 onRetry={() => retryBundle(bundle)}
                 onClear={() => clearBundle(bundle)}
+                onCheck={() => checkBundle(bundle)}
                 onOpenUrl={(u) => openExternal(u)}
               />
             </motion.div>
@@ -1243,6 +1273,15 @@ export function DiscoverModels({ category, search = '', searchSubmitToken = 0 }:
           </div>
         )}
       </Modal>
+
+      <ModelFileCheck
+        subject={checkSubject}
+        onClose={() => {
+          setCheckSubject(null)
+          // Repair may have moved files to the Trash: the cards ask the disk again.
+          refreshBundleStatuses()
+        }}
+      />
 
       <Modal open={!!confirmDownload} onClose={() => setConfirmDownload(null)} title="Download split model">
         {confirmDownload && (

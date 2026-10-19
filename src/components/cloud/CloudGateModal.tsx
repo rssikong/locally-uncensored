@@ -34,6 +34,8 @@ import { CLOUD_PITCH, CLOUD_SUBSCRIBER_LINE, cloudSalesLines } from '../../lib/c
 import { PAST_DUE_ACTION, pastDueLine } from '../../lib/past-due'
 import { Hinweis } from '../ui/Hinweis'
 import { cloudGateHeadline } from '../../lib/mac-pc-words'
+import { GateModels } from './GateModels'
+import { landOnGatePick } from '../../lib/cloud-gate-landing'
 
 const PLANS = [
   { anchor: 'hosted', name: 'Hosted', price: '€19' },
@@ -149,6 +151,9 @@ function CloudSalesPanel({ onSignIn }: { onSignIn: () => void }) {
           </li>
         ))}
       </ul>
+      {/* What the switch leads to, model by model (3.0.7). A click shows the
+          two ways in; GateModels has the rest. */}
+      <GateModels />
       <div className="space-y-2 max-w-xs mx-auto">
         <button
           onClick={() => void openExternal(`${CLOUD_BASE}/pricing`)}
@@ -253,6 +258,13 @@ export function CloudGateModal() {
     }
   }, [open, available, setOpen, updateSettings])
 
+  // A model clicked in this gate, maybe days ago and before a checkout in
+  // the browser, is where the app lands the moment the account can use it,
+  // whether or not the gate is open then (3.0.7, lib/cloud-gate-landing).
+  useEffect(() => {
+    if (available && landOnGatePick()) updateSettings({ appMode: 'cloud' })
+  }, [available, updateSettings])
+
   // Backing out of the gate drops the model the user named on the way in
   // (clicking an LU Cloud row in the local picker). It described that one
   // click, so it must not be lying in wait for the next flip, which could
@@ -317,6 +329,7 @@ export function CloudGateModal() {
                 but this account has no active plan yet. LU Cloud is part of the paid plans.
               </p>
               <PlanGrid />
+              <GateModels />
               <StayLocalButton onLocal={stayLocal} />
               <button className={ghostBtn} onClick={() => void refresh()}>
                 <RefreshCw size={12} /> I subscribed, check again

@@ -40,7 +40,7 @@ struct Progress<'a> {
 
 /// How a download ended, short of a failure of the network or the disk.
 #[derive(Debug, PartialEq)]
-pub enum Outcome {
+pub(crate) enum Outcome {
     Saved { bytes: u64 },
     /// The service said no. The window words it, it knows what was asked for.
     Refused { status: u16 },
@@ -56,7 +56,7 @@ enum Written {
 
 /// The first request carries the session token, so it only goes where a token
 /// may go: an encrypted address, or this machine (a developer's own server).
-fn token_may_go_to(raw: &str) -> Result<reqwest::Url, String> {
+pub(crate) fn token_may_go_to(raw: &str) -> Result<reqwest::Url, String> {
     let url = reqwest::Url::parse(raw).map_err(|_| "The download address is not valid.".to_string())?;
     let host = url.host_str().unwrap_or("");
     let this_machine = matches!(host, "localhost" | "127.0.0.1" | "[::1]");
@@ -81,7 +81,7 @@ fn part_path(dest: &Path) -> PathBuf {
 /// `cancel` ends it at any point: before the first request, while a server is
 /// asked, and between two pieces of the body. The connection is dropped with
 /// the request, and the part file is removed.
-async fn fetch_to_file(
+pub(crate) async fn fetch_to_file(
     url: &str,
     token: &str,
     dest: &Path,

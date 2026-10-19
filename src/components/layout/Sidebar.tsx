@@ -2,6 +2,8 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Plus, Search, Trash2, Edit3, Check, X, MessageSquare, Code, Radio, Copy, RefreshCw, Square, Wifi, Globe, QrCode, PanelLeftOpen, PanelLeftClose } from 'lucide-react'
 import { useChatStore } from '../../stores/chatStore'
+import { HowItWorks } from '../ui/HowItWorks'
+import { HOWTO } from '../../lib/howto'
 import { latestConversationOfMode } from '../../lib/conversation-mode'
 import { useUIStore } from '../../stores/uiStore'
 import { useCompareStore } from '../../stores/compareStore'
@@ -118,6 +120,12 @@ export function Sidebar() {
   const isCodingMode = chatMode === 'codex'
   const isRemoteMode = chatMode === 'remote'
 
+  // GH #174: a full, independent copy that opens at once. Not in Remote: a
+  // copy of a dispatched chat would be a chat no phone is connected to.
+  const dupliziereChat = (id: string) => {
+    if (useChatStore.getState().duplicateConversation(id)) setView('chat')
+  }
+
   // Filter conversations by current mode
   const modeConversations = useMemo(
     () => rows.filter((r) => r.mode === chatMode),
@@ -179,7 +187,7 @@ export function Sidebar() {
       return
     }
     const persona = personasEnabled ? getActivePersona() : null
-    createConversation(activeModel, persona?.systemPrompt || '', chatMode)
+    createConversation(activeModel, persona?.systemPrompt || '', chatMode, { persona })
     setView('chat')
   }
 
@@ -1102,6 +1110,16 @@ export function Sidebar() {
                       >
                         <Edit3 size={16} />
                       </button>
+                      {!isRemoteMode && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); dupliziereChat(conv.id) }}
+                          title="Duplicate chat"
+                          aria-label="Duplicate chat"
+                          className="p-1.25 rounded-md hover:bg-white/10 text-gray-500 hover:text-gray-300"
+                        >
+                          <Copy size={16} />
+                        </button>
+                      )}
                       <button
                         onClick={(e) => { e.stopPropagation(); loescheChatMitAnsage(conv.id, conv.title) }}
                         title="Delete chat"
@@ -1145,6 +1163,9 @@ export function Sidebar() {
                   <X size={11} />
                 </button>
               </div>
+            )}
+            {isRemoteMode && HOWTO.remote && (
+              <div className="flex justify-center pb-1"><HowItWorks topic="remote" variant="line" placement="above-start" /></div>
             )}
             {isRemoteMode ? (
               <AnimatePresence mode="wait">
@@ -1241,7 +1262,7 @@ export function Sidebar() {
             role="menu"
             aria-label="Chat actions"
             className="absolute min-w-[180px] py-1.25 rounded-[8px] lu-elevated text-[14px]"
-            style={{ left: Math.min(rowMenu.x, window.innerWidth - 160), top: Math.min(rowMenu.y, window.innerHeight - 80) }}
+            style={{ left: Math.min(rowMenu.x, window.innerWidth - 160), top: Math.min(rowMenu.y, window.innerHeight - 120) }}
             onClick={(e) => e.stopPropagation()}
           >
             <button
@@ -1257,6 +1278,19 @@ export function Sidebar() {
               <Edit3 size={15} />
               <span>Rename</span>
             </button>
+            {!isRemoteMode && (
+              <button
+                role="menuitem"
+                onClick={() => {
+                  dupliziereChat(rowMenu.id)
+                  setRowMenu(null)
+                }}
+                className="w-full flex items-center gap-2.5 px-3.75 py-[7.5px] text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/[0.06]"
+              >
+                <Copy size={15} />
+                <span>Duplicate chat</span>
+              </button>
+            )}
             <button
               role="menuitem"
               onClick={() => {

@@ -65,6 +65,11 @@ test('a binary file becomes a chip and reaches the model as a description', asyn
   await expect(composerChip).toBeVisible()
   await expect(composerChip).toContainText('plumber.nes')
   await expect(composerChip).toContainText('NES ROM (iNES)')
+  // Plain chat says, above the transcript, that the model only gets a summary
+  // of a binary and where it gets the file itself (3.0.7).
+  const line = page.getByTestId('chat-notices')
+  await expect(line).toContainText('Models cannot read binary files. "plumber.nes" (NES ROM (iNES)')
+  await expect(line).toContainText('turn on Agent mode or use Code')
 
   const field = page.locator('textarea').first()
   await field.fill('what is this rom?')
@@ -144,6 +149,8 @@ test('in Agent mode the file is copied into the working folder and the model is 
 
   await page.getByTestId('composer-file-input').setInputFiles(ROM)
   await expect(page.getByTestId('composer-file-chip')).toBeVisible()
+  // In Agent mode the file goes into the folder: no "summary only" line.
+  await expect(page.getByText(/Models cannot read binary files/)).toHaveCount(0)
   await page.locator('textarea').first().fill('patch the title')
   await page.getByRole('button', { name: /Send message/i }).click()
 
@@ -162,4 +169,7 @@ test('in Agent mode the file is copied into the working folder and the model is 
   expect(user).toContain('patch the title')
   expect(user).toContain('Path in your working folder: plumber.nes')
   expect(user).toContain('Type: NES ROM (iNES)')
+  // Facts and path, no dump, and nothing is run unasked.
+  expect(user).not.toContain('4e 45 53 1a')
+  expect(user).toContain('Do not run the file or open it as a program unless the user asks you to.')
 })

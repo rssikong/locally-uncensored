@@ -12,6 +12,15 @@
 
 import type { AIModel } from '../../types/models'
 import { useProviderStore } from '../../stores/providerStore'
+import { openaiEntryOfModel } from '../providers/model-name'
+
+/** isLocal of the OpenAI-compatible backend serving `entryId`, or of the
+ *  `openai` slot when there is none (GitHub #173). */
+function openaiIsLocal(entryId: string | null | undefined): boolean {
+  const st = useProviderStore.getState()
+  const cfg = entryId ? st.openaiEntries.find((e) => e.entryId === entryId) : st.providers['openai']
+  return cfg?.isLocal === true
+}
 
 /**
  * True when the model runs on the user's own machine (Ollama, LM Studio,
@@ -28,8 +37,7 @@ export function isLocalModel(model: AIModel): boolean {
   if (model.provider === 'ollama') return true
   if (model.provider === 'anthropic') return false
   if (model.provider === 'openai') {
-    const cfg = useProviderStore.getState().providers['openai']
-    return cfg?.isLocal === true
+    return openaiIsLocal('providerEntry' in model ? model.providerEntry : undefined)
   }
   return false
 }
@@ -40,9 +48,9 @@ export function isLocalModelByName(name: string): boolean {
   const [providerId] = name.split('::')
   if (providerId === 'ollama' || !name.includes('::')) return true
   if (providerId === 'anthropic') return false
-  if (providerId === 'openai') {
-    const cfg = useProviderStore.getState().providers['openai']
-    return cfg?.isLocal === true
+  const entryId = openaiEntryOfModel(name)
+  if (providerId === 'openai' || entryId) {
+    return openaiIsLocal(entryId)
   }
   return false
 }

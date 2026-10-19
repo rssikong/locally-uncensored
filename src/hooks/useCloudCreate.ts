@@ -40,7 +40,7 @@ import { intentTakesPrompt } from '../components/create/experimental/intents'
 import { rewrittenByName } from '../lib/render/qwen-enhancer'
 import { elapsedLine } from '../lib/elapsed-line'
 import { improvePrompt } from '../lib/render/improve-prompt-run'
-import { currentHelperModel } from '../lib/cloud-helper-model'
+import { currentChatModelList, currentHelperModel } from '../lib/cloud-helper-model'
 import { bookedVideoSeconds } from '../lib/render/video-duration'
 import { studioQuote, StudioQuoteChangedError } from '../api/cloud/studio'
 import { MIN_TRAIN_IMAGES, maxTrainImages } from '../lib/train-image-cap'
@@ -353,6 +353,9 @@ export function useCloudCreate(opts: { onQuotaChange?: () => void } = {}) {
       // submit schema stays honest.
       const isUtility = op === 'removebg' || op === 'upscale' || op === 'eraser'
       const bare = isUtility || specialOp
+      // Whether this run sends negative prompt, steps and CFG (the classic
+      // shape below). The gallery entry records them only then.
+      const classicKnobs = !studioModel && !bare
       // Studio: a schema-driven step booked against its own `studio_options`,
       // never one of the fixed classic shapes below. max_credits is filled
       // in once the price is confirmed, after the uploads (Portplan Abschnitt
@@ -528,7 +531,7 @@ export function useCloudCreate(opts: { onQuotaChange?: () => void } = {}) {
         if (out.status === 'improved' && !clientSafety(out.prompt).blocked) {
           runPrompt = out.prompt
           promptOriginal = prompt
-          rewrittenBy = rewrittenByName('chat', currentHelperModel())
+          rewrittenBy = rewrittenByName('chat', currentHelperModel(), currentChatModelList())
         } else if (out.status !== 'unchanged' && !ac.signal.aborted) {
           improveFailed = true
         }
@@ -662,14 +665,18 @@ export function useCloudCreate(opts: { onQuotaChange?: () => void } = {}) {
         rewrittenBy,
         improveFailed: improveFailed || undefined,
         label,
-        negativePrompt: s.negativePrompt,
+        // D9 (3.0.7): the entry keeps what the run was sent. A Studio model
+        // and a run without the classic knobs (`bare`) got no negative
+        // prompt, steps, CFG or sampler, so none is written for them; the
+        // panel of the result leaves a 0 out (lib/render/run-settings.ts).
+        negativePrompt: classicKnobs ? s.negativePrompt : '',
         // Jeder Auftrag eines Laufs rechnet mit Keim + Index (der Server bumpt
         // den klassischen Keim; ein Studio-Lauf schickt keinen).
         seed: studioModel ? runSeed : bumpSeed(runSeed, index),
-        steps: s.steps,
-        cfgScale: s.cfgScale,
-        sampler: s.sampler,
-        scheduler: s.scheduler,
+        steps: classicKnobs ? s.steps : 0,
+        cfgScale: classicKnobs ? s.cfgScale : 0,
+        sampler: classicKnobs ? s.sampler : '',
+        scheduler: classicKnobs ? s.scheduler : '',
         width: s.width,
         height: s.height,
         intent,

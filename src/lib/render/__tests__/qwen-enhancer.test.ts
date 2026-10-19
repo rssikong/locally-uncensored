@@ -192,4 +192,12 @@ describe('the name the details give the writer', () => {
     expect(rewrittenByName('chat', 'lu-cloud::glm-5.3')).toBe('glm-5.3')
     expect(rewrittenByName('chat', 'llama3.1:8b')).toBe('llama3.1:8b')
   })
+
+  // How-to recording 12.10.2026: the details showed the raw id of the model.
+  it('the chat model is named as the picker names it', () => {
+    const models = [{ name: 'lu-cloud::moonshotai/Kimi-K2.6', displayName: 'Kimi K2.6' }]
+    expect(rewrittenByName('chat', 'lu-cloud::moonshotai/Kimi-K2.6', models)).toBe('Kimi K2.6')
+    // A model the list does not carry: the id without the path in front.
+    expect(rewrittenByName('chat', 'lu-cloud::vendor/Some-Model-24B', models)).toBe('Some-Model-24B')
+  })
 })

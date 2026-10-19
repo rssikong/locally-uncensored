@@ -52,6 +52,6 @@ describe('the face of the stage', () => {
 
   it('is what the stage draws every lane in', () => {
     const source = readFileSync(resolve(__dirname, '../Stage.tsx'), 'utf-8')
-    expect(source).toContain("<StageLayer key={intent + (isGenerating ? ':gen' : '')}>{body}</StageLayer>")
+    expect(source).toContain("<StageLayer key={intent + (isGenerating ? ':gen' : '')} footRoom={footLine}>{body}</StageLayer>")
   })
 })

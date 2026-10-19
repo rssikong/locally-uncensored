@@ -287,3 +287,44 @@ describe('mehrere Fotos aus der Referenzleiste', () => {
     for (const p of submitted[0].params.image_paths as string[]) expect(p).not.toMatch(/^https?:|^data:/)
   })
 })
+
+// D9 (3.0.7): der Eintrag haelt fest, was der Lauf geschickt hat. Die Galerie
+// zeigt Schritte, CFG und negativen Prompt (lib/render/run-settings.ts), und
+// ein Lauf, der sie nicht schickte, darf sie nicht mitbringen.
+describe('was der Galerie-Eintrag ueber die Regler sagt', () => {
+  beforeEach(async () => {
+    // Der Abbruch-Test weiter oben haelt pollJob an; hier wird wieder fertig.
+    const api = await import('../../api/cloud/jobs')
+    vi.mocked(api.pollJob).mockImplementation(async (id: string) => ({
+      id, kind: 'image', model: 'flux-schnell', status: 'succeeded',
+      result_url: `https://storage.example/${id}.png`, error: null, created_at: '', params: {},
+    }) as never)
+  })
+
+  it('ein klassischer Lauf schreibt Schritte, CFG, Sampler und negativen Prompt, wie sie gingen', async () => {
+    const s = useCreateStore.getState()
+    s.setIntent('image'); s.setCloudImageModel('flux-schnell')
+    s.setSteps(13); s.setCfgScale(4); s.setNegativePrompt('blurry')
+    await useCloudCreate().generate()
+    expect(useCreateStore.getState().error).toBeNull()
+    expect(submitted[0].params).toMatchObject({ steps: 13, cfg: 4, negative_prompt: 'blurry' })
+    const entry = useCreateStore.getState().gallery[0]
+    expect(entry.steps).toBe(13)
+    expect(entry.cfgScale).toBe(4)
+    expect(entry.negativePrompt).toBe('blurry')
+  })
+
+  it('ein Lauf ohne die Regler (Freistellen) schreibt keine', async () => {
+    useCreateStore.setState({ source: BILD })
+    const s = useCreateStore.getState()
+    s.setIntent('removebg')
+    s.setSteps(13); s.setCfgScale(4); s.setNegativePrompt('blurry')
+    await useCloudCreate().generate()
+    expect(submitted[0].params.steps).toBeUndefined()
+    const entry = useCreateStore.getState().gallery[0]
+    expect(entry.steps).toBe(0)
+    expect(entry.cfgScale).toBe(0)
+    expect(entry.sampler).toBe('')
+    expect(entry.negativePrompt).toBe('')
+  })
+})

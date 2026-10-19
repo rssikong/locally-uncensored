@@ -26,21 +26,28 @@ export const DEFAULT_SETTINGS: Settings = {
   // kam gar nicht erst zum Zug.
   personasEnabled: false,
   thinkingEnabled: true,
+  // Emoticons to emojis in the chat composer (3.0.7), as chat apps do.
+  emojiAutoReplace: true,
+  // REA plugin (3.0.7): a local MCP server, off until the user turns it on.
+  reaPluginEnabled: false,
   // Reasoning effort (2.6.8). 'high' is not a taste, it is the rung this
   // client has always sent for thinking ON. Any other default would move every
   // existing customer's token bill on update without them touching anything.
   reasoningEffort: 'high',
+  // Local models get their rung only once the user picked one there (3.0.7,
+  // after issue 176). Until then a local request stays as it was before.
+  localEffortChosen: false,
+  // Think budget (D12). 0 = auto, the request every backend got before.
+  thinkingBudget: 0,
   // Small-Model Mode (v2.5.0) — lean profile for 3B-8B local models.
   // Default OFF: big models behave exactly as before until the user flips it.
   smallModelMode: false,
-  // Chat-Tools (v2.5.3) — curated web/file/image/video tools in plain chat.
-  // Default ON so the capabilities "just work" without the Agent toggle; only
-  // tool-worthy messages route through the executor (see chat-tool-intent.ts).
-  chatToolsEnabled: true,
   cavemanMode: 'off',
   searchProvider: 'auto',
   braveApiKey: '',
   tavilyApiKey: '',
+  // D16: empty = each free search tier keeps its own User-Agent.
+  searchUserAgent: '',
   // Agent budget — bumped in v2.5.0 (the web app live-test 2026-05-25, commit
   // 1af958b2): on a real scaffold-install-fix-verify loop with a 35B
   // local model, 25 iterations / 50 tool calls fired the cap while the
@@ -57,9 +64,14 @@ export const DEFAULT_SETTINGS: Settings = {
   loopMaxPasses: 0,
   hfDownloadPathOverride: '',
   downloadLimitMBps: 0,
+  extraModelIds: {},
   // Generation timeouts (Bug P v2.4.7)
   imageGenTimeoutMinutes: 20,
   videoGenTimeoutMinutes: 60,
+  // Issue 177: the wait for the first byte of a chat answer, 0 = Off.
+  chatFirstReplyTimeoutSeconds: 600,
+  // GitHub #19: empty means the page keeps its own name, AI Terminal.
+  remotePageTitle: '',
   // Bug AA v2.5.0 — Ollama num_ctx override. 0 = use Ollama default (2048
   // on most builds). Users with RAG / long chats can bump this up.
   contextWindowOverride: 0,
@@ -70,14 +82,17 @@ export const DEFAULT_SETTINGS: Settings = {
   contextDecay: true,
   codexSendWindowTokens: DEFAULT_SEND_WINDOW_TOKENS,
   cloudSendWindowByModel: {},
-  // 2.6.8: auto-compact is OFF until someone sets a threshold. 0 is the
-  // switch, not a tuning value — see the field's comment in types/settings.ts.
-  // No STORE_VERSION bump for this key: settingsStore's migrate merges
-  // additively ({...DEFAULT_SETTINGS, ...stored}), and a profile already at
-  // the current version simply reads `undefined` here, which usableThreshold
-  // already answers with "off". A version bump that buys nothing costs a full
-  // state loss on downgrade (lib/persist-version.ts, DOWNGRADE-KONTRAKT).
+  // 3.0.7: auto-compact is ON by default, and 0 as the threshold means "fit
+  // the model's context window" (lib/compact-trigger.ts). No STORE_VERSION
+  // bump: a profile already at the current version is swapped in wholesale,
+  // so the rehydration guard in settingsStore turns a missing `autoCompact`
+  // into true. A version bump that buys nothing costs a full state loss on
+  // downgrade (lib/persist-version.ts, DOWNGRADE-KONTRAKT).
+  autoCompact: true,
   autoCompactThreshold: 0,
+  // GH #171: 0 = an attached file takes what the model's context allows.
+  // Additive like the key above, no version bump.
+  attachmentTokenLimit: 0,
   // R5-27, Entscheid vom 12.09.2026: die automatische Erinnerungs-
   // Extraktion steht ab Werk AN, auch auf LU Cloud. Bis dahin stand sie im
   // Desktop still auf aus und im Web still auf an, und im Desktop gab es

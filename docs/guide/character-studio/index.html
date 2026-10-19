@@ -4,18 +4,18 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Character Studio in Locally Uncensored: Train a Character and Keep the Likeness</title>
-<meta name="description" content="How to train a character in Locally Uncensored, on your own NVIDIA card or on LU Cloud, and how to use it so it looks like your photos: photos, trigger word, the right base model, LoRA strength. Not available locally on the Mac.">
+<meta name="description" content="How to train a character in Locally Uncensored, on your own NVIDIA card, on a Mac with 24 GB or more, or on LU Cloud, and how to use it so it looks like your photos: photos, trigger word, the right base model, LoRA strength.">
 <meta name="robots" content="index, follow">
 <meta name="theme-color" content="#0a0a0a">
 <link rel="canonical" href="https://locallyuncensored.com/guide/character-studio/">
 <meta property="og:title" content="Character Studio in Locally Uncensored: Train a Character and Keep the Likeness">
-<meta property="og:description" content="How to train a character in Locally Uncensored, on your own NVIDIA card or on LU Cloud, and how to use it so it looks like your photos: photos, trigger word, the right base model, LoRA strength. Not available locally on the Mac.">
+<meta property="og:description" content="How to train a character in Locally Uncensored, on your own NVIDIA card, on a Mac with 24 GB or more, or on LU Cloud, and how to use it so it looks like your photos: photos, trigger word, the right base model, LoRA strength.">
 <meta property="og:url" content="https://locallyuncensored.com/guide/character-studio/">
 <meta property="og:type" content="article">
 <meta property="og:image" content="https://locallyuncensored.com/social-preview.png">
 <meta name="twitter:card" content="summary_large_image">
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"TechArticle","headline":"Character Studio in Locally Uncensored: Train a Character and Keep the Likeness","description":"How to train a character in Locally Uncensored, on your own NVIDIA card or on LU Cloud, and how to use it so it looks like your photos: photos, trigger word, the right base model, LoRA strength. Not available locally on the Mac.","url":"https://locallyuncensored.com/guide/character-studio/","dateModified":"2026-10-14","inLanguage":"en","author":{"@type":"Person","name":"PurpleDoubleD","url":"https://github.com/PurpleDoubleD"},"publisher":{"@type":"Organization","name":"Locally Uncensored","url":"https://locallyuncensored.com/"},"mainEntityOfPage":{"@type":"WebPage","@id":"https://locallyuncensored.com/guide/character-studio/"},"isPartOf":{"@type":"WebPage","name":"Locally Uncensored Handbook: Install, Chat, Agent, Code, Create, Cloud","url":"https://locallyuncensored.com/guide/"},"about":{"@type":"SoftwareApplication","name":"Locally Uncensored","operatingSystem":"Windows, Linux, macOS","applicationCategory":"UtilitiesApplication"}}
+{"@context":"https://schema.org","@type":"TechArticle","headline":"Character Studio in Locally Uncensored: Train a Character and Keep the Likeness","description":"How to train a character in Locally Uncensored, on your own NVIDIA card, on a Mac with 24 GB or more, or on LU Cloud, and how to use it so it looks like your photos: photos, trigger word, the right base model, LoRA strength.","url":"https://locallyuncensored.com/guide/character-studio/","dateModified":"2026-10-15","inLanguage":"en","author":{"@type":"Person","name":"PurpleDoubleD","url":"https://github.com/PurpleDoubleD"},"publisher":{"@type":"Organization","name":"Locally Uncensored","url":"https://locallyuncensored.com/"},"mainEntityOfPage":{"@type":"WebPage","@id":"https://locallyuncensored.com/guide/character-studio/"},"isPartOf":{"@type":"WebPage","name":"Locally Uncensored Handbook: Install, Chat, Agent, Code, Create, Cloud","url":"https://locallyuncensored.com/guide/"},"about":{"@type":"SoftwareApplication","name":"Locally Uncensored","operatingSystem":"Windows, Linux, macOS","applicationCategory":"UtilitiesApplication"}}
 </script>
 <link rel="icon" href="/favicon.png">
 <script type="application/ld+json">
@@ -54,14 +54,15 @@
 <article class="lu-doc" data-handbook-guide="character-studio">
 <div class="breadcrumb"><a href="/">Home</a> &rsaquo; <a href="/guide/">Handbook</a> &rsaquo; Character Studio</div>
 <h1>Character Studio: train a character and use it</h1>
-<p class="subtitle">How to get a character that looks like your photos: which photos to pick, how training works on your own graphics card or on LU Cloud, and the steps after training that decide whether the likeness holds. Written for version 3.0.6 from the app's source.</p>
+<p class="subtitle">How to get a character that looks like your photos: which photos to pick, how training works on your own graphics card, on a Mac or on LU Cloud, and the steps after training that decide whether the likeness holds. Written for version 3.0.7 from the app's source.</p>
 <nav class="toc">
 <div class="toc-title">On this page</div>
 <a href="#what">What it does, and what it does not promise</a>
-<a href="#where">Local or Cloud, and the Mac</a>
+<a href="#where">Local or Cloud, PC or Mac</a>
 <a href="#photos">Pick the photos</a>
 <a href="#train-cloud">Train on LU Cloud</a>
 <a href="#train-local">Train on your own graphics card</a>
+<a href="#train-mac">Train on a Mac</a>
 <a href="#use">Use the character</a>
 <a href="#likeness">When the likeness is off</a>
 <a href="#wrong">When it goes wrong</a>
@@ -72,16 +73,16 @@
 <p>A finished training run does not guarantee a perfect likeness. How close the result gets depends on the photos, on using the model the character was trained for, on the LoRA strength, and on a prompt that describes the character's defining features. This page goes through each of those, because each one is a common reason for a disappointing first result.</p>
 <p>One more thing to know: the chat model does not know how the built in trainer works. If you ask it to build a "training workflow", it may invent one. You never need a workflow or a node for this; everything happens in the Character tab.</p>
 
-<h2 id="where">Local or Cloud, and the Mac</h2>
+<h2 id="where">Local or Cloud, PC or Mac</h2>
 <table>
-<tr><th></th><th>On your own graphics card (Local mode)</th><th>On LU Cloud (Cloud mode)</th></tr>
-<tr><td>Windows and Linux</td><td>Yes, with an NVIDIA card with about 12 GB of memory. AMD cards can train on Linux only, and that path is not proven.</td><td>Yes, no graphics card needed</td></tr>
-<tr><td>Mac</td><td>No. On the Mac the Character tab shows as a Cloud tool in Local mode.</td><td>Yes</td></tr>
+<tr><th></th><th>On your own machine (Local mode)</th><th>On LU Cloud (Cloud mode)</th></tr>
+<tr><td>Windows and Linux</td><td>Yes, with an NVIDIA card with about 12 GB of memory. The Low VRAM setting lets smaller cards try, from about 8 GB; that number is worked out from the trainer's own figures, not measured on such a card. AMD cards can train on Linux only, and that path is not proven.</td><td>Yes, no graphics card needed</td></tr>
+<tr><td>Mac</td><td>Yes, on Apple Silicon with 24 GB of memory or more, with the Z-Image Turbo model installed. Slow: about 7 seconds per step on an M5 Pro.</td><td>Yes</td></tr>
 <tr><td>Photos</td><td>4 to 100</td><td>4 to 30</td></tr>
-<tr><td>One time setup</td><td>About 3 GB for the trainer, about 19 GB of base files</td><td>None</td></tr>
-<tr><td>Picking the model afterwards</td><td>You pick a Z Image model yourself</td><td>Automatic</td></tr>
+<tr><td>One time setup</td><td>PC: about 3 GB for the trainer, about 19 GB of base files. Mac: a training adapter of 340 MB on the first run.</td><td>None</td></tr>
+<tr><td>Picking the model afterwards</td><td>Picking the character sets a Z Image model, when one is installed</td><td>Automatic</td></tr>
 </table>
-<p>The Cloud/Local switch is at the top right of the app. LU Cloud needs an account with credits; the prices are on the <a href="/pricing/">pricing page</a>.</p>
+<p>The Cloud/Local switch is at the top right of the app. LU Cloud needs an account; the plans are on the <a href="/pricing/">pricing page</a>.</p>
 
 <h2 id="photos">Pick the photos</h2>
 <p>The stage says it in one line: "One person or character, varied angles and lighting works best". In practice:</p>
@@ -91,7 +92,8 @@
 <li><strong>Clear faces.</strong> Sharp, not tiny in the frame, not covered by sunglasses or hands in most of them.</li>
 <li><strong>Files.</strong> PNG, JPG or WebP. Drop them on the stage ("Drop 4 to 30 photos of your character here" in Cloud mode) or use the add button. The counter shows how many you have and says "need at least 4" until you reach four.</li>
 </ul>
-<p>If you saved a character from a video earlier, "or start from a saved character" on the stage adds its photos in one click.</p>
+<p>If you saved a character from a video earlier, "or start from a saved character" on the stage adds its photos in one click. The large view of a video also offers "Use frames for a character": it takes 8 frames spread over the clip (4 to 20 with the slider), and you untick the frames that do not show the figure.</p>
+<p>In Local mode, on a PC and on a Mac, each photo has a short text field under it ("e.g. red jacket, short hair, beach"). Write what changes from photo to photo there, such as clothes, hair or place. It goes into that photo's caption after the trigger word, so the character keeps its face and body but is not tied to one outfit. An empty field keeps the plain caption. "Describe photos" fills the empty fields with the local chat model picked in Chat, if that model can see images; it never overwrites what you typed and never sends the photos to a cloud model. Cloud training takes photos only and shows no fields.</p>
 
 <h2 id="train-cloud">Train on LU Cloud</h2>
 <div class="step">
@@ -112,7 +114,7 @@
 <span class="step-num">3</span>
 <span class="step-title">Create</span>
 <div class="step-body">
-<p>Press "Create". "Training runs in the cloud and lands the character on your shelf." When it is done, the character appears under "Use character" with the name of the model family it was trained for. The download button next to it saves the trained file to your computer.</p>
+<p>Press "Create". "Training runs in the cloud and lands the character on your shelf." When it is done, the character appears under "Use character" with the name of the model family it was trained for. The download button next to it saves the trained file to your computer. For a Z Image character, "Use locally" saves it into the LoRA folder of this computer, so the local "Use character" shelf lists it too. If a file of that name is already there, LU stops and says so instead of replacing it.</p>
 </div>
 </div>
 
@@ -133,9 +135,10 @@
 </div>
 <div class="step">
 <span class="step-num">3</span>
-<span class="step-title">Photos, trigger word, length</span>
+<span class="step-title">Photos, trigger word, length, memory</span>
 <div class="step-body">
 <p>Add 4 to 100 photos and a trigger word, as for Cloud above. Pick how long it trains: "Quick" (400 steps), "Standard" (1200, the default) or "Thorough" (2400). Start with Standard. Quick is for a test run; Thorough can help when Standard is not close enough, but takes about twice as long.</p>
+<p>Next to it, "Normal" is the 12 GB recipe. "Low VRAM" trains at 512 px instead of 768 px and keeps most of the model in system memory: "Each step takes clearly longer than Normal, and fine detail comes out softer." On a card with less than 11 GB the tab suggests Low VRAM with a "Use Low VRAM" button.</p>
 </div>
 </div>
 <div class="step">
@@ -146,19 +149,44 @@
 </div>
 </div>
 
+<h2 id="train-mac">Train on a Mac</h2>
+<p>Since 3.0.7 a Mac trains characters itself, with its own image engine and without ComfyUI. The Mac build is in beta. Training on a Mac has run with 10 photos and 100 steps on one Mac with 48 GB; the Standard and Thorough settings, Macs with less memory and stopping a run in the middle have not been tried yet.</p>
+<div class="step">
+<span class="step-num">1</span>
+<span class="step-title">Check memory and the model</span>
+<div class="step-body">
+<p>The Mac needs 24 GB of memory or more. On a smaller Mac the tab says "Training a character needs a Mac with 24 GB of memory, and this one has N GB." and does not start, because the run would fill the memory until the Mac stops answering. The Mac trains on the Z-Image Turbo model that Create uses, so there are no separate base files. If it is missing, the tab reads "Training a character on this Mac needs Z-Image Turbo. Install it in the Model Manager first, then come back here."</p>
+</div>
+</div>
+<div class="step">
+<span class="step-num">2</span>
+<span class="step-title">Photos, trigger word, length</span>
+<div class="step-body">
+<p>In Local mode, open Create, "Character", "Train new". Add 4 to 100 photos, type a trigger word and pick "Quick", "Standard" or "Thorough", as on a PC. There is no Normal or Low VRAM choice on a Mac. The line under the controls reads "Runs on this Mac and takes a while (Standard, 1200 steps). The local chat model pauses for the run. The first run also downloads a 340 MB training adapter. The character lands in your LoRA folder." "Open the LoRA folder" at its end shows where the file goes.</p>
+</div>
+</div>
+<div class="step">
+<span class="step-num">3</span>
+<span class="step-title">Create, and plan for the time</span>
+<div class="step-body">
+<p>Press "Create". Training is slow on a Mac: on an M5 Pro one step takes about 7 seconds, so Standard runs a little over two hours. While it runs, a picture, a track or a video is refused with "A character is being trained on this Mac. Wait for it to finish or stop it, then try again." The finished file is named <code>char_&lt;trigger&gt;_zimage.safetensors</code> and lands in the Mac's LoRA folder, where "Use character", the character chip and the chat find it.</p>
+</div>
+</div>
+
 <h2 id="use">Use the character</h2>
 <div class="step">
 <span class="step-num">1</span>
 <span class="step-title">Pick it under "Use character"</span>
 <div class="step-body">
-<p>Open Create, "Character", "Use character", and click your character. The line under it tells you what to do: on Cloud "Put "(trigger)" in your prompt to summon the character.", locally "Put "(trigger)" in your prompt. Works best with a Z Image base model." Picking a local character switches its LoRA on and any other character's LoRA off.</p>
+<p>Open Create, "Character", "Use character", and click your character. Locally, the pick switches its LoRA on and any other character's LoRA off, and it sets the Z Image model the character was trained for when one is installed. If the model picked before already fits, it stays. The line under the shelf then reads, on Cloud, "Put "(trigger)" in your prompt to summon the character.", and locally "Put "(trigger)" in your prompt and describe the key features too. The trigger word alone often does not hold the look." The trash icon next to a local character asks first and moves its file to the Recycle Bin or the Trash.</p>
 </div>
 </div>
 <div class="step">
 <span class="step-num">2</span>
-<span class="step-title">Local only: pick a Z Image model</span>
+<span class="step-title">Local only: check the model line</span>
 <div class="step-body">
-<p>This is the step most people miss. The local trainer trains against Z Image. Picking the character does <strong>not</strong> change the image model, so if a different model (for example a Qwen or Flux model) was selected before, it stays selected and the character will not look right. Open the model picker in the prompt box and choose a Z Image model. On Cloud this happens by itself: the character runs on the model it was trained for.</p>
+<p>The local trainer trains against Z Image. If you change the image model after the pick, or no Z Image model is installed, the shelf says so in red, for example "This character was trained for Z Image. Pick a Z Image model to use it." with a "Switch model" button, or that no Z Image model is installed and to get one in the Model Manager. A run with the wrong model does not start. On Cloud the character always runs on the model it was trained for.</p>
+<p>You do not have to go through this tab every time. On the Image tab, the video tabs and, on a PC, the Edit tab, a character chip sits next to the model chip. On Image and Edit it picks the character and its model the same way. On a video tab LU first makes a picture of the character and then starts the clip from it.</p>
 </div>
 </div>
 <div class="step">
@@ -172,7 +200,7 @@
 <h2 id="likeness">When the likeness is off</h2>
 <p>Go through these in order. Change one thing at a time and keep the seed fixed (Advanced settings, Output, "Seed (−1 = random)"), so you can see what each change did.</p>
 <ol>
-<li><strong>Right model?</strong> Locally: is a Z Image model selected? This alone fixes most bad first results.</li>
+<li><strong>Right model?</strong> Locally: is a Z Image model selected? The pick sets one, but a model changed afterwards stays changed.</li>
 <li><strong>Trigger word in the prompt?</strong> Spelled exactly as you trained it.</li>
 <li><strong>Features described?</strong> Add the defining features to the prompt, as above.</li>
 <li><strong>Strength (local).</strong> Under Advanced settings, Expert, "LoRA stack", each active LoRA has a "Strength" slider. If the character barely shows, raise it a little; if pictures look burnt, stiff or all the same, lower it. Change it in small steps. Keep other LoRAs off while you test.</li>
@@ -180,12 +208,14 @@
 </ol>
 
 <h2 id="wrong">When it goes wrong</h2>
-<p><strong>"This card has (N) GB of memory and the local training recipe needs (N) GB…"</strong> The card is too small for local training. Use Character Studio in Cloud mode, which trains the same character without this limit.</p>
-<p><strong>"Training a character needs a PyTorch build that can drive your AMD card…"</strong> Local training needs an NVIDIA card, or Linux with ROCm. The rest of the app keeps working on the AMD card, and nothing was downloaded. Train in Cloud mode instead.</p>
+<p><strong>"This card has (N) GB of memory and the Normal training recipe needs (N) GB…"</strong> The card is too small for Normal. Switch to "Low VRAM" in the Train tab and press Create again, or train in Cloud mode.</p>
+<p><strong>"This card has (N) GB of memory and the local training recipe needs (N) GB…"</strong> The card is too small even for Low VRAM. Use Character Studio in Cloud mode, which trains the same character without this limit.</p>
+<p><strong>"Training a character needs a PyTorch build that can drive your AMD card…"</strong> Local training on a PC needs an NVIDIA card, or Linux with ROCm. The rest of the app keeps working on the AMD card, and nothing was downloaded. Train in Cloud mode instead.</p>
 <p><strong>The trainer setup broke or a run fails at the start.</strong> The run repairs its own environment in most cases and names the cause. If it keeps failing, "Reinstall trainer" under the train controls sets it up again; then send the log file from Settings, General, Troubleshoot when you ask for help.</p>
-<p><strong>"No local characters yet. Train one first."</strong> under "Use character", although a run finished. The list reads the LoRAs that ComfyUI sees. Make sure ComfyUI is running, then open the tab again.</p>
+<p><strong>"No local characters yet. Train one first."</strong> under "Use character", although a run finished. The list reads the LoRAs that ComfyUI sees. Make sure ComfyUI is running, then open the tab again. On a Mac the shelf reads the Mac's LoRA folder instead, and an empty folder says "No characters in the LoRA folder yet."</p>
 <p><strong>The character looks right in some pictures and not in others.</strong> That is normal for a LoRA. Fix the seed once you have a good one, and keep the description in the prompt.</p>
-<p><strong>I am on a Mac and the Character tab says it runs on LU Cloud.</strong> Local training is not available on the Mac. Switch to Cloud mode to train and use characters there.</p>
+<p><strong>"Training a character needs a Mac with 24 GB of memory…"</strong> The Mac has less than 24 GB. Train in Cloud mode instead.</p>
+<p><strong>"The trainer was ended by macOS."</strong> The run most likely did not fit into memory. Close other apps and try again.</p>
 <hr>
 <p class="small">More on the Create lanes: <a href="/guide/create/">Create: images, video, audio and characters</a>. Back to the <a href="/guide/">handbook overview</a>.</p>
 </article>

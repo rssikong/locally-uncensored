@@ -68,7 +68,8 @@ describe('the Models page routes both counters through the one rule', () => {
   it('the Installed badge asks counterView', () => {
     expect(manager).toMatch(/counterView\(installedCount, showMacLoras \? macLoraState : showMlxPanel \? mlxInventoryState : inventoryState\)/)
     // And that one number is the lane's own count, not a second reading.
-    expect(manager).toMatch(/const installedCount = showMacLoras\s*\? macLoras\.loras\.length\s*: rail === 'lora'\s*\? loraRows\.length\s*: showMlxPanel \? mlxInstalled\[mode as 'image' \| 'video'\] : filteredModels\.length/)
+    // On the Mac that lane is Image, Video or Music (macLane).
+    expect(manager).toMatch(/const installedCount = showMacLoras\s*\? macLoras\.loras\.length\s*: rail === 'lora'\s*\? loraRows\.length\s*: showMlxPanel \? mlxInstalled\[macLane\] : filteredModels\.length/)
   })
 
   it('NEGATIVE CONTROL: neither counter prints a bare list length any more', () => {

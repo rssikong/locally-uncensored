@@ -8,25 +8,25 @@ export type SettingsTab = 'general' | 'backends' | 'agent' | 'voice-remote'
 // Only PREFERENCES are listed: user CONTENT (custom personas, memories,
 // conversations, agent workflows, MCP server entries) is never touched by a
 // settings reset — those have their own delete/clear flows with their own
-// confirms. Voice lives in voiceStore (reset separately); Remote Access has
-// no persisted settings (runtime server state only). onboardingDone is a
+// confirms. Voice lives in voiceStore (reset separately); Remote Access keeps
+// only the phone's tab name (GitHub #19), the rest is runtime server state. onboardingDone is a
 // lifecycle marker and is excluded everywhere (resetSettingsKeys also guards
 // against it).
 export const SETTINGS_TAB_RESET_KEYS: Record<SettingsTab, (keyof Settings)[]> = {
   general: [
     'theme', 'userAvatarDataUrl',
     'temperature', 'topP', 'topK', 'maxTokens', 'contextWindowOverride',
-    'autoCompactThreshold',
+    'autoCompact', 'autoCompactThreshold', 'attachmentTokenLimit',
     'gpuVendor', 'gpuIndices',
-    'imageGenTimeoutMinutes', 'videoGenTimeoutMinutes',
+    'imageGenTimeoutMinutes', 'videoGenTimeoutMinutes', 'chatFirstReplyTimeoutSeconds',
   ],
   backends: ['apiEndpoint', 'hfDownloadPathOverride', 'downloadLimitMBps', 'exclusiveVramMode', 'builtinEngine'],
   agent: [
     'personasEnabled', 'defaultWorkspace',
     'agentMaxToolCalls', 'agentMaxIterations',
-    'searchProvider', 'braveApiKey', 'tavilyApiKey',
+    'searchProvider', 'braveApiKey', 'tavilyApiKey', 'searchUserAgent',
     'codexArchitectMode', 'codexArchitectModel', 'codexArchitectAllowCloud',
     'codexRepoMapEnabled', 'codexRepoMapLimit', 'codexAutoApply', 'codexReviewMode',
   ],
-  'voice-remote': [],
+  'voice-remote': ['remotePageTitle'],
 }

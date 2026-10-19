@@ -59,7 +59,7 @@ const PINNED: [&str; 37] = [
 ];
 
 /// The module the engine imports as. Never `mlx_video`.
-const MODULE: &str = "ltx_pipelines_mlx";
+pub(super) const MODULE: &str = "ltx_pipelines_mlx";
 
 /// What follows `python -m`: the module, its subcommand, and the one mode
 /// every pack in the catalogue can run. `generate` has no default mode, and
@@ -69,6 +69,101 @@ pub(super) const CLI: [&str; 3] = [MODULE, "generate", "--distilled"];
 /// LTX was trained at 24 frames a second, and the engine refuses to start
 /// without `--frame-rate`.
 pub(super) const FRAME_RATE: u32 = 24;
+
+// ── Talking Character (a2v) ───────────────────────────────────────────
+//
+// Read from the engine's source at the pinned commit (`cli.py` `_cmd_a2v`,
+// `a2vid_two_stage.py`, `ti2vid_two_stages.py`), 15.10.2026:
+//   - `a2v` takes the generation flags of `generate` (`--model`, `--gemma`,
+//     `-W`, `-H`, `--frames`, `--frame-rate`, `--low-ram`, `--seed`), plus
+//     `--audio` and `--image`. The speech is encoded by the pack's audio VAE
+//     and held frozen in both stages; the clip's sound is the input audio
+//     itself, cut to the length of the video.
+//   - Stage one runs the DEV transformer with guidance at half size (30 steps
+//     by default), stage two the distilled weights at full size. A pack that
+//     carries `transformer-dev.safetensors` runs it; the distilled packs of the
+//     catalogue leave that file out, so it is a download of its own.
+//   - With `--low-ram` stage two swaps to the pre-fused
+//     `transformer-distilled*.safetensors` the pack already has, and the
+//     distilled LoRA (7.6 GB) is never read. Without the flag the LoRA is fused
+//     in memory, which needs that file and the memory for both at once.
+//   - The audio has to cover the frames: a shorter one ends the run with an
+//     error after the model has loaded.
+
+/// What follows `python -m` for a Talking Character run.
+pub(super) const A2V_CLI: [&str; 2] = [MODULE, "a2v"];
+
+/// The files an `a2v` run reads on top of what `--distilled` reads.
+pub(super) const TALKING_FILES: &[&str] = &["transformer-dev.safetensors"];
+
+/// The longest clip a voice is turned into: ten seconds at 24 frames, on the
+/// `8k + 1` grid. A longer voice is cut there.
+pub(super) const TALKING_MAX_FRAMES: u32 = 241;
+
+/// The length of the speech the clip is not allowed to outrun: the engine's
+/// audio frames are counted with rounding, and a clip that ends exactly at the
+/// last sample can ask for one frame more than there is.
+const AUDIO_MARGIN_S: f64 = 0.1;
+
+/// The frames a voice of `audio_seconds` becomes, floored to the grid so the
+/// audio always covers them, and capped at `TALKING_MAX_FRAMES`. `asked` is a
+/// shorter length the caller wants, in seconds. `None` when the voice is too
+/// short for the shortest clip.
+pub(super) fn talking_frames(audio_seconds: f64, asked: Option<f64>) -> Option<u32> {
+    let seconds = asked.filter(|s| *s > 0.0).map_or(audio_seconds, |s| s.min(audio_seconds)) - AUDIO_MARGIN_S;
+    let frames = (seconds * FRAME_RATE as f64).floor();
+    if !frames.is_finite() || frames < 9.0 {
+        return None;
+    }
+    let f = (frames as u32).min(TALKING_MAX_FRAMES);
+    Some(f - ((f - 1) % 8))
+}
+
+/// `Duration: 00:01:02.50` out of what ffmpeg says about a file.
+pub(super) fn parse_duration(ffmpeg_says: &str) -> Option<f64> {
+    let rest = &ffmpeg_says[ffmpeg_says.find("Duration:")? + "Duration:".len()..];
+    let stamp = rest.trim_start().split(',').next()?.trim();
+    let mut parts = stamp.split(':');
+    let (h, m, s) = (parts.next()?.parse::<f64>().ok()?, parts.next()?.parse::<f64>().ok()?, parts.next()?.parse::<f64>().ok()?);
+    let total = h * 3600.0 + m * 60.0 + s;
+    (total.is_finite() && total > 0.0).then_some(total)
+}
+
+/// The length of an audio file in seconds, read with the ffmpeg the engine
+/// writes its videos with. `None` when it cannot be read.
+pub(super) fn audio_seconds(audio: &Path) -> Option<f64> {
+    let out = Command::new(ffmpeg_dir(&venv_dir()).join("ffmpeg"))
+        .arg("-hide_banner")
+        .arg("-i")
+        .arg(audio.as_os_str())
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    // Without an output file ffmpeg ends with an error, after the header.
+    parse_duration(&String::from_utf8_lossy(&out.stderr))
+}
+
+/// The peak of the VAE decode at the end of a talking run, in GB. The engine
+/// gives the decode half of the memory unless told otherwise
+/// (`LTX2_VAE_DECODE_BUDGET_GB`, `ltx_core_mlx/model/video_vae/video_vae.py`),
+/// and that half was the peak of the whole run: 20 GB of a 48 GB Mac for a
+/// clip of four seconds (real run, 15.10.2026). Below it the decode works in
+/// smaller tiles, a little slower, with the same pixels.
+pub(super) const TALKING_DECODE_BUDGET_GB: &str = "8";
+
+/// What a talking run adds after the flags of `model_args`: the speech, and
+/// the cap on the decode.
+pub(super) fn talking_args(cmd: &mut Command, audio: &Path) {
+    cmd.arg("--audio").arg(audio.as_os_str());
+    cmd.env("LTX2_VAE_DECODE_BUDGET_GB", TALKING_DECODE_BUDGET_GB);
+}
+
+/// Whether the files of `TALKING_FILES` are in `dir`. The hub moves a file
+/// into place when it is whole, so one that is there is complete.
+pub(super) fn talking_files_present(dir: &Path) -> bool {
+    TALKING_FILES.iter().all(|f| dir.join(f).is_file())
+}
 
 /// The files `--distilled` reads from an LTX-2.3 pack, with the transformer
 /// first. The dev transformer and the distilled LoRAs (26 to 56 GB) are not
@@ -413,6 +508,57 @@ mod tests {
             assert_eq!(clamp_frames(asked), given, "{asked}");
             assert_eq!(clamp_frames(asked) % 8, 1);
         }
+    }
+
+    #[test]
+    fn a_voice_becomes_frames_the_audio_covers() {
+        // 4.31 s of speech: 4.21 s of it at 24 frames is 101, floored to 97.
+        assert_eq!(talking_frames(4.31, None), Some(97));
+        for secs in [0.6, 1.0, 2.0, 3.3, 4.31, 7.77, 9.9, 10.2] {
+            let f = talking_frames(secs, None).unwrap();
+            assert_eq!(f % 8, 1, "{secs}");
+            assert!(f as f64 / FRAME_RATE as f64 <= secs - AUDIO_MARGIN_S, "{secs} s gives {f} frames, more than the voice covers");
+        }
+        // The grid point right at the end of the voice is not taken.
+        assert_eq!(talking_frames(97.0 / 24.0, None), Some(89));
+        // A long voice is cut at ten seconds.
+        assert_eq!(talking_frames(60.0, None), Some(TALKING_MAX_FRAMES));
+        assert_eq!(TALKING_MAX_FRAMES % 8, 1);
+        // A shorter length asked for wins, a longer one does not.
+        assert_eq!(talking_frames(8.0, Some(2.1)), Some(41));
+        assert_eq!(talking_frames(2.0, Some(8.0)), talking_frames(2.0, None));
+        assert_eq!(talking_frames(2.0, Some(0.0)), talking_frames(2.0, None));
+        // Too short for the shortest clip, or nothing measured.
+        assert_eq!(talking_frames(0.3, None), None);
+        assert_eq!(talking_frames(f64::NAN, None), None);
+    }
+
+    #[test]
+    fn the_length_of_a_voice_is_read_from_what_ffmpeg_says() {
+        let says = "Input #0, wav, from 'speech.wav':\n  Duration: 00:00:04.31, bitrate: 768 kb/s\n  Stream #0:0: Audio: pcm_s16le";
+        assert_eq!(parse_duration(says), Some(4.31));
+        assert_eq!(parse_duration("  Duration: 01:02:03.50, start: 0.000000"), Some(3723.5));
+        assert_eq!(parse_duration("  Duration: N/A, bitrate: N/A"), None);
+        assert_eq!(parse_duration("  Duration: 00:00:00.00, bitrate: 0"), None);
+        assert_eq!(parse_duration("speech.txt: Invalid data found when processing input"), None);
+    }
+
+    #[test]
+    fn a_talking_run_is_the_engines_a2v_and_reads_the_dev_transformer() {
+        assert_eq!(A2V_CLI, ["ltx_pipelines_mlx", "a2v"]);
+        assert_eq!(TALKING_FILES, ["transformer-dev.safetensors"]);
+        // Not in any pack the distilled mode downloads: it is a download of its own.
+        for pack in [PACK_23, PACK_23_V11, PACK_25] {
+            assert!(!TALKING_FILES.iter().any(|f| pack.contains(f)));
+        }
+        let mut cmd = Command::new("python");
+        talking_args(&mut cmd, Path::new("/v/voices/a.wav"));
+        assert_eq!(args_of(&cmd), ["--audio", "/v/voices/a.wav"]);
+        assert!(cmd.get_envs().any(|(k, v)| k == "LTX2_VAE_DECODE_BUDGET_GB" && v == Some(std::ffi::OsStr::new(TALKING_DECODE_BUDGET_GB))));
+        let root = tempfile::tempdir().unwrap();
+        assert!(!talking_files_present(root.path()));
+        put(root.path().join("transformer-dev.safetensors"), 1);
+        assert!(talking_files_present(root.path()));
     }
 
     #[test]

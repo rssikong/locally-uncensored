@@ -454,7 +454,7 @@ pub async fn system_health(
         .map_err(|e| format!("host facts probe failed: {}", e))?;
 
     Ok(SystemHealthReport {
-        version: env!("CARGO_PKG_VERSION").to_string(),
+        version: crate::app_identity::APP_VERSION.to_string(),
         host,
         ollama,
         comfyui,

@@ -195,6 +195,10 @@ export interface ClassifiedModel {
    *  from text alone. Absent on a ComfyUI file, where the family decides
    *  (lib/edit-references). */
   editImages?: number
+  /** The size of the model's weights in GB, where the Mac's MLX catalogue
+   *  says so. An edit on the Mac counts it into the memory the run takes
+   *  (lib/mac-edit-memory). Absent on a ComfyUI file. */
+  packGb?: number
   /** The model runs at its own steps and guidance, and Create's sliders do not
    *  reach it (a pack of the Mac's second image engine that is tuned to one
    *  count, lib/image-engines). Absent everywhere else. */
@@ -207,10 +211,26 @@ export interface ClassifiedModel {
    *  (api/mlx-video.ts): how many frames it has by default, the rate it plays
    *  at, the grid its frame count sits on, the size it is made at and whether
    *  the model reads a negative prompt. The Mac's video engines take a length
-   *  and, where the entry says so, a negative prompt, so this is all Create
-   *  has to set for them. Absent on a ComfyUI file, where the family's
-   *  defaults stand. */
-  mlxVideo?: { frames: number; fps: number; frameStep: number; width: number; height: number; negativePrompt: boolean; recommendedRamGB?: number; measuredRunSecondsPerClipSecond?: number }
+   *  and, where the entry says so, a negative prompt, another size on
+   *  `sizeGrid` up to `maxPixels`, and a step count from 1 to `maxSteps`
+   *  around `steps`, so this is all Create has to set for them. Absent on a
+   *  ComfyUI file, where the family's defaults stand. */
+  mlxVideo?: {
+    frames: number; fps: number; frameStep: number; width: number; height: number; negativePrompt: boolean
+    loras?: boolean; recommendedRamGB?: number; measuredRunSecondsPerClipSecond?: number
+    sizeGrid?: number; maxPixels?: number; minSide?: number; maxSide?: number
+    steps?: number; maxSteps?: number
+    /** The shot list reaches the model (LTX-2.5, lib/ltx-multishot). */
+    multishot?: boolean
+    /** A run can follow a motion video (Motion Control on the Mac). */
+    motion?: boolean
+    /** Talking Character on a Mac (api/mlx-video `mlxTalking`): the model
+     *  runs it once its own download is on disk ('ready'), and not before
+     *  ('missing'). Absent for a model that does not talk. */
+    talking?: 'ready' | 'missing'
+    /** The size of that download, in decimal GB. */
+    talkingGB?: number
+  }
 }
 
 /** The ComfyUI\models folders that hold files a user installs, none of which
@@ -465,6 +485,80 @@ export function isT2VCapable(name: string): boolean {
   return true
 }
 
+/**
+ * Reference to video (Ref2V, D24): models that take the user's picture as a
+ * REFERENCE for who or what is in the clip, not as its first frame. Animate
+ * offers them next to the i2v models. MiniMax H3 (ref2va) is not here: it is
+ * an i2v family of its own and its builder already takes the reference.
+ *
+ *  vace     Wan 2.1 VACE, WanVaceToVideo with only a reference_image
+ *  phantom  Phantom Wan (subject references)
+ *  magref   Wan 2.1 MAGREF (masked multi references)
+ *  r2v      any other file whose name says r2v / ref2v
+ */
+export type Ref2VFamily = 'vace' | 'phantom' | 'magref' | 'r2v'
+
+export function ref2vFamily(name: string | null | undefined): Ref2VFamily | null {
+  if (!name) return null
+  const lower = name.toLowerCase()
+  if (classifyModel(name) === 'minimaxh3') return null
+  if (lower.includes('vace')) return 'vace'
+  if (lower.includes('phantom')) return 'phantom'
+  if (lower.includes('magref')) return 'magref'
+  if (/(^|[^a-z0-9])(ref2v|r2v)([^a-z0-9]|$)/.test(lower)) return 'r2v'
+  return null
+}
+
+/**
+ * Why Animate cannot run this reference model, or null when it can. LU builds
+ * the reference graph for one family only (Wan 2.1 VACE, the same
+ * WanVaceToVideo node the Motion tab already drives). The others need a graph
+ * LU does not have, and a guess would end in a ComfyUI error at best and a
+ * clip that silently ignores the picture at worst.
+ */
+export function ref2vRefusal(name: string | null | undefined): string | null {
+  const family = ref2vFamily(name)
+  if (!family) return null
+  const lower = (name ?? '').toLowerCase()
+  switch (family) {
+    case 'vace':
+      if (lower.includes('module')) {
+        return 'This file is a VACE add-on module for the WanVideoWrapper nodes, not a full model. Animate runs full Wan 2.1 VACE models such as wan2.1_vace_14B_fp16.'
+      }
+      if (/wan[._-]?2[._-]?2|(^|[^a-z])fun([^a-z]|$)|high[._-]?noise|low[._-]?noise/.test(lower)) {
+        return 'Wan 2.2 VACE Fun needs its own VAE and, for the 14B, a high noise and a low noise model run one after the other. LU builds neither yet. Animate runs Wan 2.1 VACE models.'
+      }
+      return null
+    case 'phantom':
+      return 'Phantom needs its own subject reference workflow, which LU does not build yet. Animate runs Wan 2.1 VACE as a reference model.'
+    case 'magref':
+      return 'MAGREF needs its own masked reference workflow, which LU does not build yet. Animate runs Wan 2.1 VACE as a reference model.'
+    case 'r2v':
+      return 'LU cannot tell from this file name which reference workflow the model needs. Animate runs Wan 2.1 VACE as a reference model.'
+  }
+}
+
+/** Can Animate run this model with the picture as a reference? */
+export function isRunnableRef2V(name: string | null | undefined): boolean {
+  return ref2vFamily(name) !== null && ref2vRefusal(name) === null
+}
+
+/** The second line of a reference model's row in the Animate picker: what
+ *  the picture becomes, or that the model cannot run here (Create then says
+ *  why in full). Nothing on the other tabs or for any other model. */
+export function ref2vRowNote(name: string, intent: string): string | undefined {
+  if (intent !== 'animate' || !ref2vFamily(name)) return undefined
+  return ref2vRefusal(name) ? 'Reference model, not supported yet' : 'Uses your image as a reference'
+}
+
+/** The Animate list of a ComfyUI host takes the reference models of the
+ *  Motion lane (VACE sits there, not on the video list) next to the video
+ *  models. A name on both lists is kept once. */
+export function withReferenceModels(video: ClassifiedModel[], motion: ClassifiedModel[]): ClassifiedModel[] {
+  const seen = new Set(video.map((m) => m.name))
+  return [...video, ...motion.filter((m) => m.type === 'wanvace' && !seen.has(m.name))]
+}
+
 /** Can this model run the given video intent? Animate/Extend feed a start
  *  image (i2v), everything else on the video lane is a text-to-video run.
  *  ONE rule for the picker, the starter-bundle gate and submit: whenever two
@@ -481,13 +575,32 @@ export function canRunVideoIntent(name: string, intent: string): boolean {
  *  display name is not a file name: "MLX LTX-2.3 Dev" reads as image to video
  *  by name and fails on a start image in the engine. */
 export function canRunVideoLane(m: ClassifiedModel, intent: string): boolean {
-  if (!m.startImage) return canRunVideoIntent(m.name, intent)
+  if (!m.startImage) {
+    // A reference model is offered on Animate only: it does not continue a
+    // clip (Extend), and VACE without a reference has no graph on Video.
+    // One it cannot run stays listed, so its row and Create say why.
+    if (intent === 'animate' && ref2vFamily(m.name)) return true
+    if (m.type === 'wanvace' || ref2vFamily(m.name) === 'vace') return false
+    return canRunVideoIntent(m.name, intent)
+  }
   return intent === 'animate' || intent === 'extend' ? m.startImage !== 'none' : m.startImage !== 'required'
 }
 
-/** The video models the CURRENT intent can actually run (see canRunVideoLane). */
+/** The video models the CURRENT intent can actually run (see canRunVideoLane).
+ *  On Animate a reference model LU cannot run goes to the end, so it is never
+ *  the pick a fresh lane falls back to. */
 export function videoLaneModels(list: ClassifiedModel[], intent: string): ClassifiedModel[] {
-  return list.filter((m) => canRunVideoLane(m, intent))
+  const lane = list.filter((m) => canRunVideoLane(m, intent))
+  if (intent !== 'animate') return lane
+  return [...lane.filter((m) => !ref2vRefusal(m.name)), ...lane.filter((m) => ref2vRefusal(m.name))]
+}
+
+/** The video models a run of `intent` can really use: videoLaneModels without
+ *  the reference models Animate lists only to say why they cannot run. The
+ *  "nothing installed" gates count these, so a lone Phantom file does not hide
+ *  the starter download. */
+export function runnableVideoLaneModels(list: ClassifiedModel[], intent: string): ClassifiedModel[] {
+  return videoLaneModels(list, intent).filter((m) => !ref2vRefusal(m.name))
 }
 
 /** Where a bundle keeps the thing that actually generates. The rest of a
@@ -1164,10 +1277,24 @@ export async function getInstalledMainImageModels(): Promise<ClassifiedModel[]> 
   return mainModelLane(isImageModelType, false)
 }
 
+/** What the video INVENTORY counts: every video architecture, including the
+ *  three Wan lanes that isVideoModelType leaves out so the plain Video picker
+ *  never offers them (S2V for Talking Character, Animate and VACE for Motion
+ *  Control). The picker rule is the wrong rule for "what is on the disk".
+ *
+ *  Discord, thread "I can't launch Wan2.2" (15.10.2026): the catalogue's
+ *  Wan2.2-Animate-14B-Q4_K_M.gguf card said Installed and the Installed tab
+ *  did not list it, because this inventory borrowed the picker rule. Renamed
+ *  to Wan2.1.gguf it showed up (plain Wan class), and Create then ran an
+ *  Animate model through the plain Wan graph. */
+export function isInstalledVideoType(type: ModelType): boolean {
+  return isVideoModelType(type) || type === 'wans2v' || type === 'wananimate' || type === 'wanvace'
+}
+
 /** The main video folders for the INVENTORY surfaces. Video twin of
  *  getInstalledMainImageModels. */
 export async function getInstalledMainVideoModels(): Promise<ClassifiedModel[]> {
-  return mainModelLane(isVideoModelType, false)
+  return mainModelLane(isInstalledVideoType, false)
 }
 
 /** The AnimateDiff motion modules, as classified models. (getMotionModels,
@@ -2061,7 +2188,7 @@ export async function submitWorkflow(workflow: ComfyApiGraph, clientId?: string)
   if (clientId) payload.client_id = clientId
   // Use localFetch (Rust proxy in Tauri, direct fetch in dev). The previous
   // direct-only fetch broke for any ComfyUI not started by LU itself —
-  // `--enable-cors-header *` is the LU spawn flag, but a user-run ComfyUI
+  // `--enable-cors-header` is the LU spawn flag, but a user-run ComfyUI
   // Portable / cu126 / AMD build doesn't pass it, so the browser blocks the
   // POST during preflight and the only thing the user sees is the JS error
   // "Failed to fetch". The proxy bypasses the SOP entirely (it's a Rust HTTP

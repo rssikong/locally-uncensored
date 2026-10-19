@@ -25,6 +25,7 @@
  */
 
 import { parseRetryAfter } from '../../lib/http-status'
+import { FIRST_REPLY_TIMEOUT } from '../../lib/chat-reply-timeout'
 
 /** Throttles and gateway hiccups. Everything else is the server's verdict on
  *  the request itself and gets exactly one attempt. */
@@ -87,7 +88,10 @@ async function isPermanent429(res: Response): Promise<boolean> {
 async function isPermanentFlashTimeout(res: Response): Promise<boolean> {
   if (res.status !== 504) return false
   try {
-    return /flash_timeout/.test(await res.clone().text())
+    // Issue 177: the first reply window of a local server is the same kind
+    // of spent deadline. api/backend.ts answers it with a 504 and this code.
+    const body = await res.clone().text()
+    return /flash_timeout/.test(body) || body.includes(FIRST_REPLY_TIMEOUT)
   } catch {
     return false
   }

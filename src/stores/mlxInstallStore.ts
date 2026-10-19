@@ -16,6 +16,7 @@
 import { create } from 'zustand'
 import { getMlxImageInstallStatus, getMlxImageEngineStatus, cancelMlxImageInstall, type MlxInstallStatus } from '../api/mlx-image'
 import { getMlxInstallStatus, getModelInstallStatus, cancelVideoModelInstall, type InstallStatus } from '../api/mlx-video'
+import { getMusicInstallStatus, cancelMusicInstall } from '../api/mlx-music'
 
 const POLL_MS = 1200
 /** How often a Stop looks whether the slot is free again. */
@@ -24,10 +25,11 @@ const STOP_POLL_MS = 150
  *  hub) ends on its own timeout, which is thirty seconds. */
 const STOP_WAIT_MS = 35_000
 
-export type MlxInstallKind = 'image-engine' | 'image-model' | 'video-engine' | 'video-model'
+export type MlxInstallKind = 'image-engine' | 'image-model' | 'video-engine' | 'video-model' | 'music-model'
 /** One lane has one Stop: Rust ends the model download and the engine setup
- *  of a lane with the same command. */
-export type MlxInstallLane = 'image' | 'video'
+ *  of a lane with the same command. The music lane has one slot for both:
+ *  its engine comes with its one model (commands/music.rs). */
+export type MlxInstallLane = 'image' | 'video' | 'music'
 
 export interface MlxInstallEntry {
   kind: MlxInstallKind
@@ -52,6 +54,7 @@ const READERS: Record<MlxInstallKind, () => Promise<MlxInstallStatus | InstallSt
   'image-model': getMlxImageInstallStatus,
   'video-engine': getMlxInstallStatus,
   'video-model': getModelInstallStatus,
+  'music-model': getMusicInstallStatus,
 }
 
 const ADOPT_LABELS: Record<MlxInstallKind, string> = {
@@ -59,19 +62,23 @@ const ADOPT_LABELS: Record<MlxInstallKind, string> = {
   'image-model': 'Image model',
   'video-engine': 'MLX video engine',
   'video-model': 'Video model',
+  'music-model': 'Music engine',
 }
 
 const LANE_KINDS: Record<MlxInstallLane, MlxInstallKind[]> = {
   image: ['image-engine', 'image-model'],
   video: ['video-engine', 'video-model'],
+  music: ['music-model'],
 }
 
 const CANCEL: Record<MlxInstallLane, () => Promise<unknown>> = {
   image: () => cancelMlxImageInstall(),
   video: () => cancelVideoModelInstall(),
+  music: () => cancelMusicInstall(),
 }
 
-export const mlxInstallLane = (kind: MlxInstallKind): MlxInstallLane => (kind.startsWith('image') ? 'image' : 'video')
+export const mlxInstallLane = (kind: MlxInstallKind): MlxInstallLane =>
+  kind.startsWith('image') ? 'image' : kind.startsWith('music') ? 'music' : 'video'
 
 interface MlxInstallStoreState {
   entries: Record<string, MlxInstallEntry>
@@ -102,7 +109,7 @@ interface MlxInstallStoreState {
 
 const timers: Partial<Record<MlxInstallKind, ReturnType<typeof setInterval>>> = {}
 const stops: Partial<Record<MlxInstallLane, Promise<void>>> = {}
-const starts: Record<MlxInstallLane, Set<Promise<unknown>>> = { image: new Set(), video: new Set() }
+const starts: Record<MlxInstallLane, Set<Promise<unknown>>> = { image: new Set(), video: new Set(), music: new Set() }
 
 /** `stopCount` of a lane, for code outside React. */
 export const mlxLaneGeneration = (lane: MlxInstallLane): number => useMlxInstallStore.getState().stopCount[lane]
@@ -110,11 +117,11 @@ export const mlxLaneGeneration = (lane: MlxInstallLane): number => useMlxInstall
 /** For tests: no watch, no Stop and no start left over from the one before. */
 export function resetMlxInstallStoreForTest() {
   for (const kind of Object.keys(timers) as MlxInstallKind[]) unwatch(kind)
-  for (const lane of ['image', 'video'] as const) {
+  for (const lane of ['image', 'video', 'music'] as const) {
     delete stops[lane]
     starts[lane].clear()
   }
-  useMlxInstallStore.setState({ entries: {}, stopCount: { image: 0, video: 0 } })
+  useMlxInstallStore.setState({ entries: {}, stopCount: { image: 0, video: 0, music: 0 } })
 }
 
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
@@ -141,7 +148,7 @@ const fresh = (kind: MlxInstallKind, label: string, modelId: string | undefined,
 
 export const useMlxInstallStore = create<MlxInstallStoreState>()((set, get) => ({
   entries: {},
-  stopCount: { image: 0, video: 0 },
+  stopCount: { image: 0, video: 0, music: 0 },
 
   begin: (kind, label, modelId, run) => {
     // An install that is already followed is somebody's running install. The

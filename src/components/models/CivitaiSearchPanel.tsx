@@ -7,9 +7,9 @@
  * mirror toggle, one key hint, one download path, and the folder a hit lands in
  * is decided once, in `searchCivitaiModels`, from that same type.
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Search, Loader2, ExternalLink, Download, CheckCircle } from 'lucide-react'
-import { searchCivitaiModels, startCivitaiDownload, startModelDownloadToPath, type CivitAIModelResult } from '../../api/discover'
+import { checkCivitaiInstalled, civitaiInstalledInFolder, searchCivitaiModels, startCivitaiDownload, startModelDownloadToPath, type CivitAIModelResult } from '../../api/discover'
 import { openExternal } from '../../api/backend'
 import { useDownloadStore } from '../../stores/downloadStore'
 import { useWorkflowStore } from '../../stores/workflowStore'
@@ -41,9 +41,13 @@ interface Props {
   /** The Mac's LoRA lane: the folder a hit is written into, in place of a
    *  ComfyUI models folder. Absent on Windows and Linux. */
   destDir?: string
+  /** The Mac's LoRA lane: the files it has listed in `destDir`. A hit whose
+   *  file is among them says Installed without asking the disk again. Absent
+   *  on Windows and Linux, where the hits are checked in their ComfyUI folder. */
+  installed?: readonly { name: string; sizeBytes: number }[]
 }
 
-export function CivitaiSearchPanel({ modelType, title, placeholder, search = '', searchSubmitToken = 0, baseModel, destDir }: Props) {
+export function CivitaiSearchPanel({ modelType, title, placeholder, search = '', searchSubmitToken = 0, baseModel, destDir, installed }: Props) {
   const [results, setResults] = useState<CivitAIModelResult[]>([])
   const [searching, setSearching] = useState(false)
   const [query, setQuery] = useState(search)
@@ -58,6 +62,27 @@ export function CivitaiSearchPanel({ modelType, title, placeholder, search = '',
   const setCivitaiHost = useWorkflowStore((s) => s.setCivitaiHost)
   const downloads = useDownloadStore((s) => s.downloads)
   const dlStore = useDownloadStore
+  // The hits already on disk, by id (Discord #feature-requests, 3.0.7: an
+  // installed model offered Download and fetched itself a second time).
+  const [onDisk, setOnDisk] = useState<Set<number>>(() => new Set())
+
+  // Windows and Linux: each new list of hits, and every finished download, is
+  // checked in the folder the download would write to.
+  useEffect(() => {
+    if (installed || results.length === 0) return
+    let live = true
+    const check = () => { void checkCivitaiInstalled(results).then((ids) => { if (live) setOnDisk(ids) }) }
+    check()
+    window.addEventListener('comfyui-model-downloaded', check)
+    return () => { live = false; window.removeEventListener('comfyui-model-downloaded', check) }
+  }, [results, installed])
+
+  // The Mac: the lane's listing is current already, it reads itself again
+  // when a download lands.
+  const installedIds = useMemo(
+    () => (installed ? civitaiInstalledInFolder(results, installed) : onDisk),
+    [installed, results, onDisk],
+  )
 
   const runSearch = async (text: string = query) => {
     if (!text.trim()) return
@@ -152,9 +177,10 @@ export function CivitaiSearchPanel({ modelType, title, placeholder, search = '',
             const dlState = model.filename ? downloads[model.filename] : null
             const isDl = dlState?.status === 'downloading' || dlState?.status === 'connecting'
             const isDone = dlState?.status === 'complete'
+            const isInstalled = installedIds.has(model.id)
 
             return (
-              <div key={model.id} className="flex gap-3 p-3 rounded-lg bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10">
+              <div key={model.id} data-testid="civitai-hit" className="flex gap-3 p-3 rounded-lg bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10">
                 {model.thumbnailUrl && (
                   <img src={proxyImageUrl(model.thumbnailUrl)} alt="" className="w-14 h-14 rounded-lg object-cover flex-shrink-0" loading="lazy" />
                 )}
@@ -172,7 +198,12 @@ export function CivitaiSearchPanel({ modelType, title, placeholder, search = '',
                   )}
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
-                  {isDone ? (
+                  {isInstalled ? (
+                    <span className="flex items-center gap-1 px-2 t-micro text-green-700 dark:text-green-400" title="This file is already in the model folder">
+                      <CheckCircle size={14} />
+                      Installed
+                    </span>
+                  ) : isDone ? (
                     <CheckCircle size={16} className="text-green-500" />
                   ) : isDl ? (
                     <Loader2 size={16} className="animate-spin text-gray-400" />

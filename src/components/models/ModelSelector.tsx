@@ -24,9 +24,10 @@ import {
 import { CallTimeoutError } from '../../lib/call-limit'
 import { loadedOnCpuLabel, loadedOnCpuTitle } from '../../lib/ollama-window-fit'
 import { ModelLoadError } from '../../lib/ollama-errors'
-import { displayModelName, getProviderIdFromModel } from '../../api/providers'
+import { displayModelName, isOpenAISlotModel } from '../../api/providers'
 import { splitForMiddleEllipsis, modelDisplayLabel } from '../../lib/model-label'
 import { formatContextWindow } from '../../lib/formatters'
+import { lmStudioLoadContext, savedLmStudioContext } from '../../lib/lmstudio-context-pick'
 import { activateBuiltinModel, isManagedBuiltinActive } from '../../api/engine'
 import { diagnoseBuiltinEngine } from '../../api/builtin-ensure'
 import { canUseTools, resolveToolSupport, type ToolSupport } from '../../lib/tool-support'
@@ -48,7 +49,7 @@ import { cloudTeaserModels } from '../../lib/cloud-teaser-models'
 import { splitBackendSwitchRows, needsBackendSwitchHeading, foldedRowsSentence } from '../../lib/lu-engine-rows'
 import { isBuiltinEngineEntry, type InstalledModelLike } from '../../lib/lmstudio-match'
 import type { HandoverSlot } from '../../lib/openai-slot-handover'
-import { modelListIsStale } from '../../lib/model-list-staleness'
+import { modelListIsStale, openaiEntriesAreStale } from '../../lib/model-list-staleness'
 import {
   ensureLuEngineIsChatProvider, announceLuEngineSwitch, LU_ENGINE_SWAP_BUSY_NOTE,
   clearEngineErrorAfterSuccess,
@@ -445,6 +446,34 @@ function groupByFamily(models: AIModel[]): { family: string; models: AIModel[] }
 }
 
 /**
+ * GitHub #173: the rows of each additional OpenAI-compatible entry, grouped
+ * under that entry's name in the order the entries arrive, and every other row
+ * untouched. Two entries with the same name get the address added, so no two
+ * headings read the same.
+ */
+export function splitEntryRows(textModels: AIModel[]): {
+  entryGroups: { family: string; models: AIModel[] }[]
+  slotRows: AIModel[]
+} {
+  const byEntry = new Map<string, { name: string; models: AIModel[] }>()
+  const slotRows: AIModel[] = []
+  for (const m of textModels) {
+    const entry = 'providerEntry' in m ? m.providerEntry : undefined
+    if (!entry) { slotRows.push(m); continue }
+    const name = (('providerName' in m && m.providerName) || '').trim() || 'OpenAI compatible'
+    const g = byEntry.get(entry)
+    if (g) g.models.push(m)
+    else byEntry.set(entry, { name, models: [m] })
+  }
+  const all = [...byEntry.entries()]
+  const entryGroups = all.map(([id, g]) => {
+    const twin = all.some(([other, o]) => other !== id && o.name === g.name)
+    return { family: twin ? `${g.name} (${id})` : g.name, models: g.models }
+  })
+  return { entryGroups, slotRows }
+}
+
+/**
  * K6 (3.0.1): GitHub #132, AppImage/Ubuntu 24.04, "it adds models and then
  * breaks the selection field... it's fixed by restarting". Not reproduced in
  * this pass (no Linux box available, see proof doc), but a restart-only fix
@@ -476,7 +505,13 @@ export function computeModelGroups(
   holderName: string | null,
 ): { groups: { family: string; models: AIModel[] }[]; showHeadings: boolean; groupingFailed: boolean } {
   try {
-    const wechsel = splitBackendSwitchRows(textModels, luEngineHoldsChat, standbyName, holderName)
+    // GitHub #173: the rows of an additional OpenAI-compatible entry stay
+    // together under that entry's name, apart from the slot's rows, so two
+    // backends serving a model of the same name are two visible rows, each
+    // under its own backend. They never enter the slot's switch logic below:
+    // an entry is not the slot and picking from it moves nothing.
+    const { entryGroups, slotRows } = splitEntryRows(textModels)
+    const wechsel = splitBackendSwitchRows(slotRows, luEngineHoldsChat, standbyName, holderName)
     const groups: { family: string; models: AIModel[] }[] = [
       ...(wechsel.switching.length > 0 && wechsel.label
         ? [{ family: wechsel.label, models: wechsel.switching }]
@@ -486,12 +521,16 @@ export function computeModelGroups(
       ...(wechsel.holding.length > 0 && wechsel.holderLabel
         ? [{ family: wechsel.holderLabel, models: wechsel.holding }]
         : []),
+      ...entryGroups,
       ...groupByFamily(wechsel.rest),
     ]
     // The one rule, asked rather than copied (second review): one group
     // normally draws no heading, except the switch group, where the heading
-    // is the warning that picking from it moves the backend.
-    const showHeadings = needsBackendSwitchHeading(groups.map((g) => g.family), wechsel.label)
+    // is the warning that picking from it moves the backend. An entry group
+    // always carries its name: it is the only thing that says which server a
+    // row is on.
+    const showHeadings = entryGroups.length > 0
+      || needsBackendSwitchHeading(groups.map((g) => g.family), wechsel.label)
     return { groups, showHeadings, groupingFailed: false }
   } catch (e) {
     log.error('[ModelSelector] grouping the model list threw, falling back to a flat ungrouped list', {
@@ -540,7 +579,8 @@ export function lmsIdOf(model: AIModel): string {
   const raw = 'lmsKey' in model && typeof model.lmsKey === 'string'
     ? model.lmsKey
     : model.name
-  return raw.replace(/^[^:]+::/, '')
+  // GitHub #173: an additional entry's prefix `openai:<entry>::` too.
+  return raw.replace(/^[^:]+(?::[a-z0-9-]+)?::/, '')
 }
 
 /**
@@ -631,12 +671,25 @@ export function blockedPickWait(
   return luEngineSwapRunning ? 'lu-engine' : 'lm-studio'
 }
 
-export function lmsAutoLoadContext(model: AIModel): number {
+/**
+ * The window LU asks for when it loads an LM Studio model by itself (a pick in
+ * this list, or its On switch).
+ *
+ * `saved` is the person's own pick for this model (lib/lmstudio-context-pick,
+ * 0 = Auto). GH #168: this ignored it and loaded every model at 16384, so a
+ * model picked at "256K · max" came back at 16K after a switch away and back.
+ */
+export function lmsAutoLoadContext(model: AIModel, saved = 0): number {
   const max =
     'contextLength' in model && typeof model.contextLength === 'number' && model.contextLength > 0
       ? model.contextLength
-      : LMS_AUTOLOAD_CONTEXT
-  return Math.min(max, LMS_AUTOLOAD_CONTEXT)
+      : 0
+  return lmStudioLoadContext(saved, max, LMS_AUTOLOAD_CONTEXT)
+}
+
+/** The same, with the pick read from the settings. */
+function lmsLoadContextNow(model: AIModel): number {
+  return lmsAutoLoadContext(model, savedLmStudioContext(useSettingsStore.getState().settings, model.name))
 }
 
 // ── Load toggle (On / Off) ────────────────────────────────────
@@ -1156,7 +1209,7 @@ export function ModelSelector({ openUpward = false, surface = 'chat', answeredBy
     let note: SwitchNote | null = null
     try {
       if (kind === 'load') {
-        await loadLmStudioModel(id, lmsAutoLoadContext(model), { signal: cancel.signal })
+        await loadLmStudioModel(id, lmsLoadContextNow(model), { signal: cancel.signal })
       } else if (await unloadLmStudioModelAndLook(id) === 'still-loaded') {
         note = { text: lmStudioSwitchFailedSentence('unload', label, { timedOut: false, reason: LM_STUDIO_STILL_LISTED }), tone: 'error' }
       }
@@ -1318,7 +1371,7 @@ export function ModelSelector({ openUpward = false, surface = 'chat', answeredBy
       setSelectingLms(id)
       setLmsRun({ name: id, kind: 'load', via: 'pick' })
       try {
-        await loadLmStudioModel(id, lmsAutoLoadContext(model), { signal: cancel.signal })
+        await loadLmStudioModel(id, lmsLoadContextNow(model), { signal: cancel.signal })
         // Confirm it actually loaded before we route chat at it.
         const loaded = await rereadLmsLoaded()
         if (!loaded?.has(id)) {
@@ -1354,7 +1407,7 @@ export function ModelSelector({ openUpward = false, surface = 'chat', answeredBy
     // Ollama or LM Studio holds the chat, and a row you can see and cannot use
     // would be worse than the old invisibility, so the pick takes the slot
     // first and says so.
-    if ((isManagedBuiltinActive() && getProviderIdFromModel(model.name) === 'openai')
+    if ((isManagedBuiltinActive() && isOpenAISlotModel(model.name))
         || isBuiltinEngineEntry(model as unknown as InstalledModelLike)) {
       // A14 fourth review: `selectingLms` is this component's own state and it
       // only ever knew about this dropdown, while the Installed card had a
@@ -1536,7 +1589,8 @@ export function ModelSelector({ openUpward = false, surface = 'chat', answeredBy
   // fragt.
   useEffect(() => {
     const unsub = useProviderStore.subscribe((state, prev) => {
-      if (modelListIsStale(state.providers, prev.providers)) fetchModels()
+      if (modelListIsStale(state.providers, prev.providers)
+        || openaiEntriesAreStale(state.openaiEntries, prev.openaiEntries)) fetchModels()
     })
     return () => unsub()
   }, [fetchModels])
@@ -1580,7 +1634,7 @@ export function ModelSelector({ openUpward = false, surface = 'chat', answeredBy
   const gezeigtesModell = imWechselZu ?? activeModel
   const swapLaeuft = useLuEngineSwapRunning()
   const wechselLaeuft = isModelLoading || imWechselZu !== null
-    || (swapLaeuft && getProviderIdFromModel(gezeigtesModell ?? '') === 'openai')
+    || (swapLaeuft && isOpenAISlotModel(gezeigtesModell ?? ''))
   const gezeigtesObj = models.find((m) => m.name === gezeigtesModell)
   const activeDisplayName = gezeigtesModell ? modelDisplayLabel(models, gezeigtesModell) : NO_MODEL_LABEL
   // Der Punkt folgt demselben Modell wie der Name daneben, sonst haette der
@@ -1962,8 +2016,8 @@ export function ModelSelector({ openUpward = false, surface = 'chat', answeredBy
               {!inventoryLoaded && textModels.length === 0 && <ModelPickerSkeleton />}
               {inventoryLoaded && textModels.length === 0 && emptyList}
 
-              {groups.map(({ family, models: groupModels }) => (
-                <div key={family}>
+              {groups.map(({ family, models: groupModels }, gi) => (
+                <div key={`${gi}-${family}`}>
                   {/* Section header. One group normally draws none; an LU
                       Engine group under a foreign chat backend draws one
                       anyway, because that heading is the warning that picking

@@ -102,7 +102,7 @@ function safeRows(models: AIModel[], paidPlan: boolean | null): PickerRow[] {
     log.error('[CloudModelPicker] building the rows threw, showing bare names', { err: e, modelCount: models.length })
     return models.filter((m) => m.type === 'text').map((model) => ({
       name: model.name, model, label: displayModelName(model.name), family: 'Other',
-      mark: null, vision: false, thinking: null, free: null, context: null, rates: null, chatOnly: false, limitedCapacity: false,
+      mark: null, vision: false, thinking: null, free: null, context: null, rates: null, chatOnly: false, limitedCapacity: false, quietNote: null,
     }))
   }
 }
@@ -471,6 +471,11 @@ export function CloudModelPicker({
                         <span className="lu-picker-quiet" title={LIMITED_CAPACITY_TITLE} data-note="limited-capacity">
                           {LIMITED_CAPACITY_LABEL}
                         </span>
+                      </span>
+                    ) : row.quietNote ? (
+                      <span className="lu-picker-lead">
+                        {lead}
+                        <span className="lu-picker-quiet" data-note="quiet">{row.quietNote}</span>
                       </span>
                     ) : lead}
                     <span className="lu-picker-fill" />

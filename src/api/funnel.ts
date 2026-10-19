@@ -18,6 +18,15 @@ export type FunnelEvent =
   | 'cloud_switch_arm'
   | 'cloud_switch_enter'
   | 'cloud_switch_leave'
+  | GateFunnelEvent
+
+/** The clicks in the gate pop-up (3.0.7): a model, then one of the two ways
+ *  in. The name is the whole message here too; which model goes with the
+ *  checkout, never with the counter. */
+export type GateFunnelEvent =
+  | 'cloud_gate_model_click'
+  | 'cloud_gate_pick_sub'
+  | 'cloud_gate_pick_credits'
 
 export function funnelEventFor(action: CloudSwitchAction): FunnelEvent {
   switch (action) {
@@ -29,7 +38,15 @@ export function funnelEventFor(action: CloudSwitchAction): FunnelEvent {
 }
 
 export function reportCloudSwitch(action: CloudSwitchAction): void {
-  const event = funnelEventFor(action)
+  reportFunnel(funnelEventFor(action))
+}
+
+/** A click in the gate pop-up, counted like a press of the switch. */
+export function reportCloudGate(event: GateFunnelEvent): void {
+  reportFunnel(event)
+}
+
+function reportFunnel(event: FunnelEvent): void {
   try {
     void backendCall('funnel_ping', { event }).catch(() => {})
   } catch {

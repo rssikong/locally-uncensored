@@ -83,19 +83,81 @@ test('mac local: MLX lanes run locally, cloud-only lanes stay visible as teasers
   // Everything hosted-only keeps its place in the bar as a locked teaser —
   // The owner's rule: what can't run locally is still shown, not deleted.
   // R5-67 renamed the upscale label to "Enhance Image" (parity with web).
-  for (const label of ['Enhance Image', 'Erase Object', 'Character Studio', 'Talking Character', 'Music', 'Extend Video', 'Motion Control']) {
+  // Enhance Image is locked here because no upscaler is installed; with
+  // SeedVR2 it is a local tab (the Enhance walk below).
+  // Music is here because this Mac has no music engine: since 14.10.2026 a
+  // Mac with ACE-Step 1.5 installed has a local Music tab (mac-music.spec.ts),
+  // one without it keeps the teaser.
+  for (const label of ['Enhance Image', 'Erase Object', 'Talking Character', 'Music', 'Extend Video', 'Motion Control']) {
     await expect(page.getByRole('radio', { name: `${label}, runs on LU Cloud` })).toBeVisible()
   }
+  // Character Studio is a local tab: "Use character" runs the LoRA from the
+  // Mac's LoRA folder through MLX.
+  await expect(page.getByRole('radio', { name: 'Character Studio', exact: true })).toBeVisible()
 
-  // A locked lane opens the teaser instead of switching the lane.
+  // A locked lane opens the teaser instead of switching the lane, and on a
+  // Mac without the music engine the teaser offers no local Music either.
   await page.getByRole('radio', { name: 'Music, runs on LU Cloud' }).click()
   await expect(page.getByRole('radio', { name: 'Image', exact: true })).toBeChecked()
 
-  // Lanes that need a ComfyUI upload/node have no Mac path at all and are not
-  // offered — a visible-but-broken button would be the worse outcome.
-  await expect(page.getByRole('radio', { name: /^Remove Background/ })).toHaveCount(0)
+  // Remove Background runs on every Mac through macOS Vision: a plain tab.
+  await expect(page.getByRole('radio', { name: 'Remove Background', exact: true })).toBeVisible()
+  // Lanes that need a model this Mac does not have are not offered: a
+  // visible-but-broken button would be the worse outcome.
   await expect(page.getByRole('radio', { name: /^Edit \/ Image to Image/ })).toHaveCount(0)
   await expect(page.getByRole('radio', { name: /^Animate Image/ })).toHaveCount(0)
+})
+
+test('mac local: Remove Background cuts out through macOS Vision, never through ComfyUI', async ({ page }) => {
+  await bootLocalCreate(page, MAC_OPTS)
+  await page.getByRole('radio', { name: 'Remove Background', exact: true }).click()
+  await page.locator('input[type="file"]').first().setInputFiles({ name: 'car.png', mimeType: 'image/png', buffer: ONE_PIXEL_PNG })
+  await expect(page.getByRole('img', { name: 'source' })).toBeVisible({ timeout: 15_000 })
+  // No node pack to install: the Mac has the tool built in.
+  await expect(page.getByText(/ComfyUI/)).toHaveCount(0)
+  await page.getByRole('button', { name: /^Create$/ }).last().click()
+  await expect
+    .poll(async () => (await mlxCalls(page)).filter((c) => c.cmd === 'mlx_cutout').length, { timeout: 30_000 })
+    .toBe(1)
+  expect(String(requireCall(await mlxCalls(page), 'mlx_cutout').raw.image)).toContain('start-images')
+  expect(await comfyCalls(page)).toHaveLength(0)
+})
+
+test('mac local: Enhance Image runs SeedVR2 on the Mac once it is installed, never ComfyUI', async ({ page }) => {
+  // Without an upscaler the tab stays a locked teaser (the first walk above).
+  // With SeedVR2 installed it is a plain tab, and the run goes to mlx_upscale.
+  await bootLocalCreate(page, {
+    ...MAC_OPTS,
+    mlx: { engineInstalled: true, mfluxEngineInstalled: true, installedImages: ['sd-turbo', 'seedvr2-3b'] },
+  })
+  const tab = page.getByRole('radio', { name: 'Enhance Image', exact: true })
+  await expect(tab).toBeVisible({ timeout: 15_000 })
+  await tab.click()
+  await expect(tab).toBeChecked()
+  // The one setting the run takes: the factor. 2x is where it starts.
+  const factor = page.getByRole('radiogroup', { name: 'Enhance factor' })
+  await expect(factor.getByRole('radio', { name: '2x' })).toBeChecked()
+  await factor.getByRole('radio', { name: '4x' }).click()
+  await expect(factor.getByRole('radio', { name: '4x' })).toBeChecked()
+  // No resolution of the hosted tool and no model picker on this tab.
+  await expect(page.getByRole('radio', { name: '8K' })).toHaveCount(0)
+  await page.locator('input[type="file"]').first().setInputFiles({ name: 'car.png', mimeType: 'image/png', buffer: ONE_PIXEL_PNG })
+  await expect(page.getByRole('img', { name: 'source' })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByText(/ComfyUI/)).toHaveCount(0)
+  await page.getByRole('button', { name: /^Create$/ }).last().click()
+  await expect
+    .poll(async () => (await mlxCalls(page)).filter((c) => c.cmd === 'mlx_upscale').length, { timeout: 30_000 })
+    .toBe(1)
+  const call = requireCall(await mlxCalls(page), 'mlx_upscale').raw
+  expect(String(call.image)).toContain('start-images')
+  expect(call.scale).toBe(4)
+  expect(String(call.run)).toMatch(/^run-/)
+  // The upscaler is never handed a prompt as an image model.
+  expect((await mlxCalls(page)).filter((c) => c.cmd === 'mlx_generate')).toHaveLength(0)
+  expect(await comfyCalls(page)).toHaveLength(0)
+  // The result lands in the gallery of this Mac, and Create is free again.
+  await expect(page.getByRole('button', { name: /^Create$/ }).last()).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByText(/Enhance failed/)).toHaveCount(0)
 })
 
 test('mac local: image generate dispatches to MLX, never to ComfyUI', async ({ page }) => {
@@ -184,6 +246,80 @@ test('mac local: a distilled LTX pack shows no negative field and gets none', as
   expect(Number(gen.raw.seconds)).toBeCloseTo(49.5 / 24, 5)
 })
 
+test('mac local: a Wan takes a size on its grid and a step count, and the run gets exactly those', async ({ page }) => {
+  // Wan reads `--width`, `--height` (floored to 16) and `--steps`
+  // (`size_grid` and `default_steps` in video.rs).
+  await bootLocalCreate(page, MAC_OPTS)
+  await page.getByRole('radio', { name: 'Video', exact: true }).click()
+  await openDrawer(page)
+  await expect(drawer(page).getByText('Guidance', { exact: true })).toHaveCount(0)
+  // The steps start at the config's own 50 of Wan 2.1.
+  await expect(slider(page, 'Steps')).toHaveValue('50')
+  await expect(drawer(page).getByTestId('mac-video-size')).toContainText('Runs at 832×480 px')
+  await drawer(page).getByRole('button', { name: 'Swap orientation' }).click()
+  await expect(drawer(page).getByTestId('mac-video-size')).toContainText('Runs at 480×832 px')
+  await slider(page, 'Steps').fill('8')
+  // Wan's 720p chip would ask for more than this model's own pixels.
+  await expect(drawer(page).getByRole('button', { name: '720p', exact: true })).toHaveCount(0)
+  await page.keyboard.press('Escape')
+  await page.locator('textarea').first().fill('slow drifting clouds over a lake')
+  await page.getByRole('button', { name: /^Create$/ }).last().click()
+  await expect
+    .poll(async () => (await mlxCalls(page)).filter((c) => c.cmd === 'video_generate').length, { timeout: 40_000 })
+    .toBeGreaterThan(0)
+  const gen = requireCall(await mlxCalls(page), 'video_generate')
+  expect(gen.id).toBe('wan21-t2v-1.3b')
+  expect([gen.raw.width, gen.raw.height, gen.raw.steps]).toEqual([480, 832, 8])
+})
+
+test('mac local: a distilled LTX pack takes a size on 64 inside its own pixels, and no steps', async ({ page }) => {
+  // `-W`/`-H` floor to 64 on the second engine, and `--distilled` reads no
+  // `--steps`. A size larger than the pack's own is brought down before the
+  // run, keeping its shape.
+  await bootLocalCreate(page, { ...MAC_OPTS, mlx: { installedVideos: ['ltx-2.3-q4'], ltx2EngineInstalled: true } })
+  await page.getByRole('radio', { name: 'Video', exact: true }).click()
+  await openDrawer(page)
+  await expect(drawer(page).getByText('Steps', { exact: true })).toHaveCount(0)
+  await expect(drawer(page).getByTestId('mac-video-size')).toContainText('Runs at 768×512 px')
+  await drawer(page).getByRole('button', { name: '1:1', exact: true }).click()
+  await expect(drawer(page).getByTestId('mac-video-size')).toContainText('Runs at 576×576 px')
+  await expect(drawer(page).getByTestId('mac-video-size')).toContainText('steps of 64 px')
+  await page.keyboard.press('Escape')
+  await page.locator('textarea').first().fill('slow drifting clouds over a lake')
+  await page.getByRole('button', { name: /^Create$/ }).last().click()
+  await expect
+    .poll(async () => (await mlxCalls(page)).filter((c) => c.cmd === 'video_generate').length, { timeout: 40_000 })
+    .toBeGreaterThan(0)
+  const gen = requireCall(await mlxCalls(page), 'video_generate')
+  expect(gen.id).toBe('ltx-2.3-q4')
+  expect([gen.raw.width, gen.raw.height]).toEqual([576, 576])
+  expect(gen.raw.steps).toBeUndefined()
+})
+
+test('mac local: an LTX-2.5 pack takes the shot list, written out as cuts in its prompt', async ({ page }) => {
+  // LTX-2.5 cuts where the prompt says so in prose (lib/ltx-multishot), and
+  // the pack reads the prompt as ComfyUI does. LTX-2.3 is offered no list.
+  await bootLocalCreate(page, { ...MAC_OPTS, mlx: { installedVideos: ['ltx-2.3-q4', 'ltx-2.5-q4'], ltx2EngineInstalled: true } })
+  await page.getByRole('radio', { name: 'Video', exact: true }).click()
+  await openDrawer(page)
+  await expect(drawer(page).getByText('Shots', { exact: true })).toHaveCount(0)
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: /LTX-2\.3 Distilled 4-bit/ }).first().click()
+  await page.getByRole('option', { name: /LTX-2\.5 Distilled 4-bit/ }).first().click()
+  await openDrawer(page)
+  await slider(page, 'Shots').fill('2')
+  await drawer(page).getByPlaceholder('Describe the next shot…').fill('close up of her face, she smiles')
+  await page.keyboard.press('Escape')
+  await page.locator('textarea').first().fill('a woman in a red coat walks through the rain')
+  await page.getByRole('button', { name: /^Create$/ }).last().click()
+  await expect
+    .poll(async () => (await mlxCalls(page)).filter((c) => c.cmd === 'video_generate').length, { timeout: 40_000 })
+    .toBeGreaterThan(0)
+  const gen = requireCall(await mlxCalls(page), 'video_generate')
+  expect(gen.id).toBe('ltx-2.5-q4')
+  expect(gen.prompt).toBe('a woman in a red coat walks through the rain. A hard cut transitions to the next shot, with the same characters. close up of her face, she smiles.')
+})
+
 // A real picture, one pixel wide: the Stage decodes what it is handed.
 const ONE_PIXEL_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
@@ -226,6 +362,67 @@ test('mac local: Animate Image hands the picked image to the MLX video model', a
   expect(await comfyCalls(page)).toHaveLength(0)
 })
 
+// M1 (14.10.2026): Extend Video on a Mac. The last frame of the picked clip
+// becomes the start image of an image to video run, as on Windows, on the
+// models that Animate runs on. The clip is one the browser records here, so
+// it is a real video the page decodes; such a clip reports no duration until
+// it is sought to its end (lib/video-frames lastFrame).
+test('mac local: Extend Video hands the last frame of the picked clip to the MLX video model', async ({ page }) => {
+  await bootLocalCreate(page, { ...MAC_OPTS, mlx: { installedVideos: ['wan21-t2v-1.3b', 'wan22-ti2v-5b-q8'] } })
+  await page.getByRole('radio', { name: 'Extend Video', exact: true }).click()
+  const clip = await page.evaluate(async () => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 64
+    canvas.height = 48
+    const ctx = canvas.getContext('2d')!
+    const recorder = new MediaRecorder(canvas.captureStream(10), { mimeType: 'video/webm' })
+    const chunks: Blob[] = []
+    recorder.ondataavailable = (e) => chunks.push(e.data)
+    const stopped = new Promise((resolve) => { recorder.onstop = resolve })
+    recorder.start()
+    for (let i = 0; i < 6; i++) {
+      ctx.fillStyle = i % 2 ? '#c03' : '#03c'
+      ctx.fillRect(0, 0, 64, 48)
+      await new Promise((r) => setTimeout(r, 100))
+    }
+    recorder.stop()
+    await stopped
+    const bytes = new Uint8Array(await new Blob(chunks, { type: 'video/webm' }).arrayBuffer())
+    let binary = ''
+    for (const b of bytes) binary += String.fromCharCode(b)
+    return btoa(binary)
+  })
+  await page.locator('input[type="file"][accept^="video/"]').setInputFiles({ name: 'dance.webm', mimeType: 'video/webm', buffer: Buffer.from(clip, 'base64') })
+  await expect(page.getByText('Continues: dance.webm')).toBeVisible({ timeout: 20_000 })
+  await page.locator('textarea').first().fill('she keeps dancing as the camera pulls back')
+  await page.getByRole('button', { name: /^Create$/ }).last().click()
+  await expect
+    .poll(async () => (await mlxCalls(page)).filter((c) => c.cmd === 'video_generate').length, { timeout: 40_000 })
+    .toBeGreaterThan(0)
+  const calls = await mlxCalls(page)
+  expect(Number(requireCall(calls, 'video_stage_start_image').raw.bytes)).toBeGreaterThan(0)
+  const gen = requireCall(calls, 'video_generate')
+  // The model that takes an image, not the text only one.
+  expect(gen.id).toBe('wan22-ti2v-5b-q8')
+  expect(gen.prompt).toContain('keeps dancing')
+  expect(gen.raw.init_image).toBe('/tmp/lu-e2e/videos/start-images/e2e-start.png')
+  expect(await comfyCalls(page)).toHaveLength(0)
+})
+
+// Found by the how-it-works film (15.10.2026): Extend on a Mac showed the
+// ComfyUI graph's steps, size chips and frames under LTX-2.3 Distilled 4-bit,
+// and a Negative switch the model never reads. It is the same run as
+// Animate, so it has the same row: the length on the model's grid.
+test('mac local: Extend Video shows the length of its model and no slider of the ComfyUI graph', async ({ page }) => {
+  await bootLocalCreate(page, { ...MAC_OPTS, mlx: { installedVideos: ['ltx-2.3-q4'] } })
+  await page.getByRole('radio', { name: 'Extend Video', exact: true }).click()
+  await expect(page.getByTestId('mac-video-length')).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByText('Quality (steps)')).toHaveCount(0)
+  await expect(page.getByText('336p', { exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Negative', exact: true })).toHaveCount(0)
+  expect(await comfyCalls(page)).toHaveLength(0)
+})
+
 test('mac local: a model that needs a start image waits for it and starts nothing', async ({ page }) => {
   // Wan 2.2 I2V cannot run from text. Without an image it would load two 14B
   // experts and then fail on a tensor shape, so nothing is called before the
@@ -264,7 +461,9 @@ function drawer(page: Page) {
 
 async function openDrawer(page: Page) {
   await page.getByRole('button', { name: 'Advanced settings' }).click()
-  await expect(drawer(page).getByRole('button', { name: 'Quality', exact: true })).toBeVisible({ timeout: 15_000 })
+  // Output is in the drawer on every tab. Quality is not on the Mac's video
+  // tab while its model takes no size and no steps.
+  await expect(drawer(page).getByRole('button', { name: 'Output', exact: true })).toBeVisible({ timeout: 15_000 })
 }
 
 /** The range input under a labelled slider of the drawer. */
@@ -291,11 +490,10 @@ test('mac local: Edit with Qwen-Image 2.1 hands the picked image and the prompt 
 
   await page.locator('input[type="file"]').first().setInputFiles({ name: 'car.png', mimeType: 'image/png', buffer: ONE_PIXEL_PNG })
   await expect(page.getByRole('img', { name: 'source' })).toBeVisible({ timeout: 15_000 })
-  // An edit from the prompt alone: no mask and no strength, as the model
-  // takes neither on Windows. The reference strip is the one Windows shows.
-  await expect(page.getByText(/needs no mask/)).toBeVisible()
-  await expect(page.getByRole('button', { name: /Paint mask|Edit mask/ })).toHaveCount(0)
-  await expect(page.getByText('Edit strength')).toHaveCount(0)
+  // An edit from the prompt, and under a mask where one is painted (mflux
+  // --mask-image). The reference strip is the one Windows shows.
+  await expect(page.getByText(/leave the mask empty to edit the whole image/)).toBeVisible()
+  await expect(page.getByRole('button', { name: /Paint mask/ })).toBeVisible()
   await expect(page.getByTestId('reference-strip')).toBeVisible()
   if (process.env.LU_SHOTS) await page.screenshot({ path: `${process.env.LU_SHOTS}/mac-edit-source.png` })
 
@@ -369,7 +567,10 @@ test('mac local: steps, CFG, size, seed and negative prompt reach Qwen-Image 2.1
   for (const label of ['Sampler', 'Scheduler', 'VAE', 'Skip CLIP layers', 'Denoise (raw)']) {
     await expect(drawer(page).getByText(label, { exact: true })).toHaveCount(0)
   }
-  await expect(drawer(page).getByText('Native HiRes')).toHaveCount(0)
+  // HiRes runs on the Mac for a model that edits: a second pass over the
+  // picture (lib/mac-hires). The latent upscale method is Windows only.
+  await expect(drawer(page).getByText('Native HiRes')).toBeVisible()
+  await expect(drawer(page).getByText('Latent upscale method')).toHaveCount(0)
   if (process.env.LU_SHOTS) await page.screenshot({ path: `${process.env.LU_SHOTS}/mac-qwen21-settings.png` })
   await page.keyboard.press('Escape')
 
@@ -424,6 +625,91 @@ test('mac local: Cancel ends the image the second engine is making, and nothing 
   await expect(page.getByText(/Generation failed/)).toHaveCount(0)
   await expect(page.getByText(/stopped the engine/)).toHaveCount(0)
   await expect(page.locator('img[src^="data:image/png"]')).toHaveCount(0)
+})
+
+// GH #148: "Improve my prompt" with the Qwen-Image 2.1 prompt enhancer from
+// the Model Manager (commands/mlx_enhancer.rs). It rewrites on the Mac, before
+// the picture, and the picture takes its prompt.
+const ENHANCED_MAC: TauriMockOptions = {
+  ...MAC_OPTS,
+  mlx: {
+    installedImages: ['qwen-image-2.1-8bit', 'qwen-image-2.1-pe-t2i-4bit', 'qwen-image-2.1-pe-i2i-4bit'],
+    mfluxEngineInstalled: true,
+    enhancerAnswer: 'The user wants a poster.\n</think>\n\nA long rewritten prompt from the Qwen enhancer.',
+  },
+}
+const improveSwitch = (page: Page) => drawer(page).getByRole('switch', { name: /Improve my prompt/ })
+
+test('mac local: the Qwen enhancer rewrites a new picture on the Mac, before the image, and the image takes its prompt', async ({ page }) => {
+  await bootLocalCreate(page, ENHANCED_MAC)
+  await expect(page.getByRole('radio', { name: 'Image', exact: true })).toBeVisible({ timeout: 15_000 })
+  await openDrawer(page)
+  await expect(improveSwitch(page)).toBeVisible()
+  await improveSwitch(page).click()
+  await expect(improveSwitch(page)).toHaveAttribute('aria-checked', 'true')
+  // Only the official edition has an MLX build: no "No Filter" entry.
+  await expect(drawer(page).getByRole('radiogroup', { name: 'Rewritten by' }).getByRole('radio')).toHaveText(['Qwen enhancer', 'Chat model'])
+  await expect(drawer(page).getByRole('radio', { name: 'Qwen enhancer', exact: true })).toHaveAttribute('aria-checked', 'true')
+  await field(page, 'Seed (−1 = random)').fill('77')
+  await page.keyboard.press('Escape')
+
+  await page.locator('textarea').first().fill('a poster')
+  await page.getByRole('button', { name: /^Create$/ }).last().click()
+  await expect.poll(() => generates(page), { timeout: 30_000 }).toBe(1)
+  const calls = await mlxCalls(page)
+  const order = calls.map((c) => c.cmd).filter((c) => c === 'mlx_enhance_prompt' || c === 'mlx_generate')
+  expect(order).toEqual(['mlx_enhance_prompt', 'mlx_generate'])
+  const enhance = requireCall(calls, 'mlx_enhance_prompt')
+  expect(enhance.model).toBe('qwen-image-2.1-pe-t2i-4bit')
+  expect(enhance.prompt).toBe('a poster')
+  expect(enhance.raw.images).toEqual([])
+  expect(enhance.seed).toBe(77)
+  expect(typeof enhance.raw.run).toBe('string')
+  const gen = requireCall(calls, 'mlx_generate')
+  expect(gen.model).toBe('qwen-image-2.1-8bit')
+  expect(gen.prompt).toBe('A long rewritten prompt from the Qwen enhancer.')
+  await expect(page.locator('img[src^="data:image/png"]').first()).toBeVisible({ timeout: 30_000 })
+  expect(await comfyCalls(page)).toHaveLength(0)
+})
+
+test('mac local: the edit enhancer reads the image of the edit, and the edit takes its prompt', async ({ page }) => {
+  await bootLocalCreate(page, ENHANCED_MAC)
+  await page.getByRole('radio', { name: 'Edit / Image to Image', exact: true }).click()
+  await page.locator('input[type="file"]').first().setInputFiles({ name: 'car.png', mimeType: 'image/png', buffer: ONE_PIXEL_PNG })
+  await expect(page.getByRole('img', { name: 'source' })).toBeVisible({ timeout: 15_000 })
+  await openDrawer(page)
+  await improveSwitch(page).click()
+  await expect(improveSwitch(page)).toHaveAttribute('aria-checked', 'true')
+  // A chat model cannot see the picture: the enhancer is the only writer.
+  await expect(drawer(page).getByRole('radiogroup', { name: 'Rewritten by' })).toHaveCount(0)
+  await page.keyboard.press('Escape')
+
+  await page.locator('textarea').first().fill('make the car blue')
+  await page.getByRole('button', { name: /^Create$/ }).last().click()
+  await expect.poll(() => generates(page), { timeout: 30_000 }).toBe(1)
+  const calls = await mlxCalls(page)
+  const enhance = requireCall(calls, 'mlx_enhance_prompt')
+  expect(enhance.model).toBe('qwen-image-2.1-pe-i2i-4bit')
+  expect(enhance.prompt).toBe('make the car blue')
+  expect(enhance.raw.images).toEqual(['/tmp/lu-e2e/videos/start-images/e2e-start.png'])
+  const gen = requireCall(calls, 'mlx_generate')
+  expect(gen.prompt).toBe('A long rewritten prompt from the Qwen enhancer.')
+  expect(gen.raw.images).toEqual(['/tmp/lu-e2e/videos/start-images/e2e-start.png'])
+  expect(calls.findIndex((c) => c.cmd === 'mlx_enhance_prompt')).toBeLessThan(calls.findIndex((c) => c.cmd === 'mlx_generate'))
+})
+
+test('mac local: without the enhancer installed the switch is the chat model one, and nothing goes to it', async ({ page }) => {
+  await bootLocalCreate(page, QWEN_MAC)
+  await expect(page.getByRole('radio', { name: 'Image', exact: true })).toBeVisible({ timeout: 15_000 })
+  await openDrawer(page)
+  await expect(improveSwitch(page)).toBeVisible()
+  await expect(drawer(page).getByRole('radiogroup', { name: 'Rewritten by' })).toHaveCount(0)
+  await page.keyboard.press('Escape')
+  // Edit has no writer at all then.
+  await page.getByRole('radio', { name: 'Edit / Image to Image', exact: true }).click()
+  await openDrawer(page)
+  await expect(improveSwitch(page)).toHaveCount(0)
+  expect((await mlxCalls(page)).some((c) => c.cmd === 'mlx_enhance_prompt')).toBe(false)
 })
 
 test('mac local: a model that takes no image gets no image field', async ({ page }) => {
@@ -638,6 +924,30 @@ test('mac local: a LoRA is added, its strength set, and Generate sends the stack
   const gen = requireCall(await mlxCalls(page), 'mlx_generate')
   expect(gen.model).toBe('qwen-image-2.1-8bit')
   expect(gen.raw.loras).toEqual([{ name: 'slider.safetensors', strength: -4 }, { name: 'qwen/detail.safetensors', strength: 1.25 }])
+  expect(await comfyCalls(page)).toHaveLength(0)
+})
+
+// M12 (14.10.2026): the quantized LTX packs and Wan take `--lora` too. The
+// stack in Create is the same one, and a video run sends it.
+test('mac local: an LTX video run sends the LoRA stack, and a Kohya file is refused on its row', async ({ page }) => {
+  await bootLocalCreate(page, {
+    ...MAC_OPTS,
+    mlx: { installedVideos: ['ltx-2.3-q4'], ltx2EngineInstalled: true, loras: [{ name: 'ltx/dance.safetensors' }, { name: 'kohya_style.safetensors', keys: 'kohya' }] },
+  })
+  await page.getByRole('radio', { name: 'Video', exact: true }).click()
+  await openStack(page)
+  await expect(drawer(page).getByTestId('lora-stack-refused')).toContainText('Kohya format')
+  await drawer(page).getByRole('button', { name: /ltx\/dance/ }).click()
+  await expect(drawer(page).getByText('· 1 active')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await page.locator('textarea').first().fill('a dancer on a rooftop at night')
+  await page.getByRole('button', { name: /^Create$/ }).last().click()
+  await expect
+    .poll(async () => (await mlxCalls(page)).filter((c) => c.cmd === 'video_generate').length, { timeout: 40_000 })
+    .toBeGreaterThan(0)
+  const gen = requireCall(await mlxCalls(page), 'video_generate')
+  expect(gen.id).toBe('ltx-2.3-q4')
+  expect(gen.raw.loras).toEqual([{ name: 'ltx/dance.safetensors', strength: 0.8 }])
   expect(await comfyCalls(page)).toHaveLength(0)
 })
 

@@ -100,10 +100,17 @@ export const MAC_LORA_MODELS = `an image model whose name ends in 4-bit or 8-bit
  * click. `qwen21` is true for a model of the Qwen-Image 2.1 family, which
  * reads lora_A / lora_B keys alone; the other families also read the Kohya
  * naming and judge a file themselves.
+ *
+ * `video` is the Mac's video engine the picked model runs on: an LTX of the
+ * second engine reads lora_A / lora_B keys alone, as Qwen-Image 2.1 does,
+ * and a Wan reads both namings (`lora_stack` in video.rs). The run checks
+ * more than the listing carries (which layers the keys name), and says it.
  */
-export function mlxLoraRefusal(keys: MlxLoraKeys | undefined, qwen21: boolean): { label: string; title: string } | null {
+export function mlxLoraRefusal(keys: MlxLoraKeys | undefined, qwen21: boolean, video?: 'ltx' | 'wan'): { label: string; title: string } | null {
   if (keys === 'unreadable') return { label: 'not readable', title: 'Not a readable safetensors file. It may be an incomplete download.' }
   if (qwen21 && keys === 'kohya') return { label: 'Kohya format', title: 'Qwen-Image 2.1 reads LoRAs with lora_A and lora_B keys, the diffusers and ComfyUI format. This file is in the Kohya format, which Z-Image, FLUX.2 and Qwen-Image read.' }
   if (qwen21 && keys === 'other') return { label: 'not a plain LoRA', title: 'Qwen-Image 2.1 reads plain LoRAs with lora_A and lora_B keys only.' }
+  if (video === 'ltx' && keys === 'kohya') return { label: 'Kohya format', title: 'LTX on a Mac reads LoRAs with lora_A and lora_B keys, the format of the LTX trainer and of ComfyUI. This file is in the Kohya format.' }
+  if (video && keys === 'other') return { label: 'not a plain LoRA', title: video === 'ltx' ? 'LTX on a Mac reads plain LoRAs with lora_A and lora_B keys only.' : 'Wan on a Mac reads plain LoRAs with lora_A and lora_B or lora_down and lora_up keys.' }
   return null
 }

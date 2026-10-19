@@ -56,7 +56,7 @@ export function LoraManager({ rows, total, searchQuery, onDelete, onGetNew }: Lo
           </button>
         )}
       >
-        Get new has ready-made LoRAs and a CivitAI search. What you pick lands in ComfyUI&apos;s models/loras folder. {LORA_USE_HINT}
+        Get new has ready-made LoRAs, a field for a CivitAI or Hugging Face link and a CivitAI search. What you pick lands in ComfyUI&apos;s models/loras folder. {LORA_USE_HINT}
       </ModelEmptyState>
     )
   }

@@ -70,14 +70,16 @@ describe('the Animate tab on the Mac', () => {
     expect(isIntentAvailable('animate', 'local', true, false)).toBe(false)
   })
 
-  it('is a plain local tab once one does, and Edit and Cutout stay out', () => {
+  it('is a plain local tab once one does, and Edit stays out', () => {
     expect(ids(true)).toContain('animate')
     expect(isIntentLocked(INTENT_MAP.animate, 'local', true, true)).toBe(false)
     expect(isIntentAvailable('animate', 'local', true, true)).toBe(true)
     expect(ids(true)).not.toContain('edit')
-    expect(ids(true)).not.toContain('removebg')
-    // With the cloud teasers off it is still there: it is no teaser.
-    expect(visibleIntents('local', true, false, true).map((m) => m.id)).toEqual(['image', 'video', 'animate'])
+    // With the cloud teasers off it is still there: it is no teaser. The
+    // cutout is there on every Mac (Vision, commands/mlx_cutout.rs), and so
+    // is Character Studio. Extend Video runs on the same models as Animate
+    // since 14.10.2026 (M1), so it comes with it.
+    expect(visibleIntents('local', true, false, true).map((m) => m.id)).toEqual(['image', 'removebg', 'video', 'animate', 'character', 'extend'])
   })
 
   it('changes nothing on a ComfyUI host, with or without the flag', () => {

@@ -48,3 +48,24 @@ export function modelListIsStale(next: Steckplaetze, prev: Steckplaetze): boolea
   }
   return false
 }
+
+/**
+ * GitHub #173: dieselbe Frage fuer die weiteren OpenAI-kompatiblen Eintraege.
+ * Ein Eintrag mehr oder weniger, oder eines der Felder oben an einem davon,
+ * und die Liste ist alt. Der Schluessel bleibt draussen, aus demselben Grund.
+ */
+export function openaiEntriesAreStale(
+  next: readonly ProviderConfig[] | undefined,
+  prev: readonly ProviderConfig[] | undefined,
+): boolean {
+  const a = next ?? []
+  const b = prev ?? []
+  if (a.length !== b.length) return true
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].entryId !== b[i].entryId) return true
+    for (const feld of FELDER) {
+      if (a[i][feld] !== b[i][feld]) return true
+    }
+  }
+  return false
+}

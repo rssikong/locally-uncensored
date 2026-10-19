@@ -21,7 +21,13 @@ import { checkComfyConnection } from './comfyui'
  * Whatever still answers after that is an engine LU does not own, and the only
  * honest thing to do is say so.
  */
-export async function restartComfyForNewNodes(): Promise<void> {
+export const OUTSIDE_LU_NODE_PACKS =
+  'Your ComfyUI is running outside LU, so LU cannot restart it. New node packs only load on startup: restart your ComfyUI yourself, then come back here.'
+
+/** `outsideMessage` is the sentence for a ComfyUI LU does not own. The default
+ *  is the node pack one; the GPU mode switch in Settings, Hardware passes its
+ *  own, because there the honest answer is a different one. */
+export async function restartComfyForNewNodes(outsideMessage: string = OUTSIDE_LU_NODE_PACKS): Promise<void> {
   try { await backendCall('stop_comfyui') } catch { /* may already be stopped */ }
   // stop_comfyui reaps its child before returning, so LU's own engine is down
   // by now — poll a few extra rounds anyway instead of trusting one sleep.
@@ -31,9 +37,7 @@ export async function restartComfyForNewNodes(): Promise<void> {
     stillUp = await checkComfyConnection()
   }
   if (stillUp) {
-    throw new Error(
-      'Your ComfyUI is running outside LU, so LU cannot restart it. New node packs only load on startup: restart your ComfyUI yourself, then come back here.',
-    )
+    throw new Error(outsideMessage)
   }
   await backendCall('start_comfyui')
 }

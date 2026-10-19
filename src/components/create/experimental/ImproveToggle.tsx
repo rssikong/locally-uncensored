@@ -4,8 +4,9 @@ import { improveKindForIntent } from '../../../lib/render/improve-prompt'
 import { improveKindForRun } from '../../../lib/render/music-ui'
 import { createRunModel } from '../../../lib/render/create-studio'
 import { useImproveAvailability } from '../../../lib/render/improve-prompt-run'
-import { QWEN_ENHANCER_HINT, activeWriter, improveWriters } from '../../../lib/render/qwen-enhancer'
-import { isMlxImageHost } from '../../../api/mlx-image'
+import { QWEN_ENHANCER_HINT, QWEN_ENHANCER_LINE, activeWriter, enhancerNames, improveWriters } from '../../../lib/render/qwen-enhancer'
+import { imageLaneModels } from '../../../lib/image-engines'
+import { isMlxImageHost, isMlxImageModel } from '../../../api/mlx-image'
 import { classifyModel } from '../../../api/comfyui'
 import { Tooltip } from '../ui/Tooltip'
 import { cn } from '../ui/cn'
@@ -18,6 +19,8 @@ import { cn } from '../ui/cn'
 // On a local Qwen-Image 2.1 with a prompt enhancer installed the enhancer
 // writes instead of the chat model, for a new picture and for an edit, and a
 // row under the switch lets the user pick who writes. Same switch, same place.
+// On a Mac the enhancers are the MLX editions from the Model Manager, and
+// without one installed the chat model writes for a new picture, as before.
 export function ImproveToggle() {
   const intent = useCreateStore((s) => s.intent())
   const backend = useCreateStore((s) => s.backend)
@@ -32,16 +35,25 @@ export function ImproveToggle() {
   const imageModel = useCreateStore((s) => s.imageModel)
   const imageModelList = useCreateStore((s) => s.imageModelList)
   const textEncoders = useCreateStore((s) => s.textEncoderList)
+  const macEnhancers = useCreateStore((s) => s.mlxEnhancerList)
   const chat = useImproveAvailability()
 
-  // The model the run really uses: the first of the list when the stored pick
-  // is not in it, the same rule the run applies.
-  const model = imageModelList.find((m) => m.name === imageModel) ?? imageModelList[0]
+  // The model the run really uses: the first of the tab's list when the
+  // stored pick is not in it, the same rule the run applies. On a Mac, Edit
+  // lists the models that edit; elsewhere the list is the whole list.
+  const onMac = isMlxImageHost()
+  const lane = imageLaneModels(imageModelList, intent)
+  const model = lane.find((m) => m.name === imageModel) ?? lane[0]
   const situation = {
-    local: backend === 'local' && !isMlxImageHost(),
+    local: backend === 'local',
     intent,
     modelType: model ? model.type : classifyModel(imageModel),
-    textEncoders,
+    textEncoders: enhancerNames(
+      // Asked on a Mac alone: elsewhere no model is an MLX one.
+      { onMac, mlxModel: onMac && isMlxImageModel(model ? model.name : imageModel) },
+      textEncoders,
+      macEnhancers,
+    ),
   }
   const writers = improveWriters(situation)
   const writer = activeWriter(situation, choice)
@@ -73,6 +85,9 @@ export function ImproveToggle() {
           <span className={cn('t-mono text-xs', active ? 'text-emerald-400' : 'text-gray-600')}>{active ? 'on' : 'off'}</span>
         </button>
       </Tooltip>
+      {active && byEnhancer && (
+        <p className="px-1 t-label text-gray-500" data-testid="improve-enhancer-line">{QWEN_ENHANCER_LINE}</p>
+      )}
       {on && writers.length > 1 && (
         <div role="radiogroup" aria-label="Rewritten by" className="flex flex-wrap items-center gap-1.5">
           <span className="w-full t-label text-gray-500">Rewritten by</span>

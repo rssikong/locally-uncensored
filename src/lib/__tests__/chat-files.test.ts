@@ -15,7 +15,7 @@ import {
   HEX_DUMP_BYTES,
   MAX_CHAT_FILE_BYTES,
   STRINGS_BUDGET_CHARS,
-  TEXT_EXCERPT_CHARS,
+  TEXT_HOLD_CHARS,
   cleanFileName,
   composeFileMessage,
   copyFailedMessage,
@@ -117,16 +117,33 @@ describe('describeFileBytes: what the model reads instead of the bytes', () => {
     expect(summary).not.toContain('Hex dump')
   })
 
-  it('cuts a long text file at the excerpt and says so', () => {
-    const { summary } = describeFileBytes(new TextEncoder().encode('x'.repeat(TEXT_EXCERPT_CHARS * 3)), 'long.log')
-    expect(summary.startsWith(`The file is longer than this excerpt. The first ${TEXT_EXCERPT_CHARS} characters:\n`)).toBe(true)
-    expect(summary.length).toBeLessThan(TEXT_EXCERPT_CHARS + 100)
+  it('GH #171: holds a long text file whole; the cut, if any, is made at send time', () => {
+    const text = 'x'.repeat(12_000)
+    const out = describeFileBytes(new TextEncoder().encode(text), 'long.log')
+    expect(out.summary).toBe(`The whole text of the file:\n${text}`)
+    expect(out.textChars).toBe(12_000)
+    expect(out.includedChars).toBeUndefined()
+  })
+
+  it('cuts a text longer than the chat holds, and tells the model how much of how much', () => {
+    const total = TEXT_HOLD_CHARS + 500
+    const out = describeFileBytes(new TextEncoder().encode('y'.repeat(total)), 'huge.log')
+    expect(out.summary.startsWith(`Only the first ${TEXT_HOLD_CHARS.toLocaleString('en-US')} of ${total.toLocaleString('en-US')} characters of this file are included, because the file is longer than the chat can hold.`)).toBe(true)
+    expect(out.textChars).toBe(total)
+    expect(out.includedChars).toBe(TEXT_HOLD_CHARS)
+  })
+
+  it('a text read only at its start says that it is an excerpt, without inventing a total', () => {
+    const out = describeFileBytes(new TextEncoder().encode('z'.repeat(1000)), 'big.log', 50_000_000)
+    expect(out.summary.startsWith('Only the first 1,000 characters of this file are included, because the file is longer than the chat can hold.')).toBe(true)
+    expect(out.textChars).toBeUndefined()
+    expect(out.includedChars).toBe(1000)
   })
 
   it('says so when a binary holds no readable strings, and when a file is empty', () => {
     expect(describeFileBytes(new Uint8Array([0x7f, 0x45, 0x4c, 0x46, 0, 1, 2, 3]), 'a.out').summary)
       .toContain('No readable strings were found in the file.')
-    expect(describeFileBytes(new Uint8Array(0), 'empty.bin')).toEqual({ kind: 'Empty file', summary: 'The file is empty.' })
+    expect(describeFileBytes(new Uint8Array(0), 'empty.bin')).toEqual({ kind: 'Empty file', summary: 'The file is empty.', binary: false })
   })
 })
 
@@ -148,18 +165,22 @@ describe('prepareChatFile', () => {
 
   it('refuses a file over the limit BEFORE reading it, in plain English', async () => {
     const tooBig = { name: 'disc.iso', size: MAX_CHAT_FILE_BYTES + 1, arrayBuffer: vi.fn() } as unknown as File
-    await expect(prepareChatFile(tooBig)).rejects.toThrow('"disc.iso" is too large. You can attach files up to 64.0 MB.')
+    await expect(prepareChatFile(tooBig)).rejects.toThrow('"disc.iso" is too large. You can attach files up to 256.0 MB.')
     expect(tooBig.arrayBuffer).not.toHaveBeenCalled()
-    expect(fileTooLargeMessage('disc.iso')).toBe('"disc.iso" is too large. You can attach files up to 64.0 MB.')
+    expect(fileTooLargeMessage('disc.iso')).toBe('"disc.iso" is too large. You can attach files up to 256.0 MB.')
   })
 
-  it('a file at exactly the limit is still accepted', async () => {
+  it('a file at exactly the limit is still accepted, and never read whole', async () => {
+    const whole = vi.fn()
     const atLimit = {
       name: 'ok.bin',
       size: MAX_CHAT_FILE_BYTES,
-      arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
+      arrayBuffer: whole,
+      // Every slice is a few bytes: only the reads matter here, not the size.
+      slice: () => new Blob([new Uint8Array([1, 2, 3])]),
     } as unknown as File
-    await expect(prepareChatFile(atLimit)).resolves.toMatchObject({ attachment: { name: 'ok.bin' } })
+    await expect(prepareChatFile(atLimit)).resolves.toMatchObject({ attachment: { name: 'ok.bin', size: MAX_CHAT_FILE_BYTES } })
+    expect(whole).not.toHaveBeenCalled()
   })
 })
 

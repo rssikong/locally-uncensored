@@ -14,7 +14,10 @@ import {
   slotForgetStandbyUpdate,
   takeoverClearsApiKey,
 } from '../../lib/openai-slot-handover'
-import { getProvider } from '../../api/providers'
+import { getProvider, getOpenAIEntryProvider } from '../../api/providers'
+import { placeBackend, sameEndpoint } from '../../lib/openai-entries'
+import { useSettingsStore } from '../../stores/settingsStore'
+import { MAX_EXTRA_MODEL_IDS, endpointKey, parseExtraModelIds } from '../../lib/extra-model-ids'
 import { PROVIDER_PRESETS } from '../../api/providers/types'
 import { Modal } from '../ui/Modal'
 import { ModalActions, ModalButton } from '../ui/ModalActions'
@@ -112,7 +115,10 @@ export function providerSlotView(id: ProviderId, config: ProviderConfig): SlotVi
 type LmStudioServerInfo = { lms_present: boolean; running: boolean }
 
 export function ProviderSettings() {
-  const { providers, setProviderConfig, setProviderApiKey, getProviderApiKey, engineOptedOut } = useProviderStore()
+  const {
+    providers, setProviderConfig, setProviderApiKey, getProviderApiKey, engineOptedOut,
+    openaiEntries, addOpenAIEntry, updateOpenAIEntry, setOpenAIEntryApiKey,
+  } = useProviderStore()
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const dropdown = usePopoverPlatz(dropdownRef, dropdownOpen, { deckel: 224 })
@@ -131,7 +137,9 @@ export function ProviderSettings() {
   // Review-Runde 2, Punkt 5: a takeover the OS keychain cannot durably park.
   // See wouldLoseApiKeyOnRestart below for why this exists.
   const [showKeyLossWarning, setShowKeyLossWarning] = useState(false)
-  const [expandedProvider, setExpandedProvider] = useState<ProviderId | null>(null)
+  // A slot id, or `entry:<id>` for an additional OpenAI-compatible entry
+  // (GitHub #173), so one row at a time is open across both lists.
+  const [expandedProvider, setExpandedProvider] = useState<string | null>(null)
   // R13D Nebenfund 1: LU Engine can fall out of the `openai` slot entirely
   // (see lib/builtin-engine-presence.ts for the read and the root cause).
   // Dismissal is session-only, not persisted: a restart re-checks the slot
@@ -337,6 +345,45 @@ export function ProviderSettings() {
     setExpandedProvider('openai')
   }
 
+  // GitHub #173: "Run side by side" on the standby card. Instead of choosing
+  // which of the two backends holds the slot, both run: the one that is not
+  // the LU Engine gets its own entry, with its own key, and the LU Engine (or
+  // whoever held the slot) keeps or gets the slot. Nothing is forgotten.
+  async function runSideBySide() {
+    const slot = providers.openai
+    const waiting = standbyOccupant(slot)
+    if (!waiting) return
+    const already = (url: string) => openaiEntries.find((e) => sameEndpoint(e.baseUrl, url))
+    if (waiting.managed) {
+      // The LU Engine waits: the backend in the slot moves to an entry and
+      // the engine gets its slot back.
+      const update = slotRemoveOccupantUpdate(slot)
+      if (!update) return
+      const key = getProviderApiKey('openai')
+      const known = already(slot.baseUrl)
+      const entryId = known?.entryId ?? addOpenAIEntry({ name: slot.name, baseUrl: slot.baseUrl, isLocal: slot.isLocal })
+      if (key && !known) setOpenAIEntryApiKey(entryId, key)
+      if (!slot.enabled) updateOpenAIEntry(entryId, { enabled: false, disabledByUser: true })
+      else if (known) updateOpenAIEntry(entryId, { enabled: true, disabledByUser: false })
+      setProviderConfig('openai', update)
+      await restoreParkedApiKey(waiting.name, waiting.apiKey)
+      setStatuses(prev => ({ ...prev, openai: 'idle' }))
+      setExpandedProvider(entryRowKey(entryId))
+      return
+    }
+    // Another backend waits: it gets the entry, the slot forgets it.
+    const update = slotForgetStandbyUpdate(slot)
+    if (!update) return
+    const parked = await restoreParkedApiKeyForBackend(waiting.name)
+    const key = parked !== null ? parked : (waiting.apiKey ? deobfuscate(waiting.apiKey) : '')
+    const known = already(waiting.baseUrl)
+    const entryId = known?.entryId ?? addOpenAIEntry({ name: waiting.name, baseUrl: waiting.baseUrl, isLocal: waiting.isLocal })
+    if (key && !known) setOpenAIEntryApiKey(entryId, key)
+    if (known) updateOpenAIEntry(entryId, { enabled: true, disabledByUser: false })
+    setProviderConfig('openai', update)
+    setExpandedProvider(entryRowKey(entryId))
+  }
+
   // Review-Runde 2, Punkt 5 (F3) + R9: whether accepting `preset` into the
   // shared `openai` slot would destroy a currently-set, non-empty API key
   // with no way to bring it back. R9 tries to prevent that outright: the
@@ -348,6 +395,8 @@ export function ProviderSettings() {
   // 401 the next time the backend returns.
   async function wouldLoseApiKeyOnRestart(preset: typeof PROVIDER_PRESETS[0]): Promise<boolean> {
     if (preset.providerId === 'ollama' || preset.providerId === 'anthropic') return false
+    // GitHub #173: a backend that gets its own entry takes nothing from the slot.
+    if (placeBackend(providers.openai, openaiEntries, preset).kind !== 'slot') return false
     const incoming = { name: preset.name, baseUrl: preset.baseUrl, isLocal: preset.isLocal, managed: preset.managed }
     if (!(takeoverClearsApiKey(providers.openai, incoming) && getProviderApiKey('openai') !== '')) return false
     const parked = await parkApiKeyForBackend(providers.openai.name, getProviderApiKey('openai'))
@@ -370,6 +419,22 @@ export function ProviderSettings() {
   }
 
   function applyPreset(preset: typeof PROVIDER_PRESETS[0]) {
+    // GitHub #173: an OpenAI-compatible backend no longer has to push the one
+    // in the slot out. While the slot is on and serves something else, the
+    // new backend gets its own entry next to it (lib/openai-entries.ts).
+    const place = placeBackend(providers.openai, openaiEntries, preset)
+    if (place.kind === 'entry-existing') {
+      updateOpenAIEntry(place.entryId, { enabled: true, disabledByUser: false })
+      setDropdownOpen(false)
+      setExpandedProvider(entryRowKey(place.entryId))
+      return
+    }
+    if (place.kind === 'entry-new') {
+      const entryId = addOpenAIEntry({ name: preset.name, baseUrl: preset.baseUrl, isLocal: preset.isLocal })
+      setDropdownOpen(false)
+      setExpandedProvider(entryRowKey(entryId))
+      return
+    }
     // Enable the selected provider WITHOUT disabling others
     if (preset.providerId === 'ollama') {
       setProviderConfig('ollama', { enabled: true, baseUrl: preset.baseUrl })
@@ -514,7 +579,7 @@ export function ProviderSettings() {
   const localPresets = PROVIDER_PRESETS.filter(p => p.isLocal)
   const cloudPresets = PROVIDER_PRESETS.filter(p => !p.isLocal)
 
-  const noBackend = enabledProviderIds.length === 0
+  const noBackend = enabledProviderIds.length === 0 && !openaiEntries.some((e) => e.enabled)
 
   return (
     <div className="space-y-2">
@@ -578,7 +643,7 @@ export function ProviderSettings() {
                 <div className="flex-1 flex items-center gap-2 min-w-0">
                   <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-gray-600" />
                   <span className="text-[0.65rem] text-gray-500 font-medium truncate">{view.label}</span>
-                  <span className="text-[0.5rem] px-1 py-0.5 rounded bg-white/5 text-gray-500 shrink-0">DISABLED</span>
+                  <span className="t-micro px-1 py-0.5 rounded bg-white/5 text-gray-500 shrink-0">DISABLED</span>
                 </div>
                 <button
                   onClick={() => toggleProvider(id)}
@@ -684,6 +749,11 @@ export function ProviderSettings() {
                   </div>
                 )}
 
+                {/* GitHub #112: a model the server serves but does not list. */}
+                {id === 'openai' && view.endpointEditable && (
+                  <ExtraModelIdsField baseUrl={config.baseUrl} />
+                )}
+
                 {/* Test + Disable + (g) Start Server when LM-Studio is offline */}
                 <div className="flex items-center gap-2 flex-wrap">
                   <button
@@ -763,6 +833,20 @@ export function ProviderSettings() {
         )
       })}
 
+      {/* GitHub #173: the additional OpenAI-compatible backends, each with its
+          own address, key and model list, next to the slot instead of in it. */}
+      {openaiEntries.map((entry) => (
+        <OpenAIEntryRow
+          key={entry.entryId}
+          entry={entry}
+          expanded={expandedProvider === entryRowKey(entry.entryId as string)}
+          onToggleExpanded={() => {
+            const k = entryRowKey(entry.entryId as string)
+            setExpandedProvider(expandedProvider === k ? null : k)
+          }}
+        />
+      ))}
+
       {/* The backend that is no longer in the shared local slot. It used to
           vanish without a word, and the way back (Add Provider, Built-in
           Engine) was there but unlabelled. Same shape as the switched-off row
@@ -783,8 +867,8 @@ export function ProviderSettings() {
               <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-gray-600" />
               <span className="text-[0.65rem] text-gray-500 font-medium truncate">{standby.name}</span>
               {standbyOff
-                ? <span className="text-[0.5rem] px-1 py-0.5 rounded bg-white/5 text-gray-500 shrink-0">DISABLED</span>
-                : <span className="text-[0.5rem] px-1 py-0.5 rounded bg-white/5 text-gray-500 shrink-0">STANDBY</span>}
+                ? <span className="t-micro px-1 py-0.5 rounded bg-white/5 text-gray-500 shrink-0">DISABLED</span>
+                : <span className="t-micro px-1 py-0.5 rounded bg-white/5 text-gray-500 shrink-0">STANDBY</span>}
             </div>
             {standbyIsRemovable(providers.openai) && (
               <button
@@ -799,6 +883,18 @@ export function ProviderSettings() {
               >
                 <Trash2 size={10} />
                 {armedRemove === 'standby' ? 'Click again to remove' : 'Remove'}
+              </button>
+            )}
+            {(!standby.managed || occupantIsRemovable(providers.openai)) && (
+              <button
+                data-testid="standby-side-by-side"
+                onClick={() => { void runSideBySide() }}
+                title={standby.managed
+                  ? `Give the slot back to ${standby.name} and keep ${providers.openai.name} as its own backend`
+                  : `Keep ${providers.openai.name} in the slot and add ${standby.name} as its own backend`}
+                className="shrink-0 px-2 py-0.5 rounded bg-white/5 border border-white/8 text-[0.6rem] text-gray-300 hover:text-gray-100 hover:bg-white/8 transition-colors"
+              >
+                Run side by side
               </button>
             )}
             <button
@@ -821,14 +917,14 @@ export function ProviderSettings() {
             </p>
           ) : providers.openai.enabled ? (
             <p className="px-2 pb-1.5 text-[0.55rem] text-gray-600 leading-snug">
-              {providers.openai.name} took over the local OpenAI compatible slot, which holds one
-              backend at a time. Press Enable to hand the slot back to {standby.name}.
-              {' '}{providers.openai.name} then waits here in its place.
+              {providers.openai.name} took over the local OpenAI compatible slot from {standby.name}.
+              Press Run side by side to keep both, each with its own models. Press Enable to hand the slot back to {standby.name}.
             </p>
           ) : (
             <p className="px-2 pb-1.5 text-[0.55rem] text-gray-600 leading-snug">
               {providers.openai.name} holds the local OpenAI compatible slot and is switched off,
-              so no local backend is running. Press Enable to give the slot back to {standby.name}.
+              so no local backend is running in it. Press Enable to give the slot back to {standby.name},
+              or Run side by side to keep both.
             </p>
           )}
         </div>
@@ -868,8 +964,9 @@ export function ProviderSettings() {
             {/* Local group */}
             <div className="px-2.5 py-1 text-[0.5rem] uppercase tracking-wider text-gray-600 font-semibold">Local</div>
             {localPresets.map(preset => {
-              const isActive = enabledProviderIds.includes(preset.providerId) &&
-                (preset.providerId !== 'openai' || providers.openai.name === preset.name)
+              const isActive = (enabledProviderIds.includes(preset.providerId) &&
+                (preset.providerId !== 'openai' || providers.openai.name === preset.name)) ||
+                (preset.providerId === 'openai' && openaiEntries.some((e) => e.enabled && sameEndpoint(e.baseUrl, preset.baseUrl)))
               return (
                 <button
                   key={preset.id}
@@ -890,8 +987,9 @@ export function ProviderSettings() {
             {/* Cloud group */}
             <div className="px-2.5 py-1 mt-1 border-t border-white/[0.06] text-[0.5rem] uppercase tracking-wider text-gray-600 font-semibold">Cloud</div>
             {cloudPresets.map(preset => {
-              const isActive = enabledProviderIds.includes(preset.providerId) &&
-                (preset.providerId !== 'openai' || providers.openai.name === preset.name)
+              const isActive = (enabledProviderIds.includes(preset.providerId) &&
+                (preset.providerId !== 'openai' || providers.openai.name === preset.name)) ||
+                (preset.providerId === 'openai' && openaiEntries.some((e) => e.enabled && sameEndpoint(e.baseUrl, preset.baseUrl)))
               return (
                 <button
                   key={preset.id}
@@ -1076,5 +1174,273 @@ function Statusfeld({ status }: { status: SlotStatus | undefined }) {
     >
       {status === 'connected' ? <Wifi size={10} /> : <WifiOff size={10} />} {wort.text}
     </span>
+  )
+}
+
+/** Model ids for an OpenAI-compatible server that serves more than its
+ *  /models list says (GitHub #112). Stored per endpoint, saved when the field
+ *  is left, and the model list is read again so the ids show in the picker. */
+function ExtraModelIdsField({ baseUrl, fieldId = 'extra-model-ids' }: { baseUrl: string; fieldId?: string }) {
+  const key = endpointKey(baseUrl)
+  const stored = useSettingsStore((s) => s.settings.extraModelIds?.[key])
+  const [draft, setDraft] = useState<string | null>(null)
+  const shown = draft ?? (stored ?? []).join('\n')
+  const save = () => {
+    if (draft === null) return
+    const ids = parseExtraModelIds(draft)
+    const all = { ...(useSettingsStore.getState().settings.extraModelIds ?? {}) }
+    if (ids.length) all[key] = ids
+    else delete all[key]
+    useSettingsStore.getState().updateSettings({ extraModelIds: all })
+    setDraft(null)
+    window.dispatchEvent(new Event('lu-models-refresh'))
+  }
+  return (
+    <div>
+      <label className="text-[0.6rem] text-gray-500 mb-0.5 block" htmlFor={fieldId}>
+        Model IDs the server does not list
+      </label>
+      <textarea
+        id={fieldId}
+        data-testid="extra-model-ids"
+        value={shown}
+        rows={2}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={save}
+        placeholder="One per line, for example deepseek-chat"
+        className="w-full px-2 py-1 rounded bg-white/5 border border-white/8 text-[0.65rem] text-gray-300 font-mono focus:outline-none focus:border-white/20 resize-y"
+      />
+      <p className="text-[0.55rem] text-gray-500 leading-tight">
+        They appear in the model list next to the ones the server names. Up to {MAX_EXTRA_MODEL_IDS}.
+      </p>
+    </div>
+  )
+}
+
+/** For the test of GitHub #112, which renders the field on its own. */
+export const ExtraModelIdsFieldForTest = ExtraModelIdsField
+
+/** The expanded-row key of an additional OpenAI-compatible entry. */
+function entryRowKey(entryId: string): string {
+  return `entry:${entryId}`
+}
+
+/**
+ * One additional OpenAI-compatible backend (GitHub #173): its own name,
+ * address, optional key, extra model ids, Test, Disable or Enable, and
+ * Remove. Same parts and the same words as a slot row, so the two lists read
+ * as one; the slot-only machinery (standby, handover, the engine) has no
+ * business here, because an entry pushes nobody out.
+ */
+function OpenAIEntryRow({ entry, expanded, onToggleExpanded }: {
+  entry: ProviderConfig
+  expanded: boolean
+  onToggleExpanded: () => void
+}) {
+  const entryId = entry.entryId as string
+  // The backend's own name, what the slot rows call `view.label`.
+  const label = entry.name
+  const updateOpenAIEntry = useProviderStore((s) => s.updateOpenAIEntry)
+  const removeOpenAIEntry = useProviderStore((s) => s.removeOpenAIEntry)
+  const setOpenAIEntryApiKey = useProviderStore((s) => s.setOpenAIEntryApiKey)
+  const currentKey = useProviderStore((s) => s.getOpenAIEntryApiKey(entryId))
+  const [status, setStatus] = useState<SlotStatus>('idle')
+  const [testing, setTesting] = useState(false)
+  const [keyVisible, setKeyVisible] = useState(false)
+  const [armed, setArmed] = useState(false)
+  const armTimer = useRef<number | null>(null)
+  useEffect(() => () => { if (armTimer.current) window.clearTimeout(armTimer.current) }, [])
+
+  const probe = async (): Promise<SlotStatus> => {
+    let ok = false
+    try {
+      ok = await getOpenAIEntryProvider(entryId).checkConnection()
+    } catch {
+      ok = false
+    }
+    let count: number | null = null
+    if (ok) {
+      try {
+        const list = await getOpenAIEntryProvider(entryId).listModels()
+        count = Array.isArray(list) ? list.length : null
+      } catch {
+        count = null
+      }
+    }
+    return reachVerdict(ok, count)
+  }
+
+  // One probe when the row appears switched on, like the slot rows get.
+  useEffect(() => {
+    if (!entry.enabled) return
+    let cancelled = false
+    void probe().then((v) => { if (!cancelled) setStatus(v) })
+    return () => { cancelled = true }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const test = async () => {
+    setTesting(true)
+    setStatus('idle')
+    const v = await probe()
+    setStatus(v)
+    setTesting(false)
+  }
+
+  const toggle = () => {
+    const next = !entry.enabled
+    updateOpenAIEntry(entryId, { enabled: next, disabledByUser: !next })
+    setStatus('idle')
+    if (next) window.dispatchEvent(new Event('lu-models-refresh'))
+  }
+
+  const remove = () => {
+    if (!armed) {
+      setArmed(true)
+      if (armTimer.current) window.clearTimeout(armTimer.current)
+      armTimer.current = window.setTimeout(() => setArmed(false), 4000)
+      return
+    }
+    if (armTimer.current) window.clearTimeout(armTimer.current)
+    setArmed(false)
+    removeOpenAIEntry(entryId)
+    window.dispatchEvent(new Event('lu-models-refresh'))
+  }
+
+  if (!entry.enabled) {
+    return (
+      <div data-testid="openai-entry-row" data-entry={entryId} className="rounded-lg border border-white/8 bg-white/[0.01] overflow-hidden">
+        <div className="flex items-center gap-2 px-2 py-1.5">
+          <button onClick={toggle} className="group flex items-center" title="Enable provider">
+            <Power size={10} className="text-gray-500 group-hover:text-green-400 transition-colors" />
+          </button>
+          <div className="flex-1 flex items-center gap-2 min-w-0">
+            <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-gray-600" />
+            <span className="t-micro text-gray-500 font-medium truncate">{label}</span>
+            <span className="t-micro px-1 py-0.5 rounded bg-white/5 text-gray-500 shrink-0">DISABLED</span>
+          </div>
+          <button
+            data-testid="openai-entry-remove"
+            onClick={remove}
+            title={`Forget ${entry.name} and stop offering it here`}
+            className={`shrink-0 flex items-center gap-1 px-2 py-0.5 rounded border t-micro transition-colors ${
+              armed
+                ? 'bg-red-500/15 border-red-500/30 text-red-300 font-medium'
+                : 'bg-white/5 border-white/8 text-gray-500 hover:text-red-300 hover:border-red-500/20'
+            }`}
+          >
+            <Trash2 size={10} />
+            {armed ? 'Click again to remove' : 'Remove'}
+          </button>
+          <button
+            onClick={toggle}
+            className="shrink-0 px-2 py-0.5 rounded bg-green-500/10 border border-green-500/20 t-micro text-green-300 hover:text-green-200 hover:bg-green-500/15 transition-colors"
+          >
+            Enable
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div data-testid="openai-entry-row" data-entry={entryId} className="rounded-lg border border-white/8 bg-white/[0.02] overflow-hidden">
+      <div className="flex items-center gap-2 px-2 py-1.5">
+        <button onClick={toggle} className="group flex items-center" title="Disable provider">
+          <Power size={10} className="text-green-400 group-hover:text-red-400 transition-colors" />
+        </button>
+        <button onClick={onToggleExpanded} className="flex-1 flex items-center justify-between min-w-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <Zustandspunkt status={status} />
+            <span className="t-micro text-gray-300 font-medium truncate">{label}</span>
+            {entry.isLocal
+              ? <span className={providerBadgeClass('local')}>LOCAL</span>
+              : <span className={providerBadgeClass('cloud')}>CLOUD</span>}
+            <Zustandssymbol status={status} />
+          </div>
+          <ChevronDown size={10} className={`text-gray-500 transition-transform shrink-0 ${expanded ? 'rotate-180' : ''}`} />
+        </button>
+      </div>
+      {expanded && (
+        <div className="px-2 pb-2 space-y-1.5 border-t border-white/[0.04]">
+          <div className="pt-1.5">
+            <label className="t-micro text-gray-500 mb-0.5 block" htmlFor={`entry-name-${entryId}`}>Name</label>
+            <input
+              id={`entry-name-${entryId}`}
+              data-testid="openai-entry-name"
+              value={entry.name}
+              onChange={(e) => updateOpenAIEntry(entryId, { name: e.target.value })}
+              className="w-full px-2 py-1 rounded bg-white/5 border border-white/8 t-micro text-gray-300 focus:outline-none focus:border-white/20"
+            />
+          </div>
+          <div>
+            <label className="t-micro text-gray-500 mb-0.5 block" htmlFor={`entry-url-${entryId}`}>Endpoint</label>
+            <input
+              id={`entry-url-${entryId}`}
+              data-testid="openai-entry-endpoint"
+              value={entry.baseUrl}
+              onChange={(e) => updateOpenAIEntry(entryId, { baseUrl: e.target.value })}
+              placeholder="http://localhost:..."
+              className="w-full px-2 py-1 rounded bg-white/5 border border-white/8 t-micro text-gray-300 font-mono focus:outline-none focus:border-white/20"
+            />
+          </div>
+          <div>
+            <label className="t-micro text-gray-500 mb-0.5 block" htmlFor={`entry-key-${entryId}`}>
+              {entry.isLocal ? 'API Key (optional)' : 'API Key'}
+            </label>
+            <div className="relative">
+              <input
+                id={`entry-key-${entryId}`}
+                type={keyVisible ? 'text' : 'password'}
+                value={currentKey}
+                onChange={(e) => setOpenAIEntryApiKey(entryId, e.target.value)}
+                placeholder="sk-..."
+                className="w-full px-2 py-1 pr-7 rounded bg-white/5 border border-white/8 t-micro text-gray-300 font-mono focus:outline-none focus:border-white/20"
+              />
+              <button
+                onClick={() => setKeyVisible(!keyVisible)}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300"
+              >
+                {keyVisible ? <EyeOff size={10} /> : <Eye size={10} />}
+              </button>
+            </div>
+          </div>
+          <ExtraModelIdsField baseUrl={entry.baseUrl} fieldId={`extra-model-ids-${entryId}`} />
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => { void test() }}
+              disabled={testing}
+              className="px-2 py-0.5 rounded bg-white/5 border border-white/8 t-micro text-gray-400 hover:text-gray-200 hover:bg-white/8 transition-colors disabled:opacity-50"
+            >
+              {testing ? <Loader2 size={10} className="animate-spin" /> : 'Test'}
+            </button>
+            <button
+              onClick={toggle}
+              className="px-2 py-0.5 rounded bg-red-500/5 border border-red-500/10 t-micro text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors"
+            >
+              Disable
+            </button>
+            <button
+              data-testid="openai-entry-remove"
+              onClick={remove}
+              title={`Forget ${entry.name} and stop offering it here`}
+              className={`flex items-center gap-1 px-2 py-0.5 rounded border t-micro transition-colors ${
+                armed
+                  ? 'bg-red-500/15 border-red-500/30 text-red-300 font-medium'
+                  : 'bg-white/5 border-white/8 text-gray-400 hover:text-red-300 hover:border-red-500/20'
+              }`}
+            >
+              <Trash2 size={10} />
+              {armed ? 'Click again to remove' : 'Remove'}
+            </button>
+            <Statusfeld status={status} />
+          </div>
+          {currentKey && (
+            <p className="text-[0.5rem] text-gray-600 mt-0.5 leading-tight">
+              Keys are stored locally with basic obfuscation, not encryption. Avoid shared computers.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
   )
 }

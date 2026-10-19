@@ -4,18 +4,18 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Chat in Locally Uncensored: Models, Context Window, Thinking, Sampling, Voice</title>
-<meta name="description" content="How chat works in Locally Uncensored: the model picker, the context window and its three labels, thinking mode, the sampling controls, personas, memory, documents, voice and export.">
+<meta name="description" content="How chat works in Locally Uncensored: the model picker, the context window and its three labels, thinking mode, editing and answer versions, duplicating and branching a chat, the sampling controls, personas and character cards, memory, documents, voice, export and the ChatGPT import.">
 <meta name="robots" content="index, follow">
 <meta name="theme-color" content="#0a0a0a">
 <link rel="canonical" href="https://locallyuncensored.com/guide/chat/">
 <meta property="og:title" content="Chat in Locally Uncensored: Models, Context Window, Thinking, Sampling, Voice">
-<meta property="og:description" content="How chat works in Locally Uncensored: the model picker, the context window and its three labels, thinking mode, the sampling controls, personas, memory, documents, voice and export.">
+<meta property="og:description" content="How chat works in Locally Uncensored: the model picker, the context window and its three labels, thinking mode, editing and answer versions, duplicating and branching a chat, the sampling controls, personas and character cards, memory, documents, voice, export and the ChatGPT import.">
 <meta property="og:url" content="https://locallyuncensored.com/guide/chat/">
 <meta property="og:type" content="article">
 <meta property="og:image" content="https://locallyuncensored.com/social-preview.png">
 <meta name="twitter:card" content="summary_large_image">
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"TechArticle","headline":"Chat in Locally Uncensored: Models, Context Window, Thinking, Sampling, Voice","description":"How chat works in Locally Uncensored: the model picker, the context window and its three labels, thinking mode, the sampling controls, personas, memory, documents, voice and export.","url":"https://locallyuncensored.com/guide/chat/","dateModified":"2026-09-11","inLanguage":"en","author":{"@type":"Person","name":"PurpleDoubleD","url":"https://github.com/PurpleDoubleD"},"publisher":{"@type":"Organization","name":"Locally Uncensored","url":"https://locallyuncensored.com/"},"mainEntityOfPage":{"@type":"WebPage","@id":"https://locallyuncensored.com/guide/chat/"},"isPartOf":{"@type":"WebPage","name":"Locally Uncensored Handbook: Install, Chat, Agent, Code, Create, Cloud","url":"https://locallyuncensored.com/guide/"},"about":{"@type":"SoftwareApplication","name":"Locally Uncensored","operatingSystem":"Windows, Linux, macOS","applicationCategory":"UtilitiesApplication"}}
+{"@context":"https://schema.org","@type":"TechArticle","headline":"Chat in Locally Uncensored: Models, Context Window, Thinking, Sampling, Voice","description":"How chat works in Locally Uncensored: the model picker, the context window and its three labels, thinking mode, editing and answer versions, duplicating and branching a chat, the sampling controls, personas and character cards, memory, documents, voice, export and the ChatGPT import.","url":"https://locallyuncensored.com/guide/chat/","dateModified":"2026-10-15","inLanguage":"en","author":{"@type":"Person","name":"PurpleDoubleD","url":"https://github.com/PurpleDoubleD"},"publisher":{"@type":"Organization","name":"Locally Uncensored","url":"https://locallyuncensored.com/"},"mainEntityOfPage":{"@type":"WebPage","@id":"https://locallyuncensored.com/guide/chat/"},"isPartOf":{"@type":"WebPage","name":"Locally Uncensored Handbook: Install, Chat, Agent, Code, Create, Cloud","url":"https://locallyuncensored.com/guide/"},"about":{"@type":"SoftwareApplication","name":"Locally Uncensored","operatingSystem":"Windows, Linux, macOS","applicationCategory":"UtilitiesApplication"}}
 </script>
 <link rel="icon" href="/favicon.png">
 <script type="application/ld+json">
@@ -54,10 +54,11 @@
 <article class="lu-doc" data-handbook-chapter="chat">
 <div class="breadcrumb"><a href="/">Home</a> &rsaquo; <a href="/guide/">Handbook</a> &rsaquo; Chat</div>
 <h1>Chat</h1>
-<p class="subtitle">The model picker, the context window, thinking, the sampling controls, personas, memory, document chat, voice in and out, and export.</p>
+<p class="subtitle">The model picker, the context window, thinking, editing and answer versions, duplicating and branching a chat, the sampling controls, personas and character cards, memory, document chat, voice in and out, export and import. Written for version 3.0.7.</p>
 <nav class="toc">
 <div class="toc-title">In this chapter</div>
 <a href="#first-message">Your first message</a>
+<a href="#versions">Edit, versions, duplicate and branch</a>
 <a href="#picker">The model picker</a>
 <a href="#context">The context window</a>
 <a href="#thinking">Thinking and effort</a>
@@ -66,7 +67,7 @@
 <a href="#documents">Document chat</a>
 <a href="#personas">Personas, memory and plugins</a>
 <a href="#voice">Voice in and out</a>
-<a href="#export">Export, compact, new chat</a>
+<a href="#export">Export, import, compact</a>
 <a href="#wrong">When it goes wrong</a>
 </nav>
 
@@ -92,13 +93,46 @@
 <span class="step-num">3</span>
 <span class="step-title">Start a new chat</span>
 <div class="step-body">
-<p>"New Chat" in the sidebar starts a fresh conversation with the same model. Old conversations stay in the list on the left, where each row has "Rename chat" and "Delete chat" buttons. Everything is stored on your machine, in the app's browser storage, with a backup file that chapter 2 names.</p>
+<p>"New Chat" in the sidebar starts a fresh conversation with the same model. Old conversations stay in the list on the left, where each row has "Rename chat", "Duplicate chat" and "Delete chat" buttons. Everything is stored on your machine, in the app's browser storage, with a backup file that chapter 2 names.</p>
 </div>
 </div>
+
+<h2 id="versions">Edit, versions, duplicate and branch</h2>
+
+<p>Point at a message and a small bar of buttons appears under it: "Edit", "Regenerate" on an answer, "Copy", "Branch from here" and "Delete message". A right click on the message opens the same actions as a menu.</p>
+
+<h3>Edit a message</h3>
+
+<p>"Edit" opens the text in a field with up to three buttons:</p>
+
+<table>
+<tr><th>Button</th><th>Key</th><th>What it does</th></tr>
+<tr><td>Cancel</td><td>Escape</td><td>Leaves the message as it was.</td></tr>
+<tr><td>Save</td><td>Enter</td><td>Changes the text only. Nothing is sent, no model is loaded, and every later turn stays.</td></tr>
+<tr><td>Save &amp; resend</td><td>Ctrl or Cmd with Enter</td><td>Asks again from this message. The answers that followed are kept as a version.</td></tr>
+</table>
+
+<p>Shift with Enter makes a new line. "Save &amp; resend" is only offered on your own messages; an answer of the model can be edited and saved, not resent. If nothing can be sent at that moment, for example because no model is picked or an answer is still running, the text is saved instead, so the edit is not lost.</p>
+
+<h3>Answer versions</h3>
+
+<p>"Regenerate" and "Save &amp; resend" do not delete what was there before. The earlier continuation is kept as a version, and a switch such as "&lt; 1/2 &gt;" appears with the arrows "Previous version" and "Next version". The arrows stop at the first and the last version. When only the answer differs, the switch sits on the answer; when you edited the question, it sits on the question. While an answer is still being written, the arrows are off.</p>
+
+<p>Only the version on screen counts: it is what the model sees in the next turn, and what the export and the search read.</p>
+
+<h3>Duplicate a chat</h3>
+
+<p>In the chat list, each row has a copy icon named "Duplicate chat", and the right click menu of the row has the same entry. The copy opens at once and its title ends in "(copy)". It is a full copy: the persona, the system prompt, the group members and their personas, the sampling values, the documents, the Agent and Code settings and the kept versions come along. Duplicate chat is not offered in Remote Access.</p>
+
+<h3>Branch from a message</h3>
+
+<p>"Branch from here" ("Branch from here: a new chat up to this message") starts a new chat whose title ends in "(branch)". It holds the history up to and including that message, as it stands on screen, without the kept versions. The settings and documents of the chat come along, and the original chat is not touched. Use it to try a second direction without the first one in the context.</p>
 
 <h2 id="picker">The model picker</h2>
 
 <p>The picker groups models by family, and each row shows the model name. A row with an On/Off switch is a model the engine can load or unload; "Unload all models" at the bottom frees the memory of every loaded model. A model that comes from LM Studio carries a hint that using it starts the LM Studio server and makes LM Studio the chat backend in place of the LU Engine. In Cloud mode the picker shows hosted models only, with the marks that chapter 8 explains.</p>
+
+<p>Several OpenAI compatible servers can run side by side, for example LM Studio and KoboldCpp next to the LU Engine. Each one has its own row under Settings, AI Backends, and its models appear in the picker under its name.</p>
 
 <p>If the picker says "No AI backend is enabled", every provider is switched off under Settings, AI Backends, Providers; enable the LU Engine there. Chapter 9 lists the other providers and their default addresses.</p>
 
@@ -126,17 +160,19 @@
 
 <h2 id="sampling">The sampling controls</h2>
 
-<p>Next to the message box a small trigger reads "Sampling: 0.70". A star after it means "Changed from the defaults". Click it to open four sliders:</p>
+<p>Next to the message box a small trigger reads "Sampling: 0.70". A star after it means "Changed from the defaults". Click it to open the sampling settings of this chat:</p>
 
 <table>
 <tr><th>Control</th><th>Range</th><th>What it does</th></tr>
 <tr><td>Temperature</td><td>0 to 2, step 0.05, default 0.7</td><td>Lower is more predictable, higher is more varied. 0 always picks the most likely word.</td></tr>
 <tr><td>Top P</td><td>0 to 1, default 0.9</td><td>Only the most likely words whose probabilities add up to this share are considered.</td></tr>
-<tr><td>Top K</td><td>0 to 200, default 40</td><td>Only the K most likely words are considered. OpenAI style backends ignore it.</td></tr>
 <tr><td>Max tokens</td><td>0 = auto</td><td>The longest answer allowed. 0 lets the app decide.</td></tr>
+<tr><td>Think budget</td><td>0 = auto</td><td>How many tokens a model may spend thinking while Think is on. It applies to every chat, and it is off for backends that do not read it.</td></tr>
 </table>
 
-<p>A help line under the sliders reads "Reasoning models accept these and react less to them." "Reset" puts everything back to the defaults. The same four values live under Settings, General, Generation as the defaults for new chats; the trigger changes them for the current chat.</p>
+<p>A help line under the controls reads "Reasoning models accept these and react less to them." "Reset" removes this chat's own values, so the chat follows Settings, General, Generation again. That settings page holds the defaults for every chat, with Top K (0 to 200, default 40) in addition, which OpenAI style backends ignore.</p>
+
+<p>Below the controls the popup lists each speaker, the chat model or every member of a group chat, with the values that hold for it and where they come from: a persona or the chat settings. A value its backend does not read is marked "(not sent)" and is not sent. The next section says how a persona gets its own values.</p>
 
 <h2 id="images">Images in the chat</h2>
 
@@ -150,9 +186,15 @@
 
 <h2 id="personas">Personas, memory and plugins</h2>
 
-<p>A persona is a system prompt with a name. The default persona is "No Filter", which tells the model that it is your own model, running for you alone, and carries the house conduct rules; it has a real role, so a plain question gets a plain answer. Twenty five personas are built in and you can write your own under Settings, Agent, Personas ("Use personas" switches the feature on). The "Plugins" button above the message box opens a panel where "Persona" has the checkbox "Enable persona for this chat".</p>
+<p>A persona is a system prompt with a name. The default persona is "No Filter", which tells the model that it is your own model, running for you alone, and carries the house conduct rules; it has a real role, so a plain question gets a plain answer. Twenty five personas are built in and you can write your own under Settings, Agent, Personas ("Use personas" switches the feature on). The "Plugins" button above the message box opens a panel where "Persona" has the checkbox "Enable persona for this chat". A chat remembers its persona, and a pick in Plugins changes the open chat, so the chat, a group chat, Agent and Voice send the persona the menu shows.</p>
 
-<p>The same panel holds "Chat Tools" (web, file, image and video tools for the plain chat), "Caveman Mode" (Off "Normal responses", Lite "Slightly shorter", Full "Very terse", Ultra "Maximum brevity") and "Group chat" ("Pick 2 to 4 models. They answer in turn on every message, and each sees what the others said.").</p>
+<p>The persona editor has a block "Sampling for this persona" with Temperature, Top P, Top K, Min P, Max tokens, Repeat penalty, Presence penalty, Frequency penalty and DRY multiplier. An empty field shows "chat default" and follows the chat. The values apply wherever the persona speaks: in a chat with the persona switched on, and on its seat in a group chat. "Empty fields follow the chat. A value moved in the chat's Sampling popup still wins. Each value only reaches a backend that reads it."</p>
+
+<p>Character cards are the files role play apps use to share characters: a JSON file, or a PNG with the card inside the picture. Under Settings, Agent, Personas, the tile "Import card" ("Import a character card (PNG or JSON)") reads card versions 1, 2 and 3, up to 20 MB per file. The card becomes a persona with the card picture as its tile, and the line under it reads "Imported (name). New chats start with this character." If personas are switched off, it asks you to switch them on. The persona's prompt is built from the card's system prompt, description, personality, scenario and example dialogue, and you can edit it like any other persona. Creator notes of a card are shown under the tiles for you to read; they are not part of the prompt.</p>
+
+<p>A new plain chat with that persona has the persona switched on and opens with the card's greeting as the first answer. With more than one greeting, "Previous greeting" and "Next greeting" switch between them until you write. The macros {{char}} and {{user}} are filled in; there is no setting for your own name yet, so {{user}} becomes "User". A lorebook inside a card imports without an error, but LU does not use it. "Export as character card" on the tile saves the persona as a version 2 JSON file.</p>
+
+<p>Web, file, image and video tools are always on in the plain chat for every model that can call tools; a model that cannot answers without them. The same panel holds "Caveman Mode" (Off "Normal responses", Lite "Slightly shorter", Full "Very terse", Ultra "Maximum brevity") and "Group chat" ("Pick 2 to 4 models. They answer in turn on every message, and each sees what the others said. Each one can speak as its own persona."). Each member has a persona button, "The persona this model speaks as in this chat".</p>
 
 <p>Memory is a small store of facts about you that the app injects into every prompt. The Memory toggle above the message box ("Memory: view, add or delete the context injected into prompts") shows what is in it. Settings, Agent, Memory manages the store.</p>
 
@@ -162,9 +204,19 @@
 
 <p>Text to speech uses Piper, a small neural voice of about 63 MB. "Enable read-aloud" under the same settings adds a speaker button to every answer ("Read aloud" / "Stop speaking"), and "Auto-read new responses" reads every answer as it arrives. In Cloud mode dictation runs hosted and needs a signed in account with credits.</p>
 
-<h2 id="export">Export, compact, new chat</h2>
+<h2 id="export">Export, import, compact</h2>
 
-<p>"Export chat" above the message box saves the conversation as Markdown or JSON; Ctrl+E saves Markdown at once. Settings, General, Chat Backup exports all chats in one file and imports them again, and Settings, General, Import from other chatbots reads the export files of ChatGPT, Claude and Gemini.</p>
+<p>"Export chat" above the message box saves the conversation as Markdown or JSON; Ctrl+E saves Markdown at once. Settings, General, Chat Backup exports all chats in one file and imports them again.</p>
+
+<p>To bring your ChatGPT history over, open Settings, General, Import from other chatbots and press "Choose export file (.zip or .json)". It takes the .zip of ChatGPT's data export, or the conversations.json inside it. A large export is read in the background with its progress on screen. The list then shows each conversation with its number of messages and its date; pick them with the checkboxes, "Select all" or the field "Filter by title", and press the import button, which names how many chats it adds.</p>
+
+<p>Each conversation becomes its own chat in the chat list, with its title, its original date and the messages of the thread you saw, in order. Answers you regenerated or edited away stay out, and so do system prompts, reasoning and tool calls. Images and files are not copied; a note such as "[Image not included in the import: beach.jpg]" marks where they were. An imported chat is a normal chat, so Duplicate and Branch from here work on it.</p>
+
+<p>Importing again is safe. A conversation marked "Already imported" is not added twice. One marked "Updated since last import" was continued in ChatGPT and is refreshed. One marked "Continued in LU, imports as a separate chat" is a chat you went on with here: LU never replaces it, and the newer export comes in as a second chat whose title ends in "(from export)".</p>
+
+<p>The second button, "Add to the open chat's documents instead", is the older way: the picked conversations become documents of the chat that is open, for document chat, and do not appear as chats.</p>
+
+<p>The importer is made for ChatGPT, and only an export in ChatGPT's format has been tried in the app, not yet a real one. The same button also reads the conversations of a Claude export and Gemini Apps activity from a Google Takeout JSON file and imports them the same way, but those have not been tried with real exports. A Gemini entry that holds only a prompt becomes a chat with just that question.</p>
 
 <p>When a long conversation nears the end of its context window, type <code>/compact</code>. The app summarises the older turns into a short recap and the conversation keeps going with the summary in place of the history. "Auto-compact at" under Settings, General, Generation does that on its own once the context is a set percentage full; 0 means off.</p>
 

@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { motion, AnimatePresence, useIsPresent } from 'framer-motion'
-import { UploadCloud, ImagePlus, Scissors, Wand2, Sparkles, X, Loader2, Download, AlertTriangle, Image as ImageIcon, Film } from 'lucide-react'
+import { UploadCloud, ImagePlus, Scissors, Wand2, Sparkles, X, Loader2, Download, AlertTriangle, Image as ImageIcon, Film, Maximize2 } from 'lucide-react'
 import { useCreateStore, type GalleryItem } from '../../../stores/createStore'
+import { useModelStore } from '../../../stores/modelStore'
 import { createRunModel } from '../../../lib/render/create-studio'
 import { musicText } from '../../../lib/render/music-ui'
 import { useCreateExp } from './CreateContext'
 import { INTENT_MAP } from './intents'
 import { editNeedsMask, defaultCloudModel, modelForOp } from '../../../stores/cloudCatalogStore'
 import { stageShowsSetupCard, laneModelCount } from './stageGate'
+import { needsMaskFor } from './maskGate'
 import { GeneratingView, ResultView } from './OutputView'
 import { EmptyState } from '../ui/EmptyState'
 import { MONOGRAM, MONOGRAM_INVERT } from '../../layout/brand'
@@ -27,7 +29,7 @@ import { getVideoBundles } from '../../../api/discover'
 import { lipsyncFitLine } from './lipsyncFit'
 import { useGraphicsCardGb } from '../../../hooks/useGraphicsMemory'
 import { ReferenceStrip } from './ReferenceStrip'
-import { FitStage } from './FitStage'
+import { FitStage, FIT_SIDE_FROM } from './FitStage'
 import { BatchStrip, useBatchPickers } from './BatchStrip'
 import { addBatchFiles, useBatchOffered } from './batchRun'
 import { filesFromDrop } from './batchFiles'
@@ -36,8 +38,12 @@ import { useReferenceSlots } from './referenceSlots'
 import { SavedCharacterChips } from './SavedCharacters'
 import { loadPhotosAsReferences, sendPhotosToStudio } from './characterPhotos'
 import { MIN_TRAIN_IMAGES, maxTrainImages } from '../../../lib/train-image-cap'
+import { TRAIN_CAPTION_HELP, TRAIN_CAPTION_MAX, TRAIN_CAPTION_PLACEHOLDER } from '../../../lib/train-captions'
+import { describeAvailability, describeTrainPhoto, type DescribeAvailability } from '../../../lib/render/describe-train-photos'
 import { MAC_IMAGE_SETUP_SIZE, macVideoSetupCopy } from '../../../lib/mac-setup-sizes'
 import { macVideoSetupPlan, type MacVideoSetupPlan } from '../../../api/mlx-starter'
+import { HowItWorks } from '../../ui/HowItWorks'
+import { stageHowtoTopic } from '../../../lib/howto'
 
 interface Props {
   displayed?: GalleryItem
@@ -61,6 +67,19 @@ interface Props {
 export function Stage({ displayed, onOpenMaskEditor, onEditResult, onAnimateResult, onFullscreen, onSaveCharacter, comfyStarting }: Props) {
   const intent = useCreateStore((s) => s.intent())
   const meta = INTENT_MAP[intent]
+  // The width of the stage, for the how-to line at its foot (footLine below).
+  const stageRef = useRef<HTMLDivElement>(null)
+  const [stageWidth, setStageWidth] = useState<number | null>(null)
+  useEffect(() => {
+    const el = stageRef.current
+    if (!el) return
+    const measure = () => setStageWidth((was) => (was === el.clientWidth ? was : el.clientWidth))
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const watch = new ResizeObserver(measure)
+    watch.observe(el)
+    return () => watch.disconnect()
+  }, [])
   // A batch over several source images is one stretch of work: between two of
   // its images nothing is rendering, and the Stage must not flash back.
   const isGenerating = useCreateStore((s) => s.isGenerating || s.batchRun !== null)
@@ -74,6 +93,7 @@ export function Stage({ displayed, onOpenMaskEditor, onEditResult, onAnimateResu
   const audioModelList = useCreateStore((s) => s.audioModelList)
   const lipsyncModelList = useCreateStore((s) => s.lipsyncModelList)
   const motionModelList = useCreateStore((s) => s.motionModelList)
+  const upscaleModelList = useCreateStore((s) => s.upscaleModelList)
   const { connected, modelsLoaded, mlxMissing } = useCreateExp()
   // On the cloud backend the utility ops (background removal, …) run on
   // the render service's hosted endpoints — there's no local ComfyUI node to install,
@@ -105,7 +125,7 @@ export function Stage({ displayed, onOpenMaskEditor, onEditResult, onAnimateResu
     modelsLoaded,
     laneModelCount: laneModelCount(intent, meta.requiresModels, {
       image: imageModelList, video: videoModelList, audio: audioModelList,
-      lipsync: lipsyncModelList, motion: motionModelList,
+      lipsync: lipsyncModelList, motion: motionModelList, upscale: upscaleModelList,
     }),
   })
 
@@ -135,6 +155,16 @@ export function Stage({ displayed, onOpenMaskEditor, onEditResult, onAnimateResu
   )
 
   let body: React.ReactNode
+  // The empty stage carries the how-to line under its examples. A stage that
+  // waits for a file or shows the source has no such place, so the line stands
+  // at its foot.
+  let howtoAtFoot = false
+  // A source on a narrow stage has its controls under the picture, and the
+  // picture already gives up all the height it can (FitStage). The line at
+  // the foot would take 28 px more and make that stage scroll, so it stands
+  // there only where the controls sit beside the picture.
+  let howtoOnlyWide = false
+  const howtoTopic = stageHowtoTopic(intent, backend, isMlxImageHost())
   if (isGenerating) {
     body = <GeneratingView />
   } else if (modelsMissing || installRun) {
@@ -145,10 +175,14 @@ export function Stage({ displayed, onOpenMaskEditor, onEditResult, onAnimateResu
     // Character-Studio training board: the image SET lives here (4-30 photos);
     // trigger word + train button sit in the composer below.
     body = <TrainSetBoard />
+    howtoAtFoot = true
   } else if (meta.needsSource && !source) {
     body = <InputSlot />
+    howtoAtFoot = true
   } else if (meta.needsSource && source && !freshResult) {
     body = <SourcePreview onOpenMaskEditor={onOpenMaskEditor} />
+    howtoAtFoot = true
+    howtoOnlyWide = true
   } else if (displayed) {
     body = (
       <ResultView
@@ -189,9 +223,17 @@ export function Stage({ displayed, onOpenMaskEditor, onEditResult, onAnimateResu
             ))}
           </div>
         )}
+        {/* How it works: the cloud tabs only, the films show the cloud. */}
+        {howtoTopic && (
+          <div className="pt-1">
+            <HowItWorks topic={howtoTopic} variant="line" />
+          </div>
+        )}
       </EmptyState>
     )
   }
+
+  const footLine = howtoAtFoot && !!howtoTopic && !(howtoOnlyWide && stageWidth !== null && stageWidth < FIT_SIDE_FROM)
 
   return (
     // The viewer canvas: ONE fixed, centred frame that is identical on every tab
@@ -202,10 +244,15 @@ export function Stage({ displayed, onOpenMaskEditor, onEditResult, onAnimateResu
     // Whatever the mode renders (empty state, dropzone, result, install card) is
     // centred inside this frame.
     <div className="flex-1 min-w-0 min-h-0 flex overflow-hidden p-2">
-      <div className="flex-1 min-w-0 rounded-xl bg-gray-50 dark:bg-[#1e1e1e] ring-1 ring-black/[0.04] dark:ring-white/[0.05] flex flex-col overflow-hidden relative">
+      <div ref={stageRef} data-testid="create-stage" className="flex-1 min-w-0 rounded-xl bg-gray-50 dark:bg-[#1e1e1e] ring-1 ring-black/[0.04] dark:ring-white/[0.05] flex flex-col overflow-hidden relative">
         <AnimatePresence mode="wait">
-          <StageLayer key={intent + (isGenerating ? ':gen' : '')}>{body}</StageLayer>
+          <StageLayer key={intent + (isGenerating ? ':gen' : '')} footRoom={footLine}>{body}</StageLayer>
         </AnimatePresence>
+        {footLine && howtoTopic && (
+          <div className="absolute bottom-2 inset-x-0 flex justify-center pointer-events-none">
+            <div className="pointer-events-auto"><HowItWorks topic={howtoTopic} variant="line" /></div>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -221,7 +268,7 @@ export function Stage({ displayed, onOpenMaskEditor, onEditResult, onAnimateResu
  * A face that is leaving takes no click and no key any more. Nothing about
  * what is drawn changes, so this holds for every host.
  */
-export function StageLayer({ children }: { children: ReactNode }) {
+export function StageLayer({ children, footRoom = false }: { children: ReactNode; footRoom?: boolean }) {
   const present = useIsPresent()
   return (
     <motion.div
@@ -229,7 +276,8 @@ export function StageLayer({ children }: { children: ReactNode }) {
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.12 }}
-      className={cn('flex-1 min-h-0 flex flex-col', !present && 'pointer-events-none')}
+      // footRoom: the how-to line sits at the stage's foot, so the face ends above it.
+      className={cn('flex-1 min-h-0 flex flex-col', footRoom && 'pb-7', !present && 'pointer-events-none')}
       inert={!present}
       data-stage-layer={present ? 'present' : 'leaving'}
     >
@@ -345,7 +393,7 @@ function InputSlot() {
               : <UploadCloud className="text-lu-accent drop-shadow-[0_0_7px_var(--color-lu-accent-ring)]" size={30} strokeWidth={ICON_STROKE_MARK} />
           )}
           <div className="text-center">
-            <div className="t-title text-gray-300">{meta.id === 'removebg' ? 'Drop an image to cut out' : meta.id === 'animate' ? 'Drop an image to animate' : 'Drop an image to edit'}</div>
+            <div className="t-title text-gray-300">{meta.id === 'removebg' ? 'Drop an image to cut out' : meta.id === 'animate' ? 'Drop an image to animate' : meta.id === 'upscale' ? 'Drop an image to enhance' : 'Drop an image to edit'}</div>
             <div className="t-body text-gray-600">or click to browse · PNG, JPG, WebP</div>
             {batchOffered && <div className="t-body text-gray-600">Pick several to give them all the same run</div>}
           </div>
@@ -414,11 +462,11 @@ function SourcePreview({ onOpenMaskEditor }: { onOpenMaskEditor: () => void }) {
   const cloudImageModel = useCreateStore((s) => s.cloudImageModel)
   // A cloud instruction editor (qwen-image-edit, every studio editor) takes no
   // mask: same model and same rule as the Create button in the Composer.
-  // The Mac's local Edit is Qwen-Image 2.1 on the second image engine: an
-  // edit from the prompt alone. That model takes no mask on Windows either.
-  const noMask = intent === 'edit' && (backend === 'cloud'
-    ? !editNeedsMask(modelForOp('image', 'edit', cloudImageModel || defaultCloudModel('image')?.id || ''))
-    : isMlxImageHost())
+  // The Mac's local Edit is Qwen-Image 2.1 on the second image engine, which
+  // takes a painted mask over the first image (mflux 0.22.0 `--mask-image`):
+  // the prompt repaints the white, the rest stays as it was.
+  const noMask = intent === 'edit' && backend === 'cloud'
+    && !editNeedsMask(modelForOp('image', 'edit', cloudImageModel || defaultCloudModel('image')?.id || ''))
   const batchCount = useCreateStore((s) => s.batchSources.length)
   const batchOffered = useBatchOffered()
   // The same run over several images: no mask (it belongs to one image), and
@@ -445,7 +493,7 @@ function SourcePreview({ onOpenMaskEditor }: { onOpenMaskEditor: () => void }) {
             className={cn(!maxHeight && 'max-h-[52vh]', 'max-w-full object-contain rounded-[var(--radius-panel)] border border-white/[0.06]', intent === 'removebg' && 'lu-checker')}
             style={maxHeight ? { maxHeight } : undefined}
           />
-          {mask && (
+          {mask && !noMask && (
             <div className="absolute top-2 left-2 t-label text-gray-300 bg-black/50 px-2 py-1 rounded-md">mask painted</div>
           )}
           <button
@@ -476,8 +524,15 @@ function SourcePreview({ onOpenMaskEditor }: { onOpenMaskEditor: () => void }) {
               : `Write your prompt below, then Create. All ${batchCount} images get the same edit.`
           ) : meta.id === 'removebg' ? 'Hit Create to cut out the subject and export a transparent PNG.'
             : meta.id === 'upscale' ? 'Hit Create to upscale the image.'
-            : meta.id === 'eraser' ? 'Paint a mask over the object to remove, then hit Create.'
+            : meta.id === 'eraser' ? (mask ? 'Mask ready. Hit Create.' : 'Paint a mask over the object to remove, then hit Create.')
             : noMask ? 'Write the edit prompt below, then Create. This model needs no mask.'
+            // A cloud model that edits through a mask does not start without
+            // one (maskGate.ts), so the line about an empty mask is local only.
+            : needsMaskFor(intent, backend, false) ? 'Paint the area to change, write your prompt below, then Create.'
+            // The Mac's Edit does not restyle at a denoise as the Windows
+            // graph does: without a mask the prompt edits the whole image.
+            : meta.id === 'edit' && backend === 'local' && isMlxImageHost()
+              ? 'Paint an area to change just that, or leave the mask empty to edit the whole image. Write your prompt below, then Create.'
             : meta.allowsMask ? 'Leave the mask empty to restyle the whole image, or paint an area to change just that. Write your prompt below, then Create.'
             : 'Describe the motion below, then Create.'}
         </p>
@@ -641,6 +696,7 @@ const BUSY_DESCRIPTION = {
   macBundle: {
     image: 'This runs in the background and survives leaving this tab. The Model Manager shows the same progress, under Image.',
     video: 'This runs in the background and survives leaving this tab. The Model Manager shows the same progress, under Video.',
+    motion: 'This runs in the background and survives leaving this tab.',
   },
 } as const
 
@@ -648,6 +704,7 @@ const BUSY_DESCRIPTION = {
 const MAC_CANCEL_TITLE = {
   image: 'Stops showing progress here. The download itself keeps running. Follow it in Models, under Image.',
   video: 'Stops showing progress here. The download itself keeps running. Follow it in Models, under Video.',
+  motion: 'Stops showing progress here. The download itself keeps running.',
 } as const
 
 function CapabilityCard({ cap }: { cap: 'rmbg' | 'inpaint-nodes' | 'dwpose' }) {
@@ -706,6 +763,12 @@ const MAC_BUNDLE_COPY = {
     // takes on this Mac.
     description: 'This sets up Apple MLX video on this Mac and downloads a video model to start with. Video renders take minutes per clip, not seconds. More models are in Models, under Video.',
   },
+  motion: {
+    icon: Film,
+    title: 'Local motion control needs a one-time download',
+    // The size of the LoRA (commands/video_motion.rs SIZE_BYTES).
+    description: 'This downloads Motion Control for LTX-2.3 (about 650 MB). Your LTX-2.3 model then follows the movement of a video, starting from your image.',
+  },
 } as const
 
 /** The plan of the Mac's video setup, for the card. Null until it is read,
@@ -750,6 +813,11 @@ const BUNDLE_COPY = {
     // Manager said "Tight on your 12 GB card".
     description: 'This sets up the Wan 2.2 S2V model plus its audio encoder (~20 GB total).',
   },
+  upscale: {
+    icon: Maximize2,
+    title: 'Local Enhance Image needs a one-time download',
+    description: 'This sets up everything for fully local upscaling: ComfyUI itself if it’s missing, plus the Real-ESRGAN x4plus upscale model (~67 MB, runs from 2 GB VRAM).',
+  },
   motion: {
     icon: Film,
     title: 'Local motion control needs a one-time download',
@@ -768,7 +836,7 @@ function videoBundleLine(intent: string): string {
   return ` The lane needs ${intent === 'animate' || intent === 'extend' ? 'an image-to-video' : 'a text-to-video'} model, so this installs ${name} (~${b.totalSizeGB} GB, ${b.vramRequired} VRAM).`
 }
 
-function ModelInstallCard({ kind }: { kind: 'image' | 'video' | 'audio' | 'lipsync' | 'motion' }) {
+function ModelInstallCard({ kind }: { kind: 'image' | 'video' | 'audio' | 'lipsync' | 'motion' | 'upscale' }) {
   const { installModelBundle } = useCreateExp()
   const intent = useCreateStore((s) => s.intent())
   // The run outlives this card on purpose. Stage swaps the card away as soon as
@@ -779,7 +847,8 @@ function ModelInstallCard({ kind }: { kind: 'image' | 'video' | 'audio' | 'lipsy
   const mac = isMlxImageHost()
   // The two lanes a Mac sets up itself. Every other lane is a cloud teaser
   // there and never renders this card.
-  const macKind = mac && (kind === 'image' || kind === 'video') ? kind : null
+  // Motion Control too (3.0.8): its LoRA, for the LTX-2.3 pack it runs on.
+  const macKind = mac && (kind === 'image' || kind === 'video' || kind === 'motion') ? kind : null
   const copy = macKind ? MAC_BUNDLE_COPY[macKind] : BUNDLE_COPY[kind]
   // The Mac lane runs its own MLX stack and has no ComfyUI bundle to name.
   const cardGb = useGraphicsCardGb()
@@ -824,12 +893,49 @@ function ModelInstallCard({ kind }: { kind: 'image' | 'video' | 'audio' | 'lipsy
 // ── Character-Studio training board (2.5.8): the 4-30 photo set. Trigger word
 // and the Create (train) button live in the composer; this is the visual home
 // of the image set with add/remove + drag&drop. ──
-function TrainSetBoard() {
+export function TrainSetBoard() {
   const trainImages = useCreateStore((s) => s.trainImages)
   const addTrainImages = useCreateStore((s) => s.addTrainImages)
   const removeTrainImage = useCreateStore((s) => s.removeTrainImage)
   const backend = useCreateStore((s) => s.backend)
+  const trainCaptions = useCreateStore((s) => s.trainCaptions)
+  const setTrainCaption = useCreateStore((s) => s.setTrainCaption)
+  const isGenerating = useCreateStore((s) => s.isGenerating)
   const inputRef = useRef<HTMLInputElement>(null)
+  // 3.0.8 D28: a description per photo, for the local trainers (musubi on
+  // Windows and Linux, mflux on a Mac; both read the photo's .txt caption).
+  // The cloud trainer takes photos only, so it shows no field it would not use.
+  const captions = backend !== 'cloud'
+  const [describe, setDescribe] = useState<DescribeAvailability | null>(null)
+  const [describing, setDescribing] = useState<{ done: number; total: number } | null>(null)
+  const describeAbort = useRef<AbortController | null>(null)
+  const hasPhotos = trainImages.length > 0
+  // Asked again when the user picks another chat model.
+  const chatModel = useModelStore((s) => s.activeModel)
+  useEffect(() => {
+    if (!captions || !hasPhotos) return
+    let live = true
+    describeAvailability().then((a) => { if (live) setDescribe(a) }).catch(() => {})
+    return () => { live = false }
+  }, [captions, hasPhotos, chatModel])
+  useEffect(() => () => describeAbort.current?.abort(), [])
+
+  // Fills only the empty fields: what the user typed is never overwritten.
+  const describeAll = async () => {
+    const todo = useCreateStore.getState().trainImages.filter((i) => i.blob instanceof Blob && !(useCreateStore.getState().trainCaptions[i.name] ?? '').trim())
+    if (todo.length === 0) return
+    const own = new AbortController()
+    describeAbort.current = own
+    setDescribing({ done: 0, total: todo.length })
+    for (const [n, img] of todo.entries()) {
+      if (own.signal.aborted) break
+      const text = await describeTrainPhoto(img.blob as Blob, own.signal)
+      if (text && !(useCreateStore.getState().trainCaptions[img.name] ?? '').trim()) setTrainCaption(img.name, text)
+      setDescribing({ done: n + 1, total: todo.length })
+    }
+    describeAbort.current = null
+    setDescribing(null)
+  }
 
   const addFiles = (files: FileList | File[]) => {
     // One mint, one release: `mediaRefFrom` is the only place a staged file
@@ -875,19 +981,58 @@ function TrainSetBoard() {
       />
       {trainImages.length === 0 ? null : (
         <>
+          {captions && (
+            <div className="flex items-start justify-center gap-2 flex-wrap shrink-0" data-testid="train-caption-help">
+              <span className="t-label text-gray-500 max-w-[640px] text-center">{TRAIN_CAPTION_HELP}</span>
+              {describing ? (
+                <button
+                  type="button"
+                  onClick={() => describeAbort.current?.abort()}
+                  className="t-label underline underline-offset-2 text-gray-400 hover:text-gray-200 transition-colors inline-flex items-center gap-1"
+                >
+                  <Loader2 size={11} className="animate-spin" />
+                  Describing {describing.done} of {describing.total}, stop
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={describeAll}
+                  disabled={!describe?.available || isGenerating}
+                  title={describe?.hint ?? 'Checking your chat model...'}
+                  className="t-label underline underline-offset-2 text-gray-400 hover:text-gray-200 disabled:opacity-50 disabled:no-underline disabled:hover:text-gray-400 transition-colors"
+                >
+                  Describe photos
+                </button>
+              )}
+            </div>
+          )}
           <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin">
             <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
               {trainImages.map((img) => (
-                <div key={img.name} className="relative group aspect-square rounded-lg overflow-hidden bg-white/[0.03] border border-white/[0.06]">
-                  <img src={img.url} alt="" className="w-full h-full object-cover" />
-                  <button
-                    onClick={() => removeTrainImage(img.name)}
-                    className="absolute top-1 right-1 p-1 rounded-md bg-black/60 text-gray-300 opacity-0 group-hover:opacity-100 hover:text-white transition-opacity"
-                    title="Remove"
-                    aria-label="Remove"
-                  >
-                    <X size={11} />
-                  </button>
+                <div key={img.name} className="flex flex-col gap-1">
+                  <div className="relative group aspect-square rounded-lg overflow-hidden bg-white/[0.03] border border-white/[0.06]">
+                    <img src={img.url} alt="" className="w-full h-full object-cover" />
+                    <button
+                      onClick={() => removeTrainImage(img.name)}
+                      className="absolute top-1 right-1 p-1 rounded-md bg-black/60 text-gray-300 opacity-0 group-hover:opacity-100 hover:text-white transition-opacity"
+                      title="Remove"
+                      aria-label="Remove"
+                    >
+                      <X size={11} />
+                    </button>
+                  </div>
+                  {captions && (
+                    <input
+                      value={trainCaptions[img.name] ?? ''}
+                      onChange={(e) => setTrainCaption(img.name, e.target.value)}
+                      maxLength={TRAIN_CAPTION_MAX}
+                      disabled={isGenerating}
+                      placeholder={TRAIN_CAPTION_PLACEHOLDER}
+                      title={trainCaptions[img.name] || TRAIN_CAPTION_PLACEHOLDER}
+                      aria-label={`What changes in ${img.name}`}
+                      className="t-label w-full px-1.5 h-6 rounded-md bg-white/[0.03] border border-white/[0.06] text-gray-300 placeholder-gray-600 focus:outline-none focus:border-white/15 disabled:opacity-60"
+                    />
+                  )}
                 </div>
               ))}
               <button
@@ -903,7 +1048,11 @@ function TrainSetBoard() {
           <div className="t-label text-gray-500 text-center shrink-0">
             {trainImages.length}/{maxTrainImages(backend)} photos. {backend === 'cloud'
               ? 'Training runs in the cloud and lands the character on your shelf.'
-              : 'Training runs on your GPU and lands the character in your local LoRAs.'}
+              // A Mac trains with its own image engine, on Z-Image Turbo, and
+              // keeps the character in the Mac's LoRA folder (api/mlx-train).
+              : isMlxImageHost()
+                ? "Training runs on this Mac and lands the character in the Mac's LoRA folder."
+                : 'Training runs on your GPU and lands the character in your local LoRAs.'}
           </div>
         </>
       )}

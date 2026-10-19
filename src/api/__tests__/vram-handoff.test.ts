@@ -308,6 +308,17 @@ describe('comfyErrorHint', () => {
     expect(comfyErrorHint(undefined, undefined, 'CUDA out of memory')).toMatch(/GPU memory/i)
   })
 
+  // Discord #bug-reports 12.10. and 17.10.2026: an edit with three images.
+  it('aimdo memory compile error → names graphics memory and what to lower', () => {
+    const h = comfyErrorHint('KSampler', 'RuntimeError', 'aimdo memory compile error')
+    expect(h).toMatch(/out of graphics memory/i)
+    expect(h).toMatch(/fewer images or a smaller size/i)
+    expect(h).toMatch(/restart ComfyUI under Settings, AI Backends/)
+    expect(comfyErrorHint('SamplerCustomAdvanced', 'RuntimeError', 'aimdo memory compile error: could not start recording')).toBe(h)
+    // Negative control: an unrelated aimdo import error is not memory.
+    expect(comfyErrorHint(undefined, 'ModuleNotFoundError', "No module named 'comfy_aimdo.storage'")).toBe('')
+  })
+
   it('Windows pagefile too small (os error 1455) → virtual-memory advice, not an LU bug (#61)', () => {
     const h = comfyErrorHint('CLIPLoader', undefined, 'The paging file is too small for this operation to complete. (os error 1455)')
     expect(h).toMatch(/virtual memory|page file/i)

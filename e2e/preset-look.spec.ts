@@ -67,7 +67,8 @@ async function bootIntoCloudCreate(page: Page, withReference: boolean): Promise<
   const notes = page.getByRole('dialog', { name: /What's new/ })
   await expect(notes).toBeVisible({ timeout: 20_000 })
   if (withReference) await notes.screenshot({ path: shotPath('referenz-hauspopup') })
-  await notes.getByRole('button', { name: 'Close' }).click()
+  // exact: ein Eintrag der Notes enthaelt "closer", ohne exact traf der Name zwei Knoepfe.
+  await notes.getByRole('button', { name: 'Close', exact: true }).click()
   await expect(notes).toBeHidden()
 
   await expect(cloudSwitch(page)).toBeVisible({ timeout: 20_000 })

@@ -46,6 +46,8 @@ export interface PickerRow {
   /** Little room for all customers together (the server's
    *  `limited_capacity`): the row carries the quiet note. */
   limitedCapacity: boolean
+  /** A quiet line after the name that no other field says, null for none. */
+  quietNote: string | null
 }
 
 /** The quiet note of a row whose model has little room for all customers
@@ -55,6 +57,11 @@ export const LIMITED_CAPACITY_TITLE = 'All customers share a small number of req
 
 function declared<K extends string>(model: AIModel, key: K): unknown {
   return key in model ? (model as unknown as Record<K, unknown>)[key] : undefined
+}
+
+function quietNoteOf(model: AIModel): string | null {
+  const note = declared(model, 'quietNote')
+  return typeof note === 'string' && note.trim() ? note : null
 }
 
 function thinkingOf(model: AIModel): PickerRow['thinking'] {
@@ -97,6 +104,7 @@ export function pickerRows(models: readonly AIModel[], paidPlan: boolean | null)
         supportsTools: typeof tools === 'boolean' ? tools : undefined,
       }) === 'none',
       limitedCapacity: declared(model, 'limitedCapacity') === true,
+      quietNote: quietNoteOf(model),
     }
   })
 }

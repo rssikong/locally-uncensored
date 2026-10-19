@@ -478,13 +478,51 @@ describe.each(QWEN21_WEIGHTS)('buildDynamicWorkflow, Qwen-Image 2.1 edit with fu
     expect(nodesOf(wf, 'LoadImage')).toHaveLength(3)
   })
 
-  it('takes no more than three references besides the source', async () => {
+  // Discord D7 / G26: up to ten images in all. The node has slots image_1 to
+  // image_16, the model reads ten (lib/edit-references).
+  it('takes nine references besides the source, in order, and drops a tenth', async () => {
+    const refs = Array.from({ length: 10 }, (_, i) => `ref${i + 2}.png`)
     const wf = await buildDynamicWorkflow({
-      ...baseParams, inputImage: 'scene.png', denoise: 0.7, referenceImages: ['a.png', 'b.png', 'c.png', 'd.png'],
+      ...baseParams, inputImage: 'scene.png', denoise: 0.7, referenceImages: refs,
     } as never)
     const enc = nodeOf(wf, 'TextEncodeQwenImage21')![1]
-    expect(enc.inputs['images.image_4']).toBeDefined()
-    expect(enc.inputs['images.image_5']).toBeUndefined()
+    const loaded = (slot: string) => {
+      const [id] = enc.inputs[slot] as [string, number]
+      return wf[id].inputs!.image
+    }
+    expect(loaded('images.image_1')).toBe('scene.png')
+    for (let i = 2; i <= 10; i++) expect(loaded(`images.image_${i}`)).toBe(`ref${i}.png`)
+    expect(enc.inputs['images.image_11']).toBeUndefined()
+    expect(nodesOf(wf, 'LoadImage')).toHaveLength(10)
+    expect(nodesOf(wf, 'LoadImage').map(([, node]) => node.inputs!.image)).not.toContain('ref11.png')
+  })
+
+  it('up to four images in all every image keeps the full side of the canvas', async () => {
+    const wf = await buildDynamicWorkflow({
+      ...baseParams, inputImage: 'scene.png', denoise: 0.7, referenceImages: ['a.png', 'b.png', 'c.png'],
+    } as never)
+    expect(nodeOf(wf, 'TextEncodeQwenImage21')![1].inputs.resolution).toBe(1024)
+  })
+
+  it('past four images they share the pixel budget of four, so ten fit a 12 GB card', async () => {
+    const at = async (refs: number, width = 1024, height = 1024) => {
+      const wf = await buildDynamicWorkflow({
+        ...baseParams, width, height, inputImage: 'scene.png', denoise: 0.7,
+        referenceImages: Array.from({ length: refs }, (_, i) => `r${i}.png`),
+      } as never)
+      return nodeOf(wf, 'TextEncodeQwenImage21')![1].inputs.resolution as number
+    }
+    // 1024 * sqrt(4 / 10) = 647.6, floored to the grid of 32.
+    expect(await at(9)).toBe(640)
+    // 1024 * sqrt(4 / 5) = 915.9
+    expect(await at(4)).toBe(896)
+    for (const refs of [4, 6, 9]) {
+      const side = await at(refs)
+      expect((refs + 1) * side * side).toBeLessThanOrEqual(4 * 1024 * 1024)
+      expect(side % 32).toBe(0)
+    }
+    // A larger canvas keeps its own larger budget: 1536 * sqrt(0.4) = 971.4.
+    expect(await at(9, 1536, 1536)).toBe(960)
   })
 
   // Negative control: references without a source are not an edit at all.

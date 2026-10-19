@@ -172,8 +172,8 @@ describe('groupSpeakers', () => {
   it('a participant with its own persona is called by it and speaks as it', () => {
     const speakers = groupSpeakers(['qwen', 'gemma'], { qwen: 'sherlock', gemma: 'watson' }, personas)
     expect(speakers).toEqual({
-      qwen: { name: 'Sherlock', personaPrompt: 'You are Sherlock Holmes.' },
-      gemma: { name: 'Watson', personaPrompt: 'You are Doctor Watson.' },
+      qwen: { name: 'Sherlock', personaPrompt: 'You are Sherlock Holmes.', personaId: 'sherlock' },
+      gemma: { name: 'Watson', personaPrompt: 'You are Doctor Watson.', personaId: 'watson' },
     })
     expect(hasOwnPersonas(speakers)).toBe(true)
   })

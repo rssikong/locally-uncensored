@@ -63,6 +63,16 @@ const TYPE_CONFIG = {
   video: { label: 'Video', icon: Video },
 }
 
+/** The Create tab a specialised video file runs in. These files are not
+ *  offered in Create's Video tab, so a row that just says "Video" sent the
+ *  Discord reporter of 15.10.2026 looking there for his Wan 2.2 Animate
+ *  model. Everything else answers null and draws nothing. */
+export function createTabForArchitecture(architecture: string | undefined): string | null {
+  if (architecture === 'wananimate' || architecture === 'wanvace') return 'Motion Control'
+  if (architecture === 'wans2v') return 'Talking Character'
+  return null
+}
+
 export function ModelCard({ model, isActive, onSelect, onDelete, onInfo, infoTitle, canDelete = true, onUse, useBusy = false, engineStopped: luEngineRuht = false }: Props) {
   const typeInfo = TYPE_CONFIG[model.type] || TYPE_CONFIG.text
   const TypeIcon = typeInfo.icon
@@ -156,6 +166,9 @@ export function ModelCard({ model, isActive, onSelect, onDelete, onInfo, infoTit
             02.10.2026). */}
         {(model.type === 'image' || model.type === 'video') && fileFormat(model) && (
           <><span className="opacity-40">·</span><span>{fileFormat(model)}</span></>
+        )}
+        {model.type === 'video' && createTabForArchitecture(model.architecture) && (
+          <><span className="opacity-40">·</span><span data-testid="model-card-create-tab">in Create: {createTabForArchitecture(model.architecture)}</span></>
         )}
       </span>
 

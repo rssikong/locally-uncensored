@@ -30,7 +30,7 @@ import type { VoiceBrain } from './voice-brain'
 import { VoiceHistory, voiceModelRecord } from './voice-history'
 import { getVoiceLoopStatus, startVoiceLoop, stopVoiceLoop } from './voice-loop'
 import { listRunningModels, unloadModel } from './ollama'
-import { getProviderForModel, getProviderIdFromModel } from './providers'
+import { getProviderForModel, getProviderIdFromModel, isOpenAISlotModel } from './providers'
 import type { VoiceLoopSession } from './voice-loop'
 import { SIGNED_OUT_MESSAGE, cloudKeyStep } from '../lib/voice/cloud-key'
 import { getAccessToken } from './cloud/supabase'
@@ -61,6 +61,7 @@ import { log } from '../lib/logger'
 import { resolveExecutor } from './computer-executor'
 import { gatePlanTool, planToolAllowed } from '../lib/plan-gate'
 import { buildChatSystemPrompt } from '../lib/system-prompt'
+import { withChatPersona } from '../lib/chat-persona'
 import { applyMaxTools, toolSelectionOpts } from '../lib/tool-selection'
 import { yieldSilentRunsTo } from '../lib/silent-runs-yield'
 import { startTimeout } from '../lib/voice/session-state'
@@ -171,7 +172,7 @@ async function noteModelBeforeSession(activeModel: string | null): Promise<void>
       const { modelId } = getProviderForModel(activeModel)
       const running = await listRunningModels()
       if (!running.includes(modelId)) loadedForVoice = { kind: 'ollama', model: modelId }
-    } else if (providerId === 'openai' && useProviderStore.getState().providers.openai.managed === true && isTauri()) {
+    } else if (isOpenAISlotModel(activeModel) && useProviderStore.getState().providers.openai.managed === true && isTauri()) {
       const status = await backendCall<{ running?: boolean }>('bundled_engine_status')
       if (status?.running !== true) loadedForVoice = { kind: 'engine' }
     }
@@ -588,7 +589,16 @@ export async function startVoiceSession(): Promise<void> {
       brain,
       all: tools.defs,
       slug,
-      prompt: { base: buildChatSystemPrompt(conversation ?? {}, settings.personasEnabled !== false), memory },
+      // GH #170: the persona of THIS chat, the one its Plugins menu names.
+      prompt: {
+        base: buildChatSystemPrompt(
+          conversation
+            ? withChatPersona(conversation, useSettingsStore.getState().personas, useSettingsStore.getState().activePersonaId)
+            : {},
+          settings.personasEnabled !== false,
+        ),
+        memory,
+      },
       wholeComputer: false,
       filesNote: null,
     }

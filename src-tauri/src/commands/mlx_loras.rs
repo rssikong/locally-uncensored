@@ -5,7 +5,9 @@
 //! `image_mflux.rs`) is handed LoRA files on its command line. So the Mac has
 //! a folder of its own in the app's data folder. The user puts `.safetensors`
 //! files there, the Model Manager and the LoRA stack in Create list them, and
-//! a run names them by the path below that folder.
+//! a run names them by the path below that folder. The video engines of the
+//! Mac read the same folder for the models that take `--lora`
+//! (`commands::video`, `lora_stack`).
 //!
 //! The engine opens whatever path it is handed, so a name from the interface
 //! is only ever resolved here (`resolve`): a `.safetensors` file inside the
@@ -93,7 +95,7 @@ pub(crate) fn classify<'a>(names: impl IntoIterator<Item = &'a str>) -> Header {
 /// The header of a safetensors file as it is on disk: eight bytes of length,
 /// then that much JSON. Comes back with the file, which then stands at the
 /// first byte of the tensor data.
-fn header_json(path: &Path) -> Option<(std::fs::File, Vec<u8>)> {
+pub(crate) fn header_json(path: &Path) -> Option<(std::fs::File, Vec<u8>)> {
     use std::io::Read;
     let mut file = std::fs::File::open(path).ok()?;
     let total = file.metadata().map(|m| m.len()).unwrap_or(0);
@@ -111,12 +113,20 @@ fn header_json(path: &Path) -> Option<(std::fs::File, Vec<u8>)> {
 /// Read the tensor names out of a safetensors header. Its keys are the names.
 pub(crate) fn read_header(path: &Path) -> Header {
     const UNREADABLE: Header = Header { keys: Keys::Unreadable, dora: false };
-    let Some((_, buf)) = header_json(path) else { return UNREADABLE };
-    // The values are not needed, and not built.
-    match serde_json::from_slice::<std::collections::HashMap<String, serde::de::IgnoredAny>>(&buf) {
-        Ok(header) => classify(header.keys().map(String::as_str).filter(|k| *k != "__metadata__")),
-        Err(_) => UNREADABLE,
+    match tensor_names(path) {
+        Some(names) => classify(names.iter().map(String::as_str)),
+        None => UNREADABLE,
     }
+}
+
+/// The tensor names of a safetensors file, or None when its header cannot be
+/// read. The video engines match some of them by their prefix
+/// (`commands::video`), which the sorting of `classify` does not keep.
+pub(crate) fn tensor_names(path: &Path) -> Option<Vec<String>> {
+    let (_, buf) = header_json(path)?;
+    // The values are not needed, and not built.
+    let header = serde_json::from_slice::<std::collections::HashMap<String, serde::de::IgnoredAny>>(&buf).ok()?;
+    Some(header.into_keys().filter(|k| k != "__metadata__").collect())
 }
 
 /// What a LoRA file says about the weight of its layers.

@@ -8,7 +8,7 @@ import { usePopoverPlatz } from '../../hooks/usePopoverPlatz'
 import { isBelowChatMinimum, SMALL_CHAT_MODEL_WARNING } from '../../lib/chat-model-minimum'
 import {
   Download, ExternalLink, Info, Check, ChevronDown, Loader2, RefreshCw,
-  X, Flame, Wrench, Eye, Feather, HardDrive,
+  X, Flame, Wrench, Eye, Feather, HardDrive, FileCheck,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { DiscoverModel, DownloadProgress, ModelBundle } from '../../api/discover'
@@ -20,6 +20,8 @@ import { modelTileAction } from '../../lib/model-tile-action'
 import { bundleGetPlan } from '../../lib/bundle-state'
 import { ICON_SM } from '../ui/icon-size'
 import { downloadSizeGB, gbOf } from '../../lib/image-part'
+import { CloudOfferLine } from '../cloud/CloudOffer'
+import type { CloudOfferTask } from '../../lib/cloud-offer'
 
 // ─── Hardware fit ───────────────────────────────────────────────────
 
@@ -398,6 +400,10 @@ export interface ModelTileProps {
   canUse?: (m: DiscoverModel) => boolean
   /** Is a Use click for THIS row already running (S6). */
   isUsing?: (m: DiscoverModel) => boolean
+  /** Check files (GH #113) for an installed row. Shown only where
+   *  `canCheck` says the files are where the check looks for them. */
+  onCheck?: (m: DiscoverModel) => void
+  canCheck?: (m: DiscoverModel) => boolean
   /** Does the download of THIS row bring the image part along. Absent = yes,
    *  which is the default everywhere; false only after the user unticked it. */
   withImagePart?: (m: DiscoverModel) => boolean
@@ -511,6 +517,9 @@ export function ModelTile(props: ModelTileProps) {
           <FitHint fit={fit} sharedMemory={sharedMemory} />
         </p>
       )}
+      {/* Too big for this machine and not here yet: the one place LU Cloud
+          is named on a chat tile (lib/cloud-offer.ts). */}
+      {fit === 'big' && action === 'get' && <CloudOfferLine task="chat" sharedMemory={sharedMemory} />}
 
       <div className="flex items-center gap-2 mt-auto pt-3 min-h-[var(--control-h-sm)]">
         {/* Variant / size selector — only when the family ships several quants */}
@@ -581,6 +590,9 @@ export function ModelTile(props: ModelTileProps) {
               (GH #118), die Optik aus den Rezepten dieser Datei. `installed`,
               `downloading` und `externalOnly` stehen deshalb nicht mehr
               einzeln in dieser Kette, sie gehen oben in `action` ein. */}
+          {props.onCheck && (action === 'use' || action === 'installed') && (!props.canCheck || props.canCheck(sel)) && (
+            <CheckFilesButton onClick={() => props.onCheck!(sel)} label={false} name={sel.name} />
+          )}
           {action === 'view' ? (
             sel.url ? (
               <button
@@ -663,9 +675,46 @@ export interface BundleTileProps {
   onRetry: () => void
   onClear: () => void
   onOpenUrl: (url: string) => void
+  /** Check files (GH #113): compare the bundle's files with the catalog and
+   *  repair the broken ones. Absent: no button. */
+  onCheck?: () => void
+  /** The Create tab this bundle serves, for the LU Cloud line on a bundle
+   *  that does not fit (lib/cloud-offer.ts). Absent: no line. */
+  cloudTask?: CloudOfferTask
+}
+
+/** Whether a bundle tile names LU Cloud: its model does not fit and it is
+ *  neither here, nor on its way, nor broken. An add-on never does: it has no
+ *  verdict of its own, its model's tile speaks for it. Both faces ask this. */
+export function bundleOffersCloud(fit: Fit, p: Pick<BundleTileProps, 'bundle' | 'cloudTask' | 'complete' | 'downloading' | 'hasErrors'>): boolean {
+  return fit === 'big' && !p.bundle.addonFor && !!p.cloudTask && !p.complete && !p.downloading && !p.hasErrors
 }
 
 const NO_FILES: ReadonlySet<string> = new Set()
+
+/** Whether a bundle tile offers Check files: something of it is on disk
+ *  (installed, failed, or some files already here) and nothing is moving.
+ *  A bundle with nothing on disk has nothing to check. Both faces ask this. */
+export function bundleOffersCheck(p: Pick<BundleTileProps, 'onCheck' | 'complete' | 'downloading' | 'hasErrors'>, present: number): boolean {
+  return !!p.onCheck && !p.downloading && (p.complete || p.hasErrors || present > 0)
+}
+
+/** The Check files button of a tile. With a label where the tile has room
+ *  (an installed bundle shows only its pill), an icon where Retry and Clear
+ *  stand already. */
+export function CheckFilesButton({ onClick, label, name, className = TILE_CONTROL }: { onClick: () => void; label: boolean; name: string; className?: string }) {
+  return (
+    <button
+      onClick={onClick}
+      className={label ? className : 'lu-control lu-control--icon'}
+      title="Check files: compare every file with the catalog and repair the broken ones"
+      aria-label={`Check files of ${name}`}
+      data-check-files={name}
+    >
+      <FileCheck size={ICON_SM} />{label && ' Check files'}
+    </button>
+  )
+}
 
 /** What a bundle tile says, without its look: the verdict, the line that
  *  names the card or the model an add-on belongs to, and what Get still has to
@@ -750,6 +799,7 @@ export function BundleTile(props: BundleTileProps) {
               <FitHint fit={fit} />
             </p>
           )}
+          {bundleOffersCloud(fit, props) && <CloudOfferLine task={props.cloudTask!} sharedMemory={props.sharedMemory} />}
         </div>
         {bundle.url && (
           <button
@@ -771,6 +821,9 @@ export function BundleTile(props: BundleTileProps) {
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
+          {bundleOffersCheck(props, plan.present) && (
+            <CheckFilesButton onClick={props.onCheck!} label={complete} name={bundle.name} />
+          )}
           {complete ? (
             <span className={TILE_STATE}>
               <Check size={ICON_SM} /> Installed

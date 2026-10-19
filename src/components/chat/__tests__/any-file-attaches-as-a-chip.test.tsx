@@ -34,9 +34,9 @@ beforeEach(() => {
 })
 afterEach(cleanup)
 
-function setup() {
+function setup({ filesReachTools = false } = {}) {
   const send = vi.fn()
-  const { container } = render(<ChatInput onSend={send} onStop={() => {}} isGenerating={false} modelReady={() => true} />)
+  const { container } = render(<ChatInput onSend={send} onStop={() => {}} isGenerating={false} modelReady={() => true} filesReachTools={filesReachTools} />)
   const input = container.querySelector<HTMLInputElement>('input[type=file]')!
   const attach = (...files: File[]) => fireEvent.change(input, { target: { files } })
   return { send, attach, input }
@@ -57,7 +57,31 @@ describe('the clip takes any file', () => {
     const chip = await screen.findByTestId('composer-file-chip')
     expect(chip.textContent).toContain('mario.nes')
     expect(chip.textContent).toContain('NES ROM (iNES), 1.0 KB')
-    // Nothing is said about it in or above the prompt box.
+  })
+
+  it('plain chat: a binary gets one line above the transcript, naming it and the way to the file itself', async () => {
+    const { attach } = setup()
+    attach(new File([rom()], 'mario.nes'))
+    await screen.findByTestId('composer-file-chip')
+    await waitFor(() => expect(notices()).toEqual([
+      'Models cannot read binary files. "mario.nes" (NES ROM (iNES), 1.0 KB) reaches the model as a short summary only. To let it work on the file itself, turn on Agent mode or use Code: the file is then put into the working folder, where the model\'s tools can open it.',
+    ]))
+    expect(useChatNoticeStore.getState().notices[0]).toMatchObject({ id: 'binary-summary-only', ton: 'ruhig' })
+    // Above the transcript, never inside the prompt box.
+    expect(screen.queryByText(/cannot read binary files/)).toBeNull()
+  })
+
+  it('Agent and Code: no such line, the file goes into the working folder', async () => {
+    const { attach } = setup({ filesReachTools: true })
+    attach(new File([rom()], 'mario.nes'))
+    await screen.findByTestId('composer-file-chip')
+    expect(notices()).toEqual([])
+  })
+
+  it('plain chat: a text file needs no such line, the model reads its text', async () => {
+    const { attach } = setup()
+    attach(new File(['just some notes'], 'notes.txt'))
+    await screen.findByTestId('composer-file-chip')
     expect(notices()).toEqual([])
   })
 
@@ -107,7 +131,7 @@ describe('the clip takes any file', () => {
     const huge = new File(['x'], 'disc.iso')
     Object.defineProperty(huge, 'size', { value: MAX_CHAT_FILE_BYTES + 1 })
     attach(huge)
-    await waitFor(() => expect(notices()).toEqual(['"disc.iso" is too large. You can attach files up to 64.0 MB.']))
+    await waitFor(() => expect(notices()).toEqual(['"disc.iso" is too large. You can attach files up to 256.0 MB.']))
     expect(screen.queryByTestId('composer-file-chip')).toBeNull()
     // The sentence is not drawn inside the composer.
     expect(screen.queryByText(/is too large/)).toBeNull()

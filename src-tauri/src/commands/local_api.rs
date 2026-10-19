@@ -477,6 +477,18 @@ pub fn forward_headers(eingehend: &BTreeMap<String, String>) -> BTreeMap<String,
         .collect()
 }
 
+/// Der Schluessel der LU Engine fuer eine Weiterleitung, oder nichts.
+///
+/// Nur die Engine-Lane bekommt ihn, und nur auf einer Loopback-Adresse: eine
+/// Lane, die jemand auf eine Adresse im Netz gestellt hat, sieht ihn nie.
+pub fn engine_schluessel(lane: Lane, url: &str) -> Option<String> {
+    if lane != Lane::Engine {
+        return None;
+    }
+    let port = reqwest::Url::parse(url).ok()?.port_or_known_default()?;
+    super::engine_key::goes_to_engine(url, &[port]).then(super::engine_key::bearer)
+}
+
 /// Ein neues Zufallstoken.
 ///
 /// 32 Bytes aus dem Systemzufall, hex — 256 Bit. Laenger als noetig und kuerzer
@@ -892,11 +904,17 @@ async fn weiterleiten_mit(
         }
     };
 
-    let mut req = state.http.post(format!("{}{}", base, pfad));
+    let ziel_url = format!("{}{}", base, pfad);
+    let mut req = state.http.post(&ziel_url);
     for (k, v) in forward_headers(&header_map_to_btree(&headers)) {
         if let (Ok(name), Ok(val)) = (HeaderName::try_from(k.as_str()), HeaderValue::from_str(&v)) {
             req = req.header(name, val);
         }
+    }
+    // Die LU Engine will ihren Schluessel (engine_key.rs). Er geht nur an
+    // eine Loopback-Adresse; das Token des Aufrufers ist oben schon gestrichen.
+    if let Some(s) = engine_schluessel(ziel.lane, &ziel_url) {
+        req = req.header(header::AUTHORIZATION, s);
     }
     let antwort = match req.json(&json).send().await {
         Ok(r) => r,
@@ -2170,6 +2188,16 @@ mod tests {
     }
 
     // ── Token ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn nur_die_engine_lane_auf_loopback_bekommt_den_engine_schluessel() {
+        let s = super::super::engine_key::bearer();
+        assert_eq!(engine_schluessel(Lane::Engine, "http://127.0.0.1:8127/v1/chat/completions"), Some(s.clone()));
+        assert_eq!(engine_schluessel(Lane::Engine, "http://localhost:8130/v1/embeddings"), Some(s));
+        assert_eq!(engine_schluessel(Lane::Engine, "http://192.168.1.9:8127/v1/chat/completions"), None);
+        assert_eq!(engine_schluessel(Lane::Ollama, "http://127.0.0.1:11434/v1/chat/completions"), None);
+        assert_eq!(engine_schluessel(Lane::LmStudio, "http://127.0.0.1:1234/v1/chat/completions"), None);
+    }
 
     #[test]
     fn ein_leeres_token_passt_zu_nichts() {

@@ -25,8 +25,7 @@ use crate::os_error;
 use crate::state::AppState;
 
 use super::download::{download_file_blocking, verify_downloaded_installer};
-use super::lmstudio::{lmstudio_gui_exe, lmstudio_lms_path, lmstudio_server_running,
-    LMSTUDIO_DEFAULT_PORT};
+use super::lmstudio::{lmstudio_gui_exe, lmstudio_lms_path, lmstudio_server_running};
 
 /// SHA-256 of the LM Studio installer at [`LMSTUDIO_INSTALLER_URL`].
 ///
@@ -111,7 +110,7 @@ const LMSTUDIO_INSTALLER_BYTES: Option<u64> = Some(221_768_208);
 //   1. Download the official LM Studio installer .exe
 //   2. Silent install with /S (NSIS / electron-builder convention)
 //   3. Run `lms bootstrap` to register the CLI on PATH
-//   4. Start the server on port 1234 via `lms server start --cors`
+//   4. Start the server on port 1234 via `lms server start`
 //
 // Step 4 is what makes this Plug & Play — without it the user has to manually
 // open the app and toggle the server, which is exactly the "version one
@@ -361,16 +360,17 @@ pub fn install_lmstudio(state: State<'_, AppState>) -> Result<serde_json::Value,
                 }
 
                 // Start the embedded server. `lms server start` is non-blocking — it
-                // detaches a background httpd. --cors so LU's web view (which is on a
-                // tauri:// origin) isn't blocked by the SOP. Port matches the
-                // provider-store default of 1234 so user config Just Works.
+                // detaches a background httpd. No --cors: LU reaches LM Studio
+                // through its Rust proxy, and the flag would let every web page
+                // in the user's browser read this server (see `lms_server_args`).
+                // Port matches the provider-store default of 1234 so user config
+                // Just Works.
                 // Re-resolve the path because the bootstrap dance above may have
                 // promoted us from the pre-bootstrap path to ~/.lmstudio/bin/lms.exe.
                 update("starting", "Starting LM Studio server on port 1234...");
                 if let Some(p) = lmstudio_lms_path() {
                     let mut srv = crate::process_util::foreign_system_command(&p);
-                    srv.args(["server", "start", "--cors", "--port"])
-                        .arg(LMSTUDIO_DEFAULT_PORT.to_string())
+                    srv.args(super::lmstudio::lms_server_args())
                         .stdout(Stdio::null())
                         .stderr(Stdio::null());
                     crate::process_util::suppress_window(&mut srv);

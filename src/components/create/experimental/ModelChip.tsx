@@ -21,6 +21,7 @@ import { useLocalModelFits } from '../../../hooks/useLocalModelFit'
 import { vramFitLabel } from '../../../lib/vram-fit'
 import { localModelLabel } from '../../../lib/local-model-name'
 import { isMlxImageHost, mlxPickerFamily } from '../../../api/mlx-image'
+import { ref2vRefusal, ref2vRowNote } from '../../../api/comfyui'
 
 // Portplan P7: lipsync/music/extend/motion reach the Studio track through the
 // SAME picker as their classic op-specialized twins, one list, matching what
@@ -199,6 +200,10 @@ function CloudModelChip() {
       className="min-w-[150px] max-w-[230px]"
       options={options}
       value={value}
+      // "Use character" lists the models of the picked character's family.
+      // With no character picked there is no list yet, and the bare
+      // "Select..." asked for a model that cannot be chosen.
+      placeholder={characterUse && !selectedCharacter ? 'Pick a character first' : undefined}
       onChange={(v) =>
         special || roleIntent || characterUse ? setCloudOpModel(v) : isVideo ? setCloudVideoModel(v) : setCloudImageModel(v)
       }
@@ -206,7 +211,29 @@ function CloudModelChip() {
   )
 }
 
+/** The Train tab on a Mac: the run trains on Z-Image Turbo whatever image
+ *  model is picked (api/mlx-train), so the chip names that and offers no
+ *  list. The picked image model showed there before ("MLX SD Turbo"). */
+function MacTrainBaseChip() {
+  return (
+    <span
+      className="lu-control t-control px-2 shrink-0"
+      data-testid="mac-train-base"
+      title="Characters train on Z-Image Turbo, the image model Use character runs them on."
+    >
+      Trains on Z-Image Turbo
+    </span>
+  )
+}
+
 function LocalModelChip() {
+  const intent = useCreateStore((s) => s.intent())
+  const characterTab = useCreateStore((s) => s.characterTab)
+  if (isMlxImageHost() && intent === 'character' && characterTab !== 'use') return <MacTrainBaseChip />
+  return <LocalModelPicker />
+}
+
+function LocalModelPicker() {
   const setImageModel = useCreateStore((s) => s.setImageModel)
   const setVideoModel = useCreateStore((s) => s.setVideoModel)
   const setLocalOpModel = useCreateStore((s) => s.setLocalOpModel)
@@ -216,6 +243,7 @@ function LocalModelChip() {
 
   // Which model a run takes lives in localPick, shared with the waiting area.
   const { isVideo, laneList, list, value } = useLocalPick()
+  const intent = useCreateStore((s) => s.intent())
   // A model that does not sit comfortably on the detected card says so on its
   // row, here, where it is picked. Never at the prompt field. A model that
   // fits, and a machine without a detected card, add nothing.
@@ -243,7 +271,8 @@ function LocalModelChip() {
     // The whole name is the tooltip: the file name on Windows and Linux,
     // the catalogue name on the Mac. It is what is left where a name is cut
     // off after all (a narrow window, a very long file name).
-    title: m.name,
+    title: isVideo && intent === 'animate' && ref2vRefusal(m.name) ? `${m.name}\n${ref2vRefusal(m.name)}` : m.name,
+    sublabel: isVideo ? ref2vRowNote(m.name, intent) : undefined,
     badge: { label: family(m)?.label ?? TYPE_LABEL[m.type] },
     group: tierGroup({ tier }),
     tags: [...tierMarks({ tier }), ...fitMarks(m.name)],

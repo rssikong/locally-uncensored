@@ -210,7 +210,7 @@ async fn read_body(mut resp: reqwest::Response, limit: usize) -> Result<Vec<u8>,
     Ok(body)
 }
 
-async fn fetch_hops(url: &str, gate: Gate, limit: usize) -> Result<Page, String> {
+async fn fetch_hops(url: &str, gate: Gate, limit: usize, user_agent: &str) -> Result<Page, String> {
     let mut current = url.to_string();
     for _ in 0..=MAX_REDIRECTS {
         let target = current.clone();
@@ -223,7 +223,7 @@ async fn fetch_hops(url: &str, gate: Gate, limit: usize) -> Result<Page, String>
         let parsed = url::Url::parse(&current).map_err(|e| format!("Invalid URL: {}", e))?;
         let host = parsed.host_str().unwrap_or("").to_string();
         let client =
-            crate::commands::proxy::pinned_client_as(&host, &addrs, DEADLINE, USER_AGENT)?;
+            crate::commands::proxy::pinned_client_as(&host, &addrs, DEADLINE, user_agent)?;
         let resp = client
             .get(current.clone())
             .header("Accept", ACCEPT)
@@ -250,8 +250,14 @@ async fn fetch_hops(url: &str, gate: Gate, limit: usize) -> Result<Page, String>
     Err("Fetch failed: too many redirects".to_string())
 }
 
-async fn fetch_page_with(url: &str, gate: Gate, limit: usize, deadline: Duration) -> Result<Page, String> {
-    match tokio::time::timeout(deadline, fetch_hops(url, gate, limit)).await {
+async fn fetch_page_with(
+    url: &str,
+    gate: Gate,
+    limit: usize,
+    deadline: Duration,
+    user_agent: &str,
+) -> Result<Page, String> {
+    match tokio::time::timeout(deadline, fetch_hops(url, gate, limit, user_agent)).await {
         Ok(result) => result,
         Err(_) => Err("Fetch failed: timed out".to_string()),
     }
@@ -260,8 +266,12 @@ async fn fetch_page_with(url: &str, gate: Gate, limit: usize, deadline: Duration
 /// GET a page for a model: every hop checked by `model_url_addrs` and
 /// connected to the addresses that check answered, the body capped at
 /// `MAX_BODY`, the whole thing inside one deadline.
-pub(crate) async fn fetch_page(url: &str) -> Result<Page, String> {
-    fetch_page_with(url, Arc::new(model_url_addrs), MAX_BODY, DEADLINE).await
+///
+/// `user_agent` is the one the user set under Settings, Search Provider
+/// (D16), already checked by `search::custom_user_agent`; `None` sends the
+/// agent's own as always.
+pub(crate) async fn fetch_page(url: &str, user_agent: Option<&str>) -> Result<Page, String> {
+    fetch_page_with(url, Arc::new(model_url_addrs), MAX_BODY, DEADLINE, user_agent.unwrap_or(USER_AGENT)).await
 }
 
 #[cfg(test)]
@@ -431,7 +441,7 @@ mod tests {
     }
 
     async fn get(url: &str, gate: Gate) -> Result<Page, String> {
-        fetch_page_with(url, gate, 64 * 1024, Duration::from_secs(10)).await
+        fetch_page_with(url, gate, 64 * 1024, Duration::from_secs(10), USER_AGENT).await
     }
 
     #[tokio::test]
@@ -453,6 +463,32 @@ mod tests {
         assert!(request.contains("accept: text/html,text/plain,application/xhtml+xml;q=0.9,*/*;q=0.5"), "{request}");
         assert!(request.contains("accept-language: en,de;q=0.8"), "{request}");
         assert!(!request.contains("accept-encoding"), "the client asks for no packing: {request}");
+    }
+
+    #[tokio::test]
+    async fn a_user_agent_from_settings_goes_out_on_every_hop() {
+        // D16: the user set his own User-Agent. It goes out on the first hop
+        // AND on the hop a redirect leads to, the other headers stay.
+        let end = stub(|_| ok("arrived")).await;
+        let to = format!("http://end.test:{}/there", end.port);
+        let start = stub(move |_| redirect(&to)).await;
+        let mine = "MyResearchBot/2.0 (+contact me)";
+        let got = fetch_page_with(
+            &format!("http://start.test:{}/", start.port),
+            stub_gate(),
+            64 * 1024,
+            Duration::from_secs(10),
+            mine,
+        )
+        .await
+        .unwrap();
+        assert_eq!(got.body, b"arrived");
+        for stub in [&start, &end] {
+            let request = stub.seen.lock().unwrap().join("\n").to_ascii_lowercase();
+            assert!(request.contains("user-agent: myresearchbot/2.0 (+contact me)"), "{request}");
+            assert!(!request.contains("locallyuncensored-agent"), "{request}");
+            assert!(request.contains("accept-language: en,de;q=0.8"), "{request}");
+        }
     }
 
     #[tokio::test]
@@ -622,7 +658,7 @@ mod tests {
                 held.push(sock);
             }
         });
-        let err = fetch_page_with(&format!("http://silent.test:{port}/"), stub_gate(), 1024, Duration::from_millis(400))
+        let err = fetch_page_with(&format!("http://silent.test:{port}/"), stub_gate(), 1024, Duration::from_millis(400), USER_AGENT)
             .await
             .unwrap_err();
         assert_eq!(err, "Fetch failed: timed out");

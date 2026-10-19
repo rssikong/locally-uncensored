@@ -1,18 +1,15 @@
 /**
- * Auto-Compact: das Opt-in und die Verdrahtung (2.6.8, Compact-Schritt 4).
+ * Auto-Compact: der Schalter und die Verdrahtung (2.6.8, Compact-Schritt 4;
+ * ab Werk an seit 3.0.7).
  *
  * Zwei Zusicherungen, die einzeln wenig und zusammen alles wert sind.
  *
- * Die erste ist eine Negativ-Aussage. Mit den ausgelieferten Einstellungen
- * darf `maybeAutoCompact` NICHTS tun — nicht den Gespraechs-Store lesen, nicht
- * das Fenster aufloesen, erst recht kein Modell fragen. Die Entscheidung vom
- * 02.09.2026 war "einstellbar sonst aus", und der Grund steht in
- * compact-trigger.ts: eine Zusammenfassung ersetzt Gespraechsverlauf, und wenn
- * sie falsch ist, verliert der Nutzer Arbeit, ohne es zu merken. Ein gespei-
- * chertes Profil auf STORE_VERSION 21 liefert das Feld als `undefined` aus
- * (der additive Merge fuellt es erst beim naechsten Versionssprung nach) —
- * wuerde das als Zahl durchgehen, waere das Feature bei jedem Bestandsnutzer
- * ungefragt an.
+ * Die erste betrifft den Schalter. Bis 3.0.6 war das Feature ein Opt-in
+ * ("einstellbar sonst aus", 02.09.2026). Seit dem 17.10.2026 ist es ab Werk
+ * an, und eine gespeicherte 0 oder ein fehlender Schalter heisst "an, passend
+ * zum Fenster". Ausgeschaltet darf `maybeAutoCompact` dagegen NICHTS tun:
+ * nicht den Gespraechs-Store lesen, nicht das Fenster aufloesen, erst recht
+ * kein Modell fragen.
  *
  * Die zweite ist die Verdrahtung, und sie ist der eigentliche Wert dieser
  * Datei. Die Funktion taugt nur so viel, wie es Sende-Pfade gibt, die sie
@@ -62,7 +59,13 @@ import { useRunActivityStore } from '../../stores/runActivityStore'
 import { deriveRunStatus } from '../../components/status/run-status'
 import { runCompactSummary } from '../compact-run'
 import { resolveAgentNumCtxWithConfidence } from '../agent-num-ctx'
-import { usableThreshold, MIN_MESSAGES_TO_COMPACT, MIN_MESSAGES_SINCE_COMPACT } from '../compact-trigger'
+import {
+  usableThreshold,
+  resolveCompactThreshold,
+  adaptiveCompactThreshold,
+  MIN_MESSAGES_TO_COMPACT,
+  MIN_MESSAGES_SINCE_COMPACT,
+} from '../compact-trigger'
 import { DEFAULT_SETTINGS } from '../constants'
 import { useChatStore } from '../../stores/chatStore'
 import { useSettingsStore } from '../../stores/settingsStore'
@@ -98,10 +101,15 @@ function setzeSchwelle(schwelle: number) {
   })
 }
 
-/** Ein Profil aus der Zeit vor dem Feld: der Schluessel fehlt ganz. */
-function setzeProfilOhneFeld() {
+/** Auto-Compact ausdruecklich ausgeschaltet. */
+function setzeAus() {
+  useSettingsStore.setState({ settings: { ...DEFAULT_SETTINGS, autoCompact: false } })
+}
+
+/** Ein Profil aus der Zeit vor dem Schalter: der Schluessel fehlt ganz. */
+function setzeProfilOhneSchalter() {
   const ohne: Record<string, unknown> = { ...DEFAULT_SETTINGS }
-  delete ohne.autoCompactThreshold
+  delete ohne.autoCompact
   useSettingsStore.setState({ settings: ohne as unknown as Settings })
 }
 
@@ -113,7 +121,7 @@ function beobachteStore() {
   return vi.spyOn(useChatStore, 'getState')
 }
 
-describe('Opt-in: mit den ausgelieferten Einstellungen passiert nichts', () => {
+describe('Ab Werk an (3.0.7), aus nur auf ausdruecklichen Wunsch', () => {
   beforeEach(() => {
     fensterAufloesen.mockClear()
     useSettingsStore.setState({ settings: DEFAULT_SETTINGS })
@@ -122,36 +130,45 @@ describe('Opt-in: mit den ausgelieferten Einstellungen passiert nichts', () => {
     vi.restoreAllMocks()
   })
 
-  it('die ausgelieferte Schwelle ist 0 und liest sich als "aus"', () => {
-    expect(DEFAULT_SETTINGS.autoCompactThreshold).toBe(0)
-    expect(DEFAULT_SETTINGS.autoCompactThreshold).toBeFalsy()
-    // Dieselbe 0 muss auch der Entscheider als "nie" lesen, sonst haengt das
-    // Aus-Sein an zwei Stellen, die auseinanderlaufen koennen.
+  it('ausgeliefert ist der Schalter an und die Schwelle passt sich dem Fenster an', () => {
+    expect(DEFAULT_SETTINGS.autoCompact).toBe(true)
+    // 0 ist keine Schwelle mehr, sondern "passend zum Fenster".
     expect(usableThreshold(DEFAULT_SETTINGS.autoCompactThreshold)).toBeNull()
+    expect(resolveCompactThreshold(DEFAULT_SETTINGS, 32768)).toBe(adaptiveCompactThreshold(32768))
   })
 
-  it('mit den ausgelieferten Einstellungen liefert maybeAutoCompact null', async () => {
+  it('mit den ausgelieferten Einstellungen wird das Fenster gefragt', async () => {
     const convId = seedGespraech()
-    useSettingsStore.setState({ settings: DEFAULT_SETTINGS })
     expect(await maybeAutoCompact({ conversationId: convId, activeModel: MODELL })).toBeNull()
+    // Kurzer Chat, also 'below'. Gefragt wurde trotzdem, das Feature ist an.
+    expect(fensterAufloesen).toHaveBeenCalled()
   })
 
-  it('ein gespeichertes Profil ohne das Feld ist aus, nicht 0.3', async () => {
-    // STORE_VERSION 21 hat fuer diesen Schluessel keinen Sprung bekommen, das
-    // Feld kommt also bei Bestandsnutzern als undefined an. Ein Default, der
-    // sich hier einschliche, waere das Feature bei allen von ihnen an.
+  it('ein gespeichertes Profil ohne den Schalter ist an', async () => {
     const convId = seedGespraech()
-    setzeProfilOhneFeld()
-    expect(useSettingsStore.getState().settings.autoCompactThreshold).toBeUndefined()
-    expect(await maybeAutoCompact({ conversationId: convId, activeModel: MODELL })).toBeNull()
+    setzeProfilOhneSchalter()
+    expect(useSettingsStore.getState().settings.autoCompact).toBeUndefined()
+    await maybeAutoCompact({ conversationId: convId, activeModel: MODELL })
+    expect(fensterAufloesen).toHaveBeenCalled()
   })
 
-  it('auch eine Schwelle ausserhalb des erlaubten Bereichs bleibt aus', async () => {
+  it('ab Werk auf einem 8K-Modell nie, auch wenn der Chat voll ist (18.10.2026)', async () => {
     const convId = seedGespraech()
-    // 0.2 liegt unter MIN_THRESHOLD. Die Zahl ist wahr, aber unbrauchbar —
-    // die UI darf sie nicht liefern, und wenn doch, entscheidet der Trigger.
-    setzeSchwelle(0.2)
+    for (let i = 0; i < 40; i++) {
+      useChatStore.getState().addMessage(convId, {
+        id: `voll${i}`, role: i % 2 === 0 ? 'user' : 'assistant', content: 'x'.repeat(4000), timestamp: 100 + i,
+      })
+    }
+    const zusammenfassen = vi.mocked(runCompactSummary)
+    zusammenfassen.mockClear()
+    fensterAufloesen.mockResolvedValueOnce({ ctx: 8192, gemessen: true })
     expect(await maybeAutoCompact({ conversationId: convId, activeModel: MODELL })).toBeNull()
+    expect(zusammenfassen).not.toHaveBeenCalled()
+  })
+
+  it('eine Schwelle ausserhalb des Bereichs heisst "passend zum Fenster", nicht aus', () => {
+    expect(resolveCompactThreshold({ autoCompact: true, autoCompactThreshold: 0.2 }, 32768))
+      .toBe(adaptiveCompactThreshold(32768))
   })
 })
 
@@ -164,12 +181,13 @@ describe('Reihenfolge: das Billige zuerst, denn das laeuft bei jedem Senden', ()
     vi.restoreAllMocks()
   })
 
-  it('ohne Schwelle wird weder der Store gelesen noch das Fenster aufgeloest', async () => {
+  it('ausgeschaltet wird weder der Store gelesen noch das Fenster aufgeloest', async () => {
     // Das ist die Eigenschaft, die das Feature bezahlbar macht: dieser Aufruf
-    // steht in jedem Sende-Pfad und muss ohne Opt-in ein Vergleich sein und
+    // steht in jedem Sende-Pfad und muss ausgeschaltet ein Vergleich sein und
     // sonst nichts. Ein Store-Lesen waere noch billig, das Fenster-Aufloesen
     // ist ein Netzweg zum Backend — auf jeder Nachricht, fuer nichts.
     const convId = seedGespraech()
+    setzeAus()
     const store = beobachteStore()
 
     expect(await maybeAutoCompact({ conversationId: convId, activeModel: MODELL })).toBeNull()
@@ -266,6 +284,30 @@ describe('Verdrahtung: jeder Sende-Pfad ruft maybeAutoCompact', () => {
   })
 })
 
+
+describe('Verdrahtung: jede Werkzeugschleife verdichtet mitten im Lauf (3.0.7)', () => {
+  /** Hooks mit einer Werkzeugschleife: wer die Arbeitshistorie mechanisch kuerzt. */
+  const schleifenHooks = () =>
+    readdirSync(hooksDir)
+      .filter((f) => f.startsWith('use') && f.endsWith('.ts'))
+      .filter((f) => /\btrimWorkingHistory\s*\(/.test(lies(f)))
+      .sort()
+
+  it('die Ableitung findet Agent (mit Chat Tools) und Code', () => {
+    expect(schleifenHooks()).toEqual(expect.arrayContaining(['useAgentChat.ts', 'useCodex.ts']))
+  })
+
+  it.each(schleifenHooks())('%s ruft compactRunMidway vor jedem trimWorkingHistory', (datei) => {
+    // Danach kaeme die Zusammenfassung zu spaet: der Trim haette die Schritte
+    // schon verworfen, und es gaebe nichts mehr zusammenzufassen.
+    const text = lies(datei)
+    const trims = [...text.matchAll(/\btrimWorkingHistory\s*\(/g)].map((m) => m.index!)
+    for (const at of trims) {
+      const davor = text.slice(Math.max(0, at - 2500), at)
+      expect(/\bcompactRunMidway\s*\(/.test(davor), `${datei} @${at}`).toBe(true)
+    }
+  })
+})
 
 // ── Der stumme Fehlschlag ─────────────────────────────────────────────────
 

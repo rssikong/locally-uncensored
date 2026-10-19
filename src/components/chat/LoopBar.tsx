@@ -15,6 +15,19 @@ interface Props {
   onStop: () => void
 }
 
+/**
+ * The seconds until the next pass, as the bar shows them.
+ *
+ * `now` is the clock of the last tick, and until the first tick after a pass
+ * was armed it is older than the arming: the clock of the mount, or of the
+ * tick before. Read plainly that gave "next in 36s" for a pause of 30 s. A
+ * pass is never further away than the pause itself, so that is the ceiling.
+ */
+export function loopCountdownSecs(loop: { nextAt: number; intervalMs: number }, now: number): number {
+  const left = Math.ceil((loop.nextAt - now) / 1000)
+  return Math.max(0, Math.min(left, Math.ceil(loop.intervalMs / 1000)))
+}
+
 export function LoopBar({ onStop }: Props) {
   const activeConversationId = useChatStore((s) => s.activeConversationId)
   // Only the ACTIVE conversation's own loop, never a foreign one (B2): the
@@ -34,7 +47,7 @@ export function LoopBar({ onStop }: Props) {
 
   if (!loop) return null
 
-  const secs = Math.max(0, Math.ceil((loop.nextAt - now) / 1000))
+  const secs = loopCountdownSecs(loop, now)
   const passLabel = loop.cap > 0 ? `pass ${loop.pass} of ${loop.cap}` : `pass ${loop.pass}`
 
   return (

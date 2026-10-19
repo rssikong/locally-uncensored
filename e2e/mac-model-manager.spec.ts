@@ -146,6 +146,29 @@ test('Get auf ein mflux-Paket richtet die mflux-Engine ein und nicht die Sidecar
   expect(setup).toBeLessThan(calls.findIndex((c) => c.cmd === 'mlx_image_install_model' && c.id === 'dreamshaper-xl-turbo'))
 })
 
+test('the Qwen-Image 2.1 prompt enhancers are tiles of the image lane, and Get installs one without an image engine', async ({ page }) => {
+  // GH #148: the official enhancers in their MLX editions, 4-bit, about 6 GB.
+  // Their install sets up what runs them (mlx_enhancer.rs), never the sidecar.
+  await openModels(page, { ...MAC, mlx: { engineInstalled: false, installedImages: [], installedVideos: [] } })
+  await rail(page, 'Image').click()
+  const lane = page.getByTestId('mac-media-image')
+  for (const id of ['qwen-image-2.1-pe-t2i-4bit', 'qwen-image-2.1-pe-i2i-4bit']) {
+    const it = tile(page, id)
+    await expect(it).toBeVisible({ timeout: 15_000 })
+    await expect(it.locator('[data-tile-note="non-commercial"]')).toHaveAttribute('title', 'Research license, non-commercial use only.')
+  }
+  await expect(tile(page, 'qwen-image-2.1-pe-t2i-4bit')).toContainText('Prompt Enhancer')
+  await expect(tile(page, 'qwen-image-2.1-pe-t2i-4bit')).toContainText(/6(\.0)? GB/)
+
+  const pick = tile(page, 'qwen-image-2.1-pe-t2i-4bit')
+  await pick.getByRole('button', { name: /^Get/ }).click()
+  await expect(pick).toHaveAttribute('data-state', 'installed', { timeout: 30_000 })
+  const calls = await mlxCalls(page)
+  expect(calls.some((c) => c.cmd === 'mlx_image_install_model' && c.id === 'qwen-image-2.1-pe-t2i-4bit')).toBe(true)
+  expect(calls.some((c) => c.cmd === 'install_mlx_diffusion')).toBe(false)
+  await expect(lane.locator('[data-engine-state="missing"]')).toBeVisible()
+})
+
 test('the engine setup can be stopped, and Set up is offered again', async ({ page }) => {
   await openModels(page, { ...MAC, mlx: { engineInstalled: false, installedImages: [], installedVideos: [], installPolls: 40 } })
   await rail(page, 'Image').click()

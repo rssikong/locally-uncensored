@@ -130,6 +130,595 @@ export interface ReleaseNote {
 }
 
 export const RELEASE_NOTES: ReleaseNote[] = [
+  // 3.0.7, vorbereitet am 14.10.2026 auf integ/307, am 15.10.2026 um alles aus
+  // 3.0.8 erweitert (Davids Wort: 3.0.8 kommt in 3.0.7; Stand e5dc1f4a0). Umfang:
+  // alle Commits seit 3.0.6 (origin/master..HEAD), der Pruefstand in
+  // Zentrale/desktop-307-stand.md, der Windows-Lauf d308-a (lu-astra/proof/
+  // d308-a/BERICHT.md) und die Mac-Echtlaeufe (lu-astra/proof/mac/
+  // release-saetze-307-mac.md, deren Saetze hier und im CHANGELOG stehen).
+  // Vorn stehen die fuenf groessten Neuerungen: Charaktere ueberall (C1),
+  // Workflows im normalen ComfyUI-Format mit Node packs (D8, D9), Edit mit
+  // bis zu zehn Bildern (D11), Verzweigen und die Gruppenchat- und
+  // Persona-Fixes (E9, issue 165, 169, 170, 174) und am Mac Training,
+  // Talking Character und Motion Control (M10 bis M12).
+  // Jeder Posten traegt seinen Baustein: faellt eine Funktion aus dem Umfang,
+  // faellt genau dieser Posten mit, im CHANGELOG ebenso (dort ohne Marke, mit
+  // demselben Titel, wo es einen gibt). Die Bausteine: C Charaktere und
+  // Kopfzeilen, D Create, E Chat und Code, F lokale Modelle und Engines,
+  // G Voice, Fernzugriff und Einstellungen, S Sicherheit (nur allgemein, ohne
+  // Angriffsweg), M Mac. Was nur in Tests lief, sagt es, hier knapp, im
+  // CHANGELOG unter Known limits ausfuehrlich. Issue 156 steht mit d2e02422b
+  // (GPU layers auto) drin. 3.0.6 darunter bleibt unveraendert.
+  // Nachzug 18.10.2026 auf integ/307 de9cd0de6: die Zweige mac/307-funde,
+  // mac/307-rea, mac/307-gate, mac/307-comfy-edit, mac/307-civitai-installed,
+  // mac/307-persona-note und feat/howto-into-307, dazu der Windows-Lauf d307-j
+  // (lu-astra/proof/d307-j/BERICHT.md), der die Issues 165, 167, 170 bis 177
+  // in der App geprueft hat. Die Saetze ueber den Pruefstand folgen ihm.
+  {
+    version: '3.0.7',
+    headline: 'Trained characters work in every part of Create and in chat, ComfyUI workflows import the way ComfyUI saves them, Edit takes up to ten images, and a chat can be duplicated or branched. On a Mac, character training, Talking Character and Motion Control now run on your own machine.',
+    lines: [
+      // Baustein C1
+      {
+        title: 'A trained character works in every part of Create and in chat.',
+        detail: 'When Create runs on ComfyUI, Image, Edit and every video tab have a character chip next to the model chip. On Image and Edit the character\'s LoRA and trigger word go into the run, and the pick sets the Z Image model it was trained for. Edit with a mask does not take a character. On Video, Animate, Extend, Multishot, MiniMax H3, Motion Control and Talking Character, LU first makes a picture of the character and then starts the clip from it, shown as Step 1 of 2 and Step 2 of 2. A start image of your own wins. A video model that only takes text, or a tab with no video model installed, says so before anything runs. In chat, the image and video tools take a character by name or trigger word. We checked this in the app on Windows with a stand-in character, and the clip step has not run with a real video model yet.',
+      },
+      // Baustein D8 und D9
+      {
+        title: 'ComfyUI workflows import the way ComfyUI saves them, with their node packs.',
+        detail: 'The Workflows view takes a workflow saved with Save or Export in ComfyUI, not only the API format, and imports a whole folder at once. Subgraphs, such as in the stock Z-Image templates, are unpacked. When a workflow needs nodes ComfyUI does not know, LU offers the node pack where it knows it, and Settings, AI Backends lists, installs, updates and removes node packs on Windows and Linux. A ComfyUI that runs is needed for the import. We imported templates, one of them with a subgraph, and installed a pack in the app on Windows; a picture from a subgraph template has not been made yet.',
+      },
+      // Baustein D11
+      {
+        title: 'Edit takes up to ten images with Qwen-Image 2.1.',
+        detail: 'On your own machine the reference strip takes up to nine images next to the source, on Windows and Linux through ComfyUI and on a Mac through the built-in engine. When there are more images than fit at full size, each one is scaled smaller, and on ComfyUI a smaller graphics card takes fewer at full size. The hint asks you to say what each image brings. On a Mac the strip offers only as many images as the memory takes. Ten images at 640 pixels ran on a Mac with the real engine; on Windows and Linux they have not run with a real model yet.',
+      },
+      // Baustein E9 (issue 165, 169, 170, 174)
+      {
+        title: 'Duplicate or branch a chat, and group chats keep each turn with its persona.',
+        detail: 'Duplicate chat makes a full copy of a chat, and Branch from here on any message starts a new chat up to that message. Regenerate keeps the earlier answer as a version you can switch back to (issue 174). The persona picked in Plugins is now the one that is sent (issue 170). In a group chat a member whose model left the model list sits out instead of being answered by another model, and a turn stays with the persona that wrote it after that persona moves to another model (issue 165, issue 169). We checked Duplicate chat, Branch from here, the kept answers, the persona fix and a member that sits out in the app on Windows.',
+      },
+      // Baustein M10 bis M12
+      {
+        title: 'On a Mac, character training, Talking Character and Motion Control run locally.',
+        detail: 'Character Studio trains a Z Image character on the Mac; on an M5 Pro the Standard setting runs a little over two hours. Talking Character turns a portrait and a voice into a clip with LTX-2.3 4-bit, roughly 150 seconds per second of clip on an M5 Pro. Motion Control makes a video that follows a motion clip. All three ran with the real engine on one Mac with 48 GB. This is on macOS only.',
+      },
+    ],
+    details: [
+      {
+        title: 'Characters',
+        items: [
+          // Baustein C6
+          {
+            title: 'Use frames of a video for a character.',
+            detail: 'The lightbox and the large view of a video offer Use frames for a character. LU takes 8 frames spread evenly over the clip, 4 to 20 with the slider. Untick the frames that do not show the figure, then train with the rest in Character Studio or save them as a character. This has run in automated tests only.',
+          },
+          // Baustein C7
+          {
+            title: 'A trained local character can be deleted.',
+            detail: 'The Use character shelf has a delete button for a character trained on this machine. It asks first, and the file goes to the Recycle Bin or Trash.',
+          },
+          // Baustein C8
+          {
+            title: 'A character trained on LU Cloud can run on your machine.',
+            detail: 'Use locally on the cloud character shelf saves a Z Image character into the LoRA folder of this machine, so the local Use character shelf lists it. If a file of that name is already there, LU stops and says so instead of replacing it. Characters of other model families are refused with the reason. This has run in automated tests only, not yet against the real service.',
+          },
+          // Baustein C9
+          {
+            title: 'Edit can use the photos a character was trained on.',
+            detail: 'The reference strip in Edit has a Trained characters row. A click adds up to three of the photos a local character was trained on as references, at most 1024 pixels each. A character trained before this version has no photos there. It has not been tried with a real training set yet.',
+          },
+          // Baustein C10
+          {
+            title: 'A trained character brings the model it was trained for.',
+            detail: 'Picking a character under Create, Character, Use character left the image model as it was, and on a model of another family the run left the character out. The pick now sets an installed Z Image model. Where none fits, the line under the character says so with a button to switch, and Create does not start a run that would ignore the character. The same line now says to describe the key features in the prompt too, because the trigger word alone often does not hold the look (issue 161).',
+          },
+          // Baustein C11
+          {
+            title: 'Train a character that changes clothes.',
+            detail: 'The Train tab of local character training (Windows, Linux and Mac) has a short text field under each photo. Name what changes from photo to photo there, like clothes, hair or place, and it goes into that photo\'s caption after the trigger word, so the trained character keeps its face and body but not one outfit. Describe photos fills the empty fields with the local chat model picked in Chat, when that model can see images; it never sends the photos to a cloud model.',
+          },
+          // Baustein C12
+          {
+            title: 'Low VRAM training for cards under 12 GB.',
+            detail: 'On Windows and Linux, local character training has a second setting, Low VRAM, which trains at 512 px with a smaller LoRA and keeps more in system memory. Each step takes clearly longer and fine detail comes out softer. It lets cards from about 8 GB train; that is worked out from the trainer\'s own numbers and not yet measured on such a card.',
+          },
+          // Baustein C13
+          {
+            title: 'Character Studio names only the base files that are missing.',
+            detail: 'It said about 19 GB above the button whatever was missing. It now names the missing files with their size, downloads only those, and counts the progress over them alone.',
+          },
+        ],
+      },
+      {
+        title: 'Create',
+        items: [
+          // Baustein C2
+          {
+            title: 'Enhance Image runs on your own machine.',
+            detail: 'On Windows and Linux, Enhance Image is a local tab that runs on ComfyUI and makes a picture 2x or 4x larger. Without an upscale model the stage offers Real-ESRGAN x4plus, a 67 MB download that LU checks against its checksum. The result lands in the gallery with the model it ran on and its real size. A Mac runs Enhance Image with a model of its own, see below.',
+          },
+          // Baustein C4
+          {
+            title: 'The gallery sorts into folders and shows how a result was made.',
+            detail: 'The Folders button makes, renames and removes folders, and Move to folder sits on each tile and in the large view. A folder is only a label: the files stay where they are, and removing a folder keeps its pictures. While a folder is open, new results land in it. Under a result, Prompt and settings lists the negative prompt, model, steps, CFG, sampler, seed and size, with one button that copies all of it.',
+          },
+          // Baustein D10 (issue 8)
+          {
+            title: 'Every setting of an imported workflow can be changed in Create.',
+            detail: 'Under Advanced settings, a workflow from the Workflows view shows its nodes with their values, such as the VAE, LoRA strength, denoise or any value of a custom node, with the limits and choices ComfyUI states. What LU sets on its own is named and not offered twice. Changes are kept per workflow, and Reset goes back to the values in the file. Windows and Linux. We checked it in the app on Windows (issue 8).',
+          },
+          // Baustein D12
+          {
+            title: 'A LoRA from a CivitAI or Hugging Face link.',
+            detail: 'Models, LoRAs, Get new takes a CivitAI model link or a Hugging Face link to a .safetensors file. LU reads the name, base model and size before anything is downloaded, checks the file against its SHA256 when the site states one, and puts it in the LoRA folder. A checkpoint or any other model that is not a LoRA is refused, and a file of the same name is never replaced. We downloaded a LoRA and saw checkpoints refused in the app on Windows.',
+          },
+          // Baustein D13
+          {
+            title: 'Create shows how many images a run makes next to the Create button.',
+            detail: 'One click picks 1 to 8 locally or 1 to 4 in LU Cloud; before, the number was only in Advanced settings.',
+          },
+          // Baustein D1
+          {
+            title: 'Each local video family has its own clip length.',
+            detail: 'The Frames slider ran from 1 to 120 for every local video model, below the default of MiniMax H3, LTX 2.5 and Cosmos. MiniMax H3 now goes up to 362 frames, 15 seconds at 24 frames per second, and MiniMax H3 and LTX 2.5 move in the steps their runs use, so the slider shows the length you get. This has not run with a real video model yet.',
+          },
+          // Baustein D2
+          {
+            title: 'Animate can start from a reference picture with Wan 2.1 VACE.',
+            detail: 'With a Wan 2.1 VACE model installed, Animate uses your picture as the reference for the clip. Phantom, MAGREF, the VACE add-on modules, Wan 2.2 VACE Fun and reference files LU does not know are listed in Animate with the reason they do not run yet. Wan 2.1 VACE has not run with a real model yet.',
+          },
+          // Nachzug fix/307-comfy-shared-dirs (issue 183)
+          {
+            title: 'Downloads and trained LoRAs go to the folders you set up for ComfyUI.',
+            detail: 'With a shared model folder set up in extra_model_paths.yaml, LU still put downloads, trained LoRAs and gallery deletes against the ComfyUI folder itself (issue 183). LU now reads that file the way ComfyUI does, the input, output and model path folders of ComfyUI\'s start script and the setup of ComfyUI Desktop. A model goes into the folder marked is_default, else the first folder you set for that kind, else the ComfyUI folder as before, and a ComfyUI that LU starts gets the folders of your start script too. Models already in the ComfyUI folder still count as installed. Settings, ComfyUI lists the folder LU uses for each kind of model and for input and output. We checked it in the app on Windows with a shared folder and a stand-in ComfyUI.',
+          },
+          // Baustein D3
+          {
+            title: 'Create sees model files you copied in by hand.',
+            detail: 'Create read the ComfyUI model and LoRA lists only when it opened, so a file copied into a ComfyUI folder by hand stayed invisible until you left Create. Coming back to the app now reads both lists again, at most every 30 seconds and not while a run is going.',
+          },
+          // Baustein D4
+          {
+            title: 'The mask editor shows Ctrl shortcuts on Windows and Linux.',
+            detail: 'Undo and Redo were labelled with the keys of a Mac. They now read Ctrl+Z and Ctrl+Y.',
+          },
+          // Baustein D6
+          {
+            title: 'A model too big for this machine points to LU Cloud.',
+            detail: 'In the Model Manager, a model that does not fit the graphics card, or the memory of a Mac, says so on its tile with one Try LU Cloud button, for example: Too big for this graphics card. Videos run on LU Cloud. A chat model leads to the cloud chat models, an image or video model to Create in Cloud mode on the same tab. Create shows a line of the same kind when the picked local model is too big, when a video model only partly fits the card, or when a video run on a Mac would take long, and that line can be closed. A number of credits stands there only where the app knows the price. Nothing of this shows in Cloud mode or with Show Cloud features in Local mode off. This has run in automated tests only.',
+          },
+          // Baustein D7 (D27)
+          {
+            title: 'Create honours the image and video timeouts from Settings.',
+            detail: 'A run that shows no progress is stopped after the minutes set in Settings, General. Before, Create always waited 20 minutes for images and 60 for video, whatever was set there. Before it stops a run, LU asks ComfyUI whether the run is still going, so a long silent step at the end is not cut off. The defaults are unchanged.',
+          },
+          // Baustein D14
+          {
+            title: 'A switch between Cloud and Local clears the red message of the other mode.',
+            detail: 'Before, a message such as Use locally failed stayed on screen after the switch to Local.',
+          },
+          // Baustein D15
+          {
+            title: 'The settings of a music track name its seed.',
+            detail: 'Prompt and settings named only the model.',
+          },
+          // Baustein D5
+          {
+            title: 'Smaller fixes in Create.',
+            detail: 'A wide result fits the stage with its prompt below it. Cloud mode no longer shows the load error of the local models. A tooltip no longer opens when the focus comes back to its button. Rewritten by names the chat model the way the picker does. The first image of a list keeps its file name. A second Enhance of the same picture no longer says Queued to the end. Erase and Edit show the mask state as it is, and the mask editor no longer points Erase to a prompt field it does not have. The model chip of Character says to pick a character first. In the lip sync tool, the voice maker row stays inside its panel when you describe a voice. The how-to line at the foot of the stage no longer makes a narrow stage with a source picture scroll.',
+          },
+          // Nachzug mac/307-comfy-edit (Discord)
+          {
+            title: 'An Edit with several images on ComfyUI fits the graphics card.',
+            detail: 'An Edit with more than two images could end in aimdo memory compile error, which ComfyUI raises when the card has no more memory for the run. With Qwen-Image 2.1 the images now share a budget by the card: two at full size below 16 GB, three on a 16 GB card, four on larger cards or when LU cannot read the size, and more images are each made smaller. Qwen-Image-Edit is refused before the run when the images do not fit, with how many to remove. A Mac is not affected. This has run in automated tests only.',
+          },
+          // Nachzug mac/307-funde (Discord)
+          {
+            title: 'Motion Control has a prompt field only where the run reads one.',
+            detail: 'The prompt field could not be typed into with only a picture or a clip in place, and it disappeared once both were in. On ComfyUI and on a Mac the field now takes typing at any time and the prompt is optional. LU Cloud\'s Motion Control takes no prompt, and its note says so.',
+          },
+          // Nachzug mac/307-funde (Discord)
+          {
+            title: 'A long prompt leaves the stage room for progress and the result.',
+            detail: 'The prompt field grew to 220 pixels in every window and hid the progress and the finished picture. It now grows to 220 pixels or 16 percent of the window, whichever is less, and scrolls beyond that.',
+          },
+          // Nachzug mac/307-funde (Discord)
+          {
+            title: 'The help says what the text encoder is and what Improve my prompt does.',
+            detail: 'The Text encoder row says that the encoder is part of the image model and reads the prompt on every run, and that Improve my prompt is a separate step before it.',
+          },
+          // Nachzug mac/307-funde
+          {
+            title: 'Wan 2.1 says where its clips turn restless.',
+            detail: 'On Windows and Linux the Frames slider of Wan 2.1 goes to 121, but the model learned its clips at 81 frames. Past 81 a line under the slider says so and points to Extend Video.',
+          },
+          // Nachzug fix/307-howto-round2 und feat/howto-into-307
+          {
+            title: 'How it works has films for this release.',
+            detail: 'The help has new short films for characters, Branch and Persona in a local chat, persona sampling, dictation and your own ComfyUI workflows. On a Mac, Character with Train new, Music, Talking Character, Motion Control and video have films of their own.',
+          },
+        ],
+      },
+      {
+        title: 'Chat and Code',
+        items: [
+          // Baustein C3
+          {
+            title: 'Character cards become personas, with a greeting and an export.',
+            detail: 'Import a character card as a PNG or JSON file (card versions 1, 2 and 3) and it becomes a persona with the card picture as its tile. A new chat with that persona opens with the card\'s greeting as the first answer, and you can switch between alternate greetings with arrows until you write. A card persona exports back as a version 2 JSON file. We checked it in the app with Holo and Qwen models.',
+          },
+          // Baustein C5
+          {
+            title: 'Read aloud speaks what the answer shows.',
+            detail: 'With a thinking model the answer looked clean, but the voice also pronounced reasoning markers that stood nowhere on the screen. The Read aloud button and the automatic reading of a new answer now take the same cleaned text the bubble shows. A thought that Gemma 4 writes into its answer goes to the thinking block and is no longer part of the answer, and in Voice a thought whose marker arrives in pieces is no longer spoken (issue 160). A model that loops and closes its thought many times no longer leaves the extra closing markers in the answer or in the voice.',
+          },
+          // Baustein E10 (issue 175)
+          {
+            title: 'Sampling values per persona and per group member.',
+            detail: 'The persona editor takes its own temperature, top P, top K, min P, max tokens, penalties and DRY multiplier. They apply wherever the persona speaks, also on its seat in a group chat, and the chat\'s own Sampling popup still wins. Each value is only sent to a backend that reads it (issue 175). We checked in the app on Windows that a persona\'s values reach the LU Engine.',
+          },
+          // Baustein E11 (issue 172)
+          {
+            title: 'Editing an earlier message no longer sends it or deletes the rest.',
+            detail: 'The edit field now has Cancel, Save and Save & resend. Save changes the text only and keeps every later turn, and Save & resend keeps the old answers as a version (issue 172). We checked it in the app on Windows with the LU Engine.',
+          },
+          // Baustein E12 (issue 171)
+          {
+            title: 'An attached text file fits the model\'s context.',
+            detail: 'A text file was cut to its first 4000 characters without a word. The chat now keeps the whole text and sends as much as fits the model\'s window next to the conversation, and says so when it had to cut. A new setting, Attached file limit, caps the share. A group chat export names the persona and model of every answer (issue 171). On Windows a long Japanese text file went to the LU Engine whole; a file too long for the window has run in automated tests only.',
+          },
+          // Baustein E13
+          {
+            title: 'A ChatGPT export becomes real chats.',
+            detail: 'Settings, General, Import from other chatbots takes the .zip of ChatGPT\'s data export. Each conversation you pick becomes its own chat with its title, date and the messages of the thread you saw. A conversation imported before is not added twice, and a chat you went on with in LU is never replaced. Images and files are not copied. We imported an export built in ChatGPT\'s format in the app on Windows; a real export has not been tried yet.',
+          },
+          // Baustein E1
+          {
+            title: 'Any file can go into the chat, and a file the model cannot read says so.',
+            detail: 'Attaching a file that is not text, such as a program or an archive, now says above the chat that models cannot read it, with its name, type and size, and points to Agent or Code. In Agent and Code the file goes into the working folder, and the model gets its name, type, size, SHA-256 checksum and path, with the instruction not to run it unless you ask. The limit is 256 MB per file, up from 64 MB.',
+          },
+          // Baustein E2
+          {
+            title: 'A think budget for the backends that take one.',
+            detail: 'Think budget sits next to Think in the sampling popup and in Settings, Generation. It sets how many tokens a model may spend on thinking. 0 keeps the automatic choice, which on the LU Engine now follows the effort setting below. It works with the LU Engine and with Anthropic. For Ollama, LM Studio, other OpenAI-compatible servers and LU Cloud the field is off and says it is not supported there. We checked it with the LU Engine on Windows; with Anthropic it has run in automated tests only.',
+          },
+          // Baustein E7 (issue 176)
+          {
+            title: 'Reasoning effort for local models.',
+            detail: 'The effort button next to Think, Low, Medium, High and Max, existed only for hosted models (issue 176). Local models now have it in the form each server reads. The LU Engine passes the level to the model\'s chat template, and Low and Medium also set a think budget of 1024 and 4096 tokens unless you set one yourself. LM Studio 0.4.8 and later gets the levels it lists for each model. KoboldCpp gets Low, Medium, High and Max, where Max leaves thinking unlimited. A llama.cpp server of your own gets the levels when the model\'s template reads them. Everywhere else the button is greyed and says why. Until you pick a level for a local model, it keeps running the way it did before. Think off still means no thinking. On Windows we checked the LU Engine in the app; LM Studio, KoboldCpp and llama.cpp have run in automated tests only.',
+          },
+          // Baustein E8 (issue 177)
+          {
+            title: 'The wait for the first word of a chat answer can be set.',
+            detail: 'A local chat stopped with the backend accepted the request but sent nothing for 600 s, even while the backend was still reading a very long prompt (issue 177). Settings, General has a new section, Chat Reply Timeout, next to the image and video timeouts: a number of seconds up to 24 hours, or Off, which waits as long as the connection stays open. The default stays 600 seconds, and Stop always ends the wait. The wait also covers a server that holds back even its first headers, and a request whose wait ran out is not sent again. We checked it in the app on Windows against a stand-in server.',
+          },
+          // Baustein E3
+          {
+            title: 'Add model IDs that a server serves but does not list.',
+            detail: 'The provider card of an OpenAI-compatible server has a new field, Model IDs the server does not list, one per line (issue 112). They join that server\'s models in the picker while the server is running.',
+          },
+          // GitHub #173
+          {
+            title: 'Several OpenAI-compatible backends at the same time.',
+            detail: 'Adding KoboldCpp while LM Studio or the LU Engine is on no longer pushes the other one out (issue 173). Each backend gets its own row in Settings, AI Backends, with its own name, address, optional key and model IDs, and its models appear in the picker under its name. A group chat can mix models from several of them. A backend that an earlier version pushed onto the standby card has a Run side by side button, and the startup dialog for detected backends can add all of them at once. Chats and settings from before keep their models. For a model of such a backend, the context window comes from that backend\'s own server (KoboldCpp, llama.cpp, LM Studio), and so do the history budget of a chat, the room for an attached file and the extra samplers; a server on your network is never cut to the send limit of a paid provider. This has run in automated tests and in the app on Windows with the LU Engine next to a stand-in server, not yet with two real servers. Settings, Local API still reaches only the LU Engine, Ollama and LM Studio.',
+          },
+          // Baustein E4
+          {
+            title: 'The User-Agent of web search can be set.',
+            detail: 'Settings, Search Provider has a User-Agent field. Empty keeps what LU sent before. A value goes with the DuckDuckGo and Wikipedia searches and with every page the agent fetches. A value that cannot be sent is replaced by the default, and the field says so. Search services with a key and a local SearXNG keep their own requests.',
+          },
+          // Baustein E5
+          {
+            title: 'A chat compacted more than once keeps one summary.',
+            detail: 'Every compaction added its own summary, and each message sent the whole chain of them. A new compaction now merges the earlier summary and the turns since then into one current state, and only that state goes out with the next message (issue 151). What the merge drops from the old state, such as your requests, open tasks, paths and numbers, is put back. The number of recent messages kept word for word now follows the model\'s context, between 4 and 20, and stays 6 where the context is unknown. Chats saved before keep sending their chain.',
+          },
+          // Baustein E6
+          {
+            title: 'Smaller fixes in Code and Loop.',
+            detail: 'The tooltip of Accept without asking says what the click changes. The plan card wraps its row instead of its words in a narrow Explorer. The countdown of a loop never shows more than the pause.',
+          },
+          // Nachzug mac/307-funde
+          {
+            title: 'Auto compact is on by default and fits the model\'s window.',
+            detail: 'It stayed off until you set a threshold. It is now on and runs from a 32K context window up, earlier on smaller windows than on large ones; below 32K older turns are only shortened. A fixed point from 30 to 95 percent runs on every window, and a new Auto-compact switch in Settings, Generation turns it off. Long Agent and Code runs also summarise their older steps in the middle of a run, and the summary keeps the files, commands, IDs, numbers, open tasks and the next step. This has run in automated tests and in a test against a local model.',
+          },
+          // Nachzug mac/307-persona-note (issue 181)
+          {
+            title: 'A persona can carry a reminder.',
+            detail: 'The persona editor has a Reminder field and Messages from the end. Wherever that persona speaks, in its chat, in a group chat or in Agent mode, the reminder goes into your message at that depth, so the model reads it close to the end of the prompt. It is never stored in the chat. A character card brings its depth prompt along as the reminder (issue 181). This has run in automated tests only.',
+          },
+          // Nachzug mac/307-rea
+          {
+            title: 'REA, a plugin for reverse engineering in Agent and Code.',
+            detail: 'Plugins has a new switch, REA (Reverse Engineer Anything, MIT license), off by default and only in the desktop app. LU fetches the official package, checks it against the checksum the npm registry publishes, and starts it with Node.js. Its tools reach Agent and Code behind the confirmation every external tool gets, and a turn gets only the REA tools its words point at. It works best with a model of about 27B and a context window of 64K or more. Use it on software you own or are allowed to examine. It has run on a Mac with LU\'s tool code outside the app; a start from the built app has not been tried yet.',
+          },
+          // Nachzug mac/307-funde
+          {
+            title: 'Chat Tools are always on.',
+            detail: 'The Chat Tools switch under Plugins is gone. Plain chat uses web search, files, images and video when a turn needs them, for every model that can call tools. A model that cannot call tools answers in plain chat as before.',
+          },
+          // Nachzug mac/307-funde
+          {
+            title: 'Typed faces become emojis.',
+            detail: 'In the composer of Chat, Agent and Code, a face such as :) turns into its emoji once the word is over. It never turns inside a word, a link, a path or code, and one Backspace right after takes it back. Settings, Appearance has a switch to turn it off.',
+          },
+          // Nachzug mac/307-gate (issue 180)
+          {
+            title: 'A former group chat keeps who said what with group chat off.',
+            detail: 'With group chat off, a chat that holds group turns now sends the other speakers\' turns tagged with their names and tells the model what the tags mean. Switching group chat off and on keeps every persona tag (issue 180). This has run in automated tests only.',
+          },
+          // Nachzug mac/307-gate
+          {
+            title: 'Two turns of one role in a row are merged on every request.',
+            detail: 'The chat templates of Mistral and Devstral refuse two user or two assistant turns in a row. LU merged them only on a request without tools; it now merges them on every request, and tool calls keep their own pairs.',
+          },
+        ],
+      },
+      {
+        title: 'Local models and engines',
+        items: [
+          // Nachzug mac/307-civitai-installed (Discord)
+          {
+            title: 'A CivitAI hit already on disk says Installed.',
+            detail: 'A model found in the CivitAI search offered Download even when its file was installed. A hit now reads Installed when a file of the same name, and where CivitAI states it the same size, lies in the folder the download would use.',
+          },
+          // Baustein F10 (issue 113)
+          {
+            title: 'Check files and Repair for installed models.',
+            detail: 'Image and video bundles and chat models of the LU Engine have a Check files button. It compares each file with the catalog by size and, where listed, SHA256, in the background with progress and Cancel. Repair downloads only the broken or missing files again; a wrong file goes to the Trash or Recycle Bin first, nothing is deleted for good. A download whose partial file already held the whole file no longer fails on every Retry (issue 113). Not offered for the Mac\'s own MLX models. We ran Check files on an image bundle in the app on Windows; Repair has not been clicked yet.',
+          },
+          // Baustein F11
+          {
+            title: 'Use a GGUF file from anywhere on your drive as a chat model.',
+            detail: 'On the Chat lane of the Model Manager, GGUF file next to Pull picks the file, and LU links it into the LU Engine folder without copying. The file must be on the same drive as that folder. The image part of a vision model comes along when it sits next to the model.',
+          },
+          // Baustein F1
+          {
+            title: 'GPU layers -1 lets the LU Engine fit the layers itself.',
+            detail: 'On AMD and Intel cards on Windows and Linux, LU only knows the total memory of the card and guessed the number of layers from it, so -1 could run as slowly as the processor (issue 156). With -1 the LU Engine now fits the layers against the free memory it measures itself. We have no AMD or Intel card to check it on.',
+          },
+          // Baustein F2
+          {
+            title: 'ComfyUI starts when no Python on your machine has PyTorch.',
+            detail: 'With Python 3.15 as the only or the default Python, ComfyUI did not start, and Install, Repair environment and Update asked for another Python. Install and Repair environment now build ComfyUI\'s environment from a Python that PyTorch supports, and when there is none, from LU\'s own Python 3.12, which needs no administrator rights. A ComfyUI without its own environment starts on the Python that holds its PyTorch, and the character trainer takes the same way. We checked this on a Windows machine whose only Python was 3.15.',
+          },
+          // Baustein F3
+          {
+            title: 'A render no longer starts LM Studio.',
+            detail: 'Before a picture or a clip, LU asks LM Studio to unload its models to free graphics memory. With LM Studio closed, that call started LM Studio in the background. LU now checks first whether LM Studio is running and skips the call when it is not.',
+          },
+          // Baustein F4
+          {
+            title: 'A chat model with image input no longer warns at every render.',
+            detail: 'Before a render, LU saves where the chat model stands in the conversation, so the next answer starts faster. The LU Engine cannot do that for a model loaded with its image part, so every render tried, failed and warned. LU now skips it for such a model.',
+          },
+          // Baustein F5
+          {
+            title: 'Importing a model follows the LU Engine folder you set.',
+            detail: 'With an LU Engine folder set under Model Storage, an import now links the model into that folder, and the error for a link across drives names that setting and a copy into the folder as the two ways out. A model imported into LU\'s own folder earlier still shows as imported.',
+          },
+          // Baustein F6
+          {
+            title: 'The voice engine and LU\'s own Python can live on another drive.',
+            detail: 'Settings, Model Storage has a new row, Voice and Python folder. New installs of the voice engine, the read-aloud voices and LU\'s own Python go to the folder you choose, and what is installed keeps working where it is. Move to this folder copies the files, checks the copy, starts it once and only then puts the old files in the Recycle Bin or Trash. Nothing is deleted for good. We moved a real voice engine install on Windows and it started from the new folder. Moving LU\'s own Python has run in automated tests only.',
+          },
+          // Baustein F7
+          {
+            title: 'A model whose server names no context length is no longer held at 4K.',
+            detail: 'KoboldCpp behind its Ollama API sends no context length, so LU took 4096 as the model\'s maximum: the context picker offered only 4K, and the history of a long chat was cut to fit 4K while a much larger window from Settings went out with each message. LU now also asks KoboldCpp itself and the list of loaded models. When nobody names a length, the picker offers every size, says that LU cannot check them, and shows the value set in Settings. In plain chat, a group round and Compare, the history is now trimmed and compacted to the window that is sent to Ollama, not to the model\'s maximum (issue 166). This has run in automated tests only, not yet against a running KoboldCpp.',
+          },
+          // Baustein F8
+          {
+            title: 'LM Studio keeps the context size you picked for a model.',
+            detail: 'A size picked in the context picker is now saved for that model and used whenever LU loads it, also after you switch to another model and back, and it no longer changes the Ollama context window. A size picked before this update needs to be picked once more. Making another model the main model no longer unloads a model that still speaks in the group chat on screen; outside a group chat, the previous local model is unloaded as before (issue 168). This has run in automated tests only, not yet with LM Studio itself.',
+          },
+          // Baustein F9
+          {
+            title: 'Japanese, Chinese and Korean text is counted closer to its real token cost.',
+            detail: 'LU estimated every text at four characters per token. Japanese takes about 1.4 characters per token on Gemma, so a long Japanese chat sent about 2.8 times more tokens than its budget, and the trim and auto compact only started after the server had already run over. The estimate now counts by script: plain English text as before, Japanese, Chinese and Korean at 1.25 characters per token, emoji and symbols higher. It lands a little above the real count on purpose. The same estimate now also sizes the reply limit sent to OpenAI compatible servers and the memory block. In a group chat the context counter no longer switches between speakers without a word: it names the speaker it counts for, the one answering or the one who opens the next round, and shows that speaker\'s own prompt over its own window (issue 167). LU does not ask the server to count tokens yet. On Windows the estimate for a long Japanese text file on the LU Engine came within 1 percent of the count the engine reported.',
+          },
+          // Nachzug fix/307-token-overflow (Windows-Lauf d307-k, B5)
+          {
+            title: 'Numbers, hex and Base64 are counted at their real token cost.',
+            detail: 'LU counted a digit at a quarter of a token. Most local models give every digit a token of its own, so a chat with a long numeric log, hex or Base64 could send more than the model\'s window holds, and the LU Engine refused it with "exceeds the available context size". Digits and such encoded text are now counted at their real cost, text without digits as before, and Japanese text with many numbers a little higher than before. When the engine still refuses a message as too long, plain chat shortens the history it sends once and tries again instead of only showing the error; the chat itself keeps every message. Where auto compact is on, it now writes its summary before older turns are cut to fit the window, also in chats the model counts with few tokens. This has run in automated tests against token counts from the Qwen 2.5 and Gemma 3 tokenizers, not yet in the app.',
+          },
+          // Nachzug fix/307-gpu-amd-intel (Funde aus Discord, ohne AMD- oder Intel-Karte geprueft)
+          {
+            title: 'Picking the outer folder of a ComfyUI portable build works.',
+            detail: 'The Windows portable builds, the Intel and AMD ones too, unpack as one folder that holds ComfyUI and python_embeded. Picking that outer folder said main.py not found, and the search on the disk only found folders named ComfyUI. LU now takes the ComfyUI folder inside, whatever the outer one is called, and keeps using the python_embeded beside it. This has run in automated tests only.',
+          },
+          {
+            title: 'Auto runs ComfyUI on an Intel Arc card.',
+            detail: 'On a machine without an NVIDIA card, Auto asks the PyTorch in the ComfyUI environment whether it has a usable GPU, and it only asked about CUDA. A PyTorch built for Intel XPU answered no, so ComfyUI started on the processor with a working Arc card. LU now asks about XPU too, and the Force GPU warning stays away when XPU is there. This has run in automated tests only, without an Intel card.',
+          },
+          {
+            title: 'A change of the ComfyUI GPU mode says that ComfyUI has to restart.',
+            detail: 'Switching ComfyUI GPU in Settings, Hardware to Force GPU with the vendor left on Auto showed nothing, and the running ComfyUI kept its old mode. Every change now says that ComfyUI only reads the mode at start, with a Restart ComfyUI button. The Device line ComfyUI prints at start stands under Status in AI Backends, ComfyUI (Image & Video), so you can see whether it runs on the card or the processor. This has run in automated tests only, without an AMD or Intel card.',
+          },
+        ],
+      },
+      {
+        title: 'Voice, Remote Access and Settings',
+        items: [
+          // Baustein G0
+          {
+            title: 'Sending while you dictate ends the recording.',
+            detail: 'Sending a message while dictation was on left the microphone recording, and the microphone button stayed locked until you stopped the answer. Send and Enter now end the recording first, and the microphone button stays usable while an answer runs. We checked it in the app on Windows.',
+          },
+          // Baustein G1
+          {
+            title: 'Voice and dictation may use the microphone on Linux.',
+            detail: 'The Linux web view refused every request for the microphone, so Voice failed at once (issue 162). LU now lets its own page use the microphone. A camera, a screen share and any other page are still refused. We built this for Linux and have not tried it on a real Linux machine with a microphone.',
+          },
+          // Baustein G2
+          {
+            title: 'Remote Access texts point to the right buttons.',
+            detail: 'After the 15 second tunnel timeout, the text now says to click Stop and start again with Dispatch, Internet, because Restart starts the server without a tunnel. A refused permission on the phone points to Settings, Voice & Remote, Remote Access, Permissions in the desktop app, and the help says what Dispatch does.',
+          },
+          // Baustein G3
+          {
+            title: 'Settings, Privacy names the real data folders on Windows and Linux.',
+            detail: 'On Windows the data folder is %LOCALAPPDATA%\\lu-labs. The chat backup and the chat models of the LU Engine sit under %APPDATA%\\Locally Uncensored, and Privacy now names both instead of saying that LU writes nothing else. Linux gets its own folders named the same way.',
+          },
+          // Baustein G4 (issue 19)
+          {
+            title: 'Remote Access can give the phone\'s browser tab your own name.',
+            detail: 'Set it under Settings, Voice & Remote, Remote Access, Tab name on your phone. Left empty, the tab keeps its name AI Terminal (issue 19).',
+          },
+          // Baustein G5
+          {
+            title: 'A paired phone can show the name of this computer.',
+            detail: 'The signed in status of Remote Access now also gives the computer\'s name, so a paired phone can show it instead of the address.',
+          },
+          // Nachzug mac/307-funde (Discord)
+          {
+            title: 'Every line of the log names the version that wrote it.',
+            detail: 'A log could show an older version after an update, because the day\'s log file still held the lines of the run before. Every line and every record in crash.log now carries the version.',
+          },
+        ],
+      },
+      {
+        title: 'LU Cloud',
+        items: [
+          // Nachzug mac/307-gate
+          {
+            title: 'The window behind the Cloud switch lists the cloud models.',
+            detail: 'Signed out, or with an account that cannot use them yet, the window has one list each for Chat, Code and Create. A model opens a short window with the two ways to get it, a plan or a pack, and a model too big for this machine says so. LU keeps the pick for a week and opens that model once your account can use it. A click there is counted like a press of the switch, never with the name of the model, and Settings, Privacy says so. This has run in automated tests only.',
+          },
+        ],
+      },
+      {
+        title: 'Security',
+        items: [
+          // Baustein S1
+          {
+            title: 'ComfyUI and LM Studio, when LU starts them, answer to LU only.',
+            detail: 'Other pages open in your browser can no longer read them.',
+          },
+          // Baustein S2
+          {
+            title: 'The LU Engine runs models for LU only.',
+            detail: 'Each time LU starts the engine, it gets a key that only this run of LU holds, and LU\'s own features send it. Other pages open in your browser can no longer run its model or read what it is doing.',
+          },
+          // Baustein S3
+          {
+            title: 'A web page the agent reads reaches the model as page content.',
+            detail: 'Text from a fetched page now goes to the model marked as data from that page, not as instructions to follow.',
+          },
+        ],
+      },
+      {
+        title: 'Mac (Beta)',
+        items: [
+          // Baustein M0
+          {
+            title: 'The Mac parts of this release have not been clicked through in a built app yet.',
+            detail: 'Mask edit, HiRes fix, Remove Background, Enhance Image, an image with a LoRA, both Qwen prompt enhancers, LTX-2.3 video at a chosen size, Extend Video, Music, training a character, Talking Character, Motion Control and an edit with ten pictures ran with the real engine on one Mac with 48 GB. The large LTX models (64 GB and more) have not run on a real Mac, nor has anything on a Mac with less than 48 GB. Video LoRAs and multishot have not run with real models on a Mac, and the downloads that Talking Character and Motion Control offer on their tabs have run in automated tests only.',
+          },
+          {
+            title: 'Music on a Mac needs 48 GB of memory.',
+            detail: 'A run used about 28 GB while it decoded, more than the 16 GB the catalogue named before.',
+          },
+          // Baustein M1
+          {
+            title: 'On a Mac, Use character runs characters from the Mac\'s LoRA folder.',
+            detail: 'Character Studio\'s Use tab lists the characters in the Mac\'s LoRA folder. A pick brings the Z Image model the character was trained for, and Image, the video tabs and the chat tools take the character as they do on Windows. A video starts from a picture of the character made on the Mac. This is on macOS only.',
+          },
+          // Baustein M10
+          {
+            title: 'On a Mac, Train new trains a character on this Mac.',
+            detail: 'Character Studio\'s Train tab trains a Z Image character from 4 to 100 photos with the Mac\'s image engine and puts it into the Mac\'s LoRA folder, where Use character, the character chip and chat find it. The first run downloads a training adapter of 340 MB. Training is slow on a Mac: on an M5 Pro one step takes about 7 seconds, so the Standard setting (1200 steps) runs a little over two hours. Use frames for a character hands its photos to the same training. This is on macOS only.',
+          },
+          // Baustein M11
+          {
+            title: 'On a Mac, Talking Character runs locally.',
+            detail: 'A portrait and a voice recording become a clip whose lips follow the voice, as long as the recording and up to 10 seconds, with LTX-2.3 4-bit. It needs one more download of 11.3 GB, offered on the tab. It is slow: a 4 second clip took about 10 minutes on an M5 Pro. It needs a Mac with 24 GB or more. This is on macOS only.',
+          },
+          // Baustein M12
+          {
+            title: 'On a Mac, Motion Control runs locally.',
+            detail: 'A motion clip and a start image become a video that follows the motion, with LTX-2.3 4-bit and the IC-LoRA Union Control (about 650 MB, offered on the tab). LU turns the motion clip into edges first. A 2 second clip at 512 x 512 took 103 seconds on an M5 Pro. This is on macOS only.',
+          },
+          // Nachzug mac/307-funde
+          {
+            title: 'On a Mac with 48 GB, an LTX clip runs up to ten seconds.',
+            detail: 'Video, Animate and Extend with an LTX model go to 241 frames, ten seconds, on a Mac with 48 GB of memory or more; before, the slider ended at 113 frames. A ten second clip from a start image ran on an M5 Pro with 48 GB in 187 seconds. A smaller Mac, Wan and Motion Control keep the old limit. This is on macOS only.',
+          },
+          // Baustein M2
+          {
+            title: 'On a Mac, Enhance Image runs with SeedVR2.',
+            detail: 'Once SeedVR2 3B (7.28 GB) is installed from the Model Manager, Enhance Image is a local tab with a choice of 2x or 4x, and the longest side is held to 4096 pixels. Without it the tab stays locked. This is on macOS only.',
+          },
+          // Baustein M3
+          {
+            title: 'On a Mac, Remove Background runs without a download.',
+            detail: 'The tab uses the subject detection built into macOS, so it needs no model and no Python. A picture without a clear subject gets a sentence instead of an empty image. This is on macOS only.',
+          },
+          // Baustein M4
+          {
+            title: 'On a Mac, Edit paints under a mask.',
+            detail: 'With Qwen-Image 2.1, Edit on a Mac offers Paint mask, Edit strength and Mask edge feather, and a result offers Edit with mask. In our run with the engine on an M5 Pro with 48 GB, a hard mask at full strength changed only the masked area in 189 seconds. This is on macOS only.',
+          },
+          // Baustein M5
+          {
+            title: 'On a Mac, HiRes fix runs as a second pass.',
+            detail: 'With a model that edits, such as Qwen-Image 2.1, the finished picture goes through a second pass at the larger size, with the HiRes denoise and steps. The latent upscale method is not offered on a Mac. This is on macOS only.',
+          },
+          // Baustein M6
+          {
+            title: 'On a Mac, video runs take LoRAs and a size, and Extend Video runs locally.',
+            detail: 'Where the model\'s entry allows it, the LTX and Wan video models take a stack of LoRAs and a width and height on the grid of the engine, and Wan takes 1 to 60 steps. Extend Video is a local tab while a video model that takes a start image is installed, and the Shots slider reaches the LTX-2.5 packs. This is on macOS only.',
+          },
+          // Baustein M7
+          {
+            title: 'On a Mac, Music runs with ACE-Step 1.5.',
+            detail: 'The Music tab in Create is a local tab once the music engine is installed from the Music rail of the Model Manager, about 10 GB. A run takes the style, the lyrics, a length from 10 seconds to 4 minutes and the seed, and puts the track in the gallery. It needs a Mac with 48 GB of memory; a smaller Mac is told so before anything loads. This is on macOS only.',
+          },
+          // Baustein M8
+          {
+            title: 'On a Mac, a Qwen prompt enhancer rewrites prompts for Qwen-Image 2.1.',
+            detail: 'Two enhancer packs of about 6 GB each, one for new pictures and one for edits, install from the Model Manager. With one installed, a new picture or an edit on Qwen-Image 2.1 can have its prompt rewritten before the run, and the edit enhancer also looks at the picture. This is on macOS only.',
+          },
+          // Baustein M13
+          {
+            title: 'On a Mac, the large LTX models render at the size Create shows.',
+            detail: 'They ran at 512 x 512 whatever was asked, so a landscape clip came out square. They now take the size on the grid their engine keeps. This is on macOS only.',
+          },
+          // Baustein M14
+          {
+            title: 'On a Mac, an edit with many pictures no longer fills the memory.',
+            detail: 'Each picture of a Qwen-Image 2.1 edit takes memory of its own, and ten pictures at full size left a 48 GB Mac a third free before the first step. Edit now offers as many reference slots as the Mac\'s memory takes, and a run past that is refused with the number that fits. This is on macOS only.',
+          },
+          // Baustein M15
+          {
+            title: 'On a Mac, Music no longer fills the memory while it decodes.',
+            detail: 'A 30 second track left 1.4 GB of a 48 GB Mac free; it now leaves over 9 GB and decodes faster. This is on macOS only.',
+          },
+          // Baustein M16
+          {
+            title: 'On a Mac, Enhance refuses a result larger than the memory takes.',
+            detail: 'At 4x a 1024 picture needs about 22 GB; a smaller Mac is told to pick 2x or a smaller picture instead of freezing. This is on macOS only.',
+          },
+          // Baustein M17
+          {
+            title: 'On a Mac, Extend Video shows the Mac\'s video settings.',
+            detail: 'It showed the ComfyUI graph\'s steps, sizes and frames, and a Negative switch a distilled LTX does not read. This is on macOS only.',
+          },
+          // Baustein M18
+          {
+            title: 'On a Mac, switching from Cloud to Local keeps Talking Character open.',
+            detail: 'It jumped to Video or Image instead, and so did Character Studio. Talking Character stays while a model that talks is installed. This is on macOS only.',
+          },
+          // Baustein M9
+          {
+            title: 'Reset and ask again shows while a permission is missing.',
+            detail: 'In the computer control permissions on a Mac, the link appeared only after Open System Settings was clicked in the same view. It now shows whenever a permission is missing, and the hint names the case it is for: an entry left by an older test copy of LU. This is on macOS only.',
+          },
+        ],
+      },
+    ],
+  },
   // 3.0.6, vorbereitet am 09.10.2026 und am 10.10.2026 auf den Umfang von
   // integ/astra-306 4b57e672 gebracht, noch nicht released: Voice, Computer
   // control, Create im Chat und die zehn Direktmodelle der Cloud (alle vier

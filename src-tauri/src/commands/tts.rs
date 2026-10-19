@@ -6,7 +6,7 @@
 //! -f out.wav` with the text on stdin. One-shot (vs a persistent server) costs
 //! ~1-2 s of ONNX model load per "speak", which is acceptable for chat TTS and
 //! avoids a long-lived process + version-specific Python API. Voice models are
-//! downloaded on demand into `<app_data>/piper_voices/`.
+//! downloaded on demand into `<app_data>/piper_voices/` (see `piper_voices_dir`).
 
 use crate::os_error;
 use std::io::Write;
@@ -31,13 +31,13 @@ fn is_valid_voice(voice: &str) -> bool {
         && voice.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
 
-fn piper_voices_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    let dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("no app data dir: {}", crate::os_error::english(&e)))?
-        .join("piper_voices");
-    Ok(dir)
+/// Where the voices are: `<app_data>/piper_voices` as always, or
+/// `piper_voices` in the folder chosen for it (`crate::runtime_root`). Voices
+/// already downloaded are found where they are until they are moved.
+pub(crate) fn piper_voices_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let app_data = app.path().app_data_dir().ok();
+    crate::runtime_root::current_here(crate::runtime_root::Kind::PiperVoices, app_data)
+        .ok_or_else(|| "no app data dir".to_string())
 }
 
 /// `(model.onnx, model.onnx.json)` for a voice id under the piper_voices dir.

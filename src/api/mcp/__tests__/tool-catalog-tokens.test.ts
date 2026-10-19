@@ -114,10 +114,20 @@ const fullWire = () => JSON.stringify(wireTools(codingCatalog()))
  * Roundtrip mit vollem Kontext. `edits` buendelt sie in einen Aufruf. Die
  * Beschreibung ist dafuer gekuerzt, der codierende Zug bleibt unter 7600;
  * der volle Katalog steht bei 17.946 Zeichen, Deckel gemessen plus Rand.
+ *
+ * ── 3.0.7: image_generate und video_generate bekommen `character` ─────────
+ * Ein trainierter Charakter soll im Chat nutzbar sein: das Modell nennt ihn,
+ * die App setzt Modell, LoRA und Triggerwort selbst. Ein Schemafeld je
+ * Werkzeug, die Beschreibung auf 103 Zeichen gekuerzt:
+ *
+ *   voller Katalog   17.976 -> 18.330 Zeichen (+354)
+ *   codierender Zug  unveraendert, beide Werkzeuge fahren dort nicht mit
+ *
+ * Deckel gemessen plus zwei Promille.
  */
 const CODING_CHAR_CEILING = 7600
 const CODING_TOKEN_CEILING = 1730
-const FULL_CHAR_CEILING = 17980
+const FULL_CHAR_CEILING = 18370
 const FULL_TOKEN_CEILING = 4090
 
 describe('the coding step carries a catalog the diet actually shrank', () => {
@@ -157,7 +167,10 @@ describe('the coding step carries a catalog the diet actually shrank', () => {
     // this is the correction itself, not a proxy for it.
     const catalog = estimateTokens(codingWire())
     expect(catalog).toBeGreaterThan(1500)
-    expect(catalog).toBeLessThanOrEqual(CODING_CHAR_CEILING / 4 + 1)
+    // Five percent over chars / 4: since 3.0.7 a digit in a schema costs a
+    // whole token (lib/token-estimate.ts). Qwen2.5 and Gemma 3 count this
+    // catalog at 1,677 and 1,739 tokens, so the estimate still errs high.
+    expect(catalog).toBeLessThanOrEqual(Math.ceil((CODING_CHAR_CEILING / 4) * 1.05) + 1)
   })
 
   it('the mobile catalog went on the same diet, or it drifts from here', () => {

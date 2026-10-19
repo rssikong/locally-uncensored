@@ -12,9 +12,9 @@
  * LU stood in both lists, with entries of two builds from August. macOS ties
  * an entry to the code hash of a build without a fixed signature, so the
  * build of 07.10. was a stranger: Accessibility switched off, Screen
- * Recording switched on and worthless. A row that was asked for and is still
- * missing therefore offers "Reset and ask again", which makes macOS drop the
- * old entry and ask for the running build.
+ * Recording switched on and worthless. A row that is missing therefore offers
+ * "Reset and ask again", which makes macOS drop the old entry and ask for the
+ * running build.
  *
  * Run: npx vitest run src/components/computer/__tests__/permission-dialog.test.tsx
  */
@@ -130,12 +130,16 @@ describe('the permission question', () => {
     await tick(10)
     const dialog = view.getByRole('group', { name: 'macOS has to allow this first' })
     expect(dialog.textContent).toContain('Click Reset and ask again.')
-    // Nothing to reset before macOS was asked once.
-    expect(within(dialog).queryByRole('button', { name: /Reset and ask again/ })).toBeNull()
+    // The hint names the link, so it is there from the start: after a restart
+    // of LU nothing was asked in this view, and the old entry is still in the
+    // way (owner's Mac, 12.10.2026).
+    expect(within(dialog).getByRole('button', { name: 'Reset and ask again for Accessibility' })).toBeTruthy()
     fireEvent.click(within(dialog).getByRole('button', { name: 'Open System Settings for Accessibility' }))
     // The user switched LU on, macOS still says no: the row stays open.
     await tick()
-    expect(within(dialog).queryByRole('button', { name: 'Reset and ask again for Screen Recording' })).toBeNull()
+    // Screen Recording is missing too and offers its own reset; the click
+    // below resets Accessibility alone.
+    expect(within(dialog).getByRole('button', { name: 'Reset and ask again for Screen Recording' })).toBeTruthy()
     fireEvent.click(within(dialog).getByRole('button', { name: 'Reset and ask again for Accessibility' }))
     await tick(10)
     expect(mac.reset).toEqual(['accessibility'])

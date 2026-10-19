@@ -32,7 +32,7 @@ export interface MenuAction {
 
 /**
  * Die Aktionen, die die Aktionsleiste unter einer Nachricht schon hat
- * (`chat/MessageBubble.tsx`). Genau diese vier, keine erfundene fünfte.
+ * (`chat/MessageBubble.tsx`). Genau diese, keine erfundene weitere; `branch` kam mit GH #174 an beide zugleich.
  * `regenerate` ist `null`, wo die Leiste den Knopf auch nicht zeigt (eigene
  * Nachricht, oder es läuft gerade eine Antwort).
  */
@@ -40,6 +40,8 @@ export interface MessageMenuHandlers {
   readonly copy: () => void
   readonly edit: (() => void) | null
   readonly regenerate: (() => void) | null
+  /** GH #174: a new chat that ends with this message. */
+  readonly branch: (() => void) | null
   readonly remove: () => void
 }
 
@@ -55,6 +57,7 @@ export function buildMessageMenu(h: MessageMenuHandlers, s: MessageMenuState): M
   if (h.edit) out.push({ id: 'edit', label: 'Edit', run: h.edit })
   if (h.regenerate) out.push({ id: 'regenerate', label: 'Regenerate', run: h.regenerate })
   out.push({ id: 'copy', label: s.copied ? 'Copied' : 'Copy text', run: h.copy })
+  if (h.branch) out.push({ id: 'branch', label: 'Branch from here', run: h.branch })
   // Die Beschriftung sagt dasselbe wie der `title` des Knopfes: der erste
   // Aufruf schärft nur, gelöscht wird erst beim zweiten.
   out.push({

@@ -91,11 +91,13 @@ describe('lokale Ansichten ohne Promptfeld', () => {
     expect(useCreateStore.getState().promptHistory).not.toContain(REST)
   })
 
-  it('Motion Control baut seinen Graphen ohne ihn', async () => {
+  // Motion Control zeigt lokal ein Promptfeld, das leer bleiben darf (Fund 1,
+  // 3.0.7): der Text darin steht sichtbar da und geht mit, wie bei Music.
+  it('Motion Control zeigt lokal sein Promptfeld und schickt den Text darin mit', async () => {
     useCreateStore.getState().setIntent('motion')
     useCreateStore.setState({ localOpModel: MOTION, source: picture, videoInput: media('dance.mp4') } as never)
     await run()
-    expect(seen.lane).toEqual([{ op: 'motion', prompt: '' }])
+    expect(seen.lane).toEqual([{ op: 'motion', prompt: REST }])
   })
 
   it('ein Text, den die Pruefung ablehnt, haelt einen Lauf ohne Promptfeld nicht auf', async () => {

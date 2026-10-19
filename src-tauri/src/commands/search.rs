@@ -48,10 +48,37 @@ async fn try_searxng(query: &str, count: usize) -> Result<Vec<SearchResult>, Str
     Ok(results)
 }
 
-async fn try_ddg(query: &str, count: usize) -> Result<Vec<SearchResult>, String> {
+/// The User-Agent the DuckDuckGo tier sends when the user set none.
+const DDG_USER_AGENT: &str =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
+/// The longest User-Agent taken from Settings. A real one is a few hundred
+/// characters at most; anything longer is pasted by mistake.
+const MAX_USER_AGENT_LEN: usize = 512;
+
+/// The User-Agent the user set under Settings, Search Provider (D16), or
+/// `None` when the free tiers and `web_fetch` keep their own.
+///
+/// Empty means "as before". So does a value that cannot go into a header as it
+/// stands (a line break, a character outside printable ASCII, too long): the
+/// request must not fail over a setting, and the field under Settings says the
+/// same with `userAgentProblem`.
+pub(crate) fn custom_user_agent(raw: Option<&str>) -> Option<String> {
+    let text = raw?.trim();
+    if text.is_empty() || text.len() > MAX_USER_AGENT_LEN {
+        return None;
+    }
+    if !text.bytes().all(|b| (0x20..0x7f).contains(&b)) {
+        return None;
+    }
+    reqwest::header::HeaderValue::from_str(text).ok()?;
+    Some(text.to_string())
+}
+
+async fn try_ddg(query: &str, count: usize, user_agent: Option<&str>) -> Result<Vec<SearchResult>, String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+        .user_agent(user_agent.unwrap_or(DDG_USER_AGENT))
         .build()
         .map_err(|e| e.to_string())?;
 
@@ -290,10 +317,10 @@ pub fn wiki_versuche(query: &str, max_versuche: usize) -> Vec<(&'static str, Str
     out
 }
 
-async fn try_wikipedia(query: &str, count: usize) -> Result<Vec<SearchResult>, String> {
+async fn try_wikipedia(query: &str, count: usize, user_agent: Option<&str>) -> Result<Vec<SearchResult>, String> {
     let mut letzter = "No Wikipedia results".to_string();
     for (sprache, anfrage) in wiki_versuche(query, 4) {
-        match try_wikipedia_einmal(sprache, &anfrage, count).await {
+        match try_wikipedia_einmal(sprache, &anfrage, count, user_agent).await {
             Ok(r) => return Ok(r),
             Err(e) => letzter = e,
         }
@@ -305,16 +332,19 @@ async fn try_wikipedia_einmal(
     sprache: &str,
     query: &str,
     count: usize,
+    user_agent: Option<&str>,
 ) -> Result<Vec<SearchResult>, String> {
     let url = format!(
         "https://{}.wikipedia.org/w/api.php?action=query&list=search&srsearch={}&format=json&srlimit={}",
         sprache, urlencoding::encode(query), count
     );
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .map_err(|e| e.to_string())?;
+    // Without a setting no User-Agent goes out here, as before.
+    let mut builder = reqwest::Client::builder().timeout(std::time::Duration::from_secs(10));
+    if let Some(agent) = user_agent {
+        builder = builder.user_agent(agent);
+    }
+    let client = builder.build().map_err(|e| e.to_string())?;
     let resp = client
         .get(&url)
         .send()
@@ -374,9 +404,14 @@ pub async fn web_search(
     provider: Option<String>,
     brave_api_key: Option<String>,
     tavily_api_key: Option<String>,
+    user_agent: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
     let count = count.unwrap_or(5);
+    // D16: the free tiers that read a public page as a browser would
+    // (DuckDuckGo, Wikipedia) send the user's own User-Agent when one is set.
+    // The keyed APIs and the local SearXNG are not asked as a browser.
+    let user_agent = custom_user_agent(user_agent.as_deref());
     let provider = provider.unwrap_or_else(|| "auto".to_string());
     let brave_key = brave_api_key.unwrap_or_default();
     let tavily_key = tavily_api_key.unwrap_or_default();
@@ -447,12 +482,12 @@ pub async fn web_search(
     }
 
     // Fallback to DuckDuckGo
-    if let Ok(results) = try_ddg(&query, count).await {
+    if let Ok(results) = try_ddg(&query, count, user_agent.as_deref()).await {
         return Ok(attach(serde_json::json!({"results": results, "provider": "duckduckgo"})));
     }
 
     // Fallback to Wikipedia
-    if let Ok(results) = try_wikipedia(&query, count).await {
+    if let Ok(results) = try_wikipedia(&query, count, user_agent.as_deref()).await {
         return Ok(attach(serde_json::json!({"results": results, "provider": "wikipedia"})));
     }
 
@@ -550,7 +585,7 @@ pub fn searxng_status(state: State<'_, AppState>) -> Result<serde_json::Value, S
 ///   - Undoes the packing a server put on the body, and never hands bytes that
 ///     are no text to the model (`page_json`)
 #[tauri::command]
-pub async fn web_fetch(url: String) -> Result<serde_json::Value, String> {
+pub async fn web_fetch(url: String, user_agent: Option<String>) -> Result<serde_json::Value, String> {
     // URL hardening: http(s) only and the host must not be localhost, a
     // private/reserved range, or a cloud-metadata endpoint. The agent should
     // fetch public pages, not poke internal services (Ollama, ComfyUI, LAN
@@ -562,7 +597,9 @@ pub async fn web_fetch(url: String) -> Result<serde_json::Value, String> {
     // model supplied, one lookup per hop with the connection pinned to its
     // answer (DNS rebinding), redirects followed by hand, and a body that is
     // read piece by piece up to a hard limit.
-    let page = crate::commands::web_reach::fetch_page(trimmed).await?;
+    // D16: the User-Agent the user set, or the agent's own.
+    let agent = custom_user_agent(user_agent.as_deref());
+    let page = crate::commands::web_reach::fetch_page(trimmed, agent.as_deref()).await?;
 
     Ok(page_json(&page.final_url, page.status, &page.content_type, &page.content_encoding, &page.body).await)
 }
@@ -756,6 +793,45 @@ fn collapse_whitespace(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn d16_a_user_agent_from_settings_is_taken_as_it_is_typed() {
+        assert_eq!(custom_user_agent(Some("MyBot/1.0")), Some("MyBot/1.0".to_string()));
+        assert_eq!(
+            custom_user_agent(Some("  Mozilla/5.0 (X11; Linux x86_64) Firefox/140.0  ")),
+            Some("Mozilla/5.0 (X11; Linux x86_64) Firefox/140.0".to_string()),
+            "spaces around it are trimmed"
+        );
+    }
+
+    #[test]
+    fn d16_empty_or_unusable_keeps_the_user_agent_of_today() {
+        assert_eq!(custom_user_agent(None), None);
+        assert_eq!(custom_user_agent(Some("")), None);
+        assert_eq!(custom_user_agent(Some("   ")), None);
+        // A line break would start a second header; never sent.
+        assert_eq!(custom_user_agent(Some("Bot/1.0\r\nX-Evil: 1")), None);
+        assert_eq!(custom_user_agent(Some("Bot/1.0\nX")), None);
+        assert_eq!(custom_user_agent(Some("Bot\t1")), None);
+        assert_eq!(custom_user_agent(Some("Böt/1.0")), None, "printable ASCII only");
+        assert_eq!(custom_user_agent(Some(&"a".repeat(MAX_USER_AGENT_LEN + 1))), None);
+        assert!(custom_user_agent(Some(&"a".repeat(MAX_USER_AGENT_LEN))).is_some());
+    }
+
+    #[test]
+    fn d16_the_user_agent_reaches_every_free_tier_and_web_fetch() {
+        // Quelltextwaechter: die Einstellung wird in beiden Befehlen geprueft
+        // und bis zu den Anfragen durchgereicht.
+        let src = include_str!("search.rs");
+        let search = &src[src.find("pub async fn web_search(").unwrap()..src.find("pub async fn search_status(").unwrap()];
+        assert!(search.contains("custom_user_agent(user_agent.as_deref())"));
+        assert!(search.contains("try_ddg(&query, count, user_agent.as_deref())"));
+        assert!(search.contains("try_wikipedia(&query, count, user_agent.as_deref())"));
+        let fetch = &src[src.find("pub async fn web_fetch(").unwrap()..src.find("async fn page_json(").unwrap()];
+        assert!(fetch.contains("fetch_page(trimmed, agent.as_deref())"));
+        let ddg = &src[src.find("async fn try_ddg(").unwrap()..src.find("fn parse_brave_results(").unwrap()];
+        assert!(ddg.contains(".user_agent(user_agent.unwrap_or(DDG_USER_AGENT))"));
+    }
 
     #[test]
     fn brave_parses_web_results() {

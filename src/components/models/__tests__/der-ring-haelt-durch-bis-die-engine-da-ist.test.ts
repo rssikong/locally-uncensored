@@ -46,7 +46,8 @@ describe('der Ladehinweis am Waehlerknopf', () => {
     // Ein Swap auf der Models-Seite darf keinen Ring an einen Cloud-Namen
     // haengen, der mit ihm nichts zu tun hat.
     const block = SRC.slice(SRC.indexOf('const wechselLaeuft ='), SRC.indexOf('const wechselLaeuft =') + 220)
-    expect(block).toContain("getProviderIdFromModel(gezeigtesModell ?? '') === 'openai'")
+    // GitHub #173: the slot itself, not every OpenAI-compatible entry.
+    expect(block).toContain("isOpenAISlotModel(gezeigtesModell ?? '')")
   })
 })
 

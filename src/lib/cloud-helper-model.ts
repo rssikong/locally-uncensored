@@ -29,3 +29,9 @@ export function helperModelFor(activeModel: string | null, appMode: AppMode | un
 export function currentHelperModel(): string | null {
   return helperModelFor(useModelStore.getState().activeModel, useSettingsStore.getState().settings.appMode)
 }
+
+/** The chat model list of right now: it carries the display name of the
+ *  helper model, for the places that name it. */
+export function currentChatModelList(): ReadonlyArray<{ name: string; displayName?: string }> {
+  return useModelStore.getState().models
+}

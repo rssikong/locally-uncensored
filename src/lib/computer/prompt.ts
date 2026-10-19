@@ -44,8 +44,8 @@ You can have things done on the user's screen with the computer_task tool. You c
  * every model that runs on this machine or in the local network, as long as
  * the task tool is there to take the work.
  */
-export function onlyTheTaskForTheScreen(providerId: string, has: (toolName: string) => boolean): boolean {
-  const local = providerId === 'ollama' || sendsToALanBackend(providerId)
+export function onlyTheTaskForTheScreen(providerId: string, has: (toolName: string) => boolean, model?: string | null): boolean {
+  const local = providerId === 'ollama' || sendsToALanBackend(providerId, model)
   return local && has(COMPUTER_TASK_TOOL_NAME)
 }
 

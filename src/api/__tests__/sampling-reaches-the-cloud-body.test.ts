@@ -213,8 +213,12 @@ describe('the panel writes to the conversation the send reads', () => {
   })
 
   it('and the send reads sampling through buildSamplingRequest, topK straight from settings', () => {
+    // GH #175: useChat goes through speakerSamplingOptions, which adds the
+    // speaker's persona preset under the chat's own values.
     const chat = src('../../hooks/useChat.ts')
-    expect(chat).toMatch(/buildSamplingRequest\(settings, conv\??\.sampling\)/)
-    expect(chat).toMatch(/topK: settings\.topK/)
+    expect(chat).toMatch(/speakerSamplingOptions\(settings, conv,/)
+    const speaker = src('../../lib/chat-persona.ts')
+    expect(speaker).toMatch(/buildSamplingRequest\(settings, conv\.sampling, preset\)/)
+    expect(speaker).toMatch(/topK: settings\.topK/)
   })
 })

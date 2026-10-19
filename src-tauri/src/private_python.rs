@@ -5,7 +5,8 @@
 //! do not even have those. Until 3.0.6 the answer was a sentence telling the
 //! customer to run `brew install python@3.12` in a terminal.
 //!
-//! This module fetches one instead, into `<data_dir>/python`, without admin
+//! This module fetches one instead, into `<data_dir>/python` (or the folder
+//! chosen for it, see [`crate::runtime_root`]), without admin
 //! rights and without Homebrew. It is not a second way of doing that: the
 //! voice loop already downloads a self-contained CPython (astral-sh
 //! python-build-standalone) by pinned release and sha256, and this is the same
@@ -25,7 +26,8 @@
 //!   marker is a leftover and is cleared, never used.
 
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, MutexGuard, TryLockError};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, TryLockError};
 use std::time::{Duration, Instant};
 
 use crate::commands::voice_loop::fetch::{self, FetchError};
@@ -41,7 +43,7 @@ pub const PIN: &str = include_str!("../resources/voice_loop/python.json");
 
 /// Written into the unpacked folder after the interpreter in it has answered,
 /// and before the folder gets its real name. Holds the sha256 of the archive.
-const COMPLETE_MARKER: &str = ".lu-python-complete";
+pub(crate) const COMPLETE_MARKER: &str = ".lu-python-complete";
 
 /// What `fail` on the slot reads as a stop on request.
 const CANCELLED: &str = "cancelled";
@@ -57,8 +59,13 @@ pub struct Place {
 }
 
 impl Place {
-    pub fn in_data_dir() -> Self {
-        Self { root: crate::os_paths::data_dir() }
+    /// The Python in use: a finished install wherever it is found (the
+    /// chosen folder, an earlier one, the app data folder), else the chosen
+    /// folder, where a new one goes. `runtime_root` decides.
+    pub fn current() -> Self {
+        let home = crate::runtime_root::current_here(crate::runtime_root::Kind::Python, None)
+            .unwrap_or_else(|| crate::os_paths::data_dir().join("python"));
+        Self { root: home.parent().map(Path::to_path_buf).unwrap_or_else(crate::os_paths::data_dir) }
     }
 
     #[cfg(test)]
@@ -107,7 +114,16 @@ fn pinned_build(manifest: &PythonManifest) -> Result<&PythonBuild, String> {
 pub fn installed() -> Option<PathBuf> {
     let manifest = pinned().ok()?;
     let build = pinned_build(&manifest).ok()?;
-    Place::in_data_dir().installed(build)
+    Place::current().installed(build)
+}
+
+/// Whether the finished install in `home` (a `python` folder) starts and
+/// is the pinned version. Asked after a move, before the old copy goes.
+pub(crate) fn starts_from(home: &Path) -> bool {
+    let Ok(manifest) = pinned() else { return false };
+    let Ok(build) = pinned_build(&manifest) else { return false };
+    let exe = Place::exe_in(home, build);
+    home.join(COMPLETE_MARKER).is_file() && proven_version(&exe).as_deref() == Some(manifest.version.as_str())
 }
 
 /// The candidates in the order they are asked: everything found on the
@@ -122,17 +138,99 @@ pub fn with_fallback(system: Vec<PathBuf>, own: Option<PathBuf>) -> Vec<PathBuf>
     out
 }
 
+/// Where a setup that fetches the private Python reports to. The engine
+/// setups have an [`InstallSlot`]; ComfyUI and the trainer have their own
+/// status channel and cancel flag ([`StatusProgress`]). Both reach the same
+/// download through this.
+pub trait Progress: Sync {
+    fn log(&self, line: String);
+    /// The flag a Stop sets. The download reads it between chunks.
+    fn cancel_flag(&self) -> Arc<AtomicBool>;
+    fn set_download(&self, done: u64, total: u64, speed: u64);
+}
+
+impl Progress for InstallSlot {
+    fn log(&self, line: String) {
+        InstallSlot::log(self, line);
+    }
+    fn cancel_flag(&self) -> Arc<AtomicBool> {
+        InstallSlot::cancel_flag(self)
+    }
+    fn set_download(&self, done: u64, total: u64, speed: u64) {
+        InstallSlot::set_download(self, done, total, speed);
+    }
+}
+
+/// The status channel ComfyUI and the trainer share their shape with: one
+/// `InstallState` the panel polls and one cancel flag.
+pub struct StatusProgress<'a> {
+    pub status: &'a Arc<Mutex<crate::state::InstallState>>,
+    pub cancel: &'a Arc<AtomicBool>,
+}
+
+impl Progress for StatusProgress<'_> {
+    fn log(&self, line: String) {
+        tracing::info!("[install] {line}");
+        if let Ok(mut s) = self.status.lock() {
+            s.logs.push(line);
+        }
+    }
+    fn cancel_flag(&self) -> Arc<AtomicBool> {
+        self.cancel.clone()
+    }
+    fn set_download(&self, done: u64, total: u64, speed: u64) {
+        if let Ok(mut s) = self.status.lock() {
+            s.download_progress = if total > 0 { done.min(total) } else { done };
+            s.download_total = total;
+            s.download_speed = speed as f64;
+        }
+    }
+}
+
+/// Why the private Python is fetched, in the two places the customer reads
+/// it: the log line before the download and the sentence when it fails.
+#[derive(Clone, Copy)]
+pub struct Why<'a> {
+    /// Starts the log line, lower case: "<log>, downloading Python 3.12.15".
+    pub log: &'a str,
+    /// Starts the failure sentence: "<sentence>, and LU could not download its own".
+    pub sentence: &'a str,
+}
+
+/// The engines (MLX, video) need 3.11 or newer.
+const ENGINES: Why<'static> = Why {
+    log: "no Python 3.11 or newer on this computer",
+    sentence: "This computer has no Python 3.11 or newer",
+};
+
 /// The private interpreter, downloaded first when it is not there. Called by
 /// an engine setup that found no Python 3.11 or newer on the machine.
 pub fn ensure(slot: &InstallSlot) -> Result<PathBuf, String> {
+    ensure_for(slot, ENGINES)
+}
+
+/// The same for any other setup, with its own reason.
+pub fn ensure_for(progress: &dyn Progress, why: Why<'_>) -> Result<PathBuf, String> {
     let manifest = pinned()?;
     let build = pinned_build(&manifest)?;
-    ensure_at(&Place::in_data_dir(), &manifest.version, build, slot, &proven_version)
+    ensure_at(&Place::current(), &manifest.version, build, progress, why, &proven_version)
+}
+
+/// `(3, 12)` when LU has a Python of its own for this system, None when the
+/// pin carries no build for it (an Intel Mac, ARM Linux, ARM Windows). Asks
+/// nothing on disk and nothing on the network.
+pub fn version_here() -> Option<(u32, u32)> {
+    let manifest = pinned().ok()?;
+    pinned_build(&manifest).ok()?;
+    let mut parts = manifest.version.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    Some((major, minor))
 }
 
 /// `3.12.15` from an interpreter that can also do what the engines ask of it
 /// first: build a venv, bootstrap pip into it and open a TLS connection.
-fn proven_version(exe: &Path) -> Option<String> {
+pub(crate) fn proven_version(exe: &Path) -> Option<String> {
     let out = private_python(exe)
         .args(["-c", "import sys, venv, ensurepip, ssl; print('%d.%d.%d' % sys.version_info[:3])"])
         .stderr(std::process::Stdio::null())
@@ -155,7 +253,7 @@ fn clear(path: &Path) -> Result<(), String> {
 
 /// Wait for another setup that is fetching the same Python, and stop waiting
 /// when this one is cancelled.
-fn wait_for_turn(slot: &InstallSlot) -> Result<MutexGuard<'static, ()>, String> {
+fn wait_for_turn(slot: &dyn Progress) -> Result<MutexGuard<'static, ()>, String> {
     let mut said = false;
     loop {
         match FETCHING.try_lock() {
@@ -163,23 +261,38 @@ fn wait_for_turn(slot: &InstallSlot) -> Result<MutexGuard<'static, ()>, String> 
             Err(TryLockError::Poisoned(poisoned)) => return Ok(poisoned.into_inner()),
             Err(TryLockError::WouldBlock) => {}
         }
-        if slot.cancel_requested() {
+        if cancel_requested(slot) {
             return Err(CANCELLED.to_string());
         }
         if !said {
-            slot.log("waiting for the Python download another setup has started");
+            slot.log("waiting for the Python download another setup has started".to_string());
             said = true;
         }
         std::thread::sleep(Duration::from_millis(300));
     }
 }
 
+/// The download lock, when nobody is fetching right now. A move of the
+/// Python holds it, so no setup unpacks into the folder being moved.
+pub(crate) fn hold_if_idle() -> Option<MutexGuard<'static, ()>> {
+    match FETCHING.try_lock() {
+        Ok(guard) => Some(guard),
+        Err(TryLockError::Poisoned(poisoned)) => Some(poisoned.into_inner()),
+        Err(TryLockError::WouldBlock) => None,
+    }
+}
+
+fn cancel_requested(slot: &dyn Progress) -> bool {
+    slot.cancel_flag().load(Ordering::SeqCst)
+}
+
 /// The sentence for a download that did not arrive.
-fn fetch_sentence(error: &FetchError) -> String {
+fn fetch_sentence(error: &FetchError, why: Why<'_>) -> String {
     match error {
         FetchError::Cancelled => CANCELLED.to_string(),
         FetchError::Network(detail) => format!(
-            "This computer has no Python 3.11 or newer, and LU could not download its own: {detail}. Check the internet connection and start the setup again, the download continues where it stopped."
+            "{}, and LU could not download its own: {detail}. Check the internet connection and start the setup again, the download continues where it stopped.",
+            why.sentence
         ),
         other => other.user_message("Python"),
     }
@@ -189,7 +302,7 @@ fn megabytes(bytes: u64) -> u64 {
     bytes.div_ceil(1_000_000)
 }
 
-fn download(place: &Place, build: &PythonBuild, slot: &InstallSlot) -> Result<(), String> {
+fn download(place: &Place, build: &PythonBuild, slot: &dyn Progress, why: Why<'_>) -> Result<(), String> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -197,7 +310,7 @@ fn download(place: &Place, build: &PythonBuild, slot: &InstallSlot) -> Result<()
     let client = fetch::http_client()?;
     let total = build.remote.size;
     let cancel = slot.cancel_flag();
-    let meter = slot.clone();
+    let meter = slot;
     let started = Instant::now();
     let mut first: Option<u64> = None;
     let mut on_progress = move |done: u64| {
@@ -210,7 +323,7 @@ fn download(place: &Place, build: &PythonBuild, slot: &InstallSlot) -> Result<()
         runtime.block_on(fetch::fetch_verified(&client, &build.remote, &place.archive(), &cancel, &mut on_progress));
     // The bar belongs to the next step again.
     slot.set_download(0, 0, 0);
-    fetched.map_err(|e| fetch_sentence(&e))
+    fetched.map_err(|e| fetch_sentence(&e, why))
 }
 
 /// Unpack the verified archive next to its target, start the interpreter once,
@@ -260,31 +373,33 @@ fn ensure_at(
     place: &Place,
     version: &str,
     build: &PythonBuild,
-    slot: &InstallSlot,
+    slot: &dyn Progress,
+    why: Why<'_>,
     prove: &dyn Fn(&Path) -> Option<String>,
 ) -> Result<PathBuf, String> {
     let _turn = wait_for_turn(slot)?;
     if let Some(exe) = place.installed(build) {
         return Ok(exe);
     }
-    if slot.cancel_requested() {
+    if cancel_requested(slot) {
         return Err(CANCELLED.to_string());
     }
     slot.log(format!(
-        "no Python 3.11 or newer on this computer, downloading Python {version} ({} MB) into LU's own folder",
+        "{}, downloading Python {version} ({} MB) into LU's own folder",
+        why.log,
         megabytes(build.remote.size)
     ));
     // Whatever is there without the marker is what a stopped run left behind.
     clear(&place.home())?;
     clear(&place.unpack())?;
 
-    download(place, build, slot)?;
-    if slot.cancel_requested() {
+    download(place, build, slot, why)?;
+    if cancel_requested(slot) {
         // The verified archive stays; the next run unpacks it without a download.
         return Err(CANCELLED.to_string());
     }
 
-    slot.log("unpacking Python");
+    slot.log("unpacking Python".to_string());
     let outcome = unpack_and_prove(place, version, build, prove);
     let _ = clear(&place.unpack());
     let _ = clear(&place.archive());
@@ -459,7 +574,7 @@ mod tests {
         std::fs::create_dir_all(place.unpack().join("python")).unwrap();
 
         let slot = running_slot();
-        let exe = ensure_at(&place, VERSION, &build, &slot, &says).unwrap();
+        let exe = ensure_at(&place, VERSION, &build, &slot, ENGINES, &says).unwrap();
         assert_eq!(exe, place.home().join("bin").join("python3.12"));
         assert_eq!(std::fs::read_to_string(&exe).unwrap(), VERSION, "the old leftover is gone");
         assert!(place.home().join("lib/python3.12/os.py").is_file());
@@ -476,7 +591,7 @@ mod tests {
         // The second setup asks nobody: the address is dead and it still answers.
         let dead = build_at("http://127.0.0.1:9/none", bytes.len() as u64, sha(&bytes));
         let again = running_slot();
-        assert_eq!(ensure_at(&place, VERSION, &dead, &again, &says).unwrap(), exe);
+        assert_eq!(ensure_at(&place, VERSION, &dead, &again, ENGINES, &says).unwrap(), exe);
         // The tests of this module share the one download lock, so a second
         // call may have waited for another test. That line is the only one.
         let said = again.snapshot().logs;
@@ -496,7 +611,7 @@ mod tests {
         // Right size, the digest of other bytes: what a tampered mirror sends.
         let build = build_at(&server.url, bytes.len() as u64, sha(b"another archive"));
         let slot = running_slot();
-        let err = ensure_at(&place, VERSION, &build, &slot, &|_| panic!("an unverified archive was unpacked"))
+        let err = ensure_at(&place, VERSION, &build, &slot, ENGINES, &|_| panic!("an unverified archive was unpacked"))
             .unwrap_err();
         assert!(err.contains("did not match its checksum"), "{err}");
         nothing_left(&place);
@@ -512,7 +627,7 @@ mod tests {
             let tmp = tempfile::tempdir().unwrap();
             let place = Place::at(tmp.path());
             let build = build_at(&server.url, bytes.len() as u64, sha(&bytes));
-            let err = ensure_at(&place, VERSION, &build, &running_slot(), &says).unwrap_err();
+            let err = ensure_at(&place, VERSION, &build, &running_slot(), ENGINES, &says).unwrap_err();
             assert!(err.contains(expected), "{err}");
             nothing_left(&place);
         }
@@ -527,7 +642,7 @@ mod tests {
         let place = Place::at(tmp.path());
         // Only reachable with a matching digest, so this is the unpack failing.
         let build = build_at(&server.url, bytes.len() as u64, sha(&bytes));
-        let err = ensure_at(&place, VERSION, &build, &running_slot(), &says).unwrap_err();
+        let err = ensure_at(&place, VERSION, &build, &running_slot(), ENGINES, &says).unwrap_err();
         assert!(err.contains("could not be unpacked"), "{err}");
         nothing_left(&place);
     }
@@ -539,7 +654,7 @@ mod tests {
         let build = build_at("http://127.0.0.1:9/none", 10, sha(b"x"));
         let slot = running_slot();
         assert!(slot.cancel());
-        let err = ensure_at(&place, VERSION, &build, &slot, &says).unwrap_err();
+        let err = ensure_at(&place, VERSION, &build, &slot, ENGINES, &says).unwrap_err();
         assert_eq!(err, CANCELLED);
         nothing_left(&place);
         slot.fail(err);
@@ -555,7 +670,7 @@ mod tests {
         assert!(!flag.load(std::sync::atomic::Ordering::SeqCst));
         assert!(slot.cancel());
         assert!(flag.load(std::sync::atomic::Ordering::SeqCst));
-        assert_eq!(fetch_sentence(&FetchError::Cancelled), CANCELLED);
+        assert_eq!(fetch_sentence(&FetchError::Cancelled, ENGINES), CANCELLED);
     }
 
     /// The real archive through the real code: unpacked by the `tar` crate
@@ -585,7 +700,7 @@ mod tests {
 
     #[test]
     fn without_a_network_the_sentence_says_what_is_missing_and_what_to_do() {
-        let said = fetch_sentence(&FetchError::Network("the server could not be reached".to_string()));
+        let said = fetch_sentence(&FetchError::Network("the server could not be reached".to_string()), ENGINES);
         assert!(said.contains("no Python 3.11 or newer"), "{said}");
         assert!(said.contains("the server could not be reached"), "{said}");
         assert!(said.contains("Check the internet connection"), "{said}");

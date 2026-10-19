@@ -13,18 +13,19 @@
  * without a renderer and without a backend — the same shape as send-window.ts
  * and context-window.ts, which it sits beside.
  *
- * ── OPT-IN, AND WHY THAT IS THE WHOLE DESIGN ───────────────────────────────
+ * ── ON BY DEFAULT SINCE 3.0.7 ──────────────────────────────────────────────
  *
- * Owner decision, 2026-09-02: "einstellbar sonst aus". There is deliberately
- * NO default threshold. Without one, `shouldCompact` is false forever and this
- * module changes nothing about how the app behaves — the mechanical trim in
- * context-compaction.ts keeps running exactly as it does today, and it stays
- * the safety net underneath.
+ * Owner decision, 2026-09-02, was "einstellbar sonst aus": no default
+ * threshold, nothing fired until someone set a number. Owner decision,
+ * 2026-10-17, replaced it: auto-compact on by default, at the level of the
+ * Claude Code desktop app. The safeguards that made the opt-in supportable are
+ * what makes the default supportable now: the record is reversible (nothing is
+ * removed from the store), the transcript says every time it happened, and the
+ * merge check in compact-summary.ts puts back what a summary dropped.
  *
- * That is not timidity, it is what makes the feature supportable: auto-compact
- * replaces conversation history with a model's summary of it. When the summary
- * is wrong the user loses work, and they lose it silently. A feature with that
- * failure mode earns its default-on only after the field says it works.
+ * The threshold now follows the window (adaptiveCompactThreshold below)
+ * unless the user set one. The mechanical trim in context-compaction.ts keeps
+ * running underneath and stays the safety net.
  *
  * ── THE CONFIDENCE MARGIN ──────────────────────────────────────────────────
  *
@@ -32,9 +33,12 @@
  * two halves. Both halves can be estimates, and — this is the part that
  * matters — BOTH of their errors point the same way:
  *
- *   - The numerator under-reads. `estimateTokens` is `chars / 4`, calibrated
- *     on English prose. Code, JSON, tool results and non-English text all
+ *   - The numerator under-reads. `estimateTokens` charges Latin text
+ *     `chars / 4`, calibrated on English prose. Code, JSON and tool results
  *     tokenize denser than that, so the estimate says "less" than the truth.
+ *     (CJK and other scripts are weighted by script since GH #167, digits
+ *     and encoded runs such as hex and Base64 by their real cost since 3.0.7,
+ *     see lib/token-estimate.ts, and lean high rather than low.)
  *   - The denominator over-reads. A window that is not `isTrue` is a fallback
  *     guess, and the fallbacks in useActiveContextWindow (the model's
  *     advertised max, DEFAULT_CONTEXT_CAP, 8192) are all ceilings, not floors.
@@ -67,7 +71,8 @@ export type FillSource = 'built' | 'usage' | 'estimate'
  *    tail.
  *  - `usage` + estimated: anchored on a provisional usage the agent path
  *    wrote, i.e. an estimate wearing a usage's clothes.
- *  - `estimate`: chars/4 over the whole visible conversation, nothing else.
+ *  - `estimate`: the token estimate over the whole visible conversation,
+ *    nothing else.
  */
 export const MARGIN_BUILT = 0
 export const MARGIN_USAGE_REAL = 0.03
@@ -124,7 +129,7 @@ export interface CompactTriggerInput {
   /** Messages in the conversation right now. */
   messageCount: number
   /**
-   * settings.autoCompactThreshold. Undefined, 0, or outside
+   * The resolved threshold (resolveCompactThreshold). Undefined, 0, or outside
    * [MIN_THRESHOLD, MAX_THRESHOLD] means the feature is off.
    */
   threshold?: number
@@ -133,10 +138,19 @@ export interface CompactTriggerInput {
    * Undefined = never compacted.
    */
   lastCompactAtMessageCount?: number
+  /**
+   * The send budget is about to trim this payload mechanically (3.0.7). The
+   * trim measures with the token estimate, the ratio above often with the
+   * server's own count, and on text the tokenizer packs densely the estimate
+   * runs ahead: the trim cut old turns while the ratio still read 'below', and
+   * no summary was ever written (Windows run, 32K window). With this set the
+   * ratio no longer decides; off, no window, too short and cooldown still do.
+   */
+  trimImminent?: boolean
 }
 
 export type CompactTriggerReason =
-  | 'off'          // no usable threshold — the opt-in was never taken
+  | 'off'          // no usable threshold: auto-compact is switched off
   | 'no-window'    // denominator not resolved yet; a ratio would be a fiction
   | 'too-short'    // nothing worth summarizing
   | 'cooldown'     // compacted too recently
@@ -176,11 +190,101 @@ export function confidenceMargin(input: {
   )
 }
 
-/** A threshold the user actually opted into, or null. */
+/** A threshold inside the usable range, or null. */
 export function usableThreshold(threshold?: number): number | null {
   if (typeof threshold !== 'number' || !Number.isFinite(threshold)) return null
   if (threshold < MIN_THRESHOLD || threshold > MAX_THRESHOLD) return null
   return threshold
+}
+
+/**
+ * What a summary needs beside the payload: its own output ceiling
+ * (COMPACT_MAX_TOKENS in compact-run.ts, 1200) and the prompt around the
+ * transcript. A literal here because this module is a leaf by contract.
+ */
+export const SUMMARY_RESERVE_TOKENS = 2200
+
+/**
+ * Room the next answer needs, as a share of the window, never below a floor.
+ * A run that compacts at 95 % of 8K has 400 tokens left for the step it was
+ * compacting for.
+ */
+export const ANSWER_ROOM_SHARE = 0.12
+export const ANSWER_ROOM_MIN_TOKENS = 2048
+
+/** Bounds of the window-fitted threshold. */
+export const ADAPTIVE_MIN = 0.5
+export const ADAPTIVE_MAX = 0.85
+
+/**
+ * The threshold that fits this window when the user chose none.
+ *
+ * The free part of a window has to hold the answer and, on the turn that
+ * compacts, the summary call. Both are close to fixed in tokens, so on a
+ * small window they are a large share and the trigger has to come early; on a
+ * large one they vanish and the trigger can sit high. Measured points:
+ * 8K 0.50, 16K 0.74, 32K 0.81, 128K and above 0.85. The Claude Code desktop
+ * app compacts a 200K window at about 0.83, which is the same shape.
+ *
+ * 0 or an unknown window gives ADAPTIVE_MAX; the trigger refuses a zero window
+ * anyway ('no-window').
+ */
+export function adaptiveCompactThreshold(window: number): number {
+  if (!(Number.isFinite(window) && window > 0)) return ADAPTIVE_MAX
+  const answer = Math.max(ANSWER_ROOM_MIN_TOKENS, window * ANSWER_ROOM_SHARE)
+  const raw = 1 - (SUMMARY_RESERVE_TOKENS + answer) / window
+  return Math.round(Math.min(ADAPTIVE_MAX, Math.max(ADAPTIVE_MIN, raw)) * 100) / 100
+}
+
+/**
+ * The highest threshold a window can carry: past it the summary call itself
+ * no longer fits beside the payload. A fixed threshold the user set is held
+ * under this, so a 95 % on an 8K model still compacts while it can.
+ */
+export function compactThresholdCeiling(window: number): number {
+  if (!(Number.isFinite(window) && window > 0)) return MAX_THRESHOLD
+  const raw = 1 - SUMMARY_RESERVE_TOKENS / window
+  return Math.round(Math.min(MAX_THRESHOLD, Math.max(MIN_THRESHOLD, raw)) * 100) / 100
+}
+
+/**
+ * The smallest model context window the default auto-compact runs on.
+ * Owner decision, 18.10.2026: "bei 8k nie, bei 32k immer und alles darueber
+ * auch immer an". Below it the window is too small for a summary to pay for
+ * itself next to the answer, and the mechanical trim does the work alone. It
+ * is the MODEL window, not the send window: a 32K model whose steps send a
+ * share of it is still a 32K model.
+ */
+export const MIN_AUTO_COMPACT_WINDOW = 32768
+
+/**
+ * The threshold auto-compact runs at, from the two settings and the window.
+ * Null = off. `autoCompact` false switches it off everywhere. A threshold of 0
+ * (or anything outside the usable range) means "fit the window", and that
+ * default runs only from MIN_AUTO_COMPACT_WINDOW of model context on. A fixed
+ * threshold the user set runs on every window.
+ *
+ * `window` is what the payload is built against and what the threshold is a
+ * share of; `contextWindow` is the model's own window for the 32K rule,
+ * `window` when omitted.
+ */
+export function resolveCompactThreshold(
+  settings: { autoCompact?: boolean; autoCompactThreshold?: number },
+  window: number,
+  contextWindow: number = window,
+): number | null {
+  if (settings.autoCompact === false) return null
+  const fixed = usableThreshold(settings.autoCompactThreshold)
+  if (fixed === null) {
+    if (!(contextWindow >= MIN_AUTO_COMPACT_WINDOW)) return null
+    return adaptiveCompactThreshold(window)
+  }
+  return Math.min(fixed, compactThresholdCeiling(window))
+}
+
+/** Whether auto-compact runs at all. The cheap question every send path asks first. */
+export function autoCompactOn(settings: { autoCompact?: boolean }): boolean {
+  return settings.autoCompact !== false
 }
 
 /**
@@ -213,7 +317,7 @@ export function shouldAutoCompact(input: CompactTriggerInput): CompactTriggerRes
   ) {
     return no('cooldown')
   }
-  if (ratio < effectiveThreshold) return no('below')
+  if (ratio < effectiveThreshold && !input.trimImminent) return no('below')
 
   return { shouldCompact: true, ratio, effectiveThreshold, margin, reason: 'over' }
 }

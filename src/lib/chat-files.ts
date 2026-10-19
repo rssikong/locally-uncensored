@@ -13,6 +13,12 @@
  *      fixed budget, a few kilobytes per file whatever the file weighs.
  *   2. In Agent and Code the file is also copied into the chat's working
  *      folder, where the file and shell tools can work on the real thing.
+ *      For a binary the model then gets the facts and the path only (3.0.7):
+ *      its tools read the bytes far better than a dump in the prompt does.
+ *
+ * In plain chat the composer says so when a binary is attached: the model
+ * only sees the summary, and Agent or Code is where it gets the file
+ * (binarySummaryOnlyMessage). Nothing attached is ever run.
  *
  * WHAT IS STORED. Only the description. The file is not copied into the chat
  * history, not as base64 and not as a reference to a stored blob: the history
@@ -28,24 +34,38 @@ import type { FileAttachment } from '../types/chat'
 import { detectFileKind } from './file-magic'
 import { formatBytes } from './formatters'
 import { log } from './logger'
+import { sha256OfBlob } from './sha256-stream'
 
 /** How many files one message may carry. */
 export const MAX_CHAT_FILES = 3
-/** The largest file that can be attached. The whole file is read once to hash
- *  it, so this is also the most memory an attachment costs for a moment. */
-export const MAX_CHAT_FILE_BYTES = 64 * 1024 * 1024
+/** The largest file that can be attached (3.0.7: 256 MB, was 64 MB). The
+ *  same number as WRITE_BYTES_CAP in src-tauri/src/commands/filesystem.rs. A
+ *  file above WHOLE_READ_BYTES is never held in memory whole: its start is
+ *  read for the description and the hash goes through it slice by slice. */
+export const MAX_CHAT_FILE_BYTES = 256 * 1024 * 1024
+/** Up to this size a file is read in one piece and hashed by WebCrypto. */
+export const WHOLE_READ_BYTES = 32 * 1024 * 1024
 /** How much of the start of a binary is shown as a hex dump. */
 export const HEX_DUMP_BYTES = 256
 /** The budget for readable strings, in characters. */
 export const STRINGS_BUDGET_CHARS = 3000
-/** How much of a text file is shown. */
-export const TEXT_EXCERPT_CHARS = 4000
+/**
+ * How much of a text file the chat holds at most, in characters (GH #171).
+ *
+ * Until 3.0.7 a text file was cut to its first 4000 characters here, before
+ * anyone knew which model it was for, and without a word to the user. Now
+ * the whole text is held up to this size and the cut, if any, is made at
+ * send time against the window of the model it goes to (chat-file-fit.ts),
+ * and said. A million characters covers every window a model ships with
+ * today, and it bounds what a chat history can grow by per file.
+ */
+export const TEXT_HOLD_CHARS = 1_048_576
 /** A run of printable characters counts as a string from this length on. */
 const MIN_STRING_LENGTH = 5
 /** One string never takes more of the budget than this. */
 const MAX_STRING_LENGTH = 120
 /** How far into the file the string scan reads at most. */
-const STRINGS_SCAN_BYTES = 8 * 1024 * 1024
+export const STRINGS_SCAN_BYTES = 8 * 1024 * 1024
 /** The window the type detection looks at. The ISO 9660 signature sits at
  *  0x8001, everything else far earlier. */
 const KIND_WINDOW_BYTES = 64 * 1024
@@ -131,27 +151,92 @@ export function readableStrings(bytes: Uint8Array, budgetChars = STRINGS_BUDGET_
   return { strings, more: end < bytes.length }
 }
 
+/** Why less than the whole text of a file reached the model (GH #171). */
+export type FileCutReason = 'context' | 'send-limit' | 'setting' | 'size'
+
+const WHOLE_TEXT_HEADER = 'The whole text of the file:\n'
+
+const count = (n: number): string => n.toLocaleString('en-US')
+
+/** The reason in the words the MODEL reads. */
+const CUT_REASON_FOR_MODEL: Record<FileCutReason, string> = {
+  context: "the whole file does not fit into your context window next to the conversation and room for your answer",
+  'send-limit': 'the whole file does not fit into the send limit set for this model',
+  setting: 'the user set a limit for attached files',
+  size: 'the file is longer than the chat can hold',
+}
+
+/** The summary of a text file that went out whole. */
+export function wholeTextSummary(text: string): string {
+  return `${WHOLE_TEXT_HEADER}${text}`
+}
+
+/** The summary of a text file of which only the start went out. The model is
+ *  told how much it got, of how much, and why, so it never mistakes the end of
+ *  the excerpt for the end of the file. */
+export function cutTextSummary(text: string, total: number | undefined, reason: FileCutReason): string {
+  const why = CUT_REASON_FOR_MODEL[reason]
+  // `total` is unknown for a file too large to be read in whole.
+  const of = total === undefined ? '' : ` of ${count(total)}`
+  if (text.length === 0) {
+    return `None of the${total === undefined ? '' : ` ${count(total)}`} characters of this file could be included, because ${why}. Tell the user that you cannot see the text.`
+  }
+  return `Only the first ${count(text.length)}${of} characters of this file are included, because ${why}. The text below stops there; tell the user so if they ask about a later part.\n${text}`
+}
+
+/** The text of a text attachment as it is held, or null when there is none
+ *  to fit (a binary, or a file stored before 3.0.7, whose excerpt is short). */
+export function heldText(file: FileAttachment): string | null {
+  if ((file.textChars === undefined && file.includedChars === undefined) || isBinaryAttachment(file)) return null
+  if (file.summary.startsWith(WHOLE_TEXT_HEADER)) return file.summary.slice(WHOLE_TEXT_HEADER.length)
+  const lineEnd = file.summary.indexOf('\n')
+  return lineEnd < 0 ? '' : file.summary.slice(lineEnd + 1)
+}
+
 /** What the model reads in place of the bytes. Pure, so it can be tested on a
- *  handful of bytes. */
-export function describeFileBytes(bytes: Uint8Array, name: string): { kind: string; summary: string } {
+ *  handful of bytes. `bytes` may be only the start of the file; `totalSize`
+ *  then says how long the whole file is, so the summary never claims to have
+ *  seen all of it. */
+export function describeFileBytes(
+  bytes: Uint8Array,
+  name: string,
+  totalSize = bytes.length,
+): { kind: string; summary: string; binary: boolean; textChars?: number; includedChars?: number } {
   const kind = detectFileKind(bytes.subarray(0, KIND_WINDOW_BYTES), name)
-  if (bytes.length === 0) return { kind: 'Empty file', summary: 'The file is empty.' }
+  if (bytes.length === 0) return { kind: 'Empty file', summary: 'The file is empty.', binary: false }
   if (kind.isText) {
-    // The window may end inside a multi-byte character; a lenient decoder
-    // turns that into one replacement character, which is cut off below.
-    const window = bytes.subarray(0, TEXT_EXCERPT_CHARS * 4)
-    const decoded = new TextDecoder('utf-8').decode(window).replace(/�+$/, '')
-    const excerpt = decoded.slice(0, TEXT_EXCERPT_CHARS)
-    const whole = window.length === bytes.length && excerpt.length === decoded.length
+    // The bytes may end inside a multi-byte character when they are only the
+    // start of the file; a lenient decoder turns that into one replacement
+    // character, which is cut off below.
+    const all = bytes.length === totalSize
+    const raw = new TextDecoder('utf-8').decode(bytes)
+    const decoded = all ? raw : raw.replace(/�+$/, '')
+    const held = decoded.slice(0, TEXT_HOLD_CHARS)
+    if (all && held.length === decoded.length) {
+      return { kind: kind.label, binary: false, summary: wholeTextSummary(held), textChars: held.length }
+    }
+    // Longer than the chat holds. When the whole file was read its length is
+    // known and the model is told it; a file read only at its start is not.
+    if (all) {
+      return {
+        kind: kind.label,
+        binary: false,
+        summary: cutTextSummary(held, decoded.length, 'size'),
+        textChars: decoded.length,
+        includedChars: held.length,
+      }
+    }
     return {
       kind: kind.label,
-      summary: whole
-        ? `The whole text of the file:\n${excerpt}`
-        : `The file is longer than this excerpt. The first ${excerpt.length} characters:\n${excerpt}`,
+      binary: false,
+      summary: cutTextSummary(held, undefined, 'size'),
+      includedChars: held.length,
     }
   }
   const shown = Math.min(bytes.length, HEX_DUMP_BYTES)
-  const { strings, more } = readableStrings(bytes)
+  const found = readableStrings(bytes)
+  const { strings } = found
+  const more = found.more || totalSize > bytes.length
   const parts = [
     'This is a binary file. Its bytes cannot be shown to you, so this is a summary of it.',
     `Hex dump of the first ${shown} bytes:\n${hexDump(bytes)}`,
@@ -163,7 +248,7 @@ export function describeFileBytes(bytes: Uint8Array, name: string): { kind: stri
   } else {
     parts.push('No readable strings were found in the file.')
   }
-  return { kind: kind.label, summary: parts.join('\n\n') }
+  return { kind: kind.label, summary: parts.join('\n\n'), binary: true }
 }
 
 async function sha256Hex(buffer: ArrayBuffer): Promise<string> {
@@ -172,37 +257,86 @@ async function sha256Hex(buffer: ArrayBuffer): Promise<string> {
 }
 
 /**
- * Read a picked file once and build its description. Refuses a file over the
- * limit before reading a byte of it.
+ * Read a picked file and build its description. Refuses a file over the limit
+ * before reading a byte of it. A small file is read once; a large one only
+ * at its start, and its hash is taken slice by slice.
  */
 export async function prepareChatFile(file: File): Promise<ChatFileInput> {
   if (file.size > MAX_CHAT_FILE_BYTES) throw new Error(fileTooLargeMessage(file.name))
-  let buffer: ArrayBuffer
-  try {
-    buffer = await file.arrayBuffer()
-  } catch {
-    throw new Error(`"${cleanFileName(file.name)}" could not be read.`)
-  }
   const name = cleanFileName(file.name)
-  const { kind, summary } = describeFileBytes(new Uint8Array(buffer), name)
+  let head: Uint8Array
+  let sha256: string
+  try {
+    if (file.size <= WHOLE_READ_BYTES) {
+      const buffer = await file.arrayBuffer()
+      head = new Uint8Array(buffer)
+      sha256 = await sha256Hex(buffer)
+    } else {
+      head = new Uint8Array(await file.slice(0, STRINGS_SCAN_BYTES).arrayBuffer())
+      sha256 = await sha256OfBlob(file)
+    }
+  } catch {
+    throw new Error(`"${name}" could not be read.`)
+  }
+  const size = file.size <= WHOLE_READ_BYTES ? head.byteLength : file.size
+  const { kind, summary, binary, textChars, includedChars } = describeFileBytes(head, name, size)
   return {
-    attachment: { name, size: buffer.byteLength, kind, sha256: await sha256Hex(buffer), summary },
+    attachment: {
+      name, size, kind, sha256, summary,
+      ...(binary ? { binary: true } : {}),
+      ...(textChars !== undefined ? { textChars } : {}),
+      ...(includedChars !== undefined ? { includedChars } : {}),
+    },
     file,
   }
 }
 
+/** Whether the model got a binary summary for this file. Attachments stored
+ *  before 3.0.7 carry no flag; their summary says it in its first words. */
+export function isBinaryAttachment(file: FileAttachment): boolean {
+  return file.binary ?? file.summary.startsWith('This is a binary file.')
+}
+
+/**
+ * The line above the transcript when a binary is attached in plain chat: the
+ * model cannot read the bytes, it gets the summary, and Agent or Code is
+ * where it gets the file itself. Null when no file needs it.
+ */
+export function binarySummaryOnlyMessage(files: readonly FileAttachment[]): string | null {
+  const binaries = files.filter(isBinaryAttachment)
+  if (binaries.length === 0) return null
+  const list = binaries.map((file) => `"${file.name}" (${file.kind}, ${formatBytes(file.size)})`).join(', ')
+  return `Models cannot read binary files. ${list} ${binaries.length > 1 ? 'reach the model as short summaries' : 'reaches the model as a short summary'} only. To let it work on the file itself, turn on Agent mode or use Code: the file is then put into the working folder, where the model's tools can open it.`
+}
+
 /** The block one file contributes to the user message. */
 export function fileBlock(file: FileAttachment, surface: 'chat' | 'workspace'): string {
-  const where = file.workspacePath
-    ? `Path in your working folder: ${file.workspacePath}\nUse your file and shell tools on that path for anything this summary does not answer.`
-    : surface === 'workspace'
-      ? 'The file could not be copied into your working folder. Only this summary is available.'
-      : 'The file itself is not available to you in this chat. Only this summary is.'
-  return [
+  const binary = isBinaryAttachment(file)
+  const facts = [
     `[Attached file: ${file.name}]`,
     `Type: ${file.kind}`,
     `Size: ${formatBytes(file.size)} (${file.size} bytes)`,
     `SHA-256: ${file.sha256}`,
+  ]
+  // A binary in the working folder: the facts and the path. The tools read
+  // the bytes; a dump of them here would only cost context.
+  if (file.workspacePath && binary) {
+    return [
+      ...facts,
+      `Path in your working folder: ${file.workspacePath}`,
+      'This is a binary file, so its bytes are not shown here. Inspect it with your file and shell tools on that path, for example a hex dump or a short Python script. Do not run the file or open it as a program unless the user asks you to.',
+      `[End of attached file: ${file.name}]`,
+    ].join('\n')
+  }
+  const where = file.workspacePath
+    ? `Path in your working folder: ${file.workspacePath}\nUse your file and shell tools on that path for anything this summary does not answer.`
+    : surface === 'workspace'
+      ? 'The file could not be copied into your working folder. Only this summary is available.'
+      : binary
+        ? 'The file itself is not available to you in this chat. Only this summary is. You cannot read its bytes here; if the user needs more than the summary answers, tell them to turn on Agent mode or use Code, where your tools can open the file itself.'
+        : 'The file itself is not available to you in this chat. Only this summary is.'
+  return [
+    ...facts,
     where,
     '',
     file.summary,

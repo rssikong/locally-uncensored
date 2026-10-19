@@ -62,6 +62,9 @@ vi.mock('../../../api/discover', () => ({
   // The catalog LoRAs above the search (LoraAddons) ask what is on disk and
   // install through the bundle path.
   checkBundlesInstalled: async () => ({}),
+  // What of the CivitAI hits is on disk already: nothing here.
+  checkCivitaiInstalled: async () => new Set<number>(),
+  civitaiInstalledInFolder: () => new Set<number>(),
   installBundleComplete: (b: { name: string }) => installBundleComplete(b.name),
   remoteBundleNotice: () => '',
 }))
@@ -101,7 +104,7 @@ vi.mock('../../../hooks/useMlxLoras', () => ({
 }))
 vi.mock('../../../hooks/useMlxMedia', () => {
   const lane = { models: [], engineReady: true, unsupported: null, engineInstall: null, modelInstall: null, queuedId: null, error: null }
-  return { useMlxMedia: () => ({ loaded: true, image: lane, video: lane, get: () => {}, setUpEngine: () => {}, remove: async () => {}, clearError: () => {}, refresh: async () => {} }) }
+  return { useMlxMedia: () => ({ loaded: true, image: lane, video: lane, music: lane, get: () => {}, setUpEngine: () => {}, remove: async () => {}, clearError: () => {}, refresh: async () => {} }) }
 })
 vi.mock('../DiscoverModels', () => ({ DiscoverModels: () => createElement('div', null, 'discover-panel') }))
 vi.mock('../../chat/LuEngineSwitchBar', () => ({ LuEngineSwitchBar: () => null }))

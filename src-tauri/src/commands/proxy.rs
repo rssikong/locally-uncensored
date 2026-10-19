@@ -689,6 +689,28 @@ pub fn register_openai_host(
     Ok(())
 }
 
+/// The caller's headers, with the key of the LU Engine on a request that goes
+/// to one (engine_key.rs). The web view never knows the key, so whatever it
+/// sent as `Authorization` for the engine (an empty key from the provider
+/// slot, at most) is replaced, not added to. Every other request keeps the
+/// caller's headers as they were.
+fn with_engine_key(
+    url: &str,
+    headers: Option<std::collections::HashMap<String, String>>,
+    engine_ports: &[u16],
+) -> Option<std::collections::HashMap<String, String>> {
+    if !super::engine_key::goes_to_engine(url, engine_ports) {
+        return headers;
+    }
+    let mut out: std::collections::HashMap<String, String> = headers
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|(k, _)| !k.eq_ignore_ascii_case("authorization") && !k.eq_ignore_ascii_case("x-api-key"))
+        .collect();
+    out.insert("Authorization".to_string(), super::engine_key::bearer());
+    Some(out)
+}
+
 /// Attach the body and the caller's headers to a proxied request.
 ///
 /// reqwest's `.header()` APPENDS, it does not replace. Setting Content-Type
@@ -967,6 +989,7 @@ pub async fn proxy_localhost(
     allow.check(&url)?;
     // A generation request may not name a model the engine is not holding.
     guard_builtin_model(&url, body.as_deref(), &state)?;
+    let headers = with_engine_key(&url, headers, &super::engine_key::engine_ports(&state));
 
     let timeout = Duration::from_millis(timeout_ms.unwrap_or(300_000));
 
@@ -1021,6 +1044,7 @@ pub async fn proxy_localhost_stream(url: String, method: Option<String>, body: O
     allow.check(&url)?;
     // A generation request may not name a model the engine is not holding.
     guard_builtin_model(&url, body.as_deref(), &state)?;
+    let headers = with_engine_key(&url, headers, &super::engine_key::engine_ports(&state));
 
     let client = proxy_client(Duration::from_secs(7200), allow)?;
 
@@ -1076,6 +1100,10 @@ pub async fn proxy_localhost_stream_chunked(
     // Optional so the renderer can widen it for a backend that is known to
     // think for minutes between tokens; see IDLE_TIMEOUT_MS for the default.
     idle_timeout_ms: Option<u64>,
+    // Issue 177: the wait for the FIRST chunk, from Settings, General, Chat
+    // Reply Timeout. None keeps FIRST_CHUNK_GRACE, 0 means Off (wait as long
+    // as the connection stays open). See first_chunk_window.
+    first_chunk_timeout_ms: Option<u64>,
     state: tauri::State<'_, crate::state::AppState>,
 ) -> Result<(), String> {
     // No chunk for this long once the stream is running means the backend died
@@ -1093,12 +1121,14 @@ pub async fn proxy_localhost_stream_chunked(
     allow.check(&url)?;
     // A generation request may not name a model the engine is not holding.
     guard_builtin_model(&url, body.as_deref(), &state)?;
+    let headers = with_engine_key(&url, headers, &super::engine_key::engine_ports(&state));
 
     // Built before the token is registered: everything after the registration
     // has to reach the pump, which is what guarantees the EOF marker and the
     // registry cleanup. An early `?` between the two would skip both.
     let idle = Duration::from_millis(idle_timeout_ms.unwrap_or(IDLE_TIMEOUT_MS));
-    let client = proxy_client(Duration::from_secs(7200), allow)?;
+    let first_chunk_grace = first_chunk_window(first_chunk_timeout_ms, FIRST_CHUNK_GRACE);
+    let client = proxy_client(whole_request_limit(first_chunk_grace), allow)?;
 
     // Register against the shared CancelRegistry (mirrors call_tokens /
     // proxy_localhost). Survives a cancel that arrives before this line
@@ -1123,10 +1153,42 @@ pub async fn proxy_localhost_stream_chunked(
         headers,
         &token,
         idle,
-        FIRST_CHUNK_GRACE,
+        first_chunk_grace,
         &move |chunk| on_chunk.send(chunk).is_ok(),
     )
     .await
+}
+
+/// "Off" for the first chunk wait: thirty days, far past any prompt and still
+/// a value tokio can add to an Instant without overflowing.
+const FIRST_CHUNK_OFF: Duration = Duration::from_secs(30 * 24 * 3600);
+
+/// The first chunk window for one stream (issue 177): the renderer's setting
+/// in ms, 0 for Off, or the built in default when it sent none.
+fn first_chunk_window(setting_ms: Option<u64>, default: Duration) -> Duration {
+    match setting_ms {
+        None => default,
+        Some(0) => FIRST_CHUNK_OFF,
+        Some(ms) => Duration::from_millis(ms).min(FIRST_CHUNK_OFF),
+    }
+}
+
+/// The reqwest timeout over the WHOLE request. It used to be a flat 7200 s,
+/// which a first chunk limit above roughly two hours (or Off) would have
+/// undercut: the request would die of the total limit while the setting still
+/// promised to wait. An hour of answer on top of the first chunk window, and
+/// never less than the old two hours.
+fn whole_request_limit(first_chunk: Duration) -> Duration {
+    Duration::from_secs(7200).max(first_chunk.saturating_add(Duration::from_secs(3600)))
+}
+
+/// The reason a stream ends when the first chunk window ran out, before or
+/// after the response headers (issue 177).
+fn nothing_sent_for(window: Duration) -> String {
+    format!(
+        "the backend accepted the request but sent nothing for {} s. A very large model or a very long prompt can take this long; raise Chat Reply Timeout in Settings, General, or restart the backend if it is not working.",
+        window.as_secs()
+    )
 }
 
 /// The stream pump behind `proxy_localhost_stream_chunked`, with the IPC channel
@@ -1169,9 +1231,18 @@ async fn pump_proxy_stream(
         request = apply_body_and_headers(request, body, headers);
 
         // Race the request against cancellation even during connect/headers.
+        // Issue 177: the first chunk window also covers the wait for the
+        // response headers. A server that holds them back until its first
+        // token (Ollama while it loads a model, a proxy in front of a busy
+        // backend) used to wait the whole request limit of two hours, whatever
+        // Chat Reply Timeout said (Windows run d307-j: limit 30 s, a stub
+        // that answered after 45 s without headers got its answer through).
         let resp = tokio::select! {
             _ = token.cancelled() => return Ok(()),
-            r = request.send() => r.map_err(|e| format!("proxy_localhost_stream_chunked: {}", os_error::english(&e)))?,
+            r = tokio::time::timeout(first_chunk_grace, request.send()) => match r {
+                Err(_) => return Err(nothing_sent_for(first_chunk_grace)),
+                Ok(r) => r.map_err(|e| format!("proxy_localhost_stream_chunked: {}", os_error::english(&e)))?,
+            },
         };
 
         if !resp.status().is_success() {
@@ -1205,10 +1276,7 @@ async fn pump_proxy_stream(
                             window.as_secs()
                         )
                     } else {
-                        format!(
-                            "the backend accepted the request but sent nothing for {} s. A very large model can take this long to load; if it is not loading, restart the backend and try again.",
-                            window.as_secs()
-                        )
+                        nothing_sent_for(window)
                     }),
                     Ok(Some(it)) => {
                         let bytes = it.map_err(|e| os_error::english(&e))?;
@@ -1575,6 +1643,37 @@ mod tests {
             Some(caller("Content-Type", "application/xml")),
         );
         assert_eq!(sent.get(reqwest::header::CONTENT_TYPE).unwrap(), "application/xml");
+    }
+
+    /// Security pass of 2026-10-13: the engine answered every web page. It
+    /// now wants its key, and only the Rust side has it.
+    #[test]
+    fn a_request_to_the_engine_carries_its_key_and_no_key_of_the_caller() {
+        let engine = [8127];
+        let sent = with_engine_key(
+            "http://127.0.0.1:8127/v1/chat/completions",
+            Some(caller("authorization", "Bearer ")),
+            &engine,
+        )
+        .unwrap();
+        assert_eq!(sent.len(), 1);
+        assert_eq!(sent["Authorization"], super::super::engine_key::bearer());
+        let with_x_key = with_engine_key("http://localhost:8127/v1/models", Some(caller("X-Api-Key", "k")), &engine).unwrap();
+        assert!(!with_x_key.keys().any(|k| k.eq_ignore_ascii_case("x-api-key")));
+        assert!(with_engine_key("http://127.0.0.1:8127/slots", None, &engine).is_some());
+    }
+
+    #[test]
+    fn a_request_anywhere_else_keeps_the_headers_of_the_caller_and_never_gets_the_key() {
+        let engine = [8127];
+        for url in ["http://127.0.0.1:11434/api/chat", "http://127.0.0.1:1234/v1/models", "http://192.168.1.5:8127/v1/models"] {
+            let sent = with_engine_key(url, Some(caller("Authorization", "Bearer k")), &engine).unwrap();
+            assert_eq!(sent["Authorization"], "Bearer k", "{url}");
+            assert!(with_engine_key(url, None, &engine).is_none(), "{url}");
+        }
+        // No engine running: nothing is an engine request.
+        let sent = with_engine_key("http://127.0.0.1:8127/v1/models", None, &[]);
+        assert!(sent.is_none());
     }
 
     #[test]
@@ -2204,6 +2303,77 @@ mod tests {
             let err = out.expect_err("the load window has to end eventually too");
             assert!(err.contains("sent nothing"), "wrong reason: {err}");
             assert!(chunks.is_empty(), "nothing arrived, so there is nothing to end: {chunks:?}");
+        });
+    }
+
+    /// Issue 177, found in the app on Windows (d307-j): a server that takes
+    /// the request but holds back even its headers is bound by the same
+    /// window. Before, only the whole request limit of two hours ended it.
+    #[test]
+    fn a_server_that_sends_no_headers_ends_at_the_first_chunk_window() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let port = raw_stub("", Some(Duration::from_secs(30))).await;
+            let token = tokio_util::sync::CancellationToken::new();
+            let started = std::time::Instant::now();
+            let (out, chunks) = pump_and_collect(
+                &format!("http://127.0.0.1:{}/", port),
+                &token,
+                Duration::from_millis(50),
+                Duration::from_millis(400),
+            ).await;
+            let err = out.expect_err("no headers within the window has to end the wait");
+            assert!(started.elapsed() < Duration::from_secs(10), "waited past the window");
+            assert!(err.contains("sent nothing for 0 s"), "wrong reason: {err}");
+            assert!(err.contains("Chat Reply Timeout"), "does not say where to change it: {err}");
+            assert!(chunks.is_empty(), "nothing arrived: {chunks:?}");
+        });
+    }
+
+    /// Issue 177: the first chunk window is the user's setting. None keeps the
+    /// old 600 s, 0 is Off, any other value is taken in ms.
+    #[test]
+    fn the_first_chunk_window_follows_the_setting() {
+        let default = Duration::from_secs(600);
+        assert_eq!(first_chunk_window(None, default), default);
+        assert_eq!(first_chunk_window(Some(1_800_000), default), Duration::from_secs(1800));
+        assert_eq!(first_chunk_window(Some(0), default), FIRST_CHUNK_OFF);
+        assert_eq!(first_chunk_window(Some(u64::MAX), default), FIRST_CHUNK_OFF);
+    }
+
+    /// The whole request limit never undercuts the first chunk window: with
+    /// four hours to wait for the first byte, a flat two hour total would have
+    /// ended the request first.
+    #[test]
+    fn the_whole_request_limit_leaves_room_after_the_first_chunk() {
+        assert_eq!(whole_request_limit(Duration::from_secs(600)), Duration::from_secs(7200));
+        assert_eq!(whole_request_limit(Duration::from_secs(4 * 3600)), Duration::from_secs(5 * 3600));
+        assert!(whole_request_limit(FIRST_CHUNK_OFF) > FIRST_CHUNK_OFF);
+    }
+
+    /// The window from the setting is the one the pump waits, and the reason
+    /// names it and the place to change it.
+    #[test]
+    fn a_short_setting_ends_the_wait_with_its_own_number() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let port = raw_stub(
+                "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n",
+                Some(Duration::from_secs(30)),
+            ).await;
+            let token = tokio_util::sync::CancellationToken::new();
+            let window = first_chunk_window(Some(1_000), Duration::from_secs(600));
+            let started = std::time::Instant::now();
+            let (out, _chunks) = pump_and_collect(
+                &format!("http://127.0.0.1:{}/", port),
+                &token,
+                Duration::from_millis(50),
+                window,
+            ).await;
+            let err = out.expect_err("the set window has to end the wait");
+            assert!(started.elapsed() < Duration::from_secs(10), "waited past the setting");
+            assert!(err.contains("sent nothing for 1 s"), "wrong reason: {err}");
+            assert!(err.contains("Chat Reply Timeout"), "does not say where to change it: {err}");
         });
     }
 

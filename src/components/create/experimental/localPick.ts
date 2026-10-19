@@ -3,6 +3,8 @@
 import { useCreateStore } from '../../../stores/createStore'
 import { resolveLocalOpPick, videoLaneModels, type ClassifiedModel } from '../../../api/comfyui'
 import { imageLaneModels } from '../../../lib/image-engines'
+import { isMlxImageHost } from '../../../api/mlx-image'
+import { mlxTalkingEntry } from '../../../api/mlx-video'
 
 export interface LocalPick {
   isVideo: boolean
@@ -27,10 +29,14 @@ export function useLocalPick(): LocalPick {
   const motionModelList = useCreateStore((s) => s.motionModelList)
 
   const isVideo = mode === 'video'
+  // A Mac has no lip sync models: its Talking Character runs on the video
+  // models that talk (api/mlx-video mlxTalking).
+  const macTalking = intent === 'lipsync' && isMlxImageHost()
   // The 2.5.8 lanes with their own local model families. Extend is NOT here:
   // it rides the regular i2v-capable video list (last-frame continue).
   const laneList =
     intent === 'music' ? audioModelList
+    : macTalking ? videoModelList.filter((m) => m.mlxVideo?.talking)
     : intent === 'lipsync' ? lipsyncModelList
     : intent === 'motion' ? motionModelList
     : null
@@ -47,7 +53,9 @@ export function useLocalPick(): LocalPick {
   // Reflect the model the run will really use: a leftover pick the current
   // op can't perform must not show as "selected". Lanes share the submit-side
   // rule (resolveLocalOpPick) so chip, meter and run always agree.
-  const value = laneList
+  const value = macTalking
+    ? (mlxTalkingEntry(list, stored)?.name ?? '')
+    : laneList
     ? resolveLocalOpPick(stored, list)
     : list.some((m) => m.name === stored) ? stored : (list[0]?.name ?? stored)
 

@@ -3,6 +3,7 @@ import { backendCall, isTauri } from '../api/backend'
 import { useMemoryStore } from './memoryStore'
 import { useProviderStore } from './providerStore'
 import type { ProviderId } from '../api/providers/types'
+import { openaiEntryOfModel, displayModelName } from '../api/providers/model-name'
 import type { MemoryFile } from '../types/agent-mode'
 
 export const REMOTE_MEMORY_CHANGED = 'Remote memory changed. Restart Remote Access and reconnect before continuing. Previously delivered data cannot be recalled.'
@@ -90,12 +91,24 @@ export function remoteBackendArgs(
   // the provider union, so a plain `string` here forced every caller to hand
   // it an id its lookup does not accept.
   getKey: (id: ProviderId) => string,
+  /** GitHub #173: address and key of an additional OpenAI-compatible entry. */
+  entry?: (entryId: string) => { baseUrl: string; apiKey: string } | undefined,
 ): { model?: string; backendKind: string; backendBase?: string; backendKey?: string } {
   if (!model) return { model, backendKind: 'ollama' }
   const hasPrefix = model.includes('::')
   const providerId = hasPrefix ? model.split('::')[0] : 'ollama'
-  // Strip only the FIRST provider:: prefix — matches the desktop's /^[^:]+::/.
-  const bare = hasPrefix ? model.replace(/^[^:]+::/, '') : model
+  // Strip only the FIRST provider:: prefix (`openai:<entry>::` included).
+  const bare = hasPrefix ? displayModelName(model) : model
+  const entryId = openaiEntryOfModel(model)
+  if (entryId) {
+    const e = entry?.(entryId)
+    return {
+      model: bare,
+      backendKind: 'openai',
+      backendBase: e?.baseUrl || '',
+      backendKey: e?.apiKey || undefined,
+    }
+  }
   if (providerId === 'openai') {
     const base = providers['openai']?.baseUrl || ''
     const key = getKey('openai') || ''
@@ -293,7 +306,10 @@ export const useRemoteStore = create<RemoteState>()((set, get) => ({
       // remote reaches the real backend (built-in engine / LM Studio / Lemonade
       // / llama.cpp / vLLM), not just Ollama. Sends the bare model name.
       const ps = useProviderStore.getState()
-      const backend = remoteBackendArgs(model, ps.providers, (id) => ps.getProviderApiKey(id))
+      const backend = remoteBackendArgs(model, ps.providers, (id) => ps.getProviderApiKey(id), (entryId) => {
+        const e = ps.openaiEntries.find((x) => x.entryId === entryId)
+        return e ? { baseUrl: e.baseUrl, apiKey: ps.getOpenAIEntryApiKey(entryId) } : undefined
+      })
       if (backend.model) args.model = backend.model
       args.backendKind = backend.backendKind
       if (backend.backendBase) args.backendBase = backend.backendBase
@@ -605,7 +621,10 @@ export const useRemoteStore = create<RemoteState>()((set, get) => ({
       // #87: same backend derivation as startServer so a restart keeps routing
       // to the desktop's real backend, not just Ollama.
       const ps = useProviderStore.getState()
-      const backend = remoteBackendArgs(model, ps.providers, (id) => ps.getProviderApiKey(id))
+      const backend = remoteBackendArgs(model, ps.providers, (id) => ps.getProviderApiKey(id), (entryId) => {
+        const e = ps.openaiEntries.find((x) => x.entryId === entryId)
+        return e ? { baseUrl: e.baseUrl, apiKey: ps.getOpenAIEntryApiKey(entryId) } : undefined
+      })
       if (backend.model) args.model = backend.model
       args.backendKind = backend.backendKind
       if (backend.backendBase) args.backendBase = backend.backendBase

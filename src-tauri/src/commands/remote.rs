@@ -143,6 +143,9 @@ struct RemoteState {
     tunnel_url: Arc<TokioMutex<Option<String>>>,
     dispatched_model: Arc<TokioMutex<String>>,
     dispatched_system_prompt: Arc<TokioMutex<String>>,
+    /// GitHub #19: the name of the phone's browser tab, from Settings. Empty
+    /// keeps the default (`DEFAULT_PAGE_TITLE`).
+    page_title: Arc<TokioMutex<String>>,
     app_handle: RemoteDesktop,
 }
 
@@ -603,14 +606,82 @@ async fn handle_status() -> Json<serde_json::Value> {
 /// Authenticated status — version + connected-device count for the desktop UI
 /// (and any authenticated client that cares). Gated by `auth_middleware`
 /// because it lives under `/remote-api/` without being in the public list.
+///
+/// `hostname` is the name of this computer, so a paired phone can show
+/// "Davids-MacBook" instead of an address. It is only here, behind the token:
+/// the public `/remote-api/status` stays a bare liveness ping, a machine name
+/// is exactly the kind of fingerprint that was taken out of it.
 async fn handle_status_full(AxumState(state): AxumState<RemoteState>) -> Json<serde_json::Value> {
     let devices = state.connected_devices.lock().await;
-    Json(serde_json::json!({
+    Json(status_full_body(&devices, &machine_name()))
+}
+
+/// The body of the authenticated status. Fields are only ever added: clients
+/// in the field read `app`, `version`, `connected_devices`, `auth_required`.
+/// The phone app reads `hostname` and falls back to the address when it is
+/// empty or missing.
+fn status_full_body(devices: &[ConnectedDevice], hostname: &str) -> serde_json::Value {
+    serde_json::json!({
         "app": "LU",
-        "version": env!("CARGO_PKG_VERSION"),
+        "version": crate::app_identity::APP_VERSION,
         "connected_devices": devices.len(),
         "auth_required": true,
-    }))
+        "hostname": presentable_host_name(hostname),
+    })
+}
+
+/// The name the system gives this computer, empty when it has none.
+fn machine_name() -> String {
+    hostname::get().ok().and_then(|n| n.into_string().ok()).unwrap_or_default()
+}
+
+/// A machine name as a label: no control characters, no surrounding space,
+/// the `.local` of a Mac dropped, at most 48 characters. Empty stays empty,
+/// the phone then shows the address as before.
+fn presentable_host_name(raw: &str) -> String {
+    let cleaned: String = raw.chars().filter(|c| !c.is_control()).collect();
+    let trimmed = cleaned.trim();
+    let trimmed = trimmed.strip_suffix(".local").unwrap_or(trimmed);
+    trimmed.chars().take(48).collect::<String>().trim().to_string()
+}
+
+#[cfg(test)]
+mod status_full_tests {
+    use super::*;
+
+    #[test]
+    fn the_authenticated_status_keeps_its_old_fields_and_adds_the_machine_name() {
+        let body = status_full_body(&[], "Davids-MacBook.local");
+        assert_eq!(body["app"], "LU");
+        assert_eq!(body["version"], crate::app_identity::APP_VERSION);
+        assert_eq!(body["connected_devices"], 0);
+        assert_eq!(body["auth_required"], true);
+        assert_eq!(body["hostname"], "Davids-MacBook");
+        assert_eq!(body.as_object().map(|o| o.len()), Some(5));
+    }
+
+    #[test]
+    fn a_machine_name_is_cleaned_before_it_leaves() {
+        assert_eq!(presentable_host_name("  WORK-PC\r\n"), "WORK-PC");
+        assert_eq!(presentable_host_name("a\u{0}b\u{7}c"), "abc");
+        assert_eq!(presentable_host_name(""), "");
+        assert_eq!(presentable_host_name(&"x".repeat(80)).chars().count(), 48);
+        // Counted in characters, so a name in another script is never cut inside one.
+        assert_eq!(presentable_host_name(&"\u{4e2d}".repeat(60)).chars().count(), 48);
+    }
+
+    #[tokio::test]
+    async fn the_public_status_still_says_nothing_about_the_machine() {
+        let Json(body) = handle_status().await;
+        assert_eq!(body, serde_json::json!({ "status": "ok" }));
+    }
+
+    #[test]
+    fn this_machine_has_a_name_or_an_empty_one_but_never_a_control_character() {
+        let name = presentable_host_name(&machine_name());
+        assert!(name.chars().all(|c| !c.is_control()));
+        assert!(name.chars().count() <= 48);
+    }
 }
 
 // ─── Mobile Agent — HTTP bridge to the Tauri agent tool commands ───
@@ -833,13 +904,16 @@ async fn handle_agent_tool(
                 .map(|n| n as usize);
             if query.is_empty() { Err("web_search needs a non-empty `query` argument.".into()) }
             // Remote clients carry no provider settings — None/None/None =
-            // 'auto' without keys, i.e. the free tiers (pre-2.5.3 behaviour).
-            else { crate::commands::search::web_search(query, count, None, None, None, app_state).await }
+            // 'auto' without keys, i.e. the free tiers (pre-2.5.3 behaviour),
+            // and the fourth None keeps the tiers' own User-Agent (D16).
+            else { crate::commands::search::web_search(query, count, None, None, None, None, app_state).await }
         }
         "web_fetch" => {
             let url = body.args.get("url").and_then(|v| v.as_str()).unwrap_or("").to_string();
             if url.is_empty() { Err("web_fetch needs a non-empty `url` argument.".into()) }
-            else { crate::commands::search::web_fetch(url).await }
+            // No User-Agent from Settings here either: they live in the
+            // desktop's own store, the remote call carries none (D16).
+            else { crate::commands::search::web_fetch(url, None).await }
         }
         "file_list" => {
             let raw_path = body.args.get("path").and_then(|v| v.as_str()).unwrap_or("").to_string();
@@ -973,11 +1047,12 @@ fn graceful_error(msg: &str) -> Response {
 }
 
 /// Permission-denied responder: still 200, but flagged so the mobile UI
-/// can render a 1-tap "Open Settings → Permissions" hint instead of a
-/// generic error.
+/// can mark the gap instead of showing a generic error. The text sends the
+/// user to the desktop: the phone's Settings sheet only shows the switches,
+/// and the server ignores a permissions write from a paired device.
 fn graceful_perm_error(tool: &str, permission: &str) -> Response {
     let msg = format!(
-        "Tool `{}` is gated behind the `{}` permission. Open the Menu, tap Settings, and turn it on under Remote Permissions.",
+        "Tool `{}` is gated behind the `{}` permission. Turn it on in the LU desktop app under Settings, Voice & Remote, Remote Access, Permissions. The phone can show this setting but not change it.",
         tool, permission
     );
     eprintln!("[Remote agent] tool `{}` blocked: missing permission `{}`", tool, permission);
@@ -1953,6 +2028,114 @@ async fn mobile_landing() -> Html<String> {
     Html(MOBILE_CLIENT_PAGE.to_string())
 }
 
+/// The tab name the page ships with (`mobile-client/index.html`).
+const DEFAULT_PAGE_TITLE: &str = "AI Terminal";
+/// Longest tab name Settings can set, in characters.
+const MAX_PAGE_TITLE_CHARS: usize = 60;
+
+/// GitHub #19: the name a person typed in Settings, made safe for the page.
+/// Control characters go, the ends are trimmed, the length is capped, and an
+/// empty result means the default.
+fn clean_page_title(raw: &str) -> String {
+    let kept: String = raw.chars().filter(|c| !c.is_control()).collect();
+    let capped: String = kept.trim().chars().take(MAX_PAGE_TITLE_CHARS).collect();
+    let capped = capped.trim_end().to_string();
+    if capped.is_empty() { DEFAULT_PAGE_TITLE.to_string() } else { capped }
+}
+
+fn escape_html(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#39;"),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
+/// The page with its tab name and its home screen name set to `title`. Both
+/// places are replaced by their whole tag, so nothing else on the page that
+/// happens to read "AI Terminal" changes.
+fn page_with_title(page: &str, title: &str) -> String {
+    let clean = clean_page_title(title);
+    if clean == DEFAULT_PAGE_TITLE {
+        return page.to_string();
+    }
+    let safe = escape_html(&clean);
+    page.replacen(
+        &format!("<title>{DEFAULT_PAGE_TITLE}</title>"),
+        &format!("<title>{safe}</title>"),
+        1,
+    )
+    .replacen(
+        &format!("<meta name=\"apple-mobile-web-app-title\" content=\"{DEFAULT_PAGE_TITLE}\">"),
+        &format!("<meta name=\"apple-mobile-web-app-title\" content=\"{safe}\">"),
+        1,
+    )
+}
+
+async fn mobile_landing_titled(AxumState(state): AxumState<RemoteState>) -> Html<String> {
+    let title = state.page_title.lock().await.clone();
+    Html(page_with_title(&mobile_landing().await.0, &title))
+}
+
+/// GitHub #19: Settings > Remote Access sets the phone's tab name. Takes
+/// effect on the next page load; works whether the server runs or not.
+#[tauri::command]
+pub async fn set_remote_page_title(
+    state: tauri::State<'_, crate::state::AppState>,
+    title: String,
+) -> Result<(), String> {
+    let arc = {
+        let remote = state.remote.lock().map_err(|e| e.to_string())?;
+        remote.page_title.clone()
+    }; // MutexGuard dropped here
+    *arc.lock().await = title;
+    Ok(())
+}
+
+#[cfg(test)]
+mod page_title_tests {
+    use super::*;
+
+    #[test]
+    fn the_shipped_page_carries_the_default_name_in_both_places() {
+        assert!(MOBILE_CLIENT_PAGE.contains("<title>AI Terminal</title>"));
+        assert!(MOBILE_CLIENT_PAGE.contains("<meta name=\"apple-mobile-web-app-title\" content=\"AI Terminal\">"));
+    }
+
+    #[test]
+    fn an_empty_or_blank_name_keeps_the_page_byte_for_byte() {
+        assert_eq!(page_with_title(MOBILE_CLIENT_PAGE, ""), MOBILE_CLIENT_PAGE);
+        assert_eq!(page_with_title(MOBILE_CLIENT_PAGE, "   \n\t "), MOBILE_CLIENT_PAGE);
+    }
+
+    #[test]
+    fn a_set_name_replaces_the_tab_and_the_home_screen_name() {
+        let page = page_with_title(MOBILE_CLIENT_PAGE, "  Kitchen PC  ");
+        assert!(page.contains("<title>Kitchen PC</title>"));
+        assert!(page.contains("<meta name=\"apple-mobile-web-app-title\" content=\"Kitchen PC\">"));
+        assert!(!page.contains("<title>AI Terminal</title>"));
+    }
+
+    #[test]
+    fn markup_in_the_name_is_escaped_and_control_characters_dropped() {
+        let page = page_with_title(MOBILE_CLIENT_PAGE, "</title><script>x\u{7}\"'&");
+        assert!(page.contains("<title>&lt;/title&gt;&lt;script&gt;x&quot;&#39;&amp;</title>"));
+        assert!(!page.contains("</title><script>x"));
+    }
+
+    #[test]
+    fn a_long_name_is_capped() {
+        assert_eq!(clean_page_title(&"a".repeat(200)).chars().count(), MAX_PAGE_TITLE_CHARS);
+    }
+}
+
 // ─── QR Code generation ───
 
 /// Deliberately carries NO passcode.
@@ -2272,6 +2455,8 @@ pub struct RemoteServer {
     pub tunnel_url: Arc<TokioMutex<Option<String>>>,
     pub dispatched_model: Arc<TokioMutex<String>>,
     pub dispatched_system_prompt: Arc<TokioMutex<String>>,
+    /// GitHub #19: the tab name set in Settings, kept across server restarts.
+    pub page_title: Arc<TokioMutex<String>>,
 }
 
 impl RemoteServer {
@@ -2307,6 +2492,7 @@ impl RemoteServer {
             tunnel_url: Arc::new(TokioMutex::new(None)),
             dispatched_model: Arc::new(TokioMutex::new(String::new())),
             dispatched_system_prompt: Arc::new(TokioMutex::new(String::new())),
+            page_title: Arc::new(TokioMutex::new(String::new())),
         }
     }
 
@@ -2628,6 +2814,18 @@ pub async fn start_remote_server(
     start_remote_server_inner(app, state, model, system_prompt, backend, &operation).await
 }
 
+/// The key the phone's OpenAI-compatible backend is reached with: the LU
+/// Engine's own key when the base is one of its ports on this machine, the
+/// key the desktop sent otherwise.
+fn remote_backend_key(base: &str, sent: String, engine_ports: &[u16]) -> String {
+    let probe = format!("{}/chat/completions", base.trim_end_matches('/'));
+    if crate::commands::engine_key::goes_to_engine(&probe, engine_ports) {
+        crate::commands::engine_key::engine_key().to_string()
+    } else {
+        sent
+    }
+}
+
 async fn start_remote_server_inner(
     app: AppHandle,
     state: tauri::State<'_, crate::state::AppState>,
@@ -2641,9 +2839,16 @@ async fn start_remote_server_inner(
 ) -> Result<serde_json::Value, String> {
     let backend_kind = backend.kind.unwrap_or_else(|| "ollama".to_string());
     let openai_base = backend.base.unwrap_or_default();
-    let openai_key = backend.key.unwrap_or_default();
+    // A phone dispatched to the LU Engine reaches it through this server, and
+    // the engine wants its key (engine_key.rs). The desktop's web view does not
+    // have it to send, so it is put in here and never leaves this process.
+    let openai_key = remote_backend_key(
+        &openai_base,
+        backend.key.unwrap_or_default(),
+        &crate::commands::engine_key::engine_ports(&state),
+    );
     // Clone Arcs from std::sync::Mutex, then drop it before any .await
-    let (jwt_secret_arc, passcode_arc, permissions_arc, devices_arc, tunnel_url_arc, dispatched_model_arc, dispatched_system_prompt_arc, memory_revoked, port, comfy_port, comfy_host, ollama_base) = {
+    let (jwt_secret_arc, passcode_arc, permissions_arc, devices_arc, tunnel_url_arc, dispatched_model_arc, dispatched_system_prompt_arc, page_title_arc, memory_revoked, port, comfy_port, comfy_host, ollama_base) = {
         let mut remote = state.remote.lock().map_err(|e| e.to_string())?;
         if remote.handle.is_some() {
             return Err("Remote server already running".into());
@@ -2669,6 +2874,7 @@ async fn start_remote_server_inner(
             remote.tunnel_url.clone(),
             remote.dispatched_model.clone(),
             remote.dispatched_system_prompt.clone(),
+            remote.page_title.clone(),
             remote.memory_revoked.clone(),
             remote.port,
             comfy_port,
@@ -2739,6 +2945,7 @@ async fn start_remote_server_inner(
         app_handle: RemoteDesktop::new(app.clone()),
         dispatched_model: dispatched_model_arc,
         dispatched_system_prompt: dispatched_system_prompt_arc,
+        page_title: page_title_arc,
     };
 
     // Bind synchronously so port-in-use returns a clean error to the
@@ -3314,8 +3521,9 @@ pub async fn start_tunnel(
         }
         return Err(format!(
             "Cloudflare tunnel started but no public URL appeared within 15 s (cloudflared PID {}). \
-             This usually means cloudflared can't reach Cloudflare's edge — check firewall / VPN, \
-             then click Restart. LAN dispatch still works in the meantime.",
+             This usually means cloudflared can't reach Cloudflare's edge. Check your firewall or VPN, \
+             then click Stop and start again with Dispatch, Internet. \
+             LAN dispatch still works in the meantime.",
             pid
         ));
     }
@@ -3402,7 +3610,7 @@ fn build_router(state: RemoteState) -> Router {
 
     // Mobile landing page
     let mobile = Router::new()
-        .route("/mobile", get(mobile_landing));
+        .route("/mobile", get(mobile_landing_titled));
 
     // Combine all routes. The remote server does NOT expose the desktop
     // React SPA — `mobile_landing` is self-contained, and serving the full
@@ -3588,7 +3796,8 @@ mod memory_revocation_tests {
                 comfy_port: 0, comfy_host: "127.0.0.1".into(),
                 permissions: server.permissions.clone(), connected_devices: server.connected_devices.clone(),
                 tunnel_url: server.tunnel_url.clone(), dispatched_model: server.dispatched_model.clone(),
-                dispatched_system_prompt: server.dispatched_system_prompt.clone(), app_handle: RemoteDesktop::unavailable(),
+                dispatched_system_prompt: server.dispatched_system_prompt.clone(), page_title: server.page_title.clone(),
+                app_handle: RemoteDesktop::unavailable(),
             };
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let base = format!("http://{}", listener.local_addr().unwrap());
@@ -5485,5 +5694,20 @@ mod mobile_environment_tests {
         let gate = html.find("if(isCodex || agentOn){").expect("the environment block lost its gate");
         let clock_at = html.find("parts.push(hostClockLine());").expect("clock push missing");
         assert!(clock_at > gate, "the clock is pushed outside the tool-surface gate");
+    }
+}
+
+#[cfg(test)]
+mod engine_key_tests {
+    use super::remote_backend_key;
+
+    #[test]
+    fn a_phone_on_the_lu_engine_reaches_it_with_the_engine_key_and_nothing_else_gets_it() {
+        let key = crate::commands::engine_key::engine_key();
+        assert_eq!(remote_backend_key("http://127.0.0.1:8127/v1", String::new(), &[8127]), key);
+        assert_eq!(remote_backend_key("http://localhost:8127/v1/", "x".into(), &[8127]), key);
+        assert_eq!(remote_backend_key("http://127.0.0.1:1234/v1", "lm".into(), &[8127]), "lm");
+        assert_eq!(remote_backend_key("http://192.168.1.4:8127/v1", "lan".into(), &[8127]), "lan");
+        assert_eq!(remote_backend_key("http://127.0.0.1:8127/v1", String::new(), &[]), "");
     }
 }

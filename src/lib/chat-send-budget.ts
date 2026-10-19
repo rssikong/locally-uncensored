@@ -23,9 +23,10 @@
  * budget while the count climbs past the proxy's 400-message gate.
  */
 
-import { compactMessages, estimateMessageTokens } from './context-compaction'
+import { COMPACT_TRIGGER_RATIO, compactMessages, estimateMessageTokens } from './context-compaction'
 import { ageOutImages } from './context-images'
 import { effectiveSendWindow } from './send-window'
+import { injectPersonaNote, noteTokens, type PersonaNote } from './persona-note'
 
 export interface ChatSendBudgetInput {
   /** Provider id of the model this payload goes to. */
@@ -144,6 +145,8 @@ export interface ChatSendResult<T> {
 export interface ApplyBudgetOptions {
   /** How many of the newest user turns keep their attachments. */
   keepImages?: number
+  /** GH #181: the speaker's persona reminder (lib/persona-note.ts). */
+  note?: PersonaNote | null
 }
 
 /**
@@ -183,10 +186,50 @@ export function applySendBudget<T extends { role: string; content?: unknown }>(
   }
 }
 
-/** Resolve the budget for one model and apply it in one call. */
+/**
+ * Resolve the budget for one model and apply it in one call.
+ *
+ * With a persona reminder (GH #181) the history is held to the budget less
+ * what the reminder costs, and the reminder goes in after that. So the
+ * payload stays within the budget, the reminder is placed relative to what
+ * actually goes out, and a trim never takes it away with an old turn.
+ * Without one this is exactly the call it always was.
+ */
 export function applyChatSendBudget<T extends { role: string; content?: unknown }>(
   messages: T[],
   input: ChatSendBudgetInput & ApplyBudgetOptions,
 ): ChatSendResult<T> {
-  return applySendBudget(messages, chatSendBudget(input), { keepImages: input.keepImages })
+  const budget = chatSendBudget(input)
+  const note = input.note ?? null
+  if (!note) return applySendBudget(messages, budget, { keepImages: input.keepImages })
+  const reserved = budget !== null ? Math.max(1, budget - noteTokens(note)) : null
+  const sent = applySendBudget(messages, reserved, { keepImages: input.keepImages })
+  const out = injectPersonaNote(sent.messages, note)
+  return {
+    ...sent,
+    messages: out,
+    budget,
+    promptTokens: estimateMessageTokens(out as unknown as Parameters<typeof estimateMessageTokens>[0]),
+  }
+}
+
+/**
+ * Whether applyChatSendBudget would trim these messages mechanically, by the
+ * same budget, the same hysteresis trigger and the same estimate (3.0.7).
+ *
+ * Plain chat asks this before auto compact, so a summary is written before
+ * the trim drops old turns instead of after (see maybeAutoCompact,
+ * trimImminent). The message count cap is not part of the question: a chat
+ * of many short turns is the count cap's business, not a summary's.
+ */
+export function sendBudgetWouldTrim<T extends { role: string; content?: unknown }>(
+  messages: T[],
+  input: ChatSendBudgetInput & { note?: PersonaNote | null },
+): boolean {
+  const budget = chatSendBudget(input)
+  if (budget === null) return false
+  const note = input.note ?? null
+  const held = note ? Math.max(1, budget - noteTokens(note)) : budget
+  const used = estimateMessageTokens(messages as unknown as Parameters<typeof estimateMessageTokens>[0])
+  return used > Math.floor(held * COMPACT_TRIGGER_RATIO)
 }

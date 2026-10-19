@@ -64,6 +64,9 @@ export interface SettingsSectionFlags {
    * Sperrklinke im Test noetig ist.
    */
   mediaTimeouts: boolean
+  /** Issue 177: the chat reply timeout, for local backends only, so not in
+   *  cloud mode. */
+  chatTimeout: boolean
 }
 
 /**
@@ -82,6 +85,7 @@ export function sectionsFor(tab: SettingsTab, flags: SettingsSectionFlags): stri
         flags.gpuPicker ? 'Hardware (GPU picker)' : 'Hardware',
         'Import from other chatbots',
         'Chat Backup',
+        ...(flags.chatTimeout ? ['Chat Reply Timeout'] : []),
         ...(flags.mediaTimeouts ? ['Image / Video Generation Timeouts'] : []),
         'Privacy',
         'Onboarding',
@@ -95,7 +99,7 @@ export function sectionsFor(tab: SettingsTab, flags: SettingsSectionFlags): stri
         'CivitAI API key',
         'Hugging Face token',
         ...(flags.builtinExpert ? ['LU Engine (expert)'] : []),
-        flags.comfyui ? 'ComfyUI (Image & Video)' : 'Local Media (Apple MLX)',
+        ...(flags.comfyui ? ['ComfyUI (Image & Video)', 'ComfyUI node packs'] : ['Local Media (Apple MLX)']),
       ]
     case 'agent':
       return [

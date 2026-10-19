@@ -54,7 +54,7 @@
  * keine Fehlermeldung, sondern lautlos die falsche Spur.
  */
 import type { ProviderId } from '../api/providers/types'
-import { getProviderIdFromModel } from '../api/providers/model-name'
+import { getProviderIdFromModel, openaiEntryOfModel } from '../api/providers/model-name'
 import { isManagedBuiltinSlot } from '../api/builtin-ensure'
 import { isOllamaLocal } from '../api/backend'
 import { useProviderStore } from '../stores/providerStore'
@@ -82,6 +82,12 @@ export interface LaneFacts {
   openaiSlotIsLocal: boolean
   /** `isOllamaLocal()`: die Ollama-Adresse zeigt auf diese Maschine. */
   ollamaBaseIsLocal: boolean
+  /**
+   * GitHub #173: dieselbe Frage fuer jeden weiteren OpenAI-kompatiblen
+   * Eintrag, nach Eintrags-Kennung. Ein Eintrag, der hier fehlt (oder
+   * ausgeschaltet ist), zaehlt als cloud, wie ein ausgeschalteter Slot.
+   */
+  openaiEntryIsLocal?: Readonly<Record<string, boolean>>
 }
 
 /**
@@ -131,6 +137,8 @@ export function laneOfProvider(id: ProviderId, facts: LaneFacts): RunLane {
  * wie ueberall sonst im Haus, sie steht in model-name.ts.
  */
 export function laneOf(model: string, facts: LaneFacts): RunLane {
+  const entry = openaiEntryOfModel(model)
+  if (entry) return facts.openaiEntryIsLocal?.[entry] ? 'local' : 'cloud'
   return laneOfProvider(getProviderIdFromModel(model), facts)
 }
 
@@ -170,7 +178,18 @@ export function currentLaneFacts(): LaneFacts {
   return {
     openaiSlotIsLocal: frage(openaiSlotLokal),
     ollamaBaseIsLocal: frage(isOllamaLocal),
+    openaiEntryIsLocal: eintraegeLokal(),
   }
+}
+
+function eintraegeLokal(): Record<string, boolean> {
+  const out: Record<string, boolean> = {}
+  try {
+    for (const e of useProviderStore.getState().openaiEntries ?? []) {
+      if (e.entryId) out[e.entryId] = e.enabled && hostIsThisMachine(e.baseUrl)
+    }
+  } catch { /* leer heisst: jeder Eintrag zaehlt als cloud */ }
+  return out
 }
 
 /**

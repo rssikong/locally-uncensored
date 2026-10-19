@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Sparkles, X, SlidersHorizontal, Square, Workflow } from 'lucide-react'
-import { isMlxImageHost } from '../../../api/mlx-image'
+import { isMlxImageHost, MAC_UPSCALE_FACTORS, type MacUpscaleFactor } from '../../../api/mlx-image'
 import { laneImageModel, runsAtOwnSampling } from '../../../lib/image-engines'
-import { MLX_VIDEO_MIN_FRAMES, mlxFramesOnGrid, mlxVideoLaneEntry, mlxVideoMaxFrames } from '../../../api/mlx-video'
+import { MLX_VIDEO_MIN_FRAMES, mlxFramesOnGrid, mlxVideoLaneEntry, mlxVideoMaxFrames, mlxTalking } from '../../../api/mlx-video'
+import { useMacMemoryGb } from '../../../lib/mac-memory'
 import { useCreateStore, MODEL_TYPE_DEFAULTS, EDIT_MAX_DENOISE, imageQualityLadder, type ImageQuality } from '../../../stores/createStore'
-import { classifyModel } from '../../../api/comfyui'
+import { classifyModel, resolveLocalOpPick } from '../../../api/comfyui'
 import { useCreateExp } from './CreateContext'
 import { intentToJob } from '../../../lib/render/cloud-jobs'
 import { meterState } from '../../../lib/render/credits-meter'
@@ -16,14 +17,18 @@ import { STUDIO_MODELS } from '../../../lib/render/studio-contract'
 import { effectiveVideoDurations, snapToVideoDuration } from '../../../lib/render/video-duration'
 import { mediaSeconds, useStudioPrice } from './useStudioPrice'
 import { getJob } from '../../../api/cloud/jobs'
-import { INTENT_MAP, intentTakesPrompt } from './intents'
+import { INTENT_MAP, intentTakesOptionalPrompt, intentTakesPrompt } from './intents'
 import { MUSIC_PLACEHOLDER, musicText } from '../../../lib/render/music-ui'
 import { subscribeInstallRuns, getInstallRun } from '../../../lib/model-install-runs'
 import { useWorkflowStore, shouldShowManagerNotice } from '../../../stores/workflowStore'
-import { missingSourceHint, noPromptHint, shouldShowLaneHint } from './laneHint'
+import { isInputHint, missingSourceHint, noPromptHint, shouldShowLaneHint } from './laneHint'
 import { stageShowsSetupCard, laneModelCount } from './stageGate'
+import { localUpscaleReady, normalizeUpscaleFactor } from '../../../lib/local-upscale'
 import { needsMaskFor } from './maskGate'
 import { ModelChip } from './ModelChip'
+import { MOTION_OWN_WORKFLOW_NOTE, useMotionOwnWorkflow } from './motionWorkflow'
+import { ImageCountChip } from './ImageCountChip'
+import { CharacterChip, CharacterNote, characterMakesStart } from './CharacterChip'
 import { PromptHistory } from './PromptHistory'
 import { SpecialControls } from './SpecialIntentControls'
 import { CreditsMeter } from './CreditsMeter'
@@ -42,8 +47,19 @@ interface Props {
 /** What the disabled Create says while the Stage offers the Mac's setup. */
 const MAC_SETUP_FIRST = 'Set this up first: Download & install, above.'
 
+/** What the disabled Create says while local Enhance has no upscale model. */
+const UPSCALE_MODEL_FIRST = 'Get the upscale model first: Download & install, above.'
+
+/** The tabs where the workflow button names itself: the video tabs and
+ *  Motion Control, where a workflow of the user's own replaces LU's graph. */
+const OWN_WORKFLOW_INTENTS: ReadonlySet<string> = new Set(['video', 'animate', 'motion'])
+
+/** The negative field grows less far than the prompt: both open at once
+ *  must still leave the stage its room (PROMPT_FIELD_MAX). */
+const NEGATIVE_FIELD_MAX = 'min(120px, calc(9vh / var(--ui-scale, 1)))'
+
 /** The prompt field of the Mac's local Edit tab. See the placeholder below. */
-const MAC_EDIT_PLACEHOLDER = 'Describe what to change in this image…'
+const MAC_EDIT_PLACEHOLDER = 'Describe what to change in this image. Paint a mask to change only that area…'
 
 export function Composer({ onOpenAdvanced, onOpenWorkflows }: Props) {
   const intent = useCreateStore((s) => s.intent())
@@ -62,6 +78,14 @@ export function Composer({ onOpenAdvanced, onOpenWorkflows }: Props) {
   const backend = useCreateStore((s) => s.backend)
   const targetResolution = useCreateStore((s) => s.targetResolution)
   const setTargetResolution = useCreateStore((s) => s.setTargetResolution)
+  const upscaleFactor = useCreateStore((s) => s.upscaleFactor)
+  const setUpscaleFactor = useCreateStore((s) => s.setUpscaleFactor)
+  const upscaleModelCount = useCreateStore((s) => s.upscaleModelList.length)
+  // Enhance Image on a Mac runs SeedVR2, which takes a factor and nothing
+  // else from Create (commands/mlx.rs mlx_upscale).
+  const macUpscaleScale = useCreateStore((s) => s.macUpscaleScale)
+  const setMacUpscaleScale = useCreateStore((s) => s.setMacUpscaleScale)
+  const macUpscale = backend === 'local' && isMlxImageHost()
   const cloudImageModel = useCreateStore((s) => s.cloudImageModel)
   const cloudVideoModel = useCreateStore((s) => s.cloudVideoModel)
   const cloudOpModel = useCreateStore((s) => s.cloudOpModel)
@@ -81,6 +105,8 @@ export function Composer({ onOpenAdvanced, onOpenWorkflows }: Props) {
   const { generate, cancel, quota, mlxMissing, modelsLoaded } = useCreateExp()
   const imageModels = useCreateStore((s) => s.imageModelList)
   const videoModels = useCreateStore((s) => s.videoModelList)
+  // Motion Control's list: on a Mac it stays empty until its LoRA is in.
+  const motionModels = useCreateStore((s) => s.motionModelList)
   const videoModel = useCreateStore((s) => s.videoModel)
   // Der Katalog kommt vom Server und kann nach dem ersten Zeichnen eintreffen:
   // die Waehler und die Studio-Wahl unten lesen ihn, also zeichnet dieser
@@ -115,8 +141,10 @@ export function Composer({ onOpenAdvanced, onOpenWorkflows }: Props) {
     intentOp = 'generate'
   }
   // The prompt field shows wherever the run consumes one — that's the meta
-  // flag, plus Character-Studio's use-surface (train has no prompt).
-  const needPrompt = intentTakesPrompt(intent, characterUse)
+  // flag, plus Character-Studio's use-surface (train has no prompt), plus
+  // Motion Control on the local lanes, whose prompt may stay empty.
+  const optionalPrompt = intentTakesOptionalPrompt(intent, backend)
+  const needPrompt = intentTakesPrompt(intent, characterUse) || optionalPrompt
   // Gate on the exact run's cost (model + op + clip length), the same figure
   // the CreditsMeter shows — quota.costs[kind] is only the tier's
   // representative per-kind number and would mis-gate utility ops / pricier
@@ -251,9 +279,13 @@ export function Composer({ onOpenAdvanced, onOpenWorkflows }: Props) {
   // one, a distilled LTX reads none and the second engine ends with an error
   // on the flag. The catalogue entry of the model the lane runs says which
   // (`negativePrompt` of `video_list_models`).
-  const macVideoLane = backend === 'local' && isMlxImageHost() && (intent === 'video' || intent === 'animate')
+  // Extend runs on the same engines, from the clip's last frame.
+  const macVideoLane = backend === 'local' && isMlxImageHost() && (intent === 'video' || intent === 'animate' || intent === 'extend')
+  // The Mac's music engine takes a style and lyrics and no negative prompt.
+  const macMusicLane = backend === 'local' && isMlxImageHost() && intent === 'music'
   const negSupported = backend === 'cloud'
     ? cloudModelById(runModel)?.negative_prompt === true
+    : macMusicLane ? false
     : !macVideoLane || mlxVideoLaneEntry(videoModels, videoModel, intent)?.mlxVideo?.negativePrompt === true
   // R5-66: see maskGate.ts for the full rule and why 'edit' differs from Web.
   const needsMask = needsMaskFor(intent, backend, !editNeedsMask(runModel))
@@ -270,20 +302,28 @@ export function Composer({ onOpenAdvanced, onOpenWorkflows }: Props) {
   // schema). A presenter endpoint (HeyGen) reads only the voice and needs no
   // photo at all, unlike every classic lipsync model.
   const studioNeeds = studioPick ? intentRequiredInputs(intent, studioPick) : []
+  // A character on the chip makes the start image itself (CharacterChip):
+  // a video tab without an image of the user's own is ready all the same.
+  const macTalkReady = useCreateStore((s) => mlxTalking(s.videoModelList).ready)
+  const characterStart = characterMakesStart(backend, intent, selectedCharacter, !!source, macTalkReady)
+  const hasStart = !!source || characterStart
   const specialReady =
     intent === 'character'
       ? (characterUse ? !!selectedCharacter : trainImages.length >= 4)
       : intent === 'lipsync'
+        // A Mac runs it once the model's own download is on disk (the line
+        // above the chips offers it).
         ? (!!audioInput || (backend === 'cloud' && !!voiceFromJob)) &&
+          !(backend === 'local' && isMlxImageHost() && !macTalkReady) &&
           (lipsyncNeedsClip
             ? !!videoInput
             : studioPick
               ? (!studioNeeds.includes('source_path') || !!source)
-              : !!source)
+              : hasStart)
         : intent === 'extend'
-          ? (backend === 'cloud' ? !!extendSource : !!source)
+          ? (backend === 'cloud' ? !!extendSource : hasStart)
           : intent === 'motion'
-            ? !!source && !!videoInput
+            ? hasStart && !!videoInput
             : true
   // A half-installed bundle is pickable long before it is usable: the lane
   // list refills as soon as the diffusion model lands, while the VAE it needs
@@ -307,19 +347,29 @@ export function Composer({ onOpenAdvanced, onOpenWorkflows }: Props) {
     mlxMissing,
     connected: null,
     modelsLoaded,
-    laneModelCount: laneModelCount(intent, meta.requiresModels, { image: imageModels, video: videoModels, audio: [], lipsync: [], motion: [] }),
+    laneModelCount: laneModelCount(intent, meta.requiresModels, { image: imageModels, video: videoModels, audio: [], lipsync: [], motion: motionModels }),
   })
+  // Local Enhance runs on a file in models/upscale_models. Without one the
+  // Stage offers the download and the button waits for it.
+  // A Mac runs Enhance with SeedVR2 (macUpscale) and shows the tab only
+  // with it installed, so models/upscale_models does not count there.
+  const upscaleReady = macUpscale || localUpscaleReady({ backend, intent, upscaleModelCount })
   const canGenerate =
     !macSetupFirst &&
-    (!needPrompt || prompt.trim().length > 0) &&
-    (!meta.needsSource || !!source) &&
+    (!needPrompt || optionalPrompt || prompt.trim().length > 0) &&
+    (!meta.needsSource || hasStart) &&
     (!needsMask || !!mask) &&
     specialReady &&
+    upscaleReady &&
     creditsOk &&
     !installing
-  const showNoPromptHint = shouldShowLaneHint({ needPrompt, isGenerating, intent, specialReady })
+  const showNoPromptHint = shouldShowLaneHint({ needPrompt: needPrompt && !optionalPrompt, isGenerating, intent, specialReady })
+  // A caption that names the missing inputs is a note above the prompt
+  // window (laneHint.ts isInputHint); the action captions stay inside it.
+  const inputNote = showNoPromptHint && !needsMask && isInputHint(intent)
+  const laneCaption = noPromptHint(meta.id, backend, backend === 'local' && isMlxImageHost())
   // The disabled button says which input it waits for (laneHint.ts).
-  const missingSource = missingSourceHint({ intent, needsSource: meta.needsSource, hasSource: !!source })
+  const missingSource = missingSourceHint({ intent, needsSource: meta.needsSource, hasSource: hasStart })
 
   return (
     // A stable min-height (bottom-anchored) so the prompt window occupies the
@@ -337,6 +387,10 @@ export function Composer({ onOpenAdvanced, onOpenWorkflows }: Props) {
       <div className="mx-auto w-full max-w-[660px] space-y-2.5">
         {special && <SpecialControls intent={intent} />}
         {!isUtility && <LaneControls />}
+        <CharacterNote />
+        {inputNote && (
+          <p className="t-body text-gray-500 text-center px-3.5" data-testid="lane-input-note">{laneCaption}</p>
+        )}
 
         <div className="rounded-[var(--radius-panel)] bg-white/[0.03] border border-white/[0.06] focus-within:border-white/15 transition-colors">
           {needPrompt && (
@@ -352,9 +406,10 @@ export function Composer({ onOpenAdvanced, onOpenWorkflows }: Props) {
                     // cloud model requires a mask.
                     : (intent === 'edit' && needsMask
                       ? 'Describe the new look. Paint an area first to tell it what to change…'
-                      // The Mac edits from the prompt alone and has no mask
-                      // to paint, so the shared sentence about leaving the
-                      // mask empty named a tool that is not there.
+                      // The Mac edits from the prompt, and under a mask
+                      // where one is painted. Without one it does not
+                      // restyle at a denoise as the Windows graph does, so
+                      // the shared sentence would promise the wrong thing.
                       : intent === 'edit' && backend === 'local' && isMlxImageHost()
                         ? MAC_EDIT_PLACEHOLDER
                       // Cloud music: the field asks for what the model does
@@ -384,7 +439,7 @@ export function Composer({ onOpenAdvanced, onOpenWorkflows }: Props) {
               der Platzhalter dagegen zuruecktritt, entscheidet jetzt
               ausschliesslich die ::placeholder-Regel in index.css. */}
           <AnimatePresence>
-            {showNegative && needPrompt && negSupported && (
+            {showNegative && needPrompt && !optionalPrompt && negSupported && (
               <motion.div
                 initial={{ height: 0, opacity: 0 }}
                 animate={{ height: 'auto', opacity: 1 }}
@@ -400,6 +455,7 @@ export function Composer({ onOpenAdvanced, onOpenWorkflows }: Props) {
                     value={negativePrompt}
                     onChange={setNegativePrompt}
                     placeholder="What to avoid…"
+                    maxHeight={NEGATIVE_FIELD_MAX}
                   />
                 </div>
               </motion.div>
@@ -413,9 +469,9 @@ export function Composer({ onOpenAdvanced, onOpenWorkflows }: Props) {
               Zustand der Maske selbst beschreibt, sonst stuende dort ein
               Text, der beim Radiergummi nie zutrifft ("remove the
               background"). */}
-          {showNoPromptHint && !needsMask && (
+          {showNoPromptHint && !needsMask && !inputNote && (
             <div className="px-3.5 py-3 t-body text-gray-500">
-              {noPromptHint(meta.id, backend)}
+              {laneCaption}
             </div>
           )}
           {needsMask && !needPrompt && !isGenerating && (
@@ -433,7 +489,7 @@ export function Composer({ onOpenAdvanced, onOpenWorkflows }: Props) {
                 also fuer einen Screenreader ein gewoehnlicher Knopf ohne
                 Zustand. Beides steht jetzt da, und `aria-controls` zeigt auf
                 das Feld, das er aufklappt. */}
-            {needPrompt && negSupported && (
+            {needPrompt && !optionalPrompt && negSupported && (
               <button
                 onClick={toggleNegative}
                 aria-pressed={showNegative}
@@ -458,7 +514,35 @@ export function Composer({ onOpenAdvanced, onOpenWorkflows }: Props) {
             {studioPick && studioPrice?.error && (
               <span className="t-control text-red-300">{studioPrice.error}</span>
             )}
-            {meta.id === 'upscale' && (
+            {meta.id === 'upscale' && backend === 'local' && !macUpscale && (
+              <Tooltip content="How much larger the result is, per side.">
+                <div>
+                  <Segmented
+                    size="sm"
+                    layoutId="upscale-factor"
+                    ariaLabel="Upscale factor"
+                    value={String(normalizeUpscaleFactor(upscaleFactor))}
+                    onChange={(v) => setUpscaleFactor(normalizeUpscaleFactor(Number(v)))}
+                    options={[{ value: '2', label: '2x' }, { value: '4', label: '4x' }]}
+                  />
+                </div>
+              </Tooltip>
+            )}
+            {meta.id === 'upscale' && macUpscale && (
+              <Tooltip content="How much larger the picture gets. Up to 4096 pixels on the longest side.">
+                <div>
+                  <Segmented
+                    size="sm"
+                    layoutId="mac-upscale-scale"
+                    ariaLabel="Enhance factor"
+                    value={String(macUpscaleScale)}
+                    onChange={(v) => setMacUpscaleScale(Number(v) as MacUpscaleFactor)}
+                    options={MAC_UPSCALE_FACTORS.map((f) => ({ value: String(f), label: `${f}x` }))}
+                  />
+                </div>
+              </Tooltip>
+            )}
+            {meta.id === 'upscale' && backend === 'cloud' && (
               <Tooltip content="Target resolution for the upscale pass.">
                 <div>
                   <Segmented
@@ -476,10 +560,18 @@ export function Composer({ onOpenAdvanced, onOpenWorkflows }: Props) {
                 was clicked once, a small dot marks it as new (the owner
                 2026-08-02: no banner line, just a minimal marker that goes
                 away on click). */}
+            {/* On the video tabs and Motion Control the button carries words.
+                Discord, 15.10.2026: a reporter had a Wan 2.2 Animate workflow
+                running in ComfyUI and did not know LU could run it; the bare
+                icon never told him. */}
             {backend === 'local' && !isMlxImageHost() && (
               <Tooltip content="Your own ComfyUI workflows, and the tags that pair them with models.">
                 <div className="relative">
-                  <Button variant="ghost" size="sm" icon={Workflow} iconOnly onClick={onOpenWorkflows} title="Workflows and tags" />
+                  {OWN_WORKFLOW_INTENTS.has(meta.id) ? (
+                    <Button variant="ghost" size="sm" icon={Workflow} onClick={onOpenWorkflows} title="Workflows and tags" ariaLabel="Use your own ComfyUI workflow">Use your own ComfyUI workflow</Button>
+                  ) : (
+                    <Button variant="ghost" size="sm" icon={Workflow} iconOnly onClick={onOpenWorkflows} title="Workflows and tags" />
+                  )}
                   {shouldShowManagerNotice(backend, managerNoticeSeen) && (
                     <span
                       aria-hidden
@@ -491,7 +583,9 @@ export function Composer({ onOpenAdvanced, onOpenWorkflows }: Props) {
             )}
             {!isUtility && (
               <>
+                <CharacterChip />
                 <ModelChip />
+                <ImageCountChip />
                 <Tooltip content="All advanced settings. Sampler, seed, LoRA, VAE and more.">
                   <Button variant="ghost" size="sm" icon={SlidersHorizontal} iconOnly onClick={onOpenAdvanced} title="Advanced settings" />
                 </Tooltip>
@@ -502,7 +596,7 @@ export function Composer({ onOpenAdvanced, onOpenWorkflows }: Props) {
             ) : (
               // The span carries the hint: a disabled button takes no pointer,
               // so a title on the button itself would never show.
-              <span className="inline-flex" title={macSetupFirst ? MAC_SETUP_FIRST : (missingSource ?? undefined)}>
+              <span className="inline-flex" title={macSetupFirst ? MAC_SETUP_FIRST : (missingSource ?? (upscaleReady ? undefined : UPSCALE_MODEL_FIRST))}>
                 <Button variant="primary" size="lg" icon={Sparkles} disabled={!canGenerate} onClick={guardedGenerate}>Create</Button>
               </span>
             )}
@@ -585,8 +679,18 @@ function LaneControls() {
   // strength slider does not reach the model either.
   const imageModelList = useCreateStore((s) => s.imageModelList)
   const mlxLocal = backend === 'local' && isMlxImageHost()
+  // The long LTX clip goes by the Mac's memory (api/mlx-video
+  // mlxVideoMaxFrames); Motion Control has not run so long.
+  const macMemoryGb = useMacMemoryGb(mlxLocal)
+  const macLengthGb = intent === 'motion' ? null : macMemoryGb
   const ownSampling = mlxLocal && runsAtOwnSampling(imageModelList, laneImageModel(imageModelList, imageModel, intent))
   const videoModelList = useCreateStore((s) => s.videoModelList)
+  // Motion Control on the Mac runs the model of its own list.
+  const motionModelList = useCreateStore((s) => s.motionModelList)
+  const localOpModel = useCreateStore((s) => s.localOpModel)
+  // Motion Control with a workflow of the user's own runs that workflow's
+  // steps, size and length: the sliders below would set nothing.
+  const motionWorkflow = useMotionOwnWorkflow()
 
   const base = MODEL_TYPE_DEFAULTS[imageModelType]?.steps ?? 25
   // The button shown as picked is the one whose step count is nearest to the
@@ -706,7 +810,10 @@ function LaneControls() {
   if (!knobsLive) return null
 
   // ── Audio (music) LOCAL: steps only — Length lives in MusicControls. ──
+  //    Not on a Mac: its music engine runs the turbo model at its own eight
+  //    steps (commands/music.rs), so a steps slider there set nothing. ──
   if (kind === 'audio') {
+    if (mlxLocal) return null
     return (
       <div className={LANE_ROW}>
         <div className="w-56">
@@ -723,8 +830,21 @@ function LaneControls() {
   //    (persona walk, 09.10.2026, Fund 19). The length counts on the grid
   //    and at the rate of the model the lane runs. With no model installed
   //    there is no row: its values would belong to no model (Fund 20). ──
-  if (mlxLocal && (intent === 'video' || intent === 'animate')) {
-    const clip = mlxVideoLaneEntry(videoModelList, videoModel, intent)?.mlxVideo
+  //    Extend is the same run from the clip's last frame, so it has the
+  //    same row and not the sliders of the ComfyUI graph.
+  // Talking Character on the Mac: no knob at all. Its length is the voice's,
+  // its shape the portrait's, and the engine's a2v runs its own steps.
+  if (mlxLocal && intent === 'lipsync') {
+    return (
+      <div className={LANE_ROW} data-testid="mac-talking-length">
+        <span className="t-label text-gray-600">clip length follows your voice, up to 10 seconds</span>
+      </div>
+    )
+  }
+  if (mlxLocal && (intent === 'video' || intent === 'animate' || intent === 'extend' || intent === 'motion')) {
+    const clip = intent === 'motion'
+      ? motionModelList.find((m) => m.name === resolveLocalOpPick(localOpModel, motionModelList))?.mlxVideo
+      : mlxVideoLaneEntry(videoModelList, videoModel, intent)?.mlxVideo
     if (!clip) return null
     return (
       <div className={LANE_ROW} data-testid="mac-video-length">
@@ -732,13 +852,21 @@ function LaneControls() {
           <Slider
             label="Length"
             min={MLX_VIDEO_MIN_FRAMES}
-            max={mlxVideoMaxFrames(clip.frameStep)}
+            max={mlxVideoMaxFrames(clip.frameStep, macLengthGb)}
             step={clip.frameStep}
-            value={mlxFramesOnGrid(frames, clip.frameStep)}
+            value={mlxFramesOnGrid(frames, clip.frameStep, macLengthGb)}
             onChange={setFrames}
             format={(v) => `${v} frames · ${(v / clip.fps).toFixed(1)}s`}
           />
         </div>
+      </div>
+    )
+  }
+
+  if (motionWorkflow) {
+    return (
+      <div className={LANE_ROW} data-testid="motion-own-workflow">
+        <span className="t-label text-gray-600">{MOTION_OWN_WORKFLOW_NOTE}</span>
       </div>
     )
   }

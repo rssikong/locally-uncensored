@@ -90,14 +90,17 @@ async function openEverySection(page: Page) {
   for (let round = 0; round < WALK_ROUNDS; round++) {
     // Visible, and inside the settings body: the header carries a hidden
     // menu button with the same attribute, and waiting for it to become
-    // clickable is a thirty-second way to learn nothing.
-    const collapsed = page.locator('main button[aria-expanded="false"]:visible')
+    // clickable is a thirty-second way to learn nothing. A trigger with
+    // aria-haspopup opens a card over the page (How it works) and is no
+    // section: clicking it covered the next section and two cards closed
+    // each other, so the walk never came to rest.
+    const collapsed = page.locator('main button[aria-expanded="false"]:not([aria-haspopup]):visible')
     const n = await collapsed.count()
     if (n === 0) return
     await collapsed.first().click()
     await page.waitForTimeout(220)
   }
-  const left = await page.locator('main button[aria-expanded="false"]:visible').count()
+  const left = await page.locator('main button[aria-expanded="false"]:not([aria-haspopup]):visible').count()
   if (left === 0) return
   throw new Error(`${left} sections still collapsed after ${WALK_ROUNDS} rounds, the walk is not converging`)
 }

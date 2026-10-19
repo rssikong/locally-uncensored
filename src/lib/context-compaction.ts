@@ -5,22 +5,30 @@
  * - Keep the last N messages intact (recent context matters most)
  * - Summarize older messages into compact one-liners
  * - Tool call + result pairs become: "Used tool_name('args') → result_snippet"
- * - Token estimation via heuristic: text.length / 4
+ * - Token estimation: script aware, see lib/token-estimate.ts (GH #167)
  */
 
 import { getModelContextCached } from '../api/ollama'
 import { getProviderForModel, getProviderIdFromModel } from '../api/providers'
 import { useModelStore } from '../stores/modelStore'
+import { useSettingsStore } from '../stores/settingsStore'
+import { ollamaWindowFor } from './context-window'
 import { truncateToolResult } from './truncate-tool-result'
+import { estimateTokens as estimateTokensByScript, charsPerToken } from './token-estimate'
 import type { OllamaChatMessage } from '../types/agent-mode'
 
 // ── Token Estimation ────────────────────────────────────────────
 
 /**
- * Rough token estimate. Ollama models typically tokenize ~4 chars per token.
+ * Token estimate of one string. GH #167: no longer chars / 4 for every
+ * script. Latin text keeps 4 characters per token to the token, Japanese,
+ * Chinese and Korean cost about 0.8 token per character, emoji and symbols
+ * more. The rules and their evidence live in lib/token-estimate.ts, a leaf
+ * module, so the provider layer can use the same function without an import
+ * cycle through this file.
  */
 export function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4) + 1
+  return estimateTokensByScript(text)
 }
 
 /**
@@ -81,6 +89,34 @@ export async function getModelMaxTokens(modelName: string): Promise<number> {
   } catch {
     return 4096
   }
+}
+
+/**
+ * The window a CHAT turn on this model runs in, for the history budget and
+ * the auto compact of plain chat, a group round and compare.
+ *
+ * On Ollama that is the num_ctx the request carries for `window: 'chat'`
+ * (`ollamaNumCtx` in api/ollama.ts asks `ollamaWindowFor` with the same three
+ * values), not the model's trained maximum. GH #166: the budget read
+ * `getModelMaxTokens`, so it ignored the user's "Context window (Ollama)".
+ * With 262144 set, num_ctx 262144 went out while the history was trimmed to a
+ * fraction of a stand in 4096, and a long chat lost its older turns without a
+ * word. The other direction was as wrong: a 128K model sent with num_ctx
+ * 16384 was budgeted at 0.8 of 128K, so Ollama cut the front itself.
+ *
+ * Every other backend: `getModelMaxTokens`, unchanged.
+ */
+export async function getChatWindowTokens(modelName: string): Promise<number> {
+  try {
+    if (getProviderIdFromModel(modelName) === 'ollama') {
+      const override = useSettingsStore.getState().settings.contextWindowOverride
+      if (override && override > 0) return override
+      return ollamaWindowFor('chat', await getModelContextCached(modelName))
+    }
+  } catch {
+    return 4096
+  }
+  return getModelMaxTokens(modelName)
 }
 
 // ── Message Compaction ──────────────────────────────────────────
@@ -327,11 +363,14 @@ export function compactMessages(
   // assistant text is never touched. The cap adapts to the budget (chars ≈
   // tokens × 4), floored so tiny budgets still keep a useful head+tail.
   const perResultCap = Math.max(4000, Math.min(32000, Math.floor(budget * 4 * 0.35)))
-  const capped = nonSystem.map((m) =>
-    isToolResultMessage(m) && typeof m.content === 'string' && m.content.length > perResultCap
-      ? { ...m, content: truncateToolResult(m.content, perResultCap) }
-      : m,
-  )
+  // GH #167: the cap is a token budget spelled in Latin characters. A
+  // Japanese result carries about three times the tokens per character, so
+  // its character cap shrinks by its own density; ASCII keeps exactly 4.
+  const capped = nonSystem.map((m) => {
+    if (!isToolResultMessage(m) || typeof m.content !== 'string') return m
+    const cap = Math.floor((perResultCap * charsPerToken(m.content)) / 4)
+    return m.content.length > cap ? { ...m, content: truncateToolResult(m.content, cap) } : m
+  })
 
   // Pin the TASK (audit C5). The oldest message is the user's actual
   // instruction, and the suffix window is precisely the mechanism that drops

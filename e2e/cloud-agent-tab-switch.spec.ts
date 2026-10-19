@@ -10,9 +10,17 @@ import { seedOnboardingDone, routeCloud, signInViaGate, cloudSwitch } from './su
  */
 const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'authorization, content-type' }
 
-async function bootCloud(page: Page, bodies: string[], stepMs: number, failAt = -1, files: Record<string, string> = {}) {
+async function bootCloud(page: Page, bodies: string[], stepMs: number, failAt = -1, files: Record<string, string> = {}, autoCompact = true) {
   await page.addInitScript(tauriMockInit, { assistantReply: DEFAULT_ASSISTANT_REPLY, modelName: DEFAULT_MODEL_NAME, files })
   await seedOnboardingDone(page)
+  if (!autoCompact) {
+    await page.addInitScript(() => {
+      const raw = window.localStorage.getItem('chat-settings')
+      const env = raw ? JSON.parse(raw) : { state: { settings: {} }, version: 10 }
+      env.state.settings = { ...env.state.settings, autoCompact: false }
+      window.localStorage.setItem('chat-settings', JSON.stringify(env))
+    })
+  }
   await page.addInitScript(() => {
     window.localStorage.setItem('locally-uncensored-permissions', JSON.stringify({
       state: {
@@ -172,9 +180,13 @@ test('cloud code: a long run that outgrew its window keeps a ledger for "continu
   const bodies: string[] = []
   // 45 files of about 1.5k tokens each: the run passes the 32K send window and
   // gets trimmed long before the line drops on request 46.
+  //
+  // Auto-compact off: this pins the mechanical trim and its ledger, the
+  // safety net under the summary. The mock answers every request with a
+  // tool call, the summary request too, and counts requests in order.
   const files: Record<string, string> = {}
   for (let i = 0; i < 60; i++) files[`file-${i}.ts`] = `// file ${i}\n` + 'const x = 1\n'.repeat(500)
-  await bootCloud(page, bodies, 60, 45, files)
+  await bootCloud(page, bodies, 60, 45, files, false)
   await page.getByRole('button', { name: /New Chat/i }).first().click()
   await pickKimi(page)
   await page.getByRole('button', { name: 'Code', exact: true }).click()

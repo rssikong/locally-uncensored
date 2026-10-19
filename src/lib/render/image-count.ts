@@ -29,3 +29,21 @@ const SEED_MAX = 2_147_483_647
 export function bumpSeed(seed: number, index: number): number {
   return (seed + index) % SEED_MAX
 }
+
+/** Hoechstzahl Bilder pro lokalem Lauf (Batch size, createStore setBatchSize). */
+export const LOCAL_BATCH_MAX = 8
+
+/**
+ * D23: wo der Composer die Bildanzahl neben Create zeigt, und bis wohin.
+ * Null heisst: dieser Lauf kennt keine Anzahl, also kein Regler.
+ *   Cloud: Bild und Bearbeiten, 1 bis MAX_IMAGE_COUNT (runImageCount).
+ *   Mac lokal: Bild und Bearbeiten, je Bild ein eigener Lauf (useCreate).
+ *   ComfyUI lokal: nur Bild, dort geht batchSize in den leeren Latent; ein
+ *   Edit startet vom Quellbild und macht immer eines.
+ */
+export function composerImageCountMax(backend: 'local' | 'cloud', intent: string, macLocal: boolean): number | null {
+  if (backend === 'cloud') return imageCountApplies(intent) ? MAX_IMAGE_COUNT : null
+  if (intent === 'image') return LOCAL_BATCH_MAX
+  if (macLocal && intent === 'edit') return LOCAL_BATCH_MAX
+  return null
+}

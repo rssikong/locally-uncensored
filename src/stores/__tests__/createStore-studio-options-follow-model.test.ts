@@ -138,8 +138,10 @@ describe('Studio-Optionen beim Modellwechsel', () => {
 
   // Nur im Desktop: der Wechsel auf lokal schliesst die Unterkategorien, die es
   // nur in der Cloud gibt. Zurueck in der Cloud steht eine andere da.
-  it('der Wechsel auf lokal und zurueck traegt Einstellungen aus Enhance Image nicht nach Edit', () => {
-    st().setIntent('upscale')
+  // Bis 3.0.7 stand hier Enhance Image. Das laeuft jetzt auch lokal und
+  // bleibt beim Wechsel stehen; Erase Object ist das Werkzeug, das schliesst.
+  it('der Wechsel auf lokal und zurueck traegt Einstellungen aus Erase Object nicht nach Edit', () => {
+    st().setIntent('eraser')
     st().setCloudStudioOptions({ target_resolution: '2k' })
     st().setBackend('local')
     st().setBackend('cloud')

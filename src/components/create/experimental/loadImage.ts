@@ -76,7 +76,7 @@ export async function loadImageRef(file: File): Promise<ImageRef> {
   }
   const backend = useCreateStore.getState().backend
   const filename = backend === 'cloud' ? '' : await stageLocally(upload)
-  return { filename, url, width, height }
+  return { filename, url, width, height, name: upload.name }
 }
 
 /** Backfill the ComfyUI filename for a ref picked while on the cloud backend

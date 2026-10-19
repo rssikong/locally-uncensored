@@ -14,6 +14,9 @@ export interface IntentMeta {
   placeholder: string
   needsSource: boolean
   needsPrompt: boolean
+  /** A prompt the local lanes read when one is typed and run without:
+   *  the field shows there, and Create does not wait for it. */
+  localPrompt?: true
   allowsMask: boolean
   isVideo: boolean
   /** Capability id (node probe) this intent depends on, if any. */
@@ -21,11 +24,12 @@ export interface IntentMeta {
   /** Categories with a hosted endpoint (cloud clip/teaser exists). */
   cloudOnly?: true
   /** 2.5.8: cloudOnly categories that ALSO run on the local ComfyUI backend
-   *  (mirrors createStore's LOCAL_LANE_OPS). The IntentBar unlocks these in
-   *  local mode; the cloud glyph becomes a "Try cloud" affordance. */
+   *  (mirrors createStore's LOCAL_LANE_OPS and LOCAL_UTILITY_OPS). The
+   *  IntentBar unlocks these in local mode; the cloud glyph becomes a
+   *  "Try cloud" affordance. */
   hasLocalLane?: true
   /** Local model files this intent needs (gates the Download & install card). */
-  requiresModels?: 'image' | 'video' | 'audio' | 'lipsync' | 'motion'
+  requiresModels?: 'image' | 'video' | 'audio' | 'lipsync' | 'motion' | 'upscale'
   examples: string[]
 }
 
@@ -70,10 +74,15 @@ export const INTENTS: IntentMeta[] = [
     // them. Web's separate 'video_upscale' intent is a feature decision for
     // The owner (does the Desktop get video upscaling at all), not a text fix,
     // and is out of scope here.
+    //
+    // 3.0.7 (Discord wish D10): a local lane on Windows and Linux, ComfyUI's
+    // core upscale nodes over a file in models/upscale_models
+    // (lib/local-upscale.ts). The Stage offers that file when none is there.
+    // A Mac has no ComfyUI and keeps this a cloud tool.
     id: 'upscale', label: 'Enhance Image', short: 'Enhance', icon: Maximize2,
     placeholder: '',
     needsSource: true, needsPrompt: false, allowsMask: false, isVideo: false,
-    cloudOnly: true,
+    cloudOnly: true, hasLocalLane: true, requiresModels: 'upscale',
     examples: [],
   },
   {
@@ -160,8 +169,11 @@ export const INTENTS: IntentMeta[] = [
     // onnxruntime-gpu is absent — slower, not broken); the pack only shows
     // up after a ComfyUI restart, which installCapability performs.
     id: 'motion', label: 'Motion Control', short: 'Motion', icon: PersonStanding,
-    placeholder: 'Optional: extra style/scene hints…',
-    needsSource: false, needsPrompt: false, allowsMask: false, isVideo: true,
+    // The local lanes read a prompt and run without one: the ComfyUI graph
+    // falls back to its own scene line (dynamic-workflow buildMotionWorkflow),
+    // the Mac to MLX_MOTION_PROMPT. The cloud model takes none.
+    placeholder: 'Optional: describe the scene or the style…',
+    needsSource: false, needsPrompt: false, localPrompt: true, allowsMask: false, isVideo: true,
     capability: 'dwpose',
     cloudOnly: true, hasLocalLane: true, requiresModels: 'motion',
     examples: [],
@@ -180,6 +192,13 @@ export function intentTakesPrompt(intent: CreateIntent, characterUse = false): b
   return INTENT_MAP[intent].needsPrompt || characterUse
 }
 
+/** Does the view on `backend` show a prompt field that may stay empty?
+ *  Motion Control on the local lanes. The start sends what is typed there,
+ *  and Create does not wait for it. */
+export function intentTakesOptionalPrompt(intent: CreateIntent, backend: CreateBackend): boolean {
+  return backend === 'local' && !!INTENT_MAP[intent].localPrompt
+}
+
 /**
  * The intents that have a REAL local pipeline on an MLX host (Apple Silicon
  * Mac). Every local lane above is a ComfyUI graph, and the Mac has no ComfyUI
@@ -194,21 +213,62 @@ export function intentTakesPrompt(intent: CreateIntent, characterUse = false): b
  * a local tab only while such a model is installed, which is what the
  * `mlxAnimate` argument below carries (api/mlx-video mlxTakesStartImage).
  *
+ * Extend Video rides on the same models (14.10.2026): as on Windows, the last
+ * frame of the picked clip becomes the start image of an image to video run
+ * (LocalExtendControls, lib/video-frames lastFrame). So it is a local tab
+ * exactly while Animate is one. The engine's own `extend` mode, which carries
+ * the clip on in latent space, is a beta of ltx-2-mlx and needs the dev
+ * transformer the distilled packs leave out; it is not used.
+ *
+ * Remove Background runs on every Mac: the subject mask comes from the Vision
+ * framework of macOS (commands/mlx_cutout.rs), with no model to install and
+ * no ComfyUI node, so the tab needs neither.
+ *
  * Everything else must NOT look like a working local tab — see visibleIntents
  * / isIntentLocked below.
  */
-const MLX_LOCAL_INTENTS: ReadonlySet<CreateIntent> = new Set<CreateIntent>(['image', 'video'])
+// Remove Background runs on Vision in macOS (commands/mlx_cutout.rs).
+// Character Studio: "Use character" runs a character's LoRA from the Mac's
+// LoRA folder on the second image engine (mflux `--lora`), the way Windows
+// runs it in ComfyUI. Training stays off on the Mac (LocalTrainControls is a
+// ComfyUI/CUDA trainer); the tab says where to train instead.
+const MLX_LOCAL_INTENTS: ReadonlySet<CreateIntent> = new Set<CreateIntent>(['image', 'video', 'removebg', 'character'])
 
 /**
  * Edit is the second lane with a source that the Mac serves: Qwen-Image 2.1
  * on the second image engine edits one image or several from a prompt, as it
  * does on Windows (commands/image_mflux.rs). It is a local tab only while such
  * a model is installed, which is what `mlxEdit` carries (lib/image-engines
- * mlxTakesEditImage). There is no mask on that lane: the model takes none on
- * Windows either.
+ * mlxTakesEditImage). A mask painted over the first image limits the edit to
+ * that area (mflux 0.22.0 `--mask-image`); without one the prompt edits the
+ * whole image.
+ *
+ * Enhance Image is a local tab on the Mac while an upscaler is installed:
+ * SeedVR2 on the second engine makes the picture on the Stage two or four
+ * times larger (commands/mlx.rs mlx_upscale). That is what `mlxUpscale`
+ * carries (api/mlx-image mlxUpscalerInstalled). Without one it stays locked,
+ * as it is everywhere else in local mode.
+ *
+ * Music too: ACE-Step 1.5 runs as a process of its own on the Mac
+ * (commands/music.rs), and the Music tab is a local tab while its engine and
+ * model are installed, which is what `mlxMusic` carries (api/mlx-music
+ * mlxMakesMusic). Without it the tab stays locked, as before.
+ *
+ * Motion Control (3.0.8): an LTX-2.3 pack of the second video engine with
+ * the IC-LoRA Union Control follows the motion of a video from a start image
+ * (commands/video_motion.rs). The tab is local while such a pack is
+ * installed, which is what `mlxMotion` carries (api/mlx-video
+ * mlxFollowsMotion). The LoRA itself comes with the tab's install card.
+ *
+ * Talking Character too (3.0.8): LTX-2.3 4-bit turns a portrait and a voice
+ * into a clip whose lips follow the speech (the engine's `a2v`,
+ * commands/video_ltx2mlx.rs). The tab is a local tab while such a model is
+ * installed, which is what `mlxTalk` carries (api/mlx-video mlxTalking); the
+ * extra download the run reads is offered on the tab itself.
  */
-function runsOnMlx(id: CreateIntent, mlxAnimate: boolean, mlxEdit: boolean): boolean {
-  return MLX_LOCAL_INTENTS.has(id) || (id === 'animate' && mlxAnimate) || (id === 'edit' && mlxEdit)
+function runsOnMlx(id: CreateIntent, mlxAnimate: boolean, mlxEdit: boolean, mlxUpscale: boolean, mlxMusic: boolean, mlxMotion: boolean, mlxTalk: boolean): boolean {
+  return MLX_LOCAL_INTENTS.has(id) || ((id === 'animate' || id === 'extend') && mlxAnimate) || (id === 'edit' && mlxEdit)
+    || (id === 'upscale' && mlxUpscale) || (id === 'music' && mlxMusic) || (id === 'motion' && mlxMotion) || (id === 'lipsync' && mlxTalk)
 }
 
 /**
@@ -218,8 +278,8 @@ function runsOnMlx(id: CreateIntent, mlxAnimate: boolean, mlxEdit: boolean): boo
  * Cloud shows everything. Local (ComfyUI, Windows/Linux) also shows
  * everything — the hosted-only tools render as locked cloud teasers rather
  * than disappearing. Local on an MLX Mac hides the intents that have neither a
- * local MLX path nor a hosted teaser sheet (removebg, edit while no installed
- * model takes an image, and animate while none starts from one): they need a ComfyUI node or a
+ * local MLX path nor a hosted teaser sheet (edit while no installed model
+ * takes an image, and animate while none starts from one): they need a ComfyUI node or a
  * model that is not there, so leaving them selectable is a dead affordance
  * that either errors on submit or, worse and the MLX case, silently drops the
  * source and returns an unrelated fresh image.
@@ -231,10 +291,10 @@ function runsOnMlx(id: CreateIntent, mlxAnimate: boolean, mlxEdit: boolean): boo
  * pickers, and Enhance and Erase kept their cloud tag and kept opening the
  * Cloud sheet (the box, 04.10.2026).
  */
-export function visibleIntents(backend: CreateBackend, mlxHost: boolean, cloudFeatures: boolean, mlxAnimate = false, mlxEdit = false): IntentMeta[] {
+export function visibleIntents(backend: CreateBackend, mlxHost: boolean, cloudFeatures: boolean, mlxAnimate = false, mlxEdit = false, mlxUpscale = false, mlxMusic = false, mlxMotion = false, mlxTalk = false): IntentMeta[] {
   if (backend === 'cloud') return INTENTS
-  const shown = mlxHost ? INTENTS.filter((m) => runsOnMlx(m.id, mlxAnimate, mlxEdit) || m.cloudOnly === true) : INTENTS
-  return cloudFeatures ? shown : shown.filter((m) => !isIntentLocked(m, backend, mlxHost, mlxAnimate, mlxEdit))
+  const shown = mlxHost ? INTENTS.filter((m) => runsOnMlx(m.id, mlxAnimate, mlxEdit, mlxUpscale, mlxMusic, mlxMotion, mlxTalk) || m.cloudOnly === true) : INTENTS
+  return cloudFeatures ? shown : shown.filter((m) => !isIntentLocked(m, backend, mlxHost, mlxAnimate, mlxEdit, mlxUpscale, mlxMusic, mlxMotion, mlxTalk))
 }
 
 /**
@@ -245,9 +305,9 @@ export function visibleIntents(backend: CreateBackend, mlxHost: boolean, cloudFe
  * — those lanes' "local" implementation is a ComfyUI graph this host does not
  * have, so the honest state is the cloud teaser, not a working-looking pill.
  */
-export function isIntentLocked(meta: IntentMeta, backend: CreateBackend, mlxHost: boolean, mlxAnimate = false, mlxEdit = false): boolean {
+export function isIntentLocked(meta: IntentMeta, backend: CreateBackend, mlxHost: boolean, mlxAnimate = false, mlxEdit = false, mlxUpscale = false, mlxMusic = false, mlxMotion = false, mlxTalk = false): boolean {
   if (backend === 'cloud') return false
-  if (mlxHost) return !runsOnMlx(meta.id, mlxAnimate, mlxEdit)
+  if (mlxHost) return !runsOnMlx(meta.id, mlxAnimate, mlxEdit, mlxUpscale, mlxMusic, mlxMotion, mlxTalk)
   return meta.cloudOnly === true && !meta.hasLocalLane
 }
 
@@ -257,7 +317,8 @@ export function isIntentLocked(meta: IntentMeta, backend: CreateBackend, mlxHost
  * result actions that FORCE-switch to an intent — "Edit with mask" on a
  * finished image used to set 'edit' even where that lane cannot run.
  */
-export function isIntentAvailable(id: CreateIntent, backend: CreateBackend, mlxHost: boolean, mlxAnimate = false, mlxEdit = false): boolean {
+export function isIntentAvailable(id: CreateIntent, backend: CreateBackend, mlxHost: boolean, mlxAnimate = false, mlxEdit = false, mlxUpscale = false, mlxMusic = false, mlxMotion = false, mlxTalk = false): boolean {
   const meta = INTENT_MAP[id]
-  return visibleIntents(backend, mlxHost, true, mlxAnimate, mlxEdit).includes(meta) && !isIntentLocked(meta, backend, mlxHost, mlxAnimate, mlxEdit)
+  return visibleIntents(backend, mlxHost, true, mlxAnimate, mlxEdit, mlxUpscale, mlxMusic, mlxMotion, mlxTalk).includes(meta)
+    && !isIntentLocked(meta, backend, mlxHost, mlxAnimate, mlxEdit, mlxUpscale, mlxMusic, mlxMotion, mlxTalk)
 }

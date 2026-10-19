@@ -14,6 +14,9 @@
  * `imageSubMode` und `videoSubMode`, aus denen genau diese drei abgeleitet
  * werden. Erreichbar ohne einen einzigen Klick in der Leiste.
  *
+ * Since 14.10.2026 the Mac cuts out through Vision (commands/mlx_cutout.rs):
+ * Remove Background is a local tab there and stays selected on the switch.
+ *
  * Der Fall unten bindet die beiden Module aneinander, ohne dass eines das
  * andere importieren muesste: was `visibleIntents` auf einem Mac versteckt,
  * darf `deriveIntent` nach dem Umschalten nicht mehr liefern. Kommt ein
@@ -38,12 +41,13 @@ describe('der Mac strandet nicht auf einem Werkzeug, das er lokal nicht hat', ()
     useCreateStore.getState().setIntent('image')
   })
 
-  it('drei Werkzeuge sind lokal auf dem Mac wirklich versteckt', () => {
+  it('zwei Werkzeuge sind lokal auf dem Mac wirklich versteckt', () => {
     // Ohne diesen Fall koennte der Rest gruen sein, weil gar nichts versteckt
-    // ist. Genau das waere die stille Fassung des Fehlers.
+    // ist. Genau das waere die stille Fassung des Fehlers. Remove Background
+    // is no longer one of them: the Mac cuts out through Vision.
     const alle = new Set(visibleIntents('cloud', true, true).map((m) => m.id))
     const fehlend = [...alle].filter((id) => !sichtbar().has(id))
-    expect(fehlend.sort()).toEqual(['animate', 'edit', 'removebg'])
+    expect(fehlend.sort()).toEqual(['animate', 'edit'])
   })
 
   it('keins davon ueberlebt den Wechsel auf lokal', () => {
@@ -73,7 +77,9 @@ describe('der Mac strandet nicht auf einem Werkzeug, das er lokal nicht hat', ()
     // an, Music geoeffnet, Cloud aus, und Create zeigte den lokalen
     // Music-Composer mit leerer Modellwahl und ohne gewaehlten Reiter.
     const gesperrt = visibleIntents('local', true, true).filter((m) => isIntentLocked(m, 'local', true)).map((m) => m.id)
-    for (const bahn of ['music', 'lipsync', 'extend', 'motion', 'character'] as CreateIntent[]) {
+    // Character ist seit 3.0.7 ein lokaler Reiter auf dem Mac (Use character
+    // ueber mflux), darum nicht mehr in dieser Liste.
+    for (const bahn of ['music', 'lipsync', 'extend', 'motion'] as CreateIntent[]) {
       expect(gesperrt, `${bahn} ist auf dem Mac lokal nicht gesperrt`).toContain(bahn)
       useCreateStore.setState({ backend: 'cloud' })
       useCreateStore.getState().setIntent(bahn)
@@ -114,5 +120,40 @@ describe('der Mac strandet nicht auf einem Werkzeug, das er lokal nicht hat', ()
     useCreateStore.getState().setBackend('local')
     expect(jetzt()).not.toBe('upscale')
     expect(sichtbar().has(jetzt())).toBe(true)
+  })
+})
+
+// M1 (14.10.2026): Extend Video has a local lane on the Mac while a video
+// model there takes a start image, exactly like Animate. With one installed
+// the switch keeps it; when the last one goes, it falls back to Video.
+describe('Extend Video on a Mac with a model that takes a start image', () => {
+  const TAKES = { name: 'MLX Wan 2.2 TI2V 5B 8-bit', type: 'wan' as const, source: 'checkpoint' as const, startImage: 'optional' as const }
+  const TEXT_ONLY = { name: 'MLX Wan 2.1 T2V 1.3B', type: 'wan' as const, source: 'checkpoint' as const, startImage: 'none' as const }
+  beforeEach(() => {
+    useCreateStore.setState({ backend: 'cloud', videoModelList: [TEXT_ONLY, TAKES] })
+    useCreateStore.getState().setIntent('image')
+  })
+
+  it('is a local tab and stays selected when the switch goes to local', () => {
+    expect(isIntentAvailable('extend', 'local', true, true)).toBe(true)
+    useCreateStore.getState().setIntent('extend')
+    useCreateStore.getState().setBackend('local')
+    expect(jetzt()).toBe('extend')
+  })
+
+  it('falls back to Video when the last model that takes a start image is removed', () => {
+    useCreateStore.setState({ backend: 'local' })
+    useCreateStore.getState().setIntent('extend')
+    expect(jetzt()).toBe('extend')
+    useCreateStore.getState().setVideoModelList([TEXT_ONLY])
+    expect(jetzt()).toBe('video')
+    expect(useCreateStore.getState().source).toBeNull()
+  })
+
+  it('COUNTER-CHECK: a list that still has one keeps the tab', () => {
+    useCreateStore.setState({ backend: 'local' })
+    useCreateStore.getState().setIntent('extend')
+    useCreateStore.getState().setVideoModelList([TAKES])
+    expect(jetzt()).toBe('extend')
   })
 })

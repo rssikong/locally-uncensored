@@ -146,7 +146,9 @@ describe('Der Prompt am Ergebnis (Desktop)', () => {
 
   it('ein Lauf ohne Umschreiben zeigt seinen Prompt, ohne die Zeilen des Umschreibens', () => {
     render(<PromptDetails item={ITEM({ prompt: 'a red apple on a plate' })} />)
-    expect(screen.getByText('Prompt')).toBeTruthy()
+    // D9 (3.0.7): the entry carries its model, seed and size, so the fold
+    // names the settings too (die-galerie-zeigt-die-einstellungen.test.tsx).
+    expect(screen.getByText('Prompt and settings')).toBeTruthy()
     expect(screen.getByTestId('prompt-text').textContent).toBe('a red apple on a plate')
     expect(screen.queryByText('You wrote')).toBeNull()
     expect(screen.queryByText('Sent to the model')).toBeNull()

@@ -122,6 +122,20 @@ describe('an open but still empty chat', () => {
     expect(document.querySelector('textarea')).toBeTruthy()
   })
 
+  it('the open, empty chat as the only one: not "No chats yet", there is one', () => {
+    // How-it-works session, 3.0.7: the list dropped the open chat and then
+    // said there were none, above the composer of that very chat.
+    useChatStore.setState({ conversations: [conv('fresh', 'New Chat', NOW)], activeConversationId: 'fresh' })
+    render(createElement(ChatView))
+    expect(screen.getByTestId('home-recent-chats').textContent).toBe('No other chats yet.')
+  })
+
+  it('COUNTER-TEST: really no chat at all still says "No chats yet."', () => {
+    useChatStore.setState({ conversations: [], activeConversationId: null })
+    render(createElement(ChatView))
+    expect(screen.getByTestId('home-recent-chats').textContent).toBe('No chats yet.')
+  })
+
   it('the chat you are in is not offered as somewhere to go', () => {
     render(createElement(ChatView))
     expect(screen.getByTestId('home-recent-chats').textContent).not.toContain('New Chat')

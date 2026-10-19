@@ -22,8 +22,12 @@ from dataclasses import dataclass, field
 _NAMED = ("think", "thinking", "thought", "reasoning", "reflect", "deepthink")
 _OPEN = re.compile(r"<(%s)>|<\|?channel\|?>\s*thought\b" % "|".join(_NAMED), re.IGNORECASE)
 _CHANNEL_CLOSE = re.compile(r"</?\|?channel\|?>", re.IGNORECASE)
-# A closer whose opener was part of the prompt and never came over the wire.
-_STRAY_CLOSE = re.compile(r"</(%s)>" % "|".join(_NAMED), re.IGNORECASE)
+# A channel marker whose word has not arrived yet. The marker and the word
+# behind it are tokens of their own, so the marker alone decides nothing.
+_CHANNEL_PENDING = re.compile(r"<\|?channel\|?>\s*(?:t(?:h(?:o(?:u(?:g(?:ht?)?)?)?)?)?)?$", re.IGNORECASE)
+# A closer whose opener was part of the prompt and never came over the wire,
+# and a channel marker with no thought behind it. Neither is a word.
+_STRAY = re.compile(r"</(%s)>|</?\|?channel\|?>" % "|".join(_NAMED), re.IGNORECASE)
 # The longest piece of a tag that is held back until the rest of it arrives.
 _MAX_TAG_CHARS = 24
 
@@ -33,6 +37,9 @@ THINK = "think"
 
 def _held_tail(text: str) -> int:
     """How many characters at the end of `text` may be the start of a tag."""
+    pending = _CHANNEL_PENDING.search(text)
+    if pending is not None:
+        return len(text) - pending.start()
     at = text.rfind("<")
     if at == -1 or len(text) - at > _MAX_TAG_CHARS or ">" in text[at:]:
         return 0
@@ -85,14 +92,20 @@ class ThoughtSplitter:
                     out.append((THINK, self._buffer[: found.start()]))
                 self._close = None
                 self._buffer = self._buffer[found.end():]
-        return [(kind, _STRAY_CLOSE.sub("", piece) if kind == SAY else piece) for kind, piece in out]
+        return _without_strays(out)
 
     def flush(self) -> list[tuple[str, str]]:
         """The stream is over: what was held back is text after all."""
         rest, self._buffer = self._buffer, ""
         kind = THINK if self._close is not None else SAY
         self._close = None
-        return [(kind, rest)] if rest else []
+        return _without_strays([(kind, rest)]) if rest else []
+
+
+def _without_strays(pieces: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """What is said, without the markers that are left when a thought is not."""
+    cleaned = [(kind, _STRAY.sub("", piece) if kind == SAY else piece) for kind, piece in pieces]
+    return [(kind, piece) for kind, piece in cleaned if piece]
 
 
 def without_thoughts(text: str | None) -> str | None:

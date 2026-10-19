@@ -15,6 +15,7 @@ import { useProviderStore } from '../../stores/providerStore'
 import { useUIStore } from '../../stores/uiStore'
 import { PROVIDER_PRESETS } from '../../api/providers/types'
 import { selectedBackendId, type DetectedBackend } from '../../lib/backend-detector'
+import { addDetectedSideBySide } from '../../lib/detected-backends-side-by-side'
 
 interface Props {
   open: boolean
@@ -94,6 +95,13 @@ export function BackendSelector({ open, backends, onClose }: Props) {
     dismiss()
   }
 
+  // GitHub #173: keep every detected backend instead of choosing one. Each
+  // gets its own entry with its own models (lib/detected-backends-side-by-side).
+  const handleAddAll = () => {
+    addDetectedSideBySide(backends)
+    dismiss()
+  }
+
   const openSettings = () => {
     useUIStore.getState().setView('settings')
     dismiss()
@@ -105,7 +113,7 @@ export function BackendSelector({ open, backends, onClose }: Props) {
         <p className="text-[12px] text-gray-400 leading-relaxed">
           {backends.length === 1
             ? `${backends[0].name} is running on your system.`
-            : 'Multiple backends running. Select your primary backend.'}
+            : 'Multiple backends running. Select your primary backend, or add all of them side by side, each with its own models.'}
         </p>
 
         {/* 2.5.7: reassure that these are optional alternatives — the built-in
@@ -163,6 +171,11 @@ export function BackendSelector({ open, backends, onClose }: Props) {
           <ModalButton variant="quiet" onClick={dismiss}>
             {builtinActive ? 'Keep LU Engine' : 'Skip'}
           </ModalButton>
+          {backends.length > 1 && (
+            <ModalButton variant="quiet" onClick={handleAddAll}>
+              Add all side by side
+            </ModalButton>
+          )}
           <ModalButton variant="primary" onClick={handleConfirm}>
             Use selected
           </ModalButton>

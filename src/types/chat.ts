@@ -39,9 +39,19 @@ export interface FileAttachment {
   /** What the model reads instead of the bytes: a hex dump of the start and
    *  the readable strings, or the start of the text for a text file. */
   summary: string
+  /** Set when the file is not text, so the model got a binary summary
+   *  (3.0.7). Absent on attachments stored before; see isBinaryAttachment. */
+  binary?: boolean
   /** Path inside the chat's working folder, set once the file was put there
    *  (Agent and Code only). */
   workspacePath?: string
+  /** A text file: how many characters its text has (GH #171). Absent on a
+   *  binary, on a text too long to be read in whole, and on attachments
+   *  stored before 3.0.7. */
+  textChars?: number
+  /** Set when less than the whole text went to the model: how many of the
+   *  `textChars` characters it got. The chip shows it. */
+  includedChars?: number
 }
 
 /**
@@ -81,6 +91,18 @@ export interface Message {
    *  bubble can label the speaker and the payload builder can tag the other
    *  models' lines. Absent on single-model chats. */
   modelId?: string
+  /** Group chat: the persona this turn was written as, when its model played
+   *  one (GH #169). The persona decides who spoke, so the turn stays its
+   *  author's after the persona moves to another model. Absent on turns from
+   *  before 3.0.7 and on turns of a model without a persona of its own. */
+  groupPersonaId?: string
+  /** The name that persona had then, for when it has been deleted since. */
+  groupSpeakerName?: string
+  /** GH #180: written outside group chat in a thread that has been a group,
+   *  by its model without any persona. Such a turn is its model's and never
+   *  gets a persona stamped on later, so turning group chat back on does not
+   *  hand it to whichever persona that model plays then. */
+  noGroupPersona?: true
   timestamp: number
   images?: ImageAttachment[]
   /** Files attached to this user message. `content` already carries their
@@ -132,6 +154,11 @@ export interface Message {
    *  Drives a labelled notice under the bubble instead of rewriting the
    *  model's text (G14-2). Absent when every link was backed. */
   unbackedLinks?: string[]
+  /** The opening message of a character card chat (3.0.7): every greeting
+   *  the card offers, `content` is the one at `greetingIndex`. Switching only
+   *  happens before the user writes. */
+  greetings?: string[]
+  greetingIndex?: number
 }
 
 /**
@@ -164,6 +191,27 @@ export interface CompactionRecord {
   /** Who asked: the user typing /compact, or the threshold firing. */
   trigger: 'manual' | 'auto'
   at: number
+  /**
+   * True when `summary` is a merged state (3.0.7, issue #151): it stands for
+   * everything up to its anchor, the earlier records included, and the payload
+   * starts from it instead of sending the whole chain. Absent on older records
+   * and on a run whose merge failed and fell back to a plain link.
+   */
+  merged?: boolean
+}
+
+/**
+ * The kept versions of one point in a chat (GH #172, #174).
+ *
+ * A resend after an edit, and a regenerate, start a new continuation after
+ * one message. The old continuation is not deleted any more: it moves in here
+ * and stays one click away ("< 1/2 >"). `null` marks the version that is in
+ * `Conversation.messages` right now, so every message lives in exactly one
+ * place and a version costs no copy.
+ */
+export interface ChatFork {
+  /** Every continuation after the key message, oldest first. */
+  versions: (Message[] | null)[]
 }
 
 export interface Conversation {
@@ -180,6 +228,11 @@ export interface Conversation {
    *  individually without losing the selection in Settings. Undefined
    *  on legacy chats and treated as enabled. */
   personaEnabled?: boolean
+  /** GH #170: the persona this chat speaks as, written when the chat is
+   *  created with one and whenever a persona is picked in the Plugins menu
+   *  of this chat. Read through lib/chat-persona.ts, which also covers chats
+   *  from before this field (they keep `systemPrompt`). */
+  personaId?: string
   /** Group chat v1: two to four models that answer in turn on every user
    *  message. Fewer than two entries means a normal single-model chat. */
   groupModels?: string[]
@@ -189,10 +242,11 @@ export interface Conversation {
    *  before this field existed. */
   groupPersonas?: Record<string, string>
   /**
-   * Compactions that have happened in this chat, oldest first. Only the NEWEST
-   * one shapes the payload — each summary already covers everything before its
-   * own cut, so applying two would send the older material twice. The earlier
-   * ones are kept because the transcript shows them where they happened.
+   * Compactions that have happened in this chat, oldest first. The payload
+   * carries the newest merged state and any plain links after it; a chat from
+   * before 3.0.7 has no merged state and sends the whole chain, because each
+   * plain link only covers the turns since the one before it. The earlier
+   * records stay stored because the transcript shows them where they happened.
    *
    * Absent on every chat from before 2.6.8, and on every chat that has never
    * been compacted. Both read as "no compaction", which is what they are.
@@ -206,6 +260,20 @@ export interface Conversation {
    *  defaults into it, so a reset chat keeps following the Settings page even
    *  if its sliders move again afterwards. */
   sampling?: SamplingOverrides
+  /**
+   * Kept versions (GH #172, #174), keyed by the id of the message they follow,
+   * or FORK_ROOT (lib/chat-forks.ts) for a change of the very first message.
+   * `messages` stays the one thread every reader works with: the payload,
+   * the search, the export. Absent on every chat from before 3.0.7 and on
+   * every chat that was never resent, which reads as "one version".
+   */
+  forks?: Record<string, ChatFork>
+  /** D26 (3.0.8): set on a chat made from a chatbot export. `fingerprint`
+   *  hashes the messages as imported; when the chat's messages no longer
+   *  match it, the user went on in LU and a newer export must not replace
+   *  the chat (see lib/chat-import.ts). `version` is the export's last
+   *  change (epoch ms) at import. Absent on every other chat. */
+  importedFrom?: { fingerprint: string; version: number }
   createdAt: number
   updatedAt: number
 }

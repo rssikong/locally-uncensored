@@ -71,7 +71,7 @@ beforeEach(() => {
   useGenerationStore.setState({ generating: {}, aborters: {}, runs: {} })
   useModelStore.setState({ models: [], activeModel: MODEL })
   useSettingsStore.setState({
-    settings: { ...DEFAULT_SETTINGS, appMode: 'cloud', cavemanMode: 'off', chatToolsEnabled: false },
+    settings: { ...DEFAULT_SETTINGS, appMode: 'cloud', cavemanMode: 'off' },
   })
   useProviderStore.setState((s) => ({
     providers: { ...s.providers, 'lu-cloud': { ...s.providers['lu-cloud'], enabled: true } },

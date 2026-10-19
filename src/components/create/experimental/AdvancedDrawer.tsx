@@ -4,12 +4,14 @@ import { isMlxImageHost } from '../../../api/mlx-image'
 import { useCreateStore } from '../../../stores/createStore'
 import {
   classifyModel,
+  resolveLocalOpPick,
   videoLaneModels,
 } from '../../../api/comfyui'
 import { ParamGroups } from './ParamGroups'
 import { StudioParams } from './StudioParams'
 import { ImproveToggle } from './ImproveToggle'
 import { ImageCount } from './ImageCount'
+import { ActiveWorkflowParams } from './WorkflowParams'
 
 export function AdvancedDrawer({
   open,
@@ -63,10 +65,17 @@ export function AdvancedDrawer({
     }
   }
 
+  // Motion Control runs its own model list, and a workflow of the user's own
+  // is picked for THAT model (useCreate runs it in place of LU's graph).
+  const localOpModel = useCreateStore((state) => state.localOpModel)
+  const motionModels = useCreateStore((state) => state.motionModelList)
+
   const modelName =
-    mode === 'image'
-      ? imageModel
-      : effectiveVideoModel
+    intent === 'motion'
+      ? resolveLocalOpPick(localOpModel, motionModels)
+      : mode === 'image'
+        ? imageModel
+        : effectiveVideoModel
 
   const modelType = classifyModel(modelName)
 
@@ -92,6 +101,13 @@ export function AdvancedDrawer({
               <WorkflowFinder
                 modelName={modelName}
                 modelType={modelType}
+              />
+              {/* Motion Control fills a workflow of its own way
+                  (injectLaneParameters): fewer values are LU's there. */}
+              <ActiveWorkflowParams
+                modelName={modelName}
+                modelType={modelType}
+                path={intent === 'motion' ? 'lane' : 'workflow'}
               />
             </div>
           )}

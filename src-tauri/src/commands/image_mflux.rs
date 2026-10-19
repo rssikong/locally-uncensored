@@ -87,6 +87,9 @@ pub(super) enum Family {
     Flux2Klein4b,
     /// Qwen-Image 2512, the 20B model.
     QwenImage,
+    /// SeedVR2, the upscaler: no prompt, one picture in, the same picture
+    /// larger out, in one step. Enhance Image runs it (`upscale`).
+    SeedVR2,
 }
 
 impl Family {
@@ -99,6 +102,9 @@ impl Family {
             Family::ZImageTurbo => "mflux.models.z_image.cli.z_image_turbo_generate",
             Family::Flux2Klein4b => "mflux.models.flux2.cli.flux2_generate",
             Family::QwenImage => "mflux.models.qwen.cli.qwen_image_generate",
+            // The entry point `mflux-upscale-seedvr2` (the wheel's
+            // entry_points.txt names this module and its `main`).
+            Family::SeedVR2 => "mflux.models.seedvr2.cli.seedvr2_upscale",
         }
     }
 
@@ -110,6 +116,10 @@ impl Family {
             Family::ZImageTurbo => "z-image-turbo",
             Family::Flux2Klein4b => "flux2-klein-4b",
             Family::QwenImage => "qwen-image",
+            // Never said: the upscale command lists `--base-model` among the
+            // options it ignores (`IGNORED_OPTIONS` in `seedvr2_upscale.py`).
+            // It reads the variant off the file names in the folder.
+            Family::SeedVR2 => "",
         }
     }
 
@@ -119,6 +129,10 @@ impl Family {
     const fn parts(self) -> &'static [&'static str] {
         match self {
             Family::Qwen21 => &["model_index.json", "scheduler/", "processor/", "vae/", "transformer/", "text_encoder/"],
+            // The two files the 3B model loads and no other
+            // (`SeedVR2WeightDefinition3B.get_download_patterns`). The repository
+            // also holds the 7B model and fp8 copies, 60 GB that stay there.
+            Family::SeedVR2 => &[SEEDVR2_3B_TRANSFORMER, SEEDVR2_VAE],
             _ => &["tokenizer/", "text_encoder/", "transformer/", "vae/"],
         }
     }
@@ -196,9 +210,17 @@ impl Pack {
     }
 
     /// Whether a run takes the user's LoRA stack. Every command of this
-    /// engine has `--lora`, so every pack does. The sidecar has none.
+    /// engine that makes a picture has `--lora`, so every such pack does.
+    /// The upscaler has no such flag, and the sidecar has none either.
     pub(super) const fn takes_loras(&self) -> bool {
-        true
+        !self.upscales()
+    }
+
+    /// Whether this pack enhances a picture instead of making one. Such an
+    /// entry is for Enhance Image alone: Generate refuses it and Create does
+    /// not list it as a model to make pictures with.
+    pub(super) const fn upscales(&self) -> bool {
+        matches!(self.family, Family::SeedVR2)
     }
 
     /// Whether the steps and the guidance of a run are the user's. Qwen-Image
@@ -268,6 +290,24 @@ pub(super) const QWEN_2512_8BIT: Pack = Pack {
     lora: None,
 };
 
+/// The transformer and the VAE of SeedVR2 3B, by the names the engine loads
+/// them under (`models/seedvr2/weights/seedvr2_weight_definition.py`). The
+/// upscale command takes the 3B model for a folder that has the first file
+/// and not the one of the 7B model (`_resolve_seedvr2_model`).
+const SEEDVR2_3B_TRANSFORMER: &str = "seedvr2_ema_3b_fp16.safetensors";
+const SEEDVR2_VAE: &str = "ema_vae_fp16.safetensors";
+
+/// SeedVR2 3B at full precision (fp16), from the repository the engine
+/// fetches it from by itself (`model_config.py`, `seedvr2-3b`). Read from
+/// the hub on 14.10.2026: 6,783,018,808 and 501,324,814 bytes, licence
+/// Apache 2.0, as for the ByteDance-Seed originals it is copied from.
+pub(super) const SEEDVR2_3B: Pack = Pack {
+    dir: "seedvr2-3b",
+    revision: "09ced71023636e9bc8cdf9cdecfb2625d1e691e8",
+    family: Family::SeedVR2,
+    lora: None,
+};
+
 // ── Where it lives ────────────────────────────────────────────────────
 
 /// Beside the sidecar's venv, under the same app data folder.
@@ -283,19 +323,19 @@ fn venv_python(venv: &Path) -> PathBuf {
 /// the engine is handed a folder, and a folder is what Remove takes away.
 /// On a Mac it is under the app's data folder and not under its cache, which
 /// the system and cleaning tools empty (`media_store`).
-fn models_root() -> PathBuf {
+pub(super) fn models_root() -> PathBuf {
     crate::media_store::active_root(crate::media_store::Store::Mflux)
 }
 
 /// Where what a download or a run leaves behind and nobody reads again goes:
 /// the app's cache folder for the app's packs, the folder itself otherwise.
-fn scratch(root: &Path) -> PathBuf {
+pub(super) fn scratch(root: &Path) -> PathBuf {
     crate::media_store::scratch_beside(root, crate::media_store::Store::Mflux)
 }
 
 /// `HF_HOME` for the downloads, so the hub's chunk cache lands in a folder of
 /// this app and not in the user's home folder.
-fn hf_home(root: &Path) -> PathBuf {
+pub(super) fn hf_home(root: &Path) -> PathBuf {
     scratch(root).join(".hf-cache")
 }
 
@@ -388,18 +428,18 @@ fn ensure_engine_at(slot: &InstallSlot, preferred_base: Option<String>, venv: &P
 /// Written into a pack's folder when every file of it is on disk at the size
 /// the hub lists. It is what tells a whole pack from a download that was
 /// stopped: a folder that merely has something in it proves nothing.
-const MANIFEST: &str = ".lu-pack.json";
+pub(super) const MANIFEST: &str = ".lu-pack.json";
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
-struct ManifestFile {
-    path: String,
-    size: u64,
+pub(super) struct ManifestFile {
+    pub path: String,
+    pub size: u64,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
-struct Manifest {
-    revision: String,
-    files: Vec<ManifestFile>,
+pub(super) struct Manifest {
+    pub revision: String,
+    pub files: Vec<ManifestFile>,
 }
 
 fn read_manifest(dir: &Path) -> Option<Manifest> {
@@ -407,7 +447,7 @@ fn read_manifest(dir: &Path) -> Option<Manifest> {
 }
 
 /// The files of `manifest` that are not in `dir` at their size.
-fn missing_files(dir: &Path, manifest: &Manifest) -> Vec<String> {
+pub(super) fn missing_files(dir: &Path, manifest: &Manifest) -> Vec<String> {
     manifest
         .files
         .iter()
@@ -418,7 +458,7 @@ fn missing_files(dir: &Path, manifest: &Manifest) -> Vec<String> {
 
 /// A pack is complete with its manifest and every file the manifest names.
 /// A handful of `stat` calls: this runs for every tile.
-fn pack_complete(dir: &Path) -> bool {
+pub(super) fn pack_complete(dir: &Path) -> bool {
     read_manifest(dir).is_some_and(|m| !m.files.is_empty() && missing_files(dir, &m).is_empty())
 }
 
@@ -435,7 +475,7 @@ fn pack_bytes(dir: &Path) -> u64 {
 /// installed, every file of the plain 8-bit entry is there, and without this
 /// it would read as installed without anyone having asked for it. Remove then
 /// had nothing it could take away, and the tile contradicted the button.
-fn claim(dir: &Path, id: &str) -> PathBuf {
+pub(super) fn claim(dir: &Path, id: &str) -> PathBuf {
     dir.join(format!(".lu-used-by-{id}"))
 }
 
@@ -480,6 +520,15 @@ fn plan(family: Family, listing: &[crate::commands::mlx_snapshot::RepoFile]) -> 
         .filter(|f| wanted(family, &f.path))
         .map(|f| ManifestFile { path: f.path.clone(), size: f.size })
         .collect();
+    if family == Family::SeedVR2 {
+        // Two files at the root and no folders: each of them has to be there.
+        for part in family.parts() {
+            if !files.iter().any(|f| f.path == *part) {
+                return Err(format!("The repository has no {part} and cannot be run. Try again later."));
+            }
+        }
+        return Ok(Manifest { revision: String::new(), files });
+    }
     for component in ["transformer/", "text_encoder/", "vae/"] {
         if !files.iter().any(|f| f.path.starts_with(component) && f.path.ends_with(".safetensors")) {
             return Err(format!(
@@ -591,7 +640,7 @@ fn install_steps(slot: &InstallSlot, python: &str, root: &Path, entry: &ImageCat
 /// `huggingface_hub` in the engine's venv. Everything that varies goes in as
 /// an argument and not into the source of the script, so no path and no file
 /// name has to survive being quoted.
-fn hub_snapshot(slot: &InstallSlot, python: &str, root: &Path, repo: &str, revision: &str, target: &Path, files: &[&str]) -> Result<(), String> {
+pub(super) fn hub_snapshot(slot: &InstallSlot, python: &str, root: &Path, repo: &str, revision: &str, target: &Path, files: &[&str]) -> Result<(), String> {
     const SCRIPT: &str = "import sys\nfrom huggingface_hub import snapshot_download\nsnapshot_download(repo_id=sys.argv[1], revision=sys.argv[2], local_dir=sys.argv[3], allow_patterns=sys.argv[4:])";
     let mut cmd = crate::python::python_command(python);
     cmd.args(["-c", SCRIPT, repo, revision]).arg(target.as_os_str()).args(files);
@@ -682,6 +731,15 @@ pub(super) struct Request {
     /// to before the model sees it, and that the result has when no size is
     /// given. The same number Windows hands `TextEncodeQwenImage21`.
     pub resolution: Option<u32>,
+    /// For an edit: the mask over the first image, white where the prompt
+    /// paints and black where the image stays. Grey between the two is kept
+    /// as a share: the engine mixes its result with the source by it, so a
+    /// soft edge stays soft (`qwen_image_21_edit.py`, 0.22.0).
+    pub mask: Option<PathBuf>,
+    /// For an edit: how far the engine starts from noise, in (0, 1]. 1 or
+    /// none: from noise alone, the engine's own default. Below that the run
+    /// starts from the first image partway down the schedule.
+    pub strength: Option<f32>,
     /// The LoRA stack of the run: files of the LoRA folder with the
     /// strengths the engine is handed, in the order they were picked. See
     /// `request_loras`.
@@ -857,6 +915,14 @@ fn command_args(
         args.extend(req.images.iter().map(|p| p.as_os_str().to_os_string()));
         args.push("--output-resolution".into());
         args.push(edit_side(req.resolution.unwrap_or(entry.default_size)).to_string().into());
+        if let Some(mask) = &req.mask {
+            args.push("--mask-image".into());
+            args.push(mask.into());
+        }
+        if let Some(strength) = req.strength.filter(|s| *s < 1.0) {
+            args.push("--strength".into());
+            args.push(strength.to_string().into());
+        }
     }
     let adapter = pack.lora.as_ref().zip(lora);
     if let Some((adapter, file)) = adapter {
@@ -903,7 +969,7 @@ fn canvas(entry: &ImageCatalogEntry, req: &Request) -> Option<(u32, u32)> {
 
 /// The folder Create stages an image in before a run reads it
 /// (`video_stage_start_image`). An edit takes its images from there alone.
-fn staged_images_dir() -> PathBuf {
+pub(super) fn staged_images_dir() -> PathBuf {
     crate::commands::video::outputs_root().join("start-images")
 }
 
@@ -923,14 +989,45 @@ fn edit_images(entry: &ImageCatalogEntry, pack: &Pack, asked: &[String], staged:
     if asked.len() > most {
         return Err(format!("{} takes at most {most} images in one edit.", entry.name));
     }
-    let staged = staged.canonicalize().map_err(|_| "The image to edit is no longer on disk. Add it again.".to_string())?;
+    staged_files(asked, staged)
+}
+
+/// The paths of `asked` as files inside `staged`, or the sentence for the
+/// user. The paths come from the interface, and whatever reads them opens
+/// whatever it is handed: a path that leads out of `staged` (through `..` or
+/// a link) or to no file is refused.
+pub(super) fn staged_files(asked: &[String], staged: &Path) -> Result<Vec<PathBuf>, String> {
+    let gone = || "The image to edit is no longer on disk. Add it again.".to_string();
+    let staged = staged.canonicalize().map_err(|_| gone())?;
     asked
         .iter()
-        .map(|path| {
-            let file = Path::new(path).canonicalize().ok().filter(|p| p.is_file() && p.starts_with(&staged));
-            file.ok_or_else(|| "The image to edit is no longer on disk. Add it again.".to_string())
-        })
+        .map(|path| Path::new(path).canonicalize().ok().filter(|p| p.is_file() && p.starts_with(&staged)).ok_or_else(gone))
         .collect()
+}
+
+/// The mask of an edit as the engine may read it, or the sentence for the
+/// user. Like the images it is a file Create staged, and it belongs to the
+/// first of them: without an image there is nothing to paint over.
+fn edit_mask(images: &[PathBuf], asked: Option<&str>, staged: &Path) -> Result<Option<PathBuf>, String> {
+    let Some(asked) = asked else { return Ok(None) };
+    if images.is_empty() {
+        return Err("A mask needs the image it was painted on. Add the image again.".to_string());
+    }
+    let gone = || "The mask is no longer on disk. Paint it again.".to_string();
+    let staged = staged.canonicalize().map_err(|_| gone())?;
+    Path::new(asked).canonicalize().ok().filter(|p| p.is_file() && p.starts_with(&staged)).map(Some).ok_or_else(gone)
+}
+
+/// The lowest strength an edit is handed. The engine takes anything above 0,
+/// but below this the source comes back nearly as it went in.
+const MIN_EDIT_STRENGTH: f32 = 0.05;
+
+/// The strength of an edit as the engine takes it: none for an image from
+/// text and for 1 and above (the engine's default), else held to
+/// `MIN_EDIT_STRENGTH`. A value that is no number is left out.
+fn edit_strength(images: &[PathBuf], asked: Option<f32>) -> Option<f32> {
+    let asked = asked.filter(|s| s.is_finite())?;
+    (!images.is_empty() && asked < 1.0).then(|| asked.max(MIN_EDIT_STRENGTH))
 }
 
 /// The LoRA stack of a run as the engine may read it, or the sentence for the
@@ -1209,8 +1306,13 @@ struct Leftover {
 /// Whether this is a generation of ours whose app is gone.
 #[cfg(any(target_os = "macos", test))]
 fn is_orphaned_run(row: &Leftover, models: &Path) -> bool {
+    // The prompt enhancer takes the same place and is noted in the same
+    // file: a script of ours handed over with `-c`, and not a module.
+    let ours = |w: &[String]| {
+        (w[0] == "-m" && w[1].starts_with("mflux.")) || (w[0] == "-c" && w[1].starts_with(super::enhancer::SCRIPT_MARK))
+    };
     row.parent == Some(1)
-        && row.cmd.windows(2).any(|w| w[0] == "-m" && w[1].starts_with("mflux."))
+        && row.cmd.windows(2).any(ours)
         && row.cmd.windows(2).any(|w| w[0] == "--model" && Path::new(&w[1]).starts_with(models))
 }
 
@@ -1260,6 +1362,16 @@ pub(super) fn request_images(entry: &ImageCatalogEntry, pack: &Pack, asked: &[St
     edit_images(entry, pack, asked, &staged_images_dir())
 }
 
+/// The mask of an edit, checked. See `edit_mask`.
+pub(super) fn request_mask(images: &[PathBuf], asked: Option<&str>) -> Result<Option<PathBuf>, String> {
+    edit_mask(images, asked, &staged_images_dir())
+}
+
+/// The strength of an edit as the engine takes it. See `edit_strength`.
+pub(super) fn request_strength(images: &[PathBuf], asked: Option<f32>) -> Option<f32> {
+    edit_strength(images, asked)
+}
+
 /// The LoRA stack of a run, checked. See `lora_files`.
 pub(super) fn request_loras(entry: &ImageCatalogEntry, pack: &Pack, asked: &[(String, f32)]) -> Result<Vec<(PathBuf, f32)>, String> {
     if asked.is_empty() {
@@ -1302,11 +1414,13 @@ pub(super) async fn generate(entry: &'static ImageCatalogEntry, pack: &'static P
         .env("PYTHONUNBUFFERED", "1")
         .stdin(Stdio::null());
     tracing::info!(
-        "[mflux] python -m {} --model {} ({steps} steps, {}, {} image(s), {} LoRA(s){}{})",
+        "[mflux] python -m {} --model {} ({steps} steps, {}, {} image(s){}{}, {} LoRA(s){}{})",
         pack.family.module(),
         model.display(),
         size.map(|(w, h)| format!("{w}x{h}")).unwrap_or_else(|| "the size of the image".to_string()),
         req.images.len(),
+        if req.mask.is_some() { ", masked" } else { "" },
+        req.strength.filter(|s| *s < 1.0).map(|s| format!(", strength {s}")).unwrap_or_default(),
         req.loras.len(),
         strengths_said(&req.loras),
         if low_ram { ", low-ram" } else { "" }
@@ -1335,14 +1449,220 @@ pub(super) async fn generate(entry: &'static ImageCatalogEntry, pack: &'static P
     }))
 }
 
+// ── Enhance ───────────────────────────────────────────────────────────
+//
+// Enhance Image on a Mac: SeedVR2 through the engine's upscale command
+// (`models/seedvr2/cli/seedvr2_upscale.py`, 0.22.0). Read from its source on
+// 14.10.2026, not yet run here:
+//
+//   - `--image-path` takes files or folders; one staged file is handed over.
+//   - `--resolution` is the shortest side of the result in pixels, or a
+//     factor such as `2x`. A number is handed over, worked out here, so the
+//     longest side can be held to `MAX_UPSCALE_SIDE`.
+//   - `--model <folder>` with `seedvr2_ema_3b_fp16.safetensors` in it runs
+//     the 3B model from that folder. A built-in name (`seedvr2`) would fetch
+//     from the hub instead, and the folder would be dropped.
+//   - One step, no prompt, no guidance. `--low-ram` is supported for a single
+//     image (the README warns only for a folder), and the VAE is tiled by
+//     default for this model (`TilingConfig` in `seedvr2_initializer.py`).
+//   - `--output` goes through `str.format(seed=..., image_name=...)` before
+//     the image is saved, so a brace in the path is doubled.
+
+/// The factors Create offers, the ones the engine's own README shows.
+pub(super) const UPSCALE_FACTORS: [u32; 2] = [2, 4];
+
+/// The longest side a result may have. Not measured yet: no run of SeedVR2
+/// has been made here. 4096 is 4K, and what a 1024 picture at 4x reaches.
+/// To be checked against the peak memory of the first real run.
+pub(super) const MAX_UPSCALE_SIDE: u32 = 4096;
+
+/// The shortest side a picture needs to be enhanced. Below this the engine
+/// would be handed a canvas of a few pixels.
+const MIN_UPSCALE_SIDE: u32 = 32;
+
+const UPSCALE_GONE: &str = "The image to enhance is no longer on disk. Add it again.";
+
+/// The picture of an enhance as the engine may read it, or the sentence for
+/// the user. The path comes from the interface, so it has to be a file in
+/// `staged` (the same rule as `edit_images`).
+fn upscale_input(asked: &str, staged: &Path) -> Result<PathBuf, String> {
+    if asked.trim().is_empty() {
+        return Err("Add an image to enhance.".to_string());
+    }
+    let staged = staged.canonicalize().map_err(|_| UPSCALE_GONE.to_string())?;
+    Path::new(asked)
+        .canonicalize()
+        .ok()
+        .filter(|p| p.is_file() && p.starts_with(&staged))
+        .ok_or_else(|| UPSCALE_GONE.to_string())
+}
+
+/// What an enhance makes of a picture of `width` x `height` at `factor`:
+/// the shortest side the engine is handed, and the size of the result as the
+/// engine works it out (`SeedVR2Util.preprocess_image`: both sides scaled by
+/// the same share, each rounded down to an even number). A factor that would
+/// carry the longest side past `MAX_UPSCALE_SIDE` is lowered to reach it.
+pub(super) fn upscale_target(width: u32, height: u32, factor: u32) -> Result<(u32, u32, u32), String> {
+    if !UPSCALE_FACTORS.contains(&factor) {
+        return Err(format!("Enhance enlarges by 2x or 4x, not {factor}x."));
+    }
+    let (short, long) = (width.min(height), width.max(height));
+    if short < MIN_UPSCALE_SIDE {
+        return Err(format!("The image is {width}x{height}. Enhance needs at least {MIN_UPSCALE_SIDE} pixels on each side."));
+    }
+    if long >= MAX_UPSCALE_SIDE {
+        return Err(format!(
+            "The image is {width}x{height} already. Enhance makes pictures up to {MAX_UPSCALE_SIDE} pixels on the longest side."
+        ));
+    }
+    let share = (factor as f64).min(MAX_UPSCALE_SIDE as f64 / long as f64);
+    let resolution = (short as f64 * share).floor() as u32;
+    let scale = resolution as f64 / short as f64;
+    let even = |side: u32| ((side as f64 * scale) as u32 / 2) * 2;
+    Ok((resolution, even(width), even(height)))
+}
+
+/// A path as `--output` must carry it: the engine formats the string before
+/// it saves, and a brace would be read as a field.
+fn output_arg(out: &Path) -> std::ffi::OsString {
+    out.to_string_lossy().replace('{', "{{").replace('}', "}}").into()
+}
+
+/// Everything after the interpreter, for an enhance.
+fn upscale_args(pack: &Pack, model: &Path, input: &Path, resolution: u32, seed: Option<u64>, out: &Path, low_ram: bool) -> Vec<std::ffi::OsString> {
+    let mut args: Vec<std::ffi::OsString> = vec!["-m".into(), pack.family.module().into(), "--model".into(), model.into()];
+    // The flag takes every value up to the next flag, and the path is one
+    // this app wrote, absolute: it cannot be read as a flag.
+    args.push("--image-path".into());
+    args.push(input.into());
+    args.push("--resolution".into());
+    args.push(resolution.to_string().into());
+    if let Some(seed) = seed {
+        args.push("--seed".into());
+        args.push(seed.to_string().into());
+    }
+    if low_ram {
+        args.push("--low-ram".into());
+    }
+    args.push("--no-exif".into());
+    args.push("--output".into());
+    args.push(output_arg(out));
+    args
+}
+
+/// The picture of an enhance, checked. See `upscale_input`.
+pub(super) fn request_upscale_input(asked: &str) -> Result<PathBuf, String> {
+    upscale_input(asked, &staged_images_dir())
+}
+
+/// Enhance the staged picture at `input` by `factor` with an upscaler pack.
+/// Answers like `generate`: `image_base64`, `width`, `height`, `steps`,
+/// `output`.
+pub(super) async fn upscale(entry: &'static ImageCatalogEntry, pack: &'static Pack, input: PathBuf, factor: u32, seed: Option<u64>) -> CmdResult {
+    if !pack.upscales() {
+        return Err(crate::commands::bad_request(format!("{} makes pictures and does not enhance them.", entry.name)));
+    }
+    let root = models_root();
+    let python = venv_python(&venv_dir());
+    if !usable(entry.id, pack) {
+        return Err(crate::commands::bad_request(format!(
+            "{} is not installed. Install it in the Model Manager first.",
+            entry.name
+        )));
+    }
+    let (width, height) = image::image_dimensions(&input)
+        .map_err(|e| crate::commands::bad_request(format!("The image could not be read ({e}). Use a PNG, JPG or WebP file.")))?;
+    let (resolution, out_width, out_height) = upscale_target(width, height, factor).map_err(crate::commands::bad_request)?;
+    let out_dir = images_root();
+    std::fs::create_dir_all(&out_dir)
+        .map_err(|e| crate::commands::internal(format!("mkdir {}: {}", out_dir.display(), os_error::english(&e))))?;
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
+    let out = out_dir.join(format!("enhance-{stamp}-{}.png", std::process::id()));
+
+    let model = pack_dir(&root, pack);
+    let args = upscale_args(pack, &model, &input, resolution, seed, &out, LOW_RAM);
+    let mut cmd = crate::python::python_command(&python);
+    cmd.args(&args)
+        // The pack is a folder on disk. Should it be incomplete, the engine
+        // is to say so, and not fetch its default from the hub.
+        .env("HF_HUB_OFFLINE", "1")
+        .env("HF_HOME", hf_home(&root))
+        .env("MFLUX_CACHE_DIR", scratch(&root).join(".mflux-cache"))
+        .env("PYTHONUNBUFFERED", "1")
+        .stdin(Stdio::null());
+    tracing::info!(
+        "[mflux] python -m {} --model {} ({width}x{height} at {factor}x, to {out_width}x{out_height}{})",
+        pack.family.module(),
+        model.display(),
+        if LOW_RAM { ", low-ram" } else { "" }
+    );
+
+    // One step: the engine's bar counts to 1.
+    let steps = 1;
+    let run_out = out.clone();
+    tokio::task::spawn_blocking(move || run(&RUNS, cmd, &run_out, steps, Some(&run_pid_file())))
+        .await
+        .map_err(|e| crate::commands::internal(format!("The image engine did not report back ({e}).")))?
+        .map_err(crate::commands::internal)?;
+
+    use base64::Engine as _;
+    let bytes = std::fs::read(&out).map_err(|e| crate::commands::internal(format!("read {}: {}", out.display(), os_error::english(&e))))?;
+    let (width, height) = png_size(&out).unwrap_or((out_width, out_height));
+    Ok(json!({
+        "image_base64": base64::engine::general_purpose::STANDARD.encode(bytes),
+        "width": width,
+        "height": height,
+        "steps": steps,
+        "output": out.to_string_lossy(),
+    }))
+}
+
 const STOPPED: &str = "The image was not finished because the app stopped the engine.";
 
 /// Start the engine, wait for it and say how it ended. `steps` is what the
 /// run takes, for reading its progress. The pid is noted in `pid_file` while
 /// the process lives, for the start after a session that ended hard.
-fn run(runs: &Runs, mut cmd: std::process::Command, out: &Path, steps: u32, pid_file: Option<&Path>) -> Result<(), String> {
+fn run(runs: &Runs, cmd: std::process::Command, out: &Path, steps: u32, pid_file: Option<&Path>) -> Result<(), String> {
+    let ended = run_child(runs, cmd, steps, pid_file, GENERATE_TIMEOUT, None, "image engine")?;
+    let verdict = match ended.status {
+        Some(status) => outcome(&status, out.is_file(), &ended.said, &ended.warned, ended.stopped),
+        None => Err("The image engine did not finish within an hour and was stopped.".to_string()),
+    };
+    if let Err(why) = &verdict {
+        tracing::error!("[mflux] {why}");
+        let _ = std::fs::remove_file(out);
+    }
+    verdict
+}
+
+/// How a process in the one place of `Runs` ended.
+pub(super) struct Ended {
+    /// `None`: it ran past its limit and was ended.
+    pub status: Option<std::process::ExitStatus>,
+    /// The last lines of its standard output and of its error stream.
+    pub said: Vec<String>,
+    pub warned: Vec<String>,
+    /// The app ended it itself (Cancel, quit).
+    pub stopped: bool,
+}
+
+/// Start `cmd` in the one place `runs` has for a process, hand it `input` on
+/// its standard input when there is some, and wait for it. `engine` names it
+/// in the sentence for a start that failed.
+fn run_child(
+    runs: &Runs,
+    mut cmd: std::process::Command,
+    steps: u32,
+    pid_file: Option<&Path>,
+    limit: std::time::Duration,
+    input: Option<Vec<u8>>,
+    engine: &str,
+) -> Result<Ended, String> {
     use std::sync::atomic::Ordering::SeqCst;
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    if input.is_some() {
+        cmd.stdin(Stdio::piped());
+    }
     let mut child = {
         let mut slot = runs.pid();
         if slot.is_some() {
@@ -1352,7 +1672,7 @@ fn run(runs: &Runs, mut cmd: std::process::Command, out: &Path, steps: u32, pid_
         if runs.stopped.swap(false, SeqCst) {
             return Err(STOPPED.to_string());
         }
-        let child = cmd.spawn().map_err(|e| format!("Could not start the image engine: {}", os_error::english(&e)))?;
+        let child = cmd.spawn().map_err(|e| format!("Could not start the {engine}: {}", os_error::english(&e)))?;
         if let Some(note) = pid_file {
             if let Some(dir) = note.parent() {
                 let _ = std::fs::create_dir_all(dir);
@@ -1364,12 +1684,20 @@ fn run(runs: &Runs, mut cmd: std::process::Command, out: &Path, steps: u32, pid_
         *slot = Some(child.id());
         child
     };
-    let (stdout, stderr) = (child.stdout.take(), child.stderr.take());
+    let (stdin, stdout, stderr) = (child.stdin.take(), child.stdout.take(), child.stderr.take());
     let (status, said, warned) = std::thread::scope(|scope| {
+        if let (Some(mut stdin), Some(input)) = (stdin, input) {
+            // Written beside the wait: a large request would otherwise fill
+            // the pipe and hold both sides. Dropped at the end, which closes it.
+            scope.spawn(move || {
+                use std::io::Write;
+                let _ = stdin.write_all(&input);
+            });
+        }
         let said = scope.spawn(move || tail_of(stdout, |_| {}));
         // The bar is drawn on the second stream.
         let warned = scope.spawn(move || tail_of(stderr, |line| runs.note(line)));
-        let status = wait_with_timeout(&mut child, GENERATE_TIMEOUT);
+        let status = wait_with_timeout(&mut child, limit);
         *runs.pid() = None;
         if let Some(note) = pid_file {
             let _ = std::fs::remove_file(note);
@@ -1378,15 +1706,32 @@ fn run(runs: &Runs, mut cmd: std::process::Command, out: &Path, steps: u32, pid_
     });
     let stopped = runs.stopped.swap(false, SeqCst);
     let status = status.map_err(|e| format!("wait failed: {}", os_error::english(&e)))?;
-    let verdict = match status {
-        Some(status) => outcome(&status, out.is_file(), &said, &warned, stopped),
-        None => Err("The image engine did not finish within an hour and was stopped.".to_string()),
-    };
-    if let Err(why) = &verdict {
-        tracing::error!("[mflux] {why}");
-        let _ = std::fs::remove_file(out);
-    }
-    verdict
+    Ok(Ended { status, said, warned, stopped })
+}
+
+/// `run_child` in the place image generations take, with the pid noted for
+/// the start after a session that ended hard. Another engine's process (the
+/// prompt enhancer) runs here so that it and an image never share the memory.
+pub(super) fn run_in_place(
+    cmd: std::process::Command,
+    limit: std::time::Duration,
+    input: Option<Vec<u8>>,
+    engine: &str,
+) -> Result<Ended, String> {
+    run_child(&RUNS, cmd, 0, Some(&run_pid_file()), limit, input, engine)
+}
+
+/// `run_child` in a place of its own, with no pid noted anywhere: for the
+/// enhancer's real run by hand, which must not touch the app's data folder
+/// nor wait on an app that may be running beside it.
+#[cfg(all(test, target_os = "macos"))]
+pub(super) fn run_alone(
+    cmd: std::process::Command,
+    limit: std::time::Duration,
+    input: Option<Vec<u8>>,
+    engine: &str,
+) -> Result<Ended, String> {
+    run_child(&Runs::new(), cmd, 0, None, limit, input, engine)
 }
 
 /// `None` when the child had to be ended because it ran past `limit`.
@@ -1444,7 +1789,7 @@ fn tail_of<R: std::io::Read>(stream: Option<R>, seen: impl Fn(&str)) -> Vec<Stri
 
 /// The last line that says something: not a progress bar, and not a frame of
 /// a traceback.
-fn last_word(lines: &[String]) -> Option<&str> {
+pub(super) fn last_word(lines: &[String]) -> Option<&str> {
     lines
         .iter()
         .rev()
@@ -1554,6 +1899,8 @@ mod tests {
             height: None,
             images: Vec::new(),
             resolution: None,
+            mask: None,
+            strength: None,
             loras: Vec::new(),
         }
     }
@@ -1712,6 +2059,7 @@ mod tests {
                 "qwen-image-2.1-8bit",
                 "qwen-image-2.1-turbo",
                 "qwen-image-2512-8bit",
+                "seedvr2-3b",
             ]
         );
         for c in &entries {
@@ -1721,8 +2069,10 @@ mod tests {
             assert!(!pack.dir.contains('/') && !pack.dir.starts_with('.') && !pack.dir.starts_with('_'), "{}", c.id);
             // The three Qwen-Image 2.1 entries have run here (real runs,
             // 09.10.2026: text to image and edit on each pack, Turbo with
-            // its adapter and with a LoRA on top).
-            let ran = ["qwen-image-2.1-4bit", "qwen-image-2.1-8bit", "qwen-image-2.1-turbo"];
+            // its adapter and with a LoRA on top), and so have Z-Image Turbo
+            // 4-bit (with a LoRA, and as the base of a training) and SeedVR2
+            // 3B (2x and 4x) on 14 and 15.10.2026.
+            let ran = ["qwen-image-2.1-4bit", "qwen-image-2.1-8bit", "qwen-image-2.1-turbo", "z-image-turbo-4bit", "seedvr2-3b"];
             assert_eq!(c.description.ends_with("Experimental: not yet tested in LU."), !ran.contains(&c.id), "{}", c.id);
             assert!(!c.retired && !c.unfiltered, "{}", c.id);
             assert_eq!(c.default_size % 32, 0, "{}", c.id);
@@ -2009,10 +2359,18 @@ mod tests {
                 "/i/mlx-1-2.png",
             ]
         );
-        // An image from text hands the engine none, and nothing in this file
-        // names a mask or a strength: Windows has neither for this model.
-        assert!(!args.iter().any(|a| a == "--image-paths" || a == "--output-resolution"));
-        for flag in ["--image", "--image-path", "--mask-image", "--auto-mask", "--strength"] {
+        // An image from text hands the engine none of the edit's flags. The
+        // engine's own mask finder and the init image of text to image are
+        // not used: the mask is the one painted in Create.
+        assert!(!args.iter().any(|a| a == "--image-paths" || a == "--output-resolution" || a == "--mask-image" || a == "--strength"));
+        // `--image-path` belongs to the upscaler alone (`upscale_args`): the
+        // picture commands never get it.
+        let picture = &production()[production().find("fn command_args(").unwrap()..];
+        let picture = &picture[..picture.find("\n}\n").unwrap()];
+        for flag in ["--image", "--image-path", "--auto-mask"] {
+            assert!(!picture.contains(&format!("\"{flag}\"")), "{flag}");
+        }
+        for flag in ["--image", "--auto-mask"] {
             assert!(!production().contains(&format!("\"{flag}\"")), "{flag}");
         }
 
@@ -2151,6 +2509,63 @@ mod tests {
         let at = args.iter().position(|a| a == "--image-paths").unwrap();
         assert_eq!(&args[at..at + 5], ["--image-paths", "/v/start-images/a.png", "--output-resolution", "1056", "--scheduler"]);
         assert_eq!(pack_of(e.id).edit_images(), 10);
+    }
+
+    #[test]
+    fn a_painted_mask_and_a_strength_reach_the_engine_with_the_edit() {
+        let (e, pack) = (entry("qwen-image-2.1-4bit"), pack_of("qwen-image-2.1-4bit"));
+        let (model, out) = (Path::new("/m/pack"), Path::new("/o/x.png"));
+        let mut req = request("a bright orange tennis ball");
+        req.images = vec![PathBuf::from("/v/start-images/a.png")];
+        req.mask = Some(PathBuf::from("/v/start-images/mask.png"));
+        req.strength = Some(0.6);
+        let args = strings(&command_args(e, pack, model, None, &req, canvas(e, &req), out, true));
+        let at = args.iter().position(|a| a == "--image-paths").unwrap();
+        assert_eq!(
+            &args[at..at + 8],
+            ["--image-paths", "/v/start-images/a.png", "--output-resolution", "1056", "--mask-image", "/v/start-images/mask.png", "--strength", "0.6"]
+        );
+        // At 1 the engine's own default runs, and the flag is left out.
+        req.strength = Some(1.0);
+        req.mask = None;
+        let args = strings(&command_args(e, pack, model, None, &req, canvas(e, &req), out, true));
+        assert!(!args.iter().any(|a| a == "--strength" || a == "--mask-image"), "{args:?}");
+    }
+
+    #[test]
+    fn a_strength_is_for_an_edit_and_held_inside_what_the_engine_takes() {
+        let one = [PathBuf::from("/v/start-images/a.png")];
+        assert_eq!(edit_strength(&one, Some(0.7)), Some(0.7));
+        assert_eq!(edit_strength(&one, Some(0.0)), Some(MIN_EDIT_STRENGTH), "the engine refuses 0");
+        assert_eq!(edit_strength(&one, Some(-3.0)), Some(MIN_EDIT_STRENGTH));
+        assert_eq!(edit_strength(&one, Some(1.0)), None);
+        assert_eq!(edit_strength(&one, Some(4.0)), None);
+        assert_eq!(edit_strength(&one, Some(f32::NAN)), None);
+        assert_eq!(edit_strength(&one, None), None);
+        assert_eq!(edit_strength(&[], Some(0.5)), None, "an image from text has nothing to start from");
+    }
+
+    #[test]
+    fn only_a_staged_mask_over_an_image_reaches_the_engine() {
+        let root = tempfile::tempdir().unwrap();
+        let staged = root.path().join("start-images");
+        put(staged.join("a.png"), 4);
+        put(staged.join("mask.png"), 4);
+        put(root.path().join("elsewhere.png"), 4);
+        let images = [staged.join("a.png")];
+        let path = |p: PathBuf| p.to_string_lossy().to_string();
+        assert_eq!(edit_mask(&images, None, &staged), Ok(None));
+        let mask = edit_mask(&images, Some(&path(staged.join("mask.png"))), &staged).unwrap().unwrap();
+        assert!(mask.ends_with("mask.png"));
+        let gone = "The mask is no longer on disk. Paint it again.";
+        assert_eq!(edit_mask(&images, Some(&path(staged.join("missing.png"))), &staged).unwrap_err(), gone);
+        assert_eq!(edit_mask(&images, Some(&path(root.path().join("elsewhere.png"))), &staged).unwrap_err(), gone);
+        assert_eq!(edit_mask(&images, Some(&path(staged.join("..").join("elsewhere.png"))), &staged).unwrap_err(), gone);
+        assert_eq!(edit_mask(&images, Some(&path(staged.clone())), &staged).unwrap_err(), gone, "a folder is not a mask");
+        assert_eq!(
+            edit_mask(&[], Some(&path(staged.join("mask.png"))), &staged).unwrap_err(),
+            "A mask needs the image it was painted on. Add the image again."
+        );
     }
 
     #[test]
@@ -2687,6 +3102,32 @@ mod tests {
         let other = cmd(&["/usr/bin/python3", "server.py", "--model", "/Users/x/Library/Caches/lu-labs/mflux/x"]);
         assert!(!is_orphaned_run(&Leftover { parent: Some(1), cmd: other }, models));
         assert!(!is_orphaned_run(&Leftover { parent: Some(1), cmd: Vec::new() }, models));
+        // The prompt enhancer takes the same place: our script, on a model
+        // in the same folder. A script of somebody else's is not ours.
+        let script = format!("{}\nimport json", super::super::enhancer::SCRIPT_MARK);
+        let enhancer = cmd(&["/d/mlx/venv/bin/python", "-c", &script, "--model", "/Users/x/Library/Caches/lu-labs/mflux/qwen-image-2.1-pe-t2i-4bit/4bit", "--out", "/x.json"]);
+        assert!(is_orphaned_run(&Leftover { parent: Some(1), cmd: enhancer.clone() }, models));
+        assert!(!is_orphaned_run(&Leftover { parent: Some(4242), cmd: enhancer }, models));
+        let foreign = cmd(&["python", "-c", "import mlx_vlm", "--model", "/Users/x/Library/Caches/lu-labs/mflux/x"]);
+        assert!(!is_orphaned_run(&Leftover { parent: Some(1), cmd: foreign }, models));
+    }
+
+    /// The prompt enhancer gets its request on its standard input and runs
+    /// in the one place an image takes.
+    #[cfg(unix)]
+    #[test]
+    fn a_child_reads_its_input_and_holds_the_place_while_it_runs() {
+        let out = tempfile::tempdir().unwrap();
+        let got = out.path().join("got.txt");
+        let mut cmd = crate::process_util::foreign_system_command(crate::test_support::posix_shell());
+        cmd.arg("-c").arg(format!("cat > '{}'; echo said; echo warned >&2", got.display()));
+        let runs = Runs::new();
+        let input = vec![b'x'; 200_000];
+        let ended = run_child(&runs, cmd, 0, None, std::time::Duration::from_secs(30), Some(input.clone()), "prompt enhancer").unwrap();
+        assert!(ended.status.is_some_and(|s| s.success()) && !ended.stopped);
+        assert_eq!(std::fs::read(&got).unwrap(), input, "the whole request arrived");
+        assert_eq!((ended.said, ended.warned), (vec!["said".to_string()], vec!["warned".to_string()]));
+        assert!(!runs.busy());
     }
 
     /// Against real processes, on the platform the sweep runs on (Linux
@@ -2825,5 +3266,218 @@ mod tests {
         // A generation never reaches the hub.
         let generate = &body[body.find("pub(super) async fn generate(").unwrap()..];
         assert!(generate.contains(".env(\"HF_HUB_OFFLINE\", \"1\")"));
+        // Nor does an enhance.
+        let upscale = &body[body.find("pub(super) async fn upscale(").unwrap()..];
+        assert!(upscale.contains(".env(\"HF_HUB_OFFLINE\", \"1\")"));
+    }
+
+    // ── Enhance ──────────────────────────────────────────────────────
+
+    #[test]
+    fn seedvr2_is_an_upscaler_pack_pinned_to_two_files() {
+        let e = entry("seedvr2-3b");
+        let pack = pack_of("seedvr2-3b");
+        assert!(pack.upscales() && !pack.takes_loras() && pack.edit_images() == 0 && !pack.user_sampling());
+        assert_eq!((e.repo, pack.dir, pack.family), ("numz/SeedVR2_comfyUI", "seedvr2-3b", Family::SeedVR2));
+        assert_eq!(pack.family.module(), "mflux.models.seedvr2.cli.seedvr2_upscale");
+        assert_eq!(pack.family.parts(), ["seedvr2_ema_3b_fp16.safetensors", "ema_vae_fp16.safetensors"]);
+        // The catalogue's size is the two files the hub lists at the pin.
+        let both = (6_783_018_808u64 + 501_324_814) as f64 / 1e9;
+        assert!((e.size_gb as f64 - both).abs() < 0.05, "{both}");
+        assert!(e.min_ram_gb >= 16, "the weights alone are 7.3 GB at fp16");
+        // A permissive licence gets no sentence on the tile (macTileNotes.ts
+        // marks only what a customer must know). It has run here (2x and 4x,
+        // 14.10.2026), so it carries no untested sentence either.
+        assert!(!e.description.contains("not yet tested"));
+        // No other pack enhances, and SeedVR2 is the only upscaler.
+        let upscalers: Vec<&str> = IMAGE_CATALOG.iter().filter(|c| c.mflux.is_some_and(|p| p.upscales())).map(|c| c.id).collect();
+        assert_eq!(upscalers, ["seedvr2-3b"]);
+    }
+
+    #[test]
+    fn the_plan_of_seedvr2_takes_the_3b_files_and_leaves_the_7b_and_fp8_copies() {
+        let file = |path: &str, size: u64| RepoFile { path: path.to_string(), size, sha256: None };
+        let listing = vec![
+            file(".gitattributes", 1519),
+            file("README.md", 41823),
+            file("config.json", 0),
+            file("ema_vae_fp16.safetensors", 501_324_814),
+            file("seedvr2_ema_3b_fp16.safetensors", 6_783_018_808),
+            file("seedvr2_ema_3b_fp8_e4m3fn.safetensors", 3_391_544_696),
+            file("seedvr2_ema_7b_fp16.safetensors", 16_479_334_424),
+            file("seedvr2_ema_7b_fp8_e4m3fn.safetensors", 8_239_729_704),
+            file("seedvr2_ema_7b_sharp_fp16.safetensors", 16_479_334_424),
+        ];
+        let planned = plan(Family::SeedVR2, &listing).unwrap();
+        let paths: Vec<&str> = planned.files.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(paths, ["ema_vae_fp16.safetensors", "seedvr2_ema_3b_fp16.safetensors"]);
+        assert_eq!(planned.files.iter().map(|f| f.size).sum::<u64>(), 7_284_343_622);
+        // Without either file it is no pack.
+        let no_vae: Vec<RepoFile> = listing.iter().filter(|f| f.path != "ema_vae_fp16.safetensors").cloned().collect();
+        assert_eq!(plan(Family::SeedVR2, &no_vae).unwrap_err(), "The repository has no ema_vae_fp16.safetensors and cannot be run. Try again later.");
+        let no_3b: Vec<RepoFile> = listing.iter().filter(|f| f.path != "seedvr2_ema_3b_fp16.safetensors").cloned().collect();
+        assert!(plan(Family::SeedVR2, &no_3b).unwrap_err().contains("seedvr2_ema_3b_fp16.safetensors"));
+    }
+
+    #[test]
+    fn the_enhance_command_line_is_the_one_the_upscaler_reads() {
+        let pack = pack_of("seedvr2-3b");
+        let args = strings(&upscale_args(pack, Path::new("/m/seedvr2-3b"), Path::new("/s/start-images/a.png"), 2048, Some(7), Path::new("/i/enhance-1.png"), true));
+        assert_eq!(
+            args,
+            [
+                "-m", "mflux.models.seedvr2.cli.seedvr2_upscale",
+                "--model", "/m/seedvr2-3b",
+                "--image-path", "/s/start-images/a.png",
+                "--resolution", "2048",
+                "--seed", "7",
+                "--low-ram", "--no-exif",
+                "--output", "/i/enhance-1.png",
+            ]
+        );
+        // No seed: the engine's own. No flag of the picture commands, and no
+        // built-in name, which would fetch from the hub instead of the folder.
+        let plain = strings(&upscale_args(pack, Path::new("/m/seedvr2-3b"), Path::new("/s/a.png"), 512, None, Path::new("/i/o.png"), false));
+        assert!(!plain.iter().any(|a| a == "--seed" || a == "--low-ram"));
+        for flag in ["--prompt", "--steps", "--guidance", "--lora", "--base-model", "--width", "--height", "--image-paths"] {
+            assert!(!plain.iter().any(|a| a.starts_with(flag)), "{flag}");
+        }
+        assert!(!plain.iter().any(|a| a == "seedvr2" || a == "seedvr2-3b"));
+        // The run the app starts is one the orphan sweep would know as its own.
+        let models = Path::new("/m");
+        assert!(is_orphaned_run(&Leftover { parent: Some(1), cmd: strings(&upscale_args(pack, &models.join("seedvr2-3b"), Path::new("/s/a.png"), 512, None, Path::new("/o.png"), true)) }, models));
+    }
+
+    #[test]
+    fn a_brace_in_the_output_path_survives_the_engines_format() {
+        assert_eq!(output_arg(Path::new("/i/o.png")), std::ffi::OsString::from("/i/o.png"));
+        assert_eq!(output_arg(Path::new("/U/a{b}/o.png")), std::ffi::OsString::from("/U/a{{b}}/o.png"));
+        assert!(production().contains("args.push(output_arg(out));"));
+    }
+
+    #[test]
+    fn the_size_of_an_enhance_is_the_factor_held_to_the_longest_side() {
+        // (shortest side handed over, width, height of the result)
+        assert_eq!(upscale_target(1024, 1024, 2), Ok((2048, 2048, 2048)));
+        assert_eq!(upscale_target(1024, 1024, 4), Ok((4096, 4096, 4096)));
+        assert_eq!(upscale_target(768, 512, 2), Ok((1024, 1536, 1024)));
+        // A portrait at 4x would be 6144 high: held to 4096, the shape kept.
+        assert_eq!(upscale_target(1024, 1536, 4), Ok((2730, 2730, 4094)));
+        // An odd side comes back even, as the engine rounds it.
+        assert_eq!(upscale_target(333, 500, 2), Ok((666, 666, 1000)));
+        // Only the factors Create offers.
+        for factor in [0, 1, 3, 8] {
+            assert!(upscale_target(512, 512, factor).unwrap_err().contains("2x or 4x"), "{factor}");
+        }
+        // Too small, and at the limit already.
+        assert!(upscale_target(16, 512, 2).unwrap_err().contains("at least 32 pixels"));
+        assert!(upscale_target(4096, 2048, 2).unwrap_err().contains("up to 4096 pixels"));
+        assert!(upscale_target(3000, 2000, 4).is_ok_and(|(_, w, h)| w <= MAX_UPSCALE_SIDE && h <= MAX_UPSCALE_SIDE));
+    }
+
+    #[test]
+    fn only_a_staged_picture_is_enhanced() {
+        let root = tempfile::tempdir().unwrap();
+        let staged = root.path().join("start-images");
+        put(staged.join("a.png"), 4);
+        put(root.path().join("elsewhere.png"), 4);
+        let path = |p: PathBuf| p.to_string_lossy().to_string();
+        assert_eq!(upscale_input(&path(staged.join("a.png")), &staged).unwrap(), staged.join("a.png").canonicalize().unwrap());
+        for asked in [
+            path(staged.join("missing.png")),
+            path(root.path().join("elsewhere.png")),
+            path(staged.join("..").join("elsewhere.png")),
+            path(staged.clone()),
+            "relative.png".to_string(),
+        ] {
+            assert_eq!(upscale_input(&asked, &staged).unwrap_err(), UPSCALE_GONE, "{asked}");
+        }
+        assert_eq!(upscale_input(&path(staged.join("a.png")), &root.path().join("no-such-folder")).unwrap_err(), UPSCALE_GONE);
+        assert_eq!(upscale_input("  ", &staged).unwrap_err(), "Add an image to enhance.");
+        #[cfg(unix)]
+        {
+            let link = staged.join("link.png");
+            std::os::unix::fs::symlink(root.path().join("elsewhere.png"), &link).unwrap();
+            assert_eq!(upscale_input(&path(link), &staged).unwrap_err(), UPSCALE_GONE, "a link out of the folder");
+        }
+    }
+
+    /// The order an enhance keeps, read from the source: refused before
+    /// anything is unloaded, the place taken before the unload, one engine
+    /// at a time, and Generate never runs the upscaler with a prompt.
+    #[test]
+    fn an_enhance_is_checked_claimed_and_unloaded_in_the_order_of_an_image() {
+        let src = include_str!("mlx.rs");
+        let from = &src[src.find("pub async fn mlx_upscale(").unwrap()..];
+        let body = &from[..from.find("\n}\n").unwrap()];
+        let at = |needle: &str| body.find(needle).unwrap_or_else(|| panic!("{needle} is not in mlx_upscale"));
+        assert!(at("memory_verdict(") < at("mlx_unload("));
+        assert!(at("image_model_is_installed(entry)") < at("mlx_unload("));
+        assert!(at("mflux::request_upscale_input(") < at("mlx_unload("));
+        assert!(at("sidecar_at_an_image()") < at("mflux::claim_run(req.run.clone())"));
+        assert!(at("mflux::claim_run(req.run.clone())") < at("mlx_unload("));
+        assert!(at("mlx_unload(") < at("mflux::upscale(entry, pack, input, factor, req.seed)"));
+        let generate = &src[src.find("pub async fn mlx_generate(").unwrap()..];
+        assert!(generate.find("pack.upscales()").unwrap() < generate.find("mlx_unload(").unwrap(), "Generate would run the upscaler with a prompt");
+        assert!(include_str!("../main.rs").contains("commands::media_cmds::mlx_upscale,"));
+        assert!(include_str!("media_cmds.rs").contains("crate::commands::mlx::mlx_upscale(state.inner(), &args).await"));
+        // The catalogue says which model enhances.
+        assert!(src.contains("\"upscaler\": c.mflux.is_some_and(|pack| pack.upscales()),"));
+    }
+
+    /// SeedVR2 3B on a real picture, through the command line the app builds.
+    /// Run on a Mac with the two files in a folder:
+    ///
+    /// ```sh
+    /// LU_MFLUX_PYTHON=<venv-mflux>/bin/python LU_SEEDVR2_MODEL=<folder> \
+    /// LU_UPSCALE_IMAGE=<picture> [LU_UPSCALE_FACTOR=4] [LU_UPSCALE_OUT=<folder>] \
+    /// cargo test upscale_on_a_real_model -- --ignored --nocapture
+    /// ```
+    ///
+    /// It prints the time, the size and the engine's last lines, among them
+    /// its peak memory.
+    #[cfg(target_os = "macos")]
+    #[test]
+    #[ignore = "loads SeedVR2 3B from LU_SEEDVR2_MODEL"]
+    fn upscale_on_a_real_model() {
+        let var = |name: &str| std::env::var(name).unwrap_or_else(|_| panic!("{name} is not set"));
+        let python = var("LU_MFLUX_PYTHON");
+        let model = PathBuf::from(var("LU_SEEDVR2_MODEL"));
+        let input = PathBuf::from(var("LU_UPSCALE_IMAGE"));
+        let factor: u32 = std::env::var("LU_UPSCALE_FACTOR").ok().and_then(|f| f.parse().ok()).unwrap_or(2);
+        for part in Family::SeedVR2.parts() {
+            assert!(model.join(part).is_file(), "{} has no {part}", model.display());
+        }
+        let temp = tempfile::tempdir().unwrap();
+        let out_dir = std::env::var("LU_UPSCALE_OUT").map(PathBuf::from).unwrap_or_else(|_| temp.path().to_path_buf());
+        std::fs::create_dir_all(&out_dir).unwrap();
+        let out = out_dir.join(format!("enhance-{factor}x.png"));
+        let (width, height) = image::image_dimensions(&input).unwrap();
+        let (resolution, want_w, want_h) = upscale_target(width, height, factor).unwrap();
+        let scratch = temp.path().join("scratch");
+        let started = std::time::Instant::now();
+        let done = crate::python::python_command(&python)
+            .args(upscale_args(&SEEDVR2_3B, &model, &input, resolution, Some(42), &out, LOW_RAM))
+            .env("HF_HUB_OFFLINE", "1")
+            .env("HF_HOME", scratch.join(".hf-cache"))
+            .env("MFLUX_CACHE_DIR", scratch.join(".mflux-cache"))
+            .env("PYTHONUNBUFFERED", "1")
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        let took = started.elapsed();
+        let said = format!("{}\n{}", String::from_utf8_lossy(&done.stdout), String::from_utf8_lossy(&done.stderr));
+        let tail: Vec<&str> = said.lines().filter(|l| !l.trim().is_empty()).collect();
+        println!("{}", tail[tail.len().saturating_sub(15)..].join("\n"));
+        assert!(done.status.success(), "the engine ended with {}", done.status);
+        let made = png_size(&out).expect("the engine wrote no PNG");
+        println!(
+            "enhance {} {width}x{height} at {factor}x -> {}x{} in {:.1} s",
+            out.display(),
+            made.0,
+            made.1,
+            took.as_secs_f64()
+        );
+        assert_eq!(made, (want_w, want_h), "the size the app reports is the size the engine made");
     }
 }

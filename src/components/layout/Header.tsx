@@ -21,8 +21,7 @@ import { checkModelCapability } from '../../api/ollama'
 import { closeDialog, isTopDialog, nextFocusIndex, openDialog } from '../ui/dialog-a11y'
 import { MONOGRAM, MONOGRAM_INVERT } from './brand'
 import type { View } from '../../stores/uiStore'
-import { modelListIsStale } from '../../lib/model-list-staleness'
-import { t as tr } from '../../lib/i18n'
+import { modelListIsStale, openaiEntriesAreStale } from '../../lib/model-list-staleness'
 
 /**
  * Die Navigation als Daten, nicht als sechs abgeschriebene Knoepfe.
@@ -46,17 +45,15 @@ interface NavTarget {
 }
 
 const NAV_TARGETS: readonly NavTarget[] = [
-  // `tr` and not `t`: the list below is filtered and mapped with `(t) => …`
-  // further down, and an imported `t` would be shadowed there.
-  { id: 'chat', label: tr('Chat'), view: 'chat' },
-  { id: 'create', label: tr('Create'), view: 'create' },
+  { id: 'chat', label: 'Chat', view: 'chat' },
+  { id: 'create', label: 'Create', view: 'create' },
   // Voice has no cloud service yet, so with the Cloud switch on it goes the
   // way Benchmark and Models go.
-  { id: 'voice', label: tr('Voice'), view: 'voice', localOnly: true },
-  { id: 'compare', label: tr('Compare'), view: null },
-  { id: 'benchmark', label: tr('Benchmark'), view: 'benchmark', localOnly: true },
-  { id: 'models', label: tr('Models'), view: 'models', localOnly: true },
-  { id: 'settings', label: tr('Settings'), view: 'settings' },
+  { id: 'voice', label: 'Voice', view: 'voice', localOnly: true },
+  { id: 'compare', label: 'Compare', view: null },
+  { id: 'benchmark', label: 'Benchmark', view: 'benchmark', localOnly: true },
+  { id: 'models', label: 'Models', view: 'models', localOnly: true },
+  { id: 'settings', label: 'Settings', view: 'settings' },
 ]
 
 export function Header() {
@@ -95,7 +92,8 @@ export function Header() {
   useEffect(() => { fetchModels() }, [fetchModels])
   useEffect(() => {
     const unsub = useProviderStore.subscribe((state, prev) => {
-      if (modelListIsStale(state.providers, prev.providers)) fetchModels()
+      if (modelListIsStale(state.providers, prev.providers)
+        || openaiEntriesAreStale(state.openaiEntries, prev.openaiEntries)) fetchModels()
     })
     return () => unsub()
   }, [fetchModels])

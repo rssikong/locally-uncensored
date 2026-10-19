@@ -501,6 +501,21 @@ export function estimateLmsTextVramBytes(id: string): number | undefined {
 // The HTTP rides the Rust side (kv_slot_action): the webview cannot reach the
 // engine port, all engine traffic goes through the proxy anyway.
 
+/** What `kv_slot_action` answers. `skipped: 'multimodal'` is an engine running
+ *  with its image part: llama-server refuses slot save and restore there with
+ *  501, so the Rust side does not ask and logs that once per model. */
+export interface KvSlotReply {
+  ok?: boolean
+  skipped?: string
+}
+
+/** Whether a KV save reply is worth a warning. A save that was never possible
+ *  is not, or every render with a vision model would warn again (box runs
+ *  d307-b and d307-c, H1). */
+export function kvSaveWorthAWarning(reply: KvSlotReply | null): boolean {
+  return reply?.ok !== true && reply?.skipped !== 'multimodal'
+}
+
 export interface BundledTarget {
   port: number
   modelPath: string
@@ -1106,8 +1121,8 @@ async function runHandoff(
       // disk, then stop the engine. Restore happens in the finally. When
       // either half fails, the next chat turn just re-processes the history,
       // which is exactly the pre-#85 cost — never block the render on it.
-      const saved = await backendCall<{ ok?: boolean }>('kv_slot_action', { port: bundledTarget.port, action: 'save' }).catch(() => null)
-      if (saved?.ok !== true) log.warn('vram_handoff.kv_save_failed', { port: bundledTarget.port })
+      const saved = await backendCall<KvSlotReply>('kv_slot_action', { port: bundledTarget.port, action: 'save' }).catch(() => null)
+      if (kvSaveWorthAWarning(saved)) log.warn('vram_handoff.kv_save_failed', { port: bundledTarget.port })
       try {
         await backendCall('stop_bundled_engine')
         evictedBundled = { ...bundledTarget, slotSaved: saved?.ok === true }
@@ -1837,6 +1852,15 @@ export function comfyErrorHint(
       : 'Read your card\'s target from the gcnArchName line of hipinfo in the HIP SDK\'s bin folder, then check that it appears in the list printed by'
     return `Your AMD card was found and the render started, but the first HIP call came back with hipErrorInvalidValue. On a recent Radeon this is almost always an architecture mismatch: the chip reports one gfx target and the ROCm build of PyTorch in this ComfyUI environment carries kernels for other ones. ${mine}${check}: python -c "import torch; print(torch.cuda.get_arch_list())" run inside the ComfyUI environment. If it is missing there, rebuilding this environment installs the same wheels and will not add it; you need a PyTorch ROCm build that names your target. Set Settings, Hardware, ComfyUI GPU to Force CPU to finish the render on the processor in the meantime.`
   }
+  // Discord #bug-reports (12.10. and 17.10.2026): "aimdo memory compile error"
+  // on the KSampler of an edit with three images. comfy-aimdo's malloc graph,
+  // the model compiler of ComfyUI 0.37 on NVIDIA and AMD cards, raises it
+  // when it cannot get another page of graphics memory (src/malloc-graph.c),
+  // so it is an out of memory under another name. "could not start recording"
+  // is the same graph failing at its very start.
+  if (m.includes('aimdo memory compile error')) {
+    return 'ComfyUI ran out of graphics memory while it compiled the model for this run. Use fewer images or a smaller size, or pick a lighter model. If it keeps failing at a size that worked before, restart ComfyUI under Settings, AI Backends to free the memory it holds.'
+  }
   if (m.includes('out of memory') || m.includes('outofmemory') || _excType === 'torch.OutOfMemoryError') {
     return 'Ran out of GPU memory. Try a shorter clip / lower resolution, set VRAM hand-off to "always" in Settings so the chat model is evicted first, or pick a lighter model.'
   }
@@ -2332,8 +2356,8 @@ async function evictBody(): Promise<RenderEviction> {
   if (bundled) {
     // GH #85 discipline for the Create path too: serialize the KV cache so
     // the reload after the render does not re-process the whole history.
-    const saved = await backendCall<{ ok?: boolean }>('kv_slot_action', { port: bundled.port, action: 'save' }).catch(() => null)
-    if (saved?.ok !== true) log.warn('render_juggle.kv_save_failed', { port: bundled.port })
+    const saved = await backendCall<KvSlotReply>('kv_slot_action', { port: bundled.port, action: 'save' }).catch(() => null)
+    if (kvSaveWorthAWarning(saved)) log.warn('render_juggle.kv_save_failed', { port: bundled.port })
     result.bundled = { ...bundled, slotSaved: saved?.ok === true }
   }
 

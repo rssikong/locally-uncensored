@@ -55,7 +55,7 @@ beforeEach(() => {
   useGenerationStore.setState({ generating: {}, aborters: {}, runs: {} })
   useModelStore.setState({ models: [], activeModel: A })
   useSettingsStore.setState({
-    settings: { ...DEFAULT_SETTINGS, appMode: 'local', cavemanMode: 'off', chatToolsEnabled: false },
+    settings: { ...DEFAULT_SETTINGS, appMode: 'local', cavemanMode: 'off' },
     personas: [...BUILT_IN_PERSONAS, SHERLOCK, WATSON],
   })
   useProviderStore.setState((s) => ({
@@ -134,6 +134,14 @@ describe('each participant speaks as its own persona', () => {
       ['user', '[Watson] I examined the body.\n\nare you sure?'],
     ])
     expect(conversation(convId).messages.filter((m) => m.role === 'assistant').map((m) => m.modelId)).toEqual([A, B, A, B])
+  })
+
+  it('GH #171: each answer records the persona it was written as, so an export can name it later', async () => {
+    const convId = openGroup()
+    useChatStore.getState().setGroupPersona(convId, A, 'sherlock')
+    await round('who did it?')
+    const said = conversation(convId).messages.filter((m) => m.role === 'assistant')
+    expect(said.map((m) => [m.modelId, m.groupPersonaId, m.groupSpeakerName])).toEqual([[A, 'sherlock', 'Sherlock'], [B, undefined, undefined]])
   })
 
   it('a line a model writes FOR the other participant is cut, under either name', async () => {

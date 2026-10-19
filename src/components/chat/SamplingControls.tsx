@@ -7,6 +7,15 @@ import { HINWEIS_TEXT } from '../../lib/hinweis'
 import { useDismissOnEscape } from '../../hooks/useDismissOnEscape'
 import { SAMPLING_DEFAULTS, effectiveSampling, samplingIsChanged, hasOwnSampling } from '../../lib/sampling'
 import type { SamplingOverrides } from '../../lib/sampling'
+import { isGroupChat } from '../../lib/group-chat'
+import { speakerSamplingLines, type SpeakerSamplingLine } from '../../lib/speaker-sampling-lines'
+import { useModelStore } from '../../stores/modelStore'
+import { useProviderStore } from '../../stores/providerStore'
+import { getProviderIdFromModel, isOpenAISlotModel } from '../../api/providers/model-name'
+import { samplerTargetOfModel } from '../../lib/lan-openai-slot'
+import {
+  THINK_BUDGET_STEP, normalizeThinkBudget, thinkBudgetHint, thinkBudgetSupport,
+} from '../../lib/think-budget'
 
 /**
  * Sampling controls next to the composer, scoped to ONE conversation.
@@ -100,6 +109,54 @@ const PANEL_WIDTH = 248
 
 const FOCUSABLE = 'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
+/** Accessible name of the think budget field, shared with its tests. */
+export const THINK_BUDGET_LABEL = 'Think budget'
+
+/**
+ * Think budget row (D12). Global like the Think button beside the popup, so
+ * it does not follow this chat's Reset and says so in its title.
+ *
+ * Shown for every model, and disabled with a plain sentence where the backend
+ * has no budget field: a field that takes a number and then does nothing
+ * would be a control that lies (lib/think-budget.ts lists who takes what).
+ */
+function ThinkBudgetRow() {
+  const [draft, setDraft] = useState<string | null>(null)
+  const budget = useSettingsStore((s) => normalizeThinkBudget(s.settings.thinkingBudget))
+  const updateSettings = useSettingsStore((s) => s.updateSettings)
+  const activeModel = useModelStore((s) => s.activeModel)
+  const managedEngine = useProviderStore((s) => s.providers.openai?.managed === true)
+  // Only the slot itself can be our engine, never an additional entry (#173).
+  const support = thinkBudgetSupport(getProviderIdFromModel(activeModel ?? ''), managedEngine && isOpenAISlotModel(activeModel ?? ''))
+  const supported = support !== 'none'
+  return (
+    <div className="space-y-0.5" data-testid="think-budget-row">
+      <label className="flex items-center gap-2">
+        <span className="w-20 shrink-0 text-gray-400">{THINK_BUDGET_LABEL}</span>
+        <input
+          type="number"
+          className="min-w-0 flex-1 rounded border border-gray-700 bg-transparent px-1 py-0.5 disabled:opacity-40"
+          min={0}
+          step={THINK_BUDGET_STEP}
+          disabled={!supported}
+          value={draft ?? String(budget)}
+          aria-label={THINK_BUDGET_LABEL}
+          title="Most tokens the model may spend thinking while Think is on. 0 = auto. Applies to every chat."
+          onChange={(e) => {
+            const raw = e.target.value
+            const next = raw.trim() === '' ? 0 : normalizeThinkBudget(Number(raw))
+            setDraft(raw.trim() === '' ? raw : String(next))
+            updateSettings({ thinkingBudget: next })
+          }}
+          onBlur={() => setDraft(null)}
+        />
+        <span className="w-10 shrink-0 text-right text-gray-500">{supported && budget === 0 ? 'auto' : ''}</span>
+      </label>
+      <p className="text-gray-500" data-testid="think-budget-hint">{thinkBudgetHint(support, budget)}</p>
+    </div>
+  )
+}
+
 export function SamplingControls() {
   const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState<string | null>(null)
@@ -118,9 +175,38 @@ export function SamplingControls() {
   )
   const setSampling = useChatStore((s) => s.setConversationSampling)
   const resetSampling = useChatStore((s) => s.resetConversationSampling)
+  // GH #175: who speaks in this chat, and which persona preset holds for
+  // each. Only the fields the lines read, so a streaming answer does not
+  // re-render the popup.
+  const personaId = useChatStore((s) => s.conversations.find((c) => c.id === s.activeConversationId)?.personaId)
+  const keptPrompt = useChatStore((s) => s.conversations.find((c) => c.id === s.activeConversationId)?.systemPrompt)
+  const personaEnabled = useChatStore((s) => s.conversations.find((c) => c.id === s.activeConversationId)?.personaEnabled)
+  const groupModels = useChatStore((s) => s.conversations.find((c) => c.id === s.activeConversationId)?.groupModels)
+  const groupPersonas = useChatStore((s) => s.conversations.find((c) => c.id === s.activeConversationId)?.groupPersonas)
+  const personas = useSettingsStore((s) => s.personas)
+  const activePersonaId = useSettingsStore((s) => s.activePersonaId)
+  const activeModel = useModelStore((s) => s.activeModel)
+  const providers = useProviderStore((s) => s.providers)
+  // Read so the lines follow an entry switched on, off or moved (#173).
+  useProviderStore((s) => s.openaiEntries)
+  const lines: SpeakerSamplingLine[] = speakerSamplingLines({
+    settings,
+    conv: { personaId, systemPrompt: keptPrompt, personaEnabled, groupModels, groupPersonas, sampling: overrides },
+    activeModel,
+    personas,
+    activePersonaId,
+    providers,
+    // GitHub #173: a speaker on an additional entry answers for its own server.
+    targetOf: samplerTargetOfModel,
+  })
+  // The sliders write THIS chat's own value. In a plain chat they show what
+  // holds for its one speaker, the persona preset included. In a group the
+  // moved value holds for every member, so they show the chat's own value or
+  // the Settings page, and the lines below say what each member runs on.
+  const sliderPreset = isGroupChat(groupModels) ? undefined : lines[0]?.preset
 
-  const value = effectiveSampling(settings, overrides)
-  const changed = samplingIsChanged(settings, overrides)
+  const value = effectiveSampling(settings, overrides, sliderPreset)
+  const changed = samplingIsChanged(settings, overrides, sliderPreset)
   // F1 (review-w2ui.md, 18.09.2026): Reset only deletes THIS chat's own
   // override, so it must go by whether one exists, not by whether the
   // EFFECTIVE value differs from the shipped default (`changed` above): that
@@ -287,6 +373,28 @@ export function SamplingControls() {
             />
             <span className="w-10 shrink-0 text-right text-gray-500">{value.maxTokens === 0 ? 'auto' : ''}</span>
           </label>
+
+          <ThinkBudgetRow />
+
+          {lines.length > 0 && (
+            <div data-testid="sampling-speakers" className="space-y-1 border-t border-gray-700/50 pt-1.5">
+              {lines.map((line) => (
+                <div key={line.model} data-testid="sampling-speaker" data-model={line.model} className="space-y-0.5">
+                  <div className="text-gray-300">
+                    {line.label}: <span className="text-gray-400">{line.source}</span>
+                  </div>
+                  <div className="text-gray-500 break-words">
+                    {line.values.map((v, i) => (
+                      <span key={v.label} title={v.sent ? undefined : 'This backend does not read this value, it is not sent.'}>
+                        {i > 0 && ' · '}
+                        <span>{v.label} {v.text}{v.sent ? '' : ' (not sent)'}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
 
           <div className="flex items-center justify-between pt-1">
             <span className="text-gray-500">Reasoning models accept these and react less to them.</span>

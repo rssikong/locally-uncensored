@@ -36,7 +36,7 @@ const KEY = 'chat-settings'
 /** The version that shipped 2.6.7, one below the rung. */
 const BEFORE_THE_RUNG = 21
 /** Must track STORE_VERSION: at this version zustand skips migrate. */
-const CURRENT = 22
+const CURRENT = 23
 
 function seed(settings: Record<string, unknown>, version: number) {
   backing.set(
@@ -106,5 +106,38 @@ describe('the rung reaches existing profiles without moving anyone bill', () => 
   it('a profile that predates the key at all gets the same answer', async () => {
     seed({ temperature: 0.7 }, 15)
     expect((await freshStore()).getState().settings.reasoningEffort).toBe('high')
+  })
+})
+
+/**
+ * v23 (3.0.7): settings.localEffortChosen. A profile from before it has never
+ * picked a rung for a local model, so it lands on false and its local
+ * requests stay as they were. Additive like v22: a true the user set survives
+ * every rerun of the migration after an A/B switch.
+ */
+describe('the local effort pick (v23)', () => {
+  beforeEach(() => backing.clear())
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('a v22 profile with a stored rung has not picked one for a local model', async () => {
+    seed({ reasoningEffort: 'high', thinkingEnabled: true }, 22)
+    const s = (await freshStore()).getState().settings
+    expect(s.localEffortChosen).toBe(false)
+    expect(s.reasoningEffort).toBe('high')
+  })
+
+  it('a pick survives the migration running again after an older build wrote the store', async () => {
+    seed({ reasoningEffort: 'medium', localEffortChosen: true }, 22)
+    const s = (await freshStore()).getState().settings
+    expect(s.localEffortChosen).toBe(true)
+    expect(s.reasoningEffort).toBe('medium')
+  })
+
+  it('at the current version a missing or foreign value reads as not picked', async () => {
+    seed({ reasoningEffort: 'high' }, CURRENT)
+    expect((await freshStore()).getState().settings.localEffortChosen).toBe(false)
+    backing.clear()
+    seed({ reasoningEffort: 'high', localEffortChosen: 'yes' }, CURRENT)
+    expect((await freshStore()).getState().settings.localEffortChosen).toBe(false)
   })
 })

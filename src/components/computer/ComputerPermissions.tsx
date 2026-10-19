@@ -61,10 +61,13 @@ interface Props {
  * and the one button that leads to it: the request makes macOS show its own
  * prompt and puts LU into the list, and the list opens in System Settings.
  *
- * Once a row was asked for and is still missing, it offers "Reset and ask
- * again". That is the way out when the list shows LU and switching it on
- * changes nothing: the entry belongs to an older build (the owner's Mac on
- * 07.10.2026 had two such entries from August).
+ * While a row is missing it offers "Reset and ask again". That is the way out
+ * when the list shows LU and switching it on changes nothing: the entry
+ * belongs to a copy of LU with another signature, an older test build (the
+ * owner's Mac on 07.10.2026 had two such entries from August, and one more on
+ * 12.10.2026). It is there from the start, not only after Open System
+ * Settings in the same view: the hint under the rows names it, and after a
+ * restart of LU the row is missing again with nothing asked yet.
  */
 export function ComputerPermissionRows({ granted, className = '' }: Props) {
   // Asked for in this view. Screen Recording then usually waits for a restart.
@@ -101,7 +104,7 @@ export function ComputerPermissionRows({ granted, className = '' }: Props) {
                       ? 'Switch LU on in the list. macOS applies this one after LU was quit and opened again.'
                       : 'Switch LU on in the list. LU notices by itself.'}
               </p>
-              {!ok && asked.includes(row.permission) && (
+              {!ok && granted !== null && (
                 <button
                   type="button"
                   onClick={() => reset(row.permission)}
@@ -127,6 +130,8 @@ export function ComputerPermissionRows({ granted, className = '' }: Props) {
   )
 }
 
-/** What to do when the list already shows LU switched on. Happens with every new build of an app without a fixed signature. */
+/** What to do when the list already shows LU switched on. Happens when the
+ *  entry belongs to a copy of LU with another signature: the released app keeps
+ *  its signature, and with it the permission, across updates. */
 export const PERMISSION_STALE_HINT =
-  'LU is switched on in the list, and this still says it is missing? Click Reset and ask again. macOS ties a permission to one exact build of LU, so after an update the old entry no longer counts. If LU is not in the list afterwards, add it with the plus button.'
+  'LU is switched on in the list, and this still says it is missing? Click Reset and ask again. macOS ties a permission to the exact copy of LU it was given to, so an entry left by an older test copy does not count for this one. If LU is not in the list afterwards, add it with the plus button.'

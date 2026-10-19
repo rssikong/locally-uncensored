@@ -133,4 +133,16 @@ describe('lmsAutoLoadContext', () => {
     expect(lmsAutoLoadContext(lmsModel('m', { contextLength: 0 }))).toBe(LMS_AUTOLOAD_CONTEXT)
     expect(lmsAutoLoadContext(lmsModel('m', { contextLength: -5 }))).toBe(LMS_AUTOLOAD_CONTEXT)
   })
+
+  // GH #168: the person's own pick for the model wins over the auto window,
+  // and is not cut down to a row value that may only be a guess from the name.
+  it('loads with the saved pick for the model', () => {
+    expect(lmsAutoLoadContext(lmsModel('gemma-4-31b-it-2', { contextLength: 262144 }), 262144)).toBe(262144)
+    expect(lmsAutoLoadContext(lmsModel('gemma-4-31b-it-2', { contextLength: 8192 }), 262144)).toBe(262144)
+    expect(lmsAutoLoadContext(lmsModel('gemma-4-31b-it-2'), 32768)).toBe(32768)
+  })
+
+  it('a saved Auto (0) keeps the auto window', () => {
+    expect(lmsAutoLoadContext(lmsModel('m', { contextLength: 131072 }), 0)).toBe(LMS_AUTOLOAD_CONTEXT)
+  })
 })

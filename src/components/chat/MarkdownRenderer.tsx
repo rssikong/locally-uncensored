@@ -7,6 +7,7 @@ import { MATH_OPTIONS, contentNeedsKatex } from '../../lib/markdown-math'
 import { CodeBlock } from './CodeBlock'
 import { codeBlockText } from '../../lib/markdown-code'
 import { openExternal } from '../../api/backend'
+import { useComfyViewRescue } from './comfyViewRescue'
 import { log } from '../../lib/logger'
 import type { Components, Options } from 'react-markdown'
 
@@ -90,6 +91,16 @@ function isTrustedImageSrc(src: string): boolean {
   return false
 }
 
+/** A picture in a reply. A model often repeats the ComfyUI /view address of a
+ *  picture it just made, and on the desktop that direct load is blocked the
+ *  same way the tool block's was (comfyViewRescue.ts), so it gets the same
+ *  rescue. Every other picture loads as before. */
+function ChatImage({ src, alt }: { src: string; alt: string }) {
+  const [failed, setFailed] = useState(false)
+  const rescued = useComfyViewRescue(src, failed)
+  return <img src={rescued ?? src} alt={alt} loading="lazy" onError={() => setFailed(true)} className="max-w-full rounded-md my-2" />
+}
+
 const components: Components = {
   code({ className, children, ...props }) {
     const match = /language-(\w+)/.exec(className || '')
@@ -161,7 +172,7 @@ const components: Components = {
   img({ src, alt }) {
     const s = typeof src === 'string' ? src : ''
     if (s && isTrustedImageSrc(s)) {
-      return <img src={s} alt={alt ?? ''} loading="lazy" className="max-w-full rounded-md my-2" />
+      return <ChatImage src={s} alt={alt ?? ''} />
     }
     // Untrusted host — do not silently fetch. Offer an explicit click instead.
     return (

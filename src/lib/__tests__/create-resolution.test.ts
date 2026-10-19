@@ -68,7 +68,9 @@ describe('ParamGroups wiring (source guards)', () => {
   const src = readFileSync(join(__dirname, '../../components/create/experimental/ParamGroups.tsx'), 'utf8')
 
   it('renders presets only for video, flip and ratios for every intent', () => {
-    expect(src).toContain('isVideo && VIDEO_RES_PRESETS.map')
+    // Not on the Mac's video lane: Wan's 720p is more than the own size of
+    // most Mac models, and a run never goes past that (mlxVideoRunSize).
+    expect(src).toContain('isVideo && !macVideo && VIDEO_RES_PRESETS.map')
     expect(src).toContain('aria-label="Swap orientation"')
     expect(src).toContain('ASPECT_RATIOS.map')
   })

@@ -17,6 +17,8 @@
 
 import { isPrivateOrLanHost, hostnameOf } from '../api/backend'
 import { useProviderStore } from '../stores/providerStore'
+import { openaiEntryOfModel, getProviderIdFromModel } from '../api/providers/model-name'
+import type { ProviderConfig, ProviderId } from '../api/providers/types'
 
 /**
  * Laeuft der eingestellte OpenAI-Slot auf diesem Rechner oder im LAN?
@@ -25,9 +27,11 @@ import { useProviderStore } from '../stores/providerStore'
  * Antwortquelle: die Voreinstellung des Slots ODER der Hostname. Ein fremder
  * Host im Internet bekommt weder Metadaten-Abfragen noch einen Fensterwaehler.
  */
-export function isLanOpenAiBackend(): boolean {
+export function isLanOpenAiBackend(entryId?: string | null): boolean {
   try {
-    const cfg = useProviderStore.getState().providers.openai
+    // GitHub #173: an additional OpenAI-compatible entry answers for itself.
+    const st = useProviderStore.getState()
+    const cfg = entryId ? st.openaiEntries.find((e) => e.entryId === entryId) : st.providers.openai
     if (!cfg) return false
     return cfg.isLocal === true || isPrivateOrLanHost(hostnameOf(cfg.baseUrl))
   } catch {
@@ -45,6 +49,41 @@ export function isLanOpenAiBackend(): boolean {
  * Anbieternamen gegeben werden: ein eigener Server im `openai`-Steckplatz
  * macht eine Sendung an LU Cloud nicht kostenlos.
  */
-export function sendsToALanBackend(providerId: string): boolean {
-  return providerId === 'openai' && isLanOpenAiBackend()
+export function sendsToALanBackend(providerId: string, model: string | null | undefined): boolean {
+  // GitHub #173: the model is not optional. A model of an additional
+  // OpenAI-compatible entry has to be asked about ITS server, and a call that
+  // left the model out answered for the slot instead (LM Studio next to a
+  // paid cloud endpoint in the slot got the paid cap).
+  return providerId === 'openai' && isLanOpenAiBackend(model ? openaiEntryOfModel(model) : null)
+}
+
+/**
+ * GH #175 with #173: the backend a model runs on, as sampler-fields.ts reads
+ * it. The OpenAI-compatible server of THIS model (slot or entry), local when
+ * it is on this machine or the LAN, the same rule the provider sends by.
+ */
+export function samplerTargetOfModel(model: string): { id: ProviderId; isLocal?: boolean; managed?: boolean } {
+  const providerId = getProviderIdFromModel(model)
+  if (providerId !== 'openai') {
+    const cfg = useProviderStore.getState().providers[providerId]
+    return { id: providerId, isLocal: cfg?.isLocal, managed: cfg?.managed }
+  }
+  const cfg = openaiConfigOfModel(model)
+  return {
+    id: 'openai',
+    isLocal: isLanOpenAiBackend(openaiEntryOfModel(model)),
+    managed: openaiEntryOfModel(model) ? false : cfg?.managed,
+  }
+}
+
+/**
+ * GitHub #173: the configuration of the OpenAI-compatible server a model runs
+ * on, the slot or an additional entry. Undefined for every other provider and
+ * for an entry that no longer exists.
+ */
+export function openaiConfigOfModel(model: string | null | undefined): ProviderConfig | undefined {
+  if (!model || getProviderIdFromModel(model) !== 'openai') return undefined
+  const st = useProviderStore.getState()
+  const entryId = openaiEntryOfModel(model)
+  return entryId ? st.openaiEntries.find((e) => e.entryId === entryId) : st.providers.openai
 }

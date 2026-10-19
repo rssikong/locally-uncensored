@@ -87,8 +87,10 @@ describe('system prompt', () => {
     for (const file of ['hooks/useChat.ts', 'hooks/useAgentChat.ts']) {
       expect(read(file)).not.toMatch(/personaEnabled === true \? conv\.systemPrompt : ''/)
       // R5-1: der Aufruf traegt jetzt den globalen Schalter als zweites
-      // Argument, wie im Web. Die Klammer bleibt deshalb offen.
-      expect(read(file)).toContain('buildChatSystemPrompt(conv, settings.personasEnabled !== false)')
+      // Argument, wie im Web.
+      // GH #170: the chat's persona comes through withChatPersona, the same
+      // resolution the Plugins menu shows.
+      expect(read(file)).toContain('buildChatSystemPrompt(withChatPersona(conv, personas, activePersonaId), settings.personasEnabled !== false)')
     }
   })
 

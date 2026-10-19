@@ -415,8 +415,9 @@ pub(crate) struct EngineFacts {
     /// supports the scalar kernel, which is every device in the class below,
     /// the binary's own default turns it on.
     pub flash_attention_on: bool,
-    /// True only when llama-server itself printed a device line and EVERY
-    /// device on it said `matrix cores: none`.
+    /// True when llama-server printed a device line and EVERY device on it
+    /// said `matrix cores: none`, and on the Vulkan build also when it printed
+    /// no device line at all (`may_lack_matrix_cores`).
     pub every_device_without_matrix_cores: bool,
 }
 
@@ -488,6 +489,37 @@ pub(crate) fn device_without_matrix_cores(startup: &str) -> Option<bool> {
     seen.then_some(all_none)
 }
 
+/// Whether the flash attention rung may be tried on this engine.
+///
+/// GH #156. The pinned llama-server (049326a) does not print the device line
+/// above: there it is a debug line (`GGML_LOG_DEBUG` in ggml-vulkan.cpp) and
+/// llama-server runs at verbosity 3. Measured on the shipped Windows sidecar
+/// with an RTX 3060, 15.10.2026: no `matrix cores:` line at the default
+/// verbosity, nor at `-lv 4`, `-lv 5` or `-v` (so raising the verbosity is
+/// no way to get it back either), while the same run offloads every layer to
+/// Vulkan0. So on the
+/// Vulkan build `device_without_matrix_cores` always answered `None`, the rung
+/// for cards without matrix cores (Pascal, GCN, RDNA 1 and 2 on RADV) could
+/// never be taken, and a garbled card went straight to the processor.
+///
+/// Where the Vulkan build says nothing, the rung is tried: it costs one
+/// restart and keeps the card when it helps, and when it does not, the
+/// processor rung follows as before. A line that IS printed (an older or a
+/// newer engine) is still believed. The Metal build is not Vulkan, the reports
+/// behind the rung are all Vulkan, so there an unknown stays unknown.
+pub(crate) fn may_lack_matrix_cores(startup: &str, vulkan_build: bool) -> bool {
+    device_without_matrix_cores(startup).unwrap_or(vulkan_build)
+}
+
+/// The log word for what the startup lines said about matrix cores.
+pub(crate) fn matrix_cores_label(startup: &str) -> &'static str {
+    match device_without_matrix_cores(startup) {
+        Some(true) => "none",
+        Some(false) => "present",
+        None => "not reported",
+    }
+}
+
 // ── The one place that speaks HTTP ──────────────────────────────────────────
 
 /// Where the probe sends its question. Loopback and a port, built here and
@@ -539,6 +571,8 @@ pub(crate) fn probe_engine(port: u16, timeout: Duration) -> Option<ProbeOutcome>
         .build()
         .ok()?
         .post(probe_url(port))
+        // The probe asks an engine this app just started (engine_key.rs).
+        .header(reqwest::header::AUTHORIZATION, super::engine_key::bearer())
         .json(&body)
         .send()
         .ok()
@@ -928,10 +962,64 @@ mod tests {
         assert_eq!(device_without_matrix_cores(""), None);
         // Verbatim from the shipped sidecar on this machine, 2026-09-11. The
         // Metal build names no device at all, so the rung is never taken here,
-        // which is the counter-check to the two tests above: the flag is only
-        // ever set where llama-server itself said the card has no matrix cores.
+        // which is the counter-check to the two tests above: on Metal the flag
+        // is only ever set where llama-server itself said the card has no
+        // matrix cores (the Vulkan build, which says nothing, see GH #156 below).
         let mac = "0.00.075.755 I srv    load_model: loading model '/Users/x/models/Qwen2.5-0.5B-Instruct-Q8_0.gguf'\n0.00.715.606 I srv    load_model: initializing, n_slots = 4, n_ctx_slot = 8192, kv_unified = 'true'\n0.00.719.437 I srv  llama_server: model loaded\n";
         assert_eq!(device_without_matrix_cores(mac), None);
+    }
+
+    // GH #156: what the pinned Vulkan build really prints. Verbatim from the
+    // shipped Windows sidecar (049326a, RTX 3060, -lv 4), 15.10.2026: the
+    // device is named, the matrix cores are not.
+    const PINNED_VULKAN_STARTUP: &str = "0.00.140.028 I cmn  common_param:   - Vulkan0 : NVIDIA GeForce RTX 3060 (12329 MiB, 11559 MiB free)\n0.00.696.228 I llama_prepare_model_devices: using device Vulkan0 (NVIDIA GeForce RTX 3060) (0000:01:00.0) - 11557 MiB free\n0.00.921.576 I load_tensors: offloaded 25/25 layers to GPU\n";
+
+    /// The device line of a Navi 10 card on Mesa RADV, built from the format
+    /// string in ggml-vulkan.cpp (ggml_vk_print_gpu_info) with the values
+    /// RADV reports for RDNA 1: fp16 yes, wave64 subgroups, no cooperative
+    /// matrix extension (RADV exposes it from RDNA 3 on).
+    const RDNA1_RADV_LINE: &str = "ggml_vulkan: 0 = AMD Radeon RX 5700 XT (RADV NAVI10) (radv) | uma: 0 | fp16: 1 | bf16: 0 | warp size: 64 | shared memory: 65536 | int dot: 1 | matrix cores: none\n";
+
+    #[test]
+    fn gh156_the_pinned_vulkan_build_names_no_matrix_cores() {
+        assert_eq!(device_without_matrix_cores(PINNED_VULKAN_STARTUP), None);
+        assert_eq!(matrix_cores_label(PINNED_VULKAN_STARTUP), "not reported");
+    }
+
+    #[test]
+    fn gh156_a_silent_vulkan_build_may_take_the_flash_attention_rung() {
+        assert!(may_lack_matrix_cores(PINNED_VULKAN_STARTUP, true));
+        let facts = EngineFacts {
+            gpu_layers: Some(998),
+            flash_attention_on: true,
+            every_device_without_matrix_cores: may_lack_matrix_cores(PINNED_VULKAN_STARTUP, true),
+        };
+        assert_eq!(decide(Sanity::Garbled(Garble::QuestionMarks), &facts), AfterProbe::RestartWithoutFlashAttention);
+        // Still garbled without flash attention: the processor, as before.
+        let without = EngineFacts { flash_attention_on: false, ..facts };
+        assert_eq!(decide(Sanity::Garbled(Garble::QuestionMarks), &without), AfterProbe::RestartOnCpu);
+        // NEGATIVE CONTROL: the rule before this change read the silence as
+        // "has matrix cores" and skipped the rung.
+        let before = EngineFacts {
+            every_device_without_matrix_cores: device_without_matrix_cores(PINNED_VULKAN_STARTUP).unwrap_or(false),
+            ..facts
+        };
+        assert_eq!(decide(Sanity::Garbled(Garble::QuestionMarks), &before), AfterProbe::RestartOnCpu);
+    }
+
+    #[test]
+    fn gh156_a_printed_line_is_still_believed() {
+        assert!(may_lack_matrix_cores(RDNA1_RADV_LINE, true));
+        assert_eq!(matrix_cores_label(RDNA1_RADV_LINE), "none");
+        let rdna3 = "ggml_vulkan: 0 = AMD Radeon RX 7900 XTX (RADV NAVI31) (radv) | uma: 0 | fp16: 1 | bf16: 0 | warp size: 64 | shared memory: 65536 | int dot: 1 | matrix cores: KHR_coopmat\n";
+        assert!(!may_lack_matrix_cores(rdna3, true), "a card that says it has them skips the rung");
+        assert_eq!(matrix_cores_label(rdna3), "present");
+    }
+
+    #[test]
+    fn gh156_the_metal_build_keeps_an_unknown_as_unknown() {
+        assert!(!may_lack_matrix_cores("", false));
+        assert!(!may_lack_matrix_cores(PINNED_VULKAN_STARTUP, false));
     }
 
     // ── The transport ───────────────────────────────────────────────────────

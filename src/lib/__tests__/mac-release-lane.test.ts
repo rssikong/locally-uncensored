@@ -700,15 +700,20 @@ describe('release.yml, the Mac lane does not race the other platforms', () => {
     expect(lane).toMatch(/^ {4}needs:\s*build-tauri\s*$/m)
   })
 
-  it('proves darwin-aarch64 landed and Windows and Linux stayed', () => {
+  it('proves darwin-aarch64 landed and every attached platform kept its key', () => {
     // The marker file of a dry run names latest.json too; the check is the
-    // step that downloads it.
+    // step that downloads it. With the SignPath lane the Windows key arrives
+    // later (stage 3), so a platform is asked for once its signed updater
+    // files hang on the release, not by a fixed list.
     const check = steps(lane).find((s) => s.includes('--pattern latest.json')) ?? ''
     expect(check, 'no step reads latest.json back from the release').not.toBe('')
     for (const key of ['darwin-aarch64', 'windows-x86_64', 'linux-x86_64']) {
       expect(check, key).toContain(`'${key}'`)
     }
+    expect(check).toContain('is gone from latest.json')
+    expect(check).toMatch(/if \(!assets\.some\(\(n\) => files\.test\(n\)\)\)/)
   })
+
 })
 
 describe('ci.yml, a Mac release is held to a keyless gate', () => {

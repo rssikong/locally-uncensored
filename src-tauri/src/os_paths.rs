@@ -10,13 +10,11 @@
 use crate::app_identity::{AGENT_WORKSPACE_DIR, APP_CONFIG_DIR, APP_DIR, APP_DISPLAY_DIR};
 use std::path::PathBuf;
 
-// Two callers, and they vanish in different builds: `agent_workspace_root`
-// below sits behind cfg(not(test)), `find_lms_cli` further down behind
-// cfg(not(target_os = "windows")). Only a Windows test build loses both at
-// once, so that is the single combination in which this function is dead, and
-// clippy -D warnings said so. Deleting it would be wrong: the other three
-// combinations still call it.
-#[cfg(any(not(test), not(target_os = "windows")))]
+// Every build calls this: `commands::plugin_rea` (REA's Node lookup) has no
+// cfg of its own. Before REA the Windows test build had no caller left
+// (`agent_workspace_root` sits behind cfg(not(test)), `find_lms_cli` behind
+// cfg(not(target_os = "windows"))) and the function was gated out there; with
+// that gate the Windows test build did not compile (d307-k, 19.10.2026).
 pub fn home() -> PathBuf {
     dirs::home_dir().unwrap_or_else(|| PathBuf::from("."))
 }

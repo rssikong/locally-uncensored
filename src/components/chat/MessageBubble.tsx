@@ -2,7 +2,7 @@ import { ChatAttachment } from './ChatAttachment'
 import { ChatFileChip } from './ChatFileChip'
 import { FILE_ONLY_TEXT } from '../../lib/chat-files'
 import { motion } from 'framer-motion'
-import { User, Copy, Check, Pencil, RefreshCw, X, Wrench, Trash2, Scissors, Unlink, Film, Music } from 'lucide-react'
+import { User, Copy, Check, Pencil, RefreshCw, Wrench, Trash2, Scissors, Unlink, Film, Music, GitBranch } from 'lucide-react'
 import { useState, useRef, useEffect, useMemo, memo } from 'react'
 import { MarkdownRenderer } from './MarkdownRenderer'
 import { closeOpenMarkdown } from '../../lib/streaming-markdown'
@@ -18,12 +18,13 @@ import { messageHasCreateOrder } from '../../lib/create/chat-control'
 import { displayModelName } from '../../api/providers/model-name'
 import { modelDisplayLabel } from '../../lib/model-label'
 import type { Message } from '../../types/chat'
-import { stripModelNoise } from '../../lib/strip-model-noise'
+import { shownAnswer } from '../../lib/shown-answer'
 import { truncationNotice } from '../../lib/answer-notes'
 import { unbackedLinksNotice } from '../../lib/unbacked-links'
 import { useAgentModeStore } from '../../stores/agentModeStore'
 import { useChatStore } from '../../stores/chatStore'
 import { useModelStore } from '../../stores/modelStore'
+import { chatToolsReach } from '../../lib/chat-tools-reach'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { extractToolCallsFromContent, looksLikeToolIntent } from '../../lib/tool-call-repair'
 import { isAgentCompatible } from '../../lib/model-compatibility'
@@ -35,6 +36,8 @@ import { MOTION_S } from '../ui/motion'
 import { Hinweis } from '../ui/Hinweis'
 import { RefusalNotice } from './RefusalNotice'
 import { fitTextarea } from '../../lib/fit-textarea'
+import { editableText } from '../../lib/message-edit'
+import { ForkSwitcher } from './ForkSwitcher'
 
 interface Props {
   message: Message
@@ -42,7 +45,18 @@ interface Props {
    *  ONE stable function to every bubble — a per-message closure would be a new
    *  prop on every render and defeat the memo() below. */
   onRegenerate?: (messageId: string) => void
-  onEdit?: (messageId: string, newContent: string) => void
+  /** "Save & resend" of an edited user message. False when nothing could be
+   *  sent; the edit is then saved instead of lost. */
+  onEdit?: (messageId: string, newContent: string) => boolean
+  /** GH #172, #174: this message carries the "< 1/2 >" of the kept versions
+   *  under `forkKey`. Plain values, not an object, so the memo below holds. */
+  forkKey?: string
+  forkIndex?: number
+  forkTotal?: number
+  /** Absent while a turn streams. */
+  onSwitchFork?: (key: string, index: number) => void
+  /** GH #174: a new chat that ends with this message. */
+  onBranch?: (messageId: string) => void
   /** Tool-call id awaiting user approval. When the matching block in
    *  this message has that id, ToolCallBlock renders Approve/Reject
    *  inline instead of a popup over the chat input. */
@@ -62,7 +76,7 @@ interface Props {
   declined?: boolean
 }
 
-function MessageBubbleImpl({ message, onRegenerate, onEdit, pendingApprovalId, onApprove, onReject, isLast, isStreaming, speakerName, declined }: Props) {
+function MessageBubbleImpl({ message, onRegenerate, onEdit, pendingApprovalId, onApprove, onReject, isLast, isStreaming, speakerName, declined, forkKey, forkIndex, forkTotal, onSwitchFork, onBranch }: Props) {
   const [copied, setCopied] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [editContent, setEditContent] = useState('')
@@ -79,6 +93,7 @@ function MessageBubbleImpl({ message, onRegenerate, onEdit, pendingApprovalId, o
   const hasCreateOrder = !isUser && messageHasCreateOrder(message)
   const deleteMessage = useChatStore((s) => s.deleteMessage)
   const updateMessageContent = useChatStore((s) => s.updateMessageContent)
+  const saveUserEdit = useChatStore((s) => s.saveUserEdit)
   const isAgentActive = useAgentModeStore((s) =>
     activeConversationId ? s.agentModeActive[activeConversationId] ?? false : false
   )
@@ -96,10 +111,12 @@ function MessageBubbleImpl({ message, onRegenerate, onEdit, pendingApprovalId, o
   // checked `!isAgentActive`. Suppress them when Chat Tools is enabled. The owner
   // 2026-06-16: web build, Agent off + Chat Tools on, image_generate emitted →
   // bubble showed "Turn Agent Mode on" even though the tool was already running.
-  const chatToolsEnabled = useSettingsStore((s) => s.settings.chatToolsEnabled !== false)
+  // Chat Tools are always on since 3.0.7 where the model can call tools
+  // (lib/chat-tools-reach.ts); the banners stay for a model that cannot.
+  const chatToolsHere = useModelStore((s) => chatToolsReach(s.activeModel, s.models))
 
   const suggestAgent = useMemo(() => {
-    if (isUser || isAgentActive || chatToolsEnabled || !activeConversationId || !activeModel) return false
+    if (isUser || isAgentActive || chatToolsHere || !activeConversationId || !activeModel) return false
     if (!message.content || message.content.length < 10) return false
     // The repair helper extracts {name, arguments}-shaped JSON blocks, plus
     // <tool_call>...</tool_call> Hermes tags. If anything came out, the
@@ -109,7 +126,7 @@ function MessageBubbleImpl({ message, onRegenerate, onEdit, pendingApprovalId, o
     // Only nudge when the model is on the agent-allow-list. Showing this
     // banner on a non-agent-capable model would be a dead-end.
     return isAgentCompatible(activeModel)
-  }, [isUser, isAgentActive, chatToolsEnabled, activeConversationId, activeModel, message.content])
+  }, [isUser, isAgentActive, chatToolsHere, activeConversationId, activeModel, message.content])
 
   // Thought-only completion (live find 2026-06-11): the model reasoned —
   // usually about calling a tool it doesn't have in a non-agent chat — and
@@ -120,35 +137,29 @@ function MessageBubbleImpl({ message, onRegenerate, onEdit, pendingApprovalId, o
   const thoughtOnly = !isUser && !(message.content || '').trim() && !!(message.thinking || '').trim()
     && (!isLast || !!message.usage)
 
-  // Orchestration strip for everything this bubble renders (2.5.9). Memoised:
-  // the regex set is not cheap and a long agent chat re-renders these bubbles
-  // often. Aggressive tier only while a tool loop drives the turn — in plain
-  // chat a {"name": …, "arguments": …} block is often the answer itself.
+  // Orchestration strip for everything this bubble renders (2.5.9), from the
+  // one routine read-aloud takes its text from too (lib/shown-answer.ts).
+  // Memoised: the regex set is not cheap and a long agent chat re-renders
+  // these bubbles often. Aggressive tier only while a tool loop drives the
+  // turn: in plain chat a {"name": …, "arguments": …} block is often the
+  // answer itself.
   // Signature, not the array itself: a streaming turn may grow a block's
   // content in place, leaving the array reference identical. Keying on the
   // total length re-runs the strip on every token while still skipping the
   // work on unrelated re-renders.
   const blockSig = (message.agentBlocks ?? []).reduce((n, b) => n + b.content.length, 0)
     + ':' + (message.agentBlocks?.length ?? 0)
-  const cleanBlocks = useMemo(() => {
-    const map = new Map<string, string>()
-    for (const b of message.agentBlocks ?? []) {
-      if (b.phase === 'answer') map.set(b.id, stripModelNoise(b.content, { aggressive: true }))
-    }
-    return map
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [blockSig])
-  // Aggressive while a tool loop drives the turn, same as Code. In plain chat
-  // the gentle tier only, because a {"name": …, "arguments": …} block there can
-  // be exactly the answer the user asked the model to print.
   const toolLoopDriven = isAgentActive || !!message.agentBlocks?.length
-  const cleanContent = useMemo(
-    () => (isUser ? '' : stripModelNoise(message.content || '', { aggressive: toolLoopDriven })),
-    [isUser, message.content, toolLoopDriven],
+  const shown = useMemo(
+    () => (isUser ? { blocks: new Map<string, string>(), content: '', spoken: '' } : shownAnswer(message, toolLoopDriven)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isUser, message.content, blockSig, toolLoopDriven],
   )
+  const cleanBlocks = shown.blocks
+  const cleanContent = shown.content
   const thoughtOnlyToolIntent = useMemo(
-    () => thoughtOnly && !isAgentActive && !chatToolsEnabled && looksLikeToolIntent(message.thinking || ''),
-    [thoughtOnly, isAgentActive, chatToolsEnabled, message.thinking],
+    () => thoughtOnly && !isAgentActive && !chatToolsHere && looksLikeToolIntent(message.thinking || ''),
+    [thoughtOnly, isAgentActive, chatToolsHere, message.thinking],
   )
 
   // A turn whose visible body comes from per-iteration answer blocks has no
@@ -178,21 +189,39 @@ function MessageBubbleImpl({ message, onRegenerate, onEdit, pendingApprovalId, o
   const startEdit = () => {
     // User: edit the short slash command, not its expanded instruction.
     // Assistant: edit what the model actually said.
-    setEditContent(isUser ? (message.displayContent || message.content) : message.content)
+    setEditContent(isUser ? editableText(message) : message.content)
     setIsEditing(true)
   }
 
-  const confirmEdit = () => {
+  /**
+   * "Save" (GH #172): the new text goes into the chat and nothing else
+   * happens. No request, no model load, every later turn stays. Enter does
+   * this, so a single key can never send. Editing the model's answer has
+   * always worked this way (D#81).
+   */
+  const saveEdit = () => {
     const next = editContent.trim()
-    if (next && next !== message.content) {
+    if (next && activeConversationId) {
       if (isUser) {
-        // Editing your own message re-asks the question (resend path).
-        onEdit?.(message.id, next)
-      } else if (activeConversationId) {
-        // Editing the model's answer rewrites history in place (D#81):
-        // no resend, and every later turn reads the edited text as context.
+        if (next !== editableText(message)) saveUserEdit(activeConversationId, message.id, next)
+      } else if (next !== message.content) {
         updateMessageContent(activeConversationId, message.id, next)
       }
+    }
+    setIsEditing(false)
+  }
+
+  /**
+   * "Save & resend": ask again from here. The old continuation is kept as a
+   * version ("< 1/2 >"), not deleted. When the send path refuses (no model
+   * picked, a run still going) the text is saved, so the edit is not lost.
+   */
+  const resendEdit = () => {
+    const next = editContent.trim()
+    if (!next) return
+    if (!onEdit?.(message.id, next)) {
+      saveEdit()
+      return
     }
     setIsEditing(false)
   }
@@ -228,6 +257,7 @@ function MessageBubbleImpl({ message, onRegenerate, onEdit, pendingApprovalId, o
     copy: handleCopy,
     edit: canEdit ? startEdit : null,
     regenerate: !isUser && onRegenerate ? () => onRegenerate(message.id) : null,
+    branch: onBranch ? () => onBranch(message.id) : null,
     remove: handleDelete,
   }
   // Die Leiste haengt an `!isEditing && !isStreaming` — das Menue bietet
@@ -478,14 +508,25 @@ function MessageBubbleImpl({ message, onRegenerate, onEdit, pendingApprovalId, o
                   fitTextarea(e.target)
                 }}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); confirmEdit() }
+                  // Enter saves, Ctrl or Cmd with Enter resends, Shift with
+                  // Enter is a new line. Enter used to resend and drop every
+                  // later turn (GH #172).
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    if ((e.ctrlKey || e.metaKey) && isUser && onEdit) resendEdit()
+                    else saveEdit()
+                  }
                   if (e.key === 'Escape') cancelEdit()
                 }}
+                aria-label={isUser ? 'Edit message text' : 'Edit response text'}
                 className="w-full bg-transparent text-[0.78rem] leading-relaxed text-gray-800 dark:text-gray-200 resize-none focus:outline-none"
               />
-              <div className="flex items-center gap-1 justify-end">
-                <button onClick={confirmEdit} className="p-0.5 rounded hover:bg-green-500/20 text-green-500 transition-colors"><Check size={11} /></button>
-                <button onClick={cancelEdit} className="p-0.5 rounded hover:bg-red-500/20 text-red-400 transition-colors"><X size={11} /></button>
+              <div className="flex items-center gap-1 justify-end t-micro">
+                <button onClick={cancelEdit} className="px-1.5 py-0.5 rounded text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors">Cancel</button>
+                <button onClick={saveEdit} title="Change the text only (Enter)" className="px-1.5 py-0.5 rounded text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors">Save</button>
+                {isUser && onEdit && (
+                  <button onClick={resendEdit} title="Ask again from here and keep the current answers as a version (Ctrl+Enter)" className="px-1.5 py-0.5 rounded border border-gray-300 dark:border-white/15 text-gray-800 dark:text-gray-100 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors">Save &amp; resend</button>
+                )}
               </div>
             </div>
           ) : isUser && message.files?.length && message.displayContent === FILE_ONLY_TEXT ? (
@@ -621,6 +662,19 @@ function MessageBubbleImpl({ message, onRegenerate, onEdit, pendingApprovalId, o
             never reports usage would otherwise lose the bar for good. */}
         {/* Und seit D-S07 nur noch beim Hovern/Fokus sichtbar — die Begruendung
             samt der beiden bewussten Ausnahmen steht bei `actionBarVisibility`. */}
+        {/* GH #172, #174: the kept versions of this point of the chat. Always
+            visible, not hover gated like the bar below: it says that there IS
+            another version, which nobody would find under a hover. */}
+        {forkKey !== undefined && forkIndex !== undefined && forkTotal !== undefined && !isEditing && (
+          <ForkSwitcher
+            forkKey={forkKey}
+            index={forkIndex}
+            total={forkTotal}
+            onSwitch={onSwitchFork}
+            align={isUser ? 'end' : 'start'}
+          />
+        )}
+
         {actionsAvailable && (
           <div className={
             'flex items-center gap-0.5 ' + actionBarVisibility + ' ' +
@@ -638,7 +692,10 @@ function MessageBubbleImpl({ message, onRegenerate, onEdit, pendingApprovalId, o
             <button onClick={actions.copy} className="p-1 rounded-md text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors" aria-label="Copy message" title={copied ? 'Copied' : 'Copy'}>
               {copied ? <Check size={12} className="text-green-500" /> : <Copy size={12} />}
             </button>
-            {!isUser && <SpeakerButton text={message.content} />}
+            {!isUser && <SpeakerButton text={shown.spoken} />}
+            {actions.branch && (
+              <button onClick={actions.branch} className="p-1 rounded-md text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors" aria-label="Branch from here" title="Branch from here: a new chat up to this message"><GitBranch size={12} /></button>
+            )}
             <button onClick={actions.remove} className={'p-1 rounded-md transition-colors hover:bg-gray-100 dark:hover:bg-white/10 ' + (confirmDelete ? 'text-red-500' : 'text-gray-400 dark:text-gray-500 hover:text-red-500')} aria-label="Delete message" title={confirmDelete ? 'Click again to delete' : 'Delete message'}>
               <Trash2 size={12} />
             </button>

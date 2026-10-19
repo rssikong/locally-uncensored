@@ -135,7 +135,10 @@ describe('der Speicher merkt sich, was gesagt werden muss', () => {
 describe('verdrahtet', () => {
   it('die Liste zaehlt beide Richtungen und sagt genau eine an', () => {
     const src = lies('hooks/useModels.ts')
-    expect(src).toContain('const eigeneBleiben = dropDuplicateLuEngineRows(bundled, allModels)')
+    // GitHub #173: measured against the slot's rows; a row of an additional
+    // OpenAI-compatible entry is a backend of its own and folds nothing away.
+    expect(src).toContain("const slotRows = allModels.filter((m) => !('providerEntry' in m && m.providerEntry))")
+    expect(src).toContain('const eigeneBleiben = dropDuplicateLuEngineRows(bundled, slotRows)')
     expect(src).toContain('bundled.length - eigeneBleiben.length')
     expect(src).toContain('const bleiben = dropStandbyRowsServedByLuEngine(standbyRows, allModels)')
     expect(src).toContain('standbyRows.length - bleiben.length')

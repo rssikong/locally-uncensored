@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Search, Globe, FileText, FileEdit, Terminal, Image, Film, Loader2, Check, X, Clock, AlertCircle, FolderOpen, Monitor, GitBranch, GitCommitHorizontal, GitPullRequest, FlaskConical, History, Users, Database, Download, Square } from 'lucide-react'
 import type { AgentToolCall } from '../../types/agent-mode'
 import { getComfyHost, getComfyPort, downloadComfyFile } from '../../api/backend'
+import { useComfyViewRescue } from './comfyViewRescue'
 import { useModelPickStore } from '../../stores/modelPickStore'
 import { useGenerationStore } from '../../stores/generationStore'
 import { ModelPickerCard, ChangeModelInline, pickKindForToolCall } from './ModelPickerCard'
@@ -290,8 +291,12 @@ function ToolCallBlockImpl({ toolCall, onApprove, onReject }: Props) {
   // so it loads with no server-side proxy. Tauri results are already absolute
   // (they never start with '/') and are unaffected.
   const [imgFailed, setImgFailed] = useState(false)
+  // Desktop: a blocked direct load of an absolute /view URL is fetched through
+  // the app's localhost proxy instead (comfyViewRescue.ts, Discord 15.10.2026).
+  const rescuedUrl = useComfyViewRescue(comfyPreviewUrl, imgFailed)
   const effectivePreviewUrl = (() => {
     if (!previewUrl) return null
+    if (rescuedUrl) return rescuedUrl
     // blob:/data: URLs (Mac MLX) are self-contained in this session — the
     // ComfyUI-host retry below only ever applies to a relative /view path.
     if (imgFailed && previewUrl.startsWith('/')) {
@@ -440,7 +445,7 @@ A user 2026-06-07 fix this lived inside the collapsed details, so a
               ComfyUI /view route to re-fetch from, so a plain anchor download
               off the blob:/data: URL already in hand does the same job. */}
           {(() => {
-            const p = comfyViewParams(effectivePreviewUrl)
+            const p = comfyViewParams(comfyPreviewUrl ?? effectivePreviewUrl)
             if (p) {
               return (
                 <button

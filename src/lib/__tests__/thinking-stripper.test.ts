@@ -7,7 +7,6 @@
  * algorithm — passing these tests means the mobile helper is also correct.
  *
  * Covers:
- * - stripAllThinkingTags (full strip — used when Thinking OFF)
  * - stripNonCanonicalTags (strip non-<think> only — used inside state-machine)
  * - finalStripThinkingTags (end-of-stream safety pass)
  *
@@ -19,52 +18,50 @@
  */
 import { describe, it, expect } from 'vitest'
 import {
-  stripAllThinkingTags,
   stripNonCanonicalTags,
   finalStripThinkingTags,
 } from '../thinking-stripper'
 
 describe('thinking-stripper', () => {
-  describe('stripAllThinkingTags — full strip', () => {
+  describe('stripNonCanonicalTags: blocks and channel thoughts', () => {
     it('empty content passes through', () => {
-      expect(stripAllThinkingTags('')).toBe('')
+      expect(stripNonCanonicalTags('')).toBe('')
     })
 
     it('content with no thinking tags passes through', () => {
-      expect(stripAllThinkingTags('Hello, here is the answer.')).toBe(
+      expect(stripNonCanonicalTags('Hello, here is the answer.')).toBe(
         'Hello, here is the answer.'
       )
     })
 
     it('removes a full <thought>…</thought> block', () => {
       const input = 'Before <thought>internal reasoning</thought> After'
-      expect(stripAllThinkingTags(input)).toBe('Before  After')
+      expect(stripNonCanonicalTags(input)).toBe('Before  After')
     })
 
     it('removes a full <reasoning>…</reasoning> block', () => {
       const input = '<reasoning>step 1\nstep 2</reasoning>Answer!'
-      expect(stripAllThinkingTags(input)).toBe('Answer!')
+      expect(stripNonCanonicalTags(input)).toBe('Answer!')
     })
 
     it('removes <reflect>…</reflect>', () => {
-      expect(stripAllThinkingTags('x<reflect>hmm</reflect>y')).toBe('xy')
+      expect(stripNonCanonicalTags('x<reflect>hmm</reflect>y')).toBe('xy')
     })
 
     it('removes <deepthink>…</deepthink>', () => {
-      expect(stripAllThinkingTags('x<deepthink>deep</deepthink>y')).toBe('xy')
+      expect(stripNonCanonicalTags('x<deepthink>deep</deepthink>y')).toBe('xy')
     })
 
     it('removes multiple blocks in one buffer', () => {
       const input = '<thought>a</thought>mid<reasoning>b</reasoning>end'
-      expect(stripAllThinkingTags(input)).toBe('midend')
+      expect(stripNonCanonicalTags(input)).toBe('midend')
     })
 
     it('removes Gemma <|channel|>thought … </channel|> block', () => {
-      // Real closing form the stripper supports: `</channel>` with optional
-      // trailing pipe (BLOCK_PATTERN: `<\/\|?channel\|?>`).
+      // Any channel marker closes the thought (CHANNEL_THOUGHT).
       const input =
         'prefix <|channel|>thought\nPlan step\n</channel|> answer'
-      const out = stripAllThinkingTags(input)
+      const out = stripNonCanonicalTags(input)
       expect(out).not.toContain('<|channel|>')
       expect(out).not.toContain('</channel|>')
       expect(out).toContain('prefix')
@@ -73,7 +70,7 @@ describe('thinking-stripper', () => {
 
     it('also handles </channel> (no trailing pipe)', () => {
       const input = 'x <|channel|>thought\nplan\n</channel> y'
-      const out = stripAllThinkingTags(input)
+      const out = stripNonCanonicalTags(input)
       expect(out).not.toContain('<|channel|>')
       expect(out).not.toContain('</channel>')
     })
@@ -82,7 +79,7 @@ describe('thinking-stripper', () => {
       // Mid-stream the close hasn't arrived; the opener must still be
       // stripped so the UI never shows the "thought" marker.
       const input = 'Before <|channel|>thought more text'
-      const out = stripAllThinkingTags(input)
+      const out = stripNonCanonicalTags(input)
       expect(out).not.toContain('<|channel|>')
       expect(out).not.toContain('thought')
       expect(out).toContain('Before')
@@ -90,12 +87,12 @@ describe('thinking-stripper', () => {
 
     it('is case-insensitive on tag name', () => {
       const input = '<THOUGHT>x</THOUGHT>answer'
-      expect(stripAllThinkingTags(input)).toBe('answer')
+      expect(stripNonCanonicalTags(input)).toBe('answer')
     })
 
     it('handles multi-line tag content', () => {
       const input = '<thought>\nline 1\nline 2\nline 3\n</thought>\nDone.'
-      expect(stripAllThinkingTags(input)).toBe('\nDone.')
+      expect(stripNonCanonicalTags(input)).toBe('\nDone.')
     })
   })
 
@@ -157,7 +154,7 @@ describe('thinking-stripper', () => {
     it('does not eat content that merely contains the word "thought"', () => {
       // False-positive guard: we match <thought> as a TAG, not the word.
       const input = 'I thought about it.'
-      expect(stripAllThinkingTags(input)).toBe('I thought about it.')
+      expect(stripNonCanonicalTags(input)).toBe('I thought about it.')
     })
 
     it('handles nested markup gracefully (simple non-greedy match)', () => {
@@ -166,22 +163,33 @@ describe('thinking-stripper', () => {
       // next close tag.
       const input =
         '<thought>a</thought>between<thought>b</thought>after'
-      expect(stripAllThinkingTags(input)).toBe('betweenafter')
+      expect(stripNonCanonicalTags(input)).toBe('betweenafter')
     })
 
     it('stripping is idempotent (applying twice yields same result)', () => {
       const input = '<thought>a</thought>clean<reasoning>b</reasoning>'
-      const once = stripAllThinkingTags(input)
-      const twice = stripAllThinkingTags(once)
+      const once = stripNonCanonicalTags(input)
+      const twice = stripNonCanonicalTags(once)
       expect(twice).toBe(once)
     })
 
     it('typical Gemma 4 streaming snapshot (mid-generation)', () => {
       const streamSnap =
         'Sure! <|channel|>thought\nLet me plan:\n1. parse input\n2.'
-      const out = stripAllThinkingTags(streamSnap)
+      const out = stripNonCanonicalTags(streamSnap)
       expect(out).not.toContain('channel')
       expect(out).toContain('Sure!')
+      // The half block is not the answer: nothing of it may stand in the bubble.
+      expect(out.trim()).toBe('Sure!')
+    })
+
+    it('Gemma 4 writes <|channel>thought … <channel|>, and the thought goes with its markers', () => {
+      const wire = '<|channel>thought\nThe user asks about clocks. Keep it short.<channel|>People like light evenings.'
+      expect(stripNonCanonicalTags(wire)).toBe('People like light evenings.')
+    })
+
+    it('a channel marker without a thought behind it is only a marker', () => {
+      expect(stripNonCanonicalTags('<|channel|>answer')).toBe('answer')
     })
   })
 })

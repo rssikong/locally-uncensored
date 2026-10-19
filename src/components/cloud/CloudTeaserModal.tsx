@@ -16,6 +16,8 @@ import { cloudModelById } from '../../stores/cloudCatalogStore'
 import { useCreateStore, type CreateIntent } from '../../stores/createStore'
 import { isIntentAvailable } from '../create/experimental/intents'
 import { isMlxImageHost } from '../../api/mlx-image'
+import { mlxMakesMusic } from '../../lib/mac-music'
+import { mlxFollowsMotion, mlxTalking } from '../../api/mlx-video'
 import { openExternal, isMacOS } from '../../api/backend'
 import { CLOUD_BASE } from '../../api/cloud/config'
 import { getMaxVramGb, getSharedMemoryGb } from '../../lib/hardware'
@@ -79,6 +81,14 @@ export function CloudTeaserModal() {
   const setCloudTeaser = useUIStore((s) => s.setCloudTeaser)
   const setCloudHiddenNotice = useUIStore((s) => s.setCloudHiddenNotice)
   const setIntent = useCreateStore((s) => s.setIntent)
+  // Enhance Image runs on a Mac with an upscaler installed (SeedVR2).
+  const mlxUpscale = useCreateStore((s) => s.mlxUpscale)
+  // The one lane of these a Mac runs itself, while its music engine is there.
+  const mlxMusic = useCreateStore((s) => mlxMakesMusic(s.audioModelList))
+  // And Motion Control while an installed LTX-2.3 pack follows a motion video.
+  const mlxMotion = useCreateStore((s) => mlxFollowsMotion(s.videoModelList))
+  // And Talking Character, while a video model that talks is installed.
+  const mlxTalk = useCreateStore((s) => mlxTalking(s.videoModelList).tab)
   const { updateSettings } = useSettingsStore()
   // The card's own number (2026-09-07): "Your GPU has 6 GB" says why
   // the tool is greyed out better than any adjective. Read once per opening,
@@ -128,7 +138,7 @@ export function CloudTeaserModal() {
   // "Try local" button for lanes the bar doesn't even show (MAC-2).
   const localLane =
     target?.surface === 'intent' &&
-    isIntentAvailable(target.intent as CreateIntent, 'local', isMlxImageHost())
+    isIntentAvailable(target.intent as CreateIntent, 'local', isMlxImageHost(), false, false, mlxUpscale, mlxMusic, mlxMotion, mlxTalk)
       ? target.intent
       : null
   const copy: TeaserCopy | null =

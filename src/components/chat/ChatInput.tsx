@@ -3,7 +3,7 @@ import { usePopoverPlatz } from '../../hooks/usePopoverPlatz'
 import { SamplingControls } from './SamplingControls'
 import { Send, Square, Paperclip, X, Brain, Gauge, Terminal, Film, Music } from 'lucide-react'
 import { matchAgentCommands, type AgentCommand, type CommandScope } from '../../lib/agent-commands'
-import { VoiceButton } from './VoiceButton'
+import { VoiceButton, type VoiceButtonHandle } from './VoiceButton'
 import { ApprovalDialog } from './ApprovalDialog'
 import { ComputerQuestionSlot } from '../computer/ComputerQuestion'
 import { ComputerNote } from '../computer/ComputerNote'
@@ -18,7 +18,7 @@ import { clampEffort, effortChoices, effortLabel, nextEffort, DEFAULT_EFFORT } f
 import type { AgentToolCall } from '../../types/agent-mode'
 import type { ImageAttachment } from '../../types/chat'
 import { MAX_CHAT_IMAGES, prepareChatImages } from '../../lib/chat-image-input'
-import { FILE_ONLY_TEXT, MAX_CHAT_FILES, TOO_MANY_FILES_MESSAGE, prepareChatFile, type ChatFileInput } from '../../lib/chat-files'
+import { FILE_ONLY_TEXT, MAX_CHAT_FILES, TOO_MANY_FILES_MESSAGE, binarySummaryOnlyMessage, prepareChatFile, type ChatFileInput } from '../../lib/chat-files'
 import { fileExtension } from '../../lib/file-magic'
 import { ChatFileChip } from './ChatFileChip'
 import { COMPOSER_MAX_W } from './composer-width'
@@ -26,9 +26,9 @@ import { consumeComposerFocusPending } from '../../hooks/useKeyboardShortcuts'
 import { useChatNoticeStore, CHAT_NOTICE_MS } from '../../stores/chatNoticeStore'
 import { MONOGRAM, MONOGRAM_INVERT } from '../layout/brand'
 import { fitTextarea } from '../../lib/fit-textarea'
+import { turnOnSend, turnOnType, type EmojiTurn } from '../../lib/emoticons'
 import { createActive, createChatLive, createInChatOf, servedWindowOf } from '../../lib/create/chat-switch'
 import { useCreateChatReleased } from '../../lib/create/chat-release'
-import { t } from '../../lib/i18n'
 import {
   ATTACH_TOO_LARGE, ATTACH_TOO_MANY, addPendingMedia, mediaKindOf, tooLargeToAttach, type PendingMedia,
 } from '../../lib/create/chat-attachments'
@@ -82,6 +82,13 @@ interface Props {
    * bar between Think and the model picker. Chat and Code pass different sets.
    */
   composerActions?: ReactNode
+  /**
+   * Do attached files reach the model's tools here (Agent mode, Code)? Then a
+   * file is copied into the working folder on send. Without them (plain chat)
+   * a binary only reaches the model as a summary, and the composer says so
+   * the moment one is attached (3.0.7, Discord: "attach a ROM").
+   */
+  filesReachTools?: boolean
 }
 
 /**
@@ -108,14 +115,25 @@ const COMPOSER_MAX_PX = 200
  * same tick as the second keydown) and makes it a thing that can be reasoned
  * about (and tested) on its own. Returns false when the send must be dropped.
  */
-function passSendLock(lock: { current: number }): boolean {
+function passSendLock(lock: { current: SendLock }, message: string): boolean {
   const now = Date.now()
-  if (now - lock.current < SEND_LOCK_MS) return false
-  lock.current = now
+  // Only the SAME message is a double fire: both keydowns of one tick read
+  // the same field. A different message within the window is a new send.
+  // The lock used to hold for any message, and a model that answers in under
+  // 700 ms (the engine mock of the how-it-works recordings, a fast cloud
+  // model) left the next message in the field with no word why.
+  if (now - lock.current.at < SEND_LOCK_MS && lock.current.message === message) return false
+  lock.current = { at: now, message }
   return true
 }
 
-export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, pendingApproval, onApprove, onReject, disabled, modelReady, slashCommands, composerModel, composerActions, composerAbove }: Props) {
+/** The last accepted send: when, and what it carried (see passSendLock). */
+interface SendLock {
+  at: number
+  message: string
+}
+
+export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, pendingApproval, onApprove, onReject, disabled, modelReady, slashCommands, composerModel, composerActions, composerAbove, filesReachTools = false }: Props) {
   const [input, setInput] = useState('')
   const [images, setImages] = useState<ImageAttachment[]>([])
   // Files of any other kind (3.0.5). Each entry is a description plus the
@@ -133,6 +151,7 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
   const imageJob = useRef({ busy: false, epoch: 0 })
   const fileJob = useRef({ busy: false })
   const [isVoiceRecording, setIsVoiceRecording] = useState(false)
+  const voiceRef = useRef<VoiceButtonHandle>(null)
   // Slash-command autocomplete (v2.5.3). When the input is a lone "/token", show
   // the matching agent commands; ↑/↓ to move, Enter/Tab to pick, Esc to dismiss.
   const [cmdMenu, setCmdMenu] = useState<AgentCommand[]>([])
@@ -234,6 +253,11 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
   const isTranscribing = useVoiceStore((s) => s.isTranscribing)
   const thinkingEnabled = useSettingsStore((s) => s.settings.thinkingEnabled)
   const updateSettings = useSettingsStore((s) => s.updateSettings)
+  // Emoticons to emojis while typing (lib/emoticons.ts, Settings: Appearance).
+  const emojiOn = useSettingsStore((s) => s.settings.emojiAutoReplace) !== false
+  // The last turn, for one Backspace to take back, and the caret it leaves.
+  const emojiTurnRef = useRef<EmojiTurn | null>(null)
+  const caretRef = useRef<number | null>(null)
   // Cloud mode is a money state: the next Send is billed. It gets drawn here,
   // where the user is typing, not only on the switch in the header corner.
   const cloudMode = useSettingsStore((s) => s.settings.appMode) === 'cloud'
@@ -257,10 +281,35 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
   const effortDefault = activeModelMeta && 'effortDefault' in activeModelMeta ? activeModelMeta.effortDefault : undefined
   const effortSteps = effortChoices(effortLevels)
   const effortNow = clampEffort(effortLevels, reasoningEffort ?? DEFAULT_EFFORT, effortDefault)
+  // 3.0.7, after issue 176: rungs a local server gave us wait for the user's
+  // own pick. Until then the request is the one from before 3.0.7 and the
+  // button says so with Default instead of naming a rung nobody chose. On a
+  // local model the round ends at Default again, so the old behaviour stays
+  // one click away.
+  const localEffortChosen = useSettingsStore((s) => s.settings.localEffortChosen)
+  const effortLocal = !!activeModelMeta && 'effortLocal' in activeModelMeta && activeModelMeta.effortLocal === true
+  const effortWaits = effortLocal && localEffortChosen !== true
+  const effortText = effortWaits ? 'Default' : effortLabel(effortNow)
+  const effortHint = effortWaits
+    ? 'Reasoning effort: Default, the model decides. Click to pick a level. Higher effort spends more output tokens.'
+    : `Reasoning effort: ${effortLabel(effortNow)}. Click to cycle. Higher effort spends more output tokens.`
+  const cycleEffort = () => {
+    if (effortWaits) {
+      updateSettings({ localEffortChosen: true, reasoningEffort: effortSteps[0] })
+    } else if (effortLocal && effortNow === effortSteps[effortSteps.length - 1]) {
+      updateSettings({ localEffortChosen: false })
+    } else {
+      updateSettings({ reasoningEffort: nextEffort(effortLevels, effortNow) })
+    }
+  }
   // Only while thinking is really happening. 'always' models keep their Think
   // button locked on, so the rung is live there without the button being.
   const thinkingIsOn = thinkLockedOn || (thinkingEnabled && canThink)
   const showEffort = effortSteps.length > 0 && thinkingIsOn
+  // Issue 176: a local model whose server takes no rungs shows the control
+  // greyed with the reason, the same way the Think budget field does.
+  const effortNote = activeModelMeta && 'effortNote' in activeModelMeta ? activeModelMeta.effortNote : undefined
+  const showEffortGreyed = !showEffort && !!effortNote && thinkingIsOn
   const serverVision = declaredVision(activeModelMeta)
   const canSeeImages = serverVision !== undefined ? serverVision : isVisionCompatible(activeModel)
   // Is Create in chat on for the next message? Follows the account's release,
@@ -288,6 +337,16 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
       textareaRef.current?.focus()
     }
   }, [conversationId])
+
+  // After an emoji turn (or its take-back) the caret stands where the text
+  // changed, not at the end React leaves it at. Before paint, so it never
+  // jumps.
+  useLayoutEffect(() => {
+    const at = caretRef.current
+    if (at == null || !textareaRef.current) return
+    caretRef.current = null
+    textareaRef.current.setSelectionRange(at, at)
+  }, [input])
 
   // GH #139: measured on a copy outside the page, and written only when the
   // height really changes, so a key within a line lays out nothing but the
@@ -340,7 +399,14 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
       else notices.dismiss('file-attach')
       // A PDF or Word file attaches like any other, but the model gets far
       // more out of it through the Documents panel (GH #69).
-      if (ready.some(({ attachment }) => DOCUMENT_EXTENSIONS.has(fileExtension(attachment.name)))) {
+      const isDocument = (name: string) => DOCUMENT_EXTENSIONS.has(fileExtension(name))
+      // A binary in plain chat: say what the model gets and where it gets
+      // more. A document has its own, better way (below).
+      const binaryLine = filesReachTools
+        ? null
+        : binarySummaryOnlyMessage(ready.map(({ attachment }) => attachment).filter((a) => !isDocument(a.name)))
+      if (binaryLine) notices.show('binary-summary-only', binaryLine, 'ruhig', CHAT_NOTICE_MS)
+      if (ready.some(({ attachment }) => isDocument(attachment.name))) {
         notices.show(
           'document-belongs-in-docs',
           'The model only gets a summary of this document. To ask about its text, add it in the Documents panel.',
@@ -352,7 +418,7 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
       job.busy = false
       setPreparingFiles(false)
     }
-  }, [files.length, conversationId])
+  }, [files.length, conversationId, filesReachTools])
 
   const addFiles = useCallback(async (picked: FileList | File[]) => {
     const all = Array.from(picked)
@@ -463,9 +529,10 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
   // on the NEXT render, so two Enter keydowns in the same tick (key-repeat / IME
   // / a held Enter) both pass the checks below and send the identical message
   // twice. A short monotonic lock closes that window.
-  const sendLockRef = useRef(0)
+  const sendLockRef = useRef<SendLock>({ at: 0, message: '' })
   const handleSend = () => {
-    const trimmed = input.trim()
+    // Enter ends the last word as a space would, so an emoticon there turns.
+    const trimmed = (emojiOn ? turnOnSend(input) : input).trim()
     if (imageJob.current.busy || fileJob.current.busy || (!trimmed && images.length === 0 && files.length === 0 && media.length === 0) || isGenerating || waitingForLocalLane || disabled) return
     // No chat model to answer: the send handlers return without a word in that
     // case, and the lines below would then empty the field and the chips for a
@@ -476,7 +543,9 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
       useUIStore.getState().askForModel()
       return
     }
-    if (!passSendLock(sendLockRef)) return
+    // What the message carries, so a double fire is told from a new send.
+    const signature = JSON.stringify([trimmed, images.length, files.length, media.length])
+    if (!passSendLock(sendLockRef, signature)) return
     // A message is sent: the note about a stop has been seen.
     dismissComputerStop()
     const text = trimmed || (images.length > 0 ? '(image)' : FILE_ONLY_TEXT)
@@ -487,6 +556,9 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
     if (media.length > 0) onSend(trimmed || '(attachment)', pictures, files.length > 0 ? files : undefined, media)
     else if (files.length > 0) onSend(text, pictures, files)
     else onSend(text, pictures)
+    // Sent while dictating: the words in the field went out, the take ends
+    // here and leaves nothing to fill the emptied field again.
+    if (isVoiceRecording) voiceRef.current?.endOnSend()
     setInput('')
     setImages([])
     setFiles([])
@@ -499,10 +571,17 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
   // and in plain chat only the commands marked for it (today: /compact).
   // Offering an agent command where there is no tool catalogue would be
   // offering work the surface cannot do.
-  const updateInput = (value: string) => {
-    setInput(value)
+  const updateInput = (value: string, caret?: number | null) => {
     // The user writes on: the note about a stop has been seen.
     dismissComputerStop()
+    // One character typed behind a finished emoticon turns it into its emoji.
+    const turn = emojiOn && caret != null && value.length === input.length + 1 ? turnOnType(value, caret) : null
+    emojiTurnRef.current = turn
+    if (turn) {
+      value = turn.after
+      caretRef.current = turn.caret
+    }
+    setInput(value)
     const matches = slashCommands ? matchAgentCommands(value, slashCommands) : []
     setCmdMenu(matches)
     setCmdIndex(0)
@@ -518,6 +597,17 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // A Backspace right after a turn takes it back: the emoticon as typed.
+    const turn = emojiTurnRef.current
+    const field = textareaRef.current
+    if (e.key === 'Backspace' && turn && field && field.value === turn.after
+      && field.selectionStart === turn.caret && field.selectionEnd === turn.caret) {
+      e.preventDefault()
+      emojiTurnRef.current = null
+      caretRef.current = turn.caret - (turn.after.length - turn.before.length)
+      setInput(turn.before)
+      return
+    }
     // Slash-command menu navigation takes precedence while it's open.
     if (cmdMenu.length > 0) {
       if (e.key === 'ArrowDown') {
@@ -543,7 +633,10 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
     }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      if (isVoiceRecording || isTranscribing) return
+      // While the last words are still being transcribed, Enter waits for
+      // them. While recording it sends what the field shows and ends the
+      // take, as the Send button does.
+      if (isTranscribing) return
       handleSend()
     }
   }
@@ -720,7 +813,7 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
                   <span className="truncate">{clip.name}</span>
                   <button
                     onClick={() => setMedia(prev => prev.filter((_, k) => k !== i))}
-                    aria-label={`${t('Remove')} ${clip.name}`}
+                    aria-label={`Remove ${clip.name}`}
                     className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-0.5 text-gray-500 hover:bg-gray-200 hover:text-gray-800 dark:hover:bg-white/10 dark:hover:text-gray-200"
                   >
                     <X size={10} />
@@ -760,11 +853,11 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
             key={conversationId ?? 'none'}
             ref={textareaRef}
             value={input}
-            onChange={(e) => updateInput(e.target.value)}
+            onChange={(e) => updateInput(e.target.value, e.target.selectionStart)}
             onKeyDown={handleKeyDown}
             onBlur={() => setTimeout(() => setCmdMenu([]), 120)}
             onPaste={handlePaste}
-            placeholder={disabled ? t('Unavailable') : isDragOver ? t('Drop files here...') : isTranscribing ? t('Transcribing...') : isVoiceRecording ? t('Recording...') : t('Message...')}
+            placeholder={disabled ? "Unavailable" : isDragOver ? "Drop files here..." : isTranscribing ? "Transcribing..." : isVoiceRecording ? "Recording..." : "Message..."}
             disabled={disabled}
             rows={1}
             className="lu-fokus-am-kasten w-full bg-transparent resize-none text-gray-800 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-600 focus:outline-none text-[12px] leading-relaxed max-h-[200px] disabled:opacity-50 scrollbar-thin"
@@ -792,7 +885,7 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
             onClick={() => fileInputRef.current?.click()}
             disabled={isGenerating || preparingImages || preparingFiles}
             className="lu-control lu-control--icon"
-            title={createOn ? t('Attach images, clips, audio or files') : t('Attach images or files')}
+            title={createOn ? 'Attach images, clips, audio or files' : 'Attach images or files'}
           >
             <Paperclip size={14} />
           </button>
@@ -806,6 +899,7 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
           />
 
           <VoiceButton
+            ref={voiceRef}
             // Streaming dictation: interim chunks arrive while talking, the final
             // transcript replaces them on stop, both via applyDictation, which
             // writes base + transcript and NEVER sends (user presses Send).
@@ -815,7 +909,11 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
               if (r) dictationBaseRef.current = input
               setIsVoiceRecording(r)
             }}
-            disabled={isGenerating}
+            // The microphone stays free while an answer streams: a take that
+            // runs can be stopped, and a new one can be started, as the field
+            // takes typing then too. Box run d307-i (15.10.2026): with the
+            // button greyed out until the answer ended, a send while
+            // dictating still left the microphone out of reach.
           />
 
           {/* Think toggle ('always'-models render it locked on).
@@ -833,15 +931,15 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
             className="lu-control"
             title={
               thinkLockedOn
-                ? t('Thinking is always on for this model')
+                ? 'Thinking is always on for this model'
                 : canThink
-                  ? (thinkingEnabled ? t('Thinking ON') : t('Thinking OFF'))
-                  : t('Model does not support thinking')
+                  ? (thinkingEnabled ? 'Thinking ON' : 'Thinking OFF')
+                  : 'Model does not support thinking'
             }
           >
             <Brain size={11} />
             {/* In a narrow composer the icon and the tooltip carry it. */}
-            <span className="@max-[30rem]:hidden">{t('Think')}</span>
+            <span className="@max-[30rem]:hidden">Think</span>
           </button>
 
           {/* Reasoning effort. Same shape and size as the Think button beside
@@ -860,13 +958,25 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
           {showEffort && (
             <button
               data-testid="effort-toggle"
-              onClick={() => updateSettings({ reasoningEffort: nextEffort(effortLevels, effortNow) })}
-              aria-label={`${t('Reasoning effort')}: ${effortLabel(effortNow)}`}
+              onClick={cycleEffort}
+              aria-label={`Reasoning effort: ${effortText}`}
               className="lu-control"
-              title={`${t('Reasoning effort')}: ${effortLabel(effortNow)}. ${t('Click to cycle. Higher effort spends more output tokens.')}`}
+              title={effortHint}
             >
               <Gauge size={11} />
-              <span>{effortLabel(effortNow)}</span>
+              <span>{effortText}</span>
+            </button>
+          )}
+          {showEffortGreyed && (
+            <button
+              data-testid="effort-toggle-unsupported"
+              disabled
+              aria-label={`Reasoning effort: ${effortNote}`}
+              className="lu-control"
+              title={`Reasoning effort: ${effortNote}`}
+            >
+              <Gauge size={11} />
+              <span>Effort</span>
             </button>
           )}
 
@@ -880,7 +990,7 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
           {cloudMode && (
             <span
               data-testid="composer-cloud-state"
-              title={t("Cloud mode: this message runs on LU's hosted GPUs and is billed to your lu-labs.ai credits. The Cloud switch up in the header turns it off.")}
+              title="Cloud mode: this message runs on LU's hosted GPUs and is billed to your lu-labs.ai credits. The Cloud switch up in the header turns it off."
               className="flex items-center gap-1 px-1.5 py-1.5 rounded-md shrink-0 t-micro font-medium bg-lu-cloud/15 text-lu-cloud dark:text-lu-cloud-lift border border-lu-cloud/30"
             >
               <img
@@ -891,7 +1001,7 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
                 draggable={false}
                 className={`shrink-0 select-none ${MONOGRAM_INVERT}`}
               />
-              <span>{t('Cloud')}</span>
+              <span>Cloud</span>
             </span>
           )}
 
@@ -927,7 +1037,7 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
                 // auffindbar bleibt, ohne die Fehlerfarbe zu tragen.
                 data-active="true"
                 className="lu-control lu-control--icon w-full h-full"
-                aria-label={t('Stop generation')}
+                aria-label="Stop generation"
               >
                 <Square size={13} />
               </button>
@@ -936,7 +1046,7 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
                 onClick={handleSend}
                 disabled={preparingImages || preparingFiles || (!input.trim() && images.length === 0 && files.length === 0 && media.length === 0) || isTranscribing || !!waitingForLocalLane}
                 className="lu-control lu-control--icon lu-primary w-full h-full"
-                aria-label={t('Send message')}
+                aria-label="Send message"
               >
                 <Send size={13} />
               </button>

@@ -165,3 +165,43 @@ export function parseLmStudioModel(body: unknown): { loaded: number | null; max:
     ),
   }
 }
+
+/** A positive count, also when the server wrote it as a string. */
+const positiveCount = (v: unknown): number | null => {
+  const n = typeof v === 'string' ? Number(v) : v
+  return typeof n === 'number' && Number.isFinite(n) && n > 0 ? Math.floor(n) : null
+}
+
+/**
+ * Ollama `POST /api/show`: the length the body names, or null.
+ *
+ *   1. `model_info`: `general.context_length`, then any architecture key that
+ *      ends in `.context_length` (qwen2, gemma3, llama). Ollama always fills one.
+ *   2. `parameters`: `num_ctx`, as an object or as a Modelfile line.
+ *
+ * null is "not said", and a server that emulates the Ollama API may say
+ * nothing at all here: KoboldCpp answers with an empty `model_info` (GH #166).
+ * What to ask next is the caller's business (api/ollama.ts).
+ */
+export function parseOllamaShowContext(info: unknown): number | null {
+  const modelInfo = prop(info, 'model_info')
+  if (isRecord(modelInfo)) {
+    const general = positiveCount(modelInfo['general.context_length'])
+    if (general) return general
+    for (const [k, v] of Object.entries(modelInfo)) {
+      if (k.endsWith('.context_length')) {
+        const n = positiveCount(v)
+        if (n) return n
+      }
+    }
+  }
+  const params = prop(info, 'parameters')
+  if (isRecord(params)) {
+    const n = positiveCount(params.num_ctx)
+    if (n) return n
+  } else if (typeof params === 'string') {
+    const match = params.match(/num_ctx\s+(\d+)/)
+    if (match) return positiveCount(match[1])
+  }
+  return null
+}

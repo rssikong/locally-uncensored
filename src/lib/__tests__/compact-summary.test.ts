@@ -467,7 +467,7 @@ describe('der Rundlauf verliert und verschiebt nichts', () => {
 
   it('das Wort NOTES steht in keinem Abschnittstext, auch nicht in der Mitte', () => {
     const voll = renderCompactSummary({
-      task: 'T', requests: '', progress: 'P', decisions: 'D', facts: 'F', open: 'O', rest: 'R',
+      task: 'T', requests: '', progress: 'P', decisions: 'D', files: 'X', facts: 'F', open: 'O', rest: 'R',
     })
     for (const abschnitt of summarySections(voll)) {
       expect(abschnitt.body).not.toMatch(/^\s*NOTES\s*$/m)
@@ -477,11 +477,11 @@ describe('der Rundlauf verliert und verschiebt nichts', () => {
   it('jeder Abschnitt kommt Zeichen fuer Zeichen zurueck, wie er hineinging', () => {
     const quelle = {
       task: 'Zeile eins\nZeile zwei', requests: '', progress: '- a\n- b', decisions: 'X weil Y',
-      facts: '1) eins', open: 'noch offen', rest: 'loses Ende',
+      files: 'src/a.ts geaendert', facts: '1) eins', open: 'noch offen', rest: 'loses Ende',
     }
     const zurueck = summarySections(renderCompactSummary(quelle))
     expect(zurueck.map((a) => a.body)).toEqual([
-      quelle.task, quelle.progress, quelle.decisions, quelle.facts, quelle.open, quelle.rest,
+      quelle.task, quelle.progress, quelle.decisions, quelle.files, quelle.facts, quelle.open, quelle.rest,
     ])
   })
 

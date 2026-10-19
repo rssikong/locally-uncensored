@@ -36,6 +36,7 @@ const SUMME: CompactSummary = {
   task: 'Den Login reparieren.',
   requests: '', progress: 'auth.ts gelesen, Nullwert in Zeile 40 gefunden.',
   decisions: 'Kein Refactoring — der Rest ist getestet.',
+  files: '',
   facts: 'src/auth.ts:40, verifyToken.',
   open: 'Der Test fehlt.',
   rest: '',
@@ -50,10 +51,17 @@ const nachricht = (id: string, content: string, role: Role = 'user'): Message =>
   timestamp: 1,
 })
 
-/** N sichtbare Nachrichten, m0 … m(N-1), abwechselnd Nutzer und Modell. */
+/**
+ * Genug Text je Zug, dass eine Verdichtung etwas sparen KANN. Seit Befund H3
+ * (Box-Lauf 3) endet ein Lauf ueber zu kurze Zuege vor dem Modellaufruf, und
+ * diese Datei prueft den Schnitt, nicht diese Schwelle.
+ */
+const FUELLUNG = ' und weiter'.repeat(50)
+
+/** N sichtbare Nachrichten, m0 bis m(N-1), abwechselnd Nutzer und Modell. */
 const verlauf = (n: number): Message[] =>
   Array.from({ length: n }, (_, i) =>
-    nachricht(`m${i}`, `Zug ${i}: Inhalt`, i % 2 ? 'assistant' : 'user'),
+    nachricht(`m${i}`, `Zug ${i}: Inhalt${FUELLUNG}`, i % 2 ? 'assistant' : 'user'),
   )
 
 function chatMit(messages: Message[], compactions?: CompactionRecord[]): string {
@@ -89,11 +97,15 @@ function gesehene(): TranscriptTurn[] {
   return zusammenfasser.mock.calls[0][0].turns as TranscriptTurn[]
 }
 
+// Fenster 0 heisst unbekannt, und dann gilt die feste Zahl KEEP_AFTER_COMPACT,
+// um die es in dieser Datei geht. Das anpassbare Fenster (Issue #151) hat seine
+// eigene Datei: verdichtung-zusammengefuehrt.test.ts.
 const lauf = (extra: Record<string, unknown> = {}) =>
   runCompactForConversation({
     conversationId: CHAT_ID,
     activeModel: 'qwen:4b',
     trigger: 'manual',
+    window: 0,
     ...extra,
   })
 
@@ -268,14 +280,14 @@ describe('Eine gespeicherte Zusammenfassung ist kein Verlauf', () => {
   it('ein alter Block wird aus dem Zug entfernt, der Rest der Nachricht bleibt', async () => {
     const mitBlock = nachricht(
       'm0',
-      `${COMPACT_OPEN}\nTASK\nEtwas ganz Altes${COMPACT_CLOSE}\nZug 0: Inhalt`,
+      `${COMPACT_OPEN}\nTASK\nEtwas ganz Altes${COMPACT_CLOSE}\nZug 0: Inhalt${FUELLUNG}`,
     )
     chatMit([mitBlock, ...verlauf(19).slice(1)])
     const r = await lauf()
     expect(r.ok).toBe(true)
 
     const turns = gesehene()
-    expect(turns[0].content).toBe('Zug 0: Inhalt')
+    expect(turns[0].content).toBe(`Zug 0: Inhalt${FUELLUNG}`)
     const text = turns.map((t) => t.content).join('\n')
     expect(text).not.toContain(COMPACT_OPEN)
     expect(text).not.toContain('Etwas ganz Altes')

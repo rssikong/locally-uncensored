@@ -18,9 +18,10 @@ import { tierMarks } from '../../../lib/render/model-tier'
 import { ICON_SM } from '../../ui/icon-size'
 import {
   FIT_META, FitHint, CapIcons, HotMark, computeFit, shortBlurb, variantLabel,
-  useModelTile, bundleTileFacts,
+  useModelTile, bundleTileFacts, bundleOffersCloud, bundleOffersCheck, CheckFilesButton,
   type ModelTileProps, type BundleTileProps,
 } from '../ModelTiles'
+import { CloudOfferLine } from '../../cloud/CloudOffer'
 
 // ─── Drei Rollen, drei Erscheinungen ────────────────────────────────
 //
@@ -180,6 +181,9 @@ export function ClassicModelTile(props: ModelTileProps) {
               (GH #118), die Optik aus den Rezepten dieser Datei. `installed`,
               `downloading` und `externalOnly` stehen deshalb nicht mehr
               einzeln in dieser Kette, sie gehen oben in `action` ein. */}
+          {props.onCheck && (action === 'use' || action === 'installed') && (!props.canCheck || props.canCheck(sel)) && (
+            <CheckFilesButton onClick={() => props.onCheck!(sel)} label={false} name={sel.name} />
+          )}
           {action === 'view' ? (
             sel.url ? (
               <button
@@ -223,6 +227,10 @@ export function ClassicModelTile(props: ModelTileProps) {
           )}
         </div>
       </div>
+
+      {/* Too big for this machine and not here yet: the one place LU Cloud
+          is named on a chat tile (lib/cloud-offer.ts). */}
+      {fit === 'big' && action === 'get' && <CloudOfferLine task="chat" sharedMemory={sharedMemory} />}
 
       {/* Slim inline progress, the header badge stays the full control center */}
       {downloading && dl && dl.total > 0 && (
@@ -279,6 +287,7 @@ export function ClassicBundleTile(props: BundleTileProps) {
               <span>{cardLine}</span>
             </p>
           )}
+          {bundleOffersCloud(fit, props) && <CloudOfferLine task={props.cloudTask!} sharedMemory={props.sharedMemory} />}
         </div>
         {bundle.url && (
           <button
@@ -298,6 +307,9 @@ export function ClassicBundleTile(props: BundleTileProps) {
         {!cardLine && !addonLine && <FitHint fit={fit} />}
 
         <div className="flex items-center gap-1 shrink-0 ml-auto">
+          {bundleOffersCheck(props, plan.present) && (
+            <CheckFilesButton onClick={props.onCheck!} label={complete} name={bundle.name} className={TILE_CONTROL} />
+          )}
           {complete ? (
             <span className={TILE_STATE}>
               <Check size={ICON_SM} /> Installed

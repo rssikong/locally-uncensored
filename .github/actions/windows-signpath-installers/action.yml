@@ -1,0 +1,178 @@
+name: SignPath stage 2, pack the installers around the signed binary and submit them
+description: >-
+  Fetches the build output of stage 1 and the app binary SignPath signed,
+  packs the NSIS installer and the MSI around that binary, and submits both
+  installers to SignPath without waiting for them. Publishes nothing.
+
+# The order of all three stages is in the header of
+# .github/actions/windows-signpath/action.yml.
+#
+# The caller must have checked out the tag, installed Node, Rust and the npm
+# dependencies, and asked `scripts/signpath-stages.mjs plan installers` whether
+# this stage runs; its outputs are the inputs here. The job runs on a
+# GitHub-hosted Windows runner and needs `actions: read` (the build output is
+# an artifact of another run, and SignPath fetches the installers with the
+# job's token).
+#
+# Nothing here compiles. The llama.cpp files come from the run that built
+# them on the tag and are checked against the sha256 record made there.
+
+inputs:
+  api-token:
+    description: API token of the SignPath CI user that may submit to the signing policy.
+    required: true
+  organization-id:
+    description: SignPath organization ID.
+    required: true
+  project-slug:
+    description: SignPath project slug.
+    required: true
+  signing-policy-slug:
+    description: SignPath signing policy slug.
+    required: true
+  installers-artifact-configuration-slug:
+    description: Slug of the artifact configuration in .signpath/artifact-configurations/windows-installers.xml.
+    default: windows-installers
+  label:
+    description: Name of the chain of stages, the tag of a release or probe-<run id>.
+    required: true
+  app-request-id:
+    description: The completed signing request of the app binary.
+    required: true
+  build-run-id:
+    description: The run that built the app (stage 1) and kept windows-bundle-input.
+    required: true
+  version:
+    description: The app version stage 1 built.
+    required: true
+  github-token:
+    description: Token that reads the artifacts of the stage 1 run (actions read).
+    default: ${{ github.token }}
+
+outputs:
+  installers-signing-request:
+    description: URL of the signing request of the installers in SignPath.
+    value: ${{ steps.sign-installers.outputs.signing-request-web-url }}
+
+runs:
+  using: composite
+  steps:
+    - name: Fetch the build output of stage 1
+      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      with:
+        name: windows-bundle-input
+        run-id: ${{ inputs.build-run-id }}
+        github-token: ${{ inputs.github-token }}
+        path: src-tauri
+
+    # The same files the release run built and recorded, byte for byte, and
+    # the same version as the checkout of the tag.
+    - name: Check the build output against its record
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        node scripts/signpath-stages.mjs check-provenance src-tauri/target/signpath/llama-cpp-provenance.json
+        here="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+        if [ "$here" != "$VERSION" ]; then
+          echo "::error::stage 1 built version $VERSION, this checkout is version $here"
+          exit 1
+        fi
+
+    - name: Fetch the signed app binary from SignPath
+      shell: bash
+      env:
+        SIGNPATH_API_TOKEN: ${{ inputs.api-token }}
+        SIGNPATH_ORGANIZATION_ID: ${{ inputs.organization-id }}
+        REQUEST_ID: ${{ inputs.app-request-id }}
+      run: node scripts/signpath-stages.mjs download-signed "$REQUEST_ID" "$RUNNER_TEMP/signpath/app-signed"
+
+    # One installer type per run, each around the copy of the binary that is
+    # marked for it. `check-app` fails the build if the bundler touched the
+    # signed file. `tauri bundle` packs and does not compile (read at
+    # tauri-cli 2.10.1; the binary is compared after each run).
+    - name: Pack the installers around the signed app binary
+      shell: bash
+      env:
+        SIGNED: ${{ runner.temp }}/signpath/app-signed
+      run: |
+        set -euo pipefail
+        for kind in nsis msi; do
+          node scripts/windows-signpath.mjs place-app "$kind" "$SIGNED"
+          npx tauri bundle --bundles "$kind"
+          node scripts/windows-signpath.mjs check-app "$kind" "$SIGNED"
+        done
+
+    - name: Stage the installers for signing
+      id: stage-installers
+      shell: bash
+      run: node scripts/windows-signpath.mjs stage-installers "$RUNNER_TEMP/signpath/installers-unsigned"
+
+    - name: Upload the unsigned installers
+      id: upload-installers
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      with:
+        name: windows-installers-unsigned
+        path: ${{ steps.stage-installers.outputs.dir }}
+        if-no-files-found: error
+        retention-days: 7
+        overwrite: true
+
+    - name: Submit the installers to SignPath
+      id: sign-installers
+      uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3.0
+      with:
+        api-token: ${{ inputs.api-token }}
+        organization-id: ${{ inputs.organization-id }}
+        project-slug: ${{ inputs.project-slug }}
+        signing-policy-slug: ${{ inputs.signing-policy-slug }}
+        artifact-configuration-slug: ${{ inputs.installers-artifact-configuration-slug }}
+        github-artifact-id: ${{ steps.upload-installers.outputs.artifact-id }}
+        wait-for-completion: false
+        wait-for-completion-timeout-in-seconds: '900'
+        parameters: |
+          version: "${{ inputs.version }}"
+
+    - name: Write the state of stage 2
+      id: state
+      shell: bash
+      env:
+        LABEL: ${{ inputs.label }}
+        REQUEST_ID: ${{ steps.sign-installers.outputs.signing-request-id }}
+        REQUEST_URL: ${{ steps.sign-installers.outputs.signing-request-web-url }}
+        APP_REQUEST_ID: ${{ inputs.app-request-id }}
+        VERSION: ${{ inputs.version }}
+        POLICY: ${{ inputs.signing-policy-slug }}
+        BUILD_RUN_ID: ${{ inputs.build-run-id }}
+      run: |
+        set -euo pipefail
+        node scripts/signpath-stages.mjs write-state "$RUNNER_TEMP/signpath/state-installers" "$LABEL" installers \
+          "requestId=$REQUEST_ID" "requestUrl=$REQUEST_URL" "appRequestId=$APP_REQUEST_ID" \
+          "version=$VERSION" "policy=$POLICY" "buildRunId=$BUILD_RUN_ID"
+        cp src-tauri/target/signpath/llama-cpp-provenance.json "$RUNNER_TEMP/signpath/state-installers/"
+
+    - name: Keep the state of stage 2
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      with:
+        name: ${{ steps.state.outputs.name }}
+        path: ${{ steps.state.outputs.dir }}
+        if-no-files-found: error
+        retention-days: 90
+
+    - name: Say what waits for approval
+      shell: bash
+      env:
+        LABEL: ${{ inputs.label }}
+        REQUEST_URL: ${{ steps.sign-installers.outputs.signing-request-web-url }}
+      run: |
+        {
+          echo "### SignPath: the installers of $LABEL wait for approval"
+          echo ""
+          echo "Signing request: $REQUEST_URL"
+          echo ""
+          case "$LABEL" in
+            probe-*) echo "Next, after the approval: \`gh workflow run signpath-probe.yml --ref $GITHUB_REF_NAME -f stage=finish -f label=$LABEL\`." ;;
+            *) echo "After the approval in SignPath the watcher of windows-signpath.yml starts stage 3 (publish) on the tag within about 15 minutes. By hand: \`gh workflow run windows-signpath.yml --ref $LABEL -f stage=publish\`." ;;
+          esac
+        } >> "$GITHUB_STEP_SUMMARY"

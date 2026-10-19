@@ -2,6 +2,940 @@
 
 All notable changes to Locally Uncensored are documented here.
 
+## [3.0.7] - 2026-10-19
+
+Trained characters now work in every part of Create and in chat, and a Mac can
+train them too. ComfyUI workflows import in the format ComfyUI saves, with the
+node packs they need, Edit takes up to ten images, and a chat can be duplicated
+or branched from any message. Group chats and personas got a round of fixes.
+Enhance Image runs on your own machine, character cards bring role play to the
+chat, and the gallery sorts into folders. On a Mac, Create gains Talking
+Character, Motion Control, Music, Enhance Image, Remove Background and masks in
+Edit. Auto compact is on by default now, a persona can carry a reminder, and
+Agent and Code can take apart apps and files with the REA plugin. Our check in
+the real app ran on one Windows machine, and the Mac parts
+ran with the real engine on one Mac. What has only run in automated tests is
+listed under Known limits. LU Cloud keeps its open models: fourteen video models
+and seven image models in the cloud catalogue.
+
+### Added
+
+- **A trained character works in every part of Create and in chat.** When Create
+  runs on ComfyUI, Image, Edit and every video tab have a character chip next to
+  the model chip. On Image and Edit the character's LoRA and trigger word go
+  into the run, and the pick sets the Z Image model it was trained for. Edit
+  with a mask does not take a character. On Video, Animate, Extend, Multishot,
+  MiniMax H3, Motion Control and Talking Character, LU first makes a picture of
+  the character and then starts the clip from it, shown as Step 1 of 2 and Step
+  2 of 2. A start image of your own wins. A video model that only takes text, or
+  a tab with no video model installed, says so before anything runs. In chat,
+  the image and video tools take a character by name or trigger word. We checked
+  this in the app on Windows with a stand-in character, and the clip step has
+  not run with a real video model yet.
+- **ComfyUI workflows import in the regular save format, and from a folder.**
+  The Workflows view now takes a workflow saved with Save or Export in ComfyUI,
+  not only one saved with Save (API Format). LU reads the node settings from the
+  running ComfyUI, so ComfyUI has to be started for this, and the import says so
+  when it is not. Reroute and Primitive nodes are resolved, notes are left out,
+  bypassed nodes pass their input through and muted nodes are left out.
+  Subgraphs are unpacked the way ComfyUI unpacks them when it runs a workflow,
+  nested ones and ones used more than once included, so the stock ComfyUI
+  templates built on subgraphs (all Z-Image templates among them) can be
+  imported. A bypassed or muted subgraph passes its input through or is left out
+  as a whole. Workflows with the older group nodes, nodes ComfyUI does not know,
+  or settings that do not fit the installed node version are turned down with
+  the reason. Choose files picks several at once and Choose folder imports every
+  .json in a folder, each file with its own result. On Windows we imported stock
+  templates without subgraphs in the app, one by file and several from a folder,
+  and made a picture with one of them. The Z-Image Turbo template with its
+  subgraph imported in the app too. Subgraphs are checked with automated tests
+  on the real Z-Image Turbo and NetaYume Lumina templates, and all 205 subgraph
+  templates of the template package unpack without a loose wire. A picture from
+  a subgraph template has not been made against ComfyUI yet. (Discussion 124)
+- **ComfyUI node packs, managed from LU.** Settings, AI Backends has a new
+  section ComfyUI node packs on Windows and Linux. It lists every pack in the
+  custom_nodes folder with where it came from, its branch, commit and date, and
+  marks packs that are switched off. A pack installs from a link to its
+  repository on github.com, gitlab.com or codeberg.org (https only): LU says
+  first that a pack is code that runs inside ComfyUI, then clones it and
+  installs its requirements.txt into the Python of your ComfyUI, with the log on
+  screen. Update pulls the newest version and installs the requirements again; a
+  pack LU pins to a tested version stays on it. Remove moves the folder to the
+  trash, nothing is deleted for good. Restart ComfyUI loads the change. When an
+  imported workflow uses nodes ComfyUI does not know, the Workflows view offers
+  the pack for every node LU itself knows the pack of, and names the others with
+  the way to the link field. A ComfyUI on another machine is not managed from
+  here. On Windows we installed a pack from GitHub in the app, ComfyUI knew its
+  nodes after Restart ComfyUI, and Remove put it in the Recycle Bin. Update has
+  run in automated tests only. (issue 14, Discussion 72)
+- **Every setting of an imported workflow can be changed in Create.** Under
+  Advanced settings, a workflow from the Workflows view now shows a list
+  "Workflow parameters": each node with its values, such as the VAE, CLIP skip,
+  LoRA strength, denoise or any value of a custom node. Numbers keep the limits
+  ComfyUI states, lists offer the choices ComfyUI has, switches and text fields
+  follow the value. What LU sets on its own (prompt, seed, size, steps, CFG,
+  sampler, scheduler, model) is named per node and not offered twice; the VAE
+  and text encoder stay on Auto until you pick one. Changes are kept per
+  workflow, go into every run, and Reset goes back to the values in the file.
+  Nodes fold, and a search finds a setting by name. Built-in workflows are not
+  affected. Windows and Linux; a Mac runs no ComfyUI workflows. On Windows we
+  changed the denoise of an imported workflow in the app, the run used it, and
+  Reset brought back the value of the file (issue 8).
+- **Up to ten images in one Edit with Qwen-Image 2.1.** On your own machine the
+  reference strip under the source now takes up to nine more images (three
+  before), on Windows and Linux through ComfyUI and on a Mac through the
+  built-in engine; the model reads ten. The tiles wrap into rows, and the hint
+  names them as a range, for example "image 2 to image 10", and from four extra
+  images it asks you to say what each one brings, for example "the scarf from
+  image 3". With more images than fit at full size, every image is scaled
+  smaller so that together they take no more memory than the full size ones
+  would. That is four images, and on ComfyUI fewer on a smaller graphics card
+  (see Fixed). With four, at a 1024 canvas ten images run at 640 pixels each.
+  On ComfyUI the result then comes out at that smaller size too, and the hint
+  says so; on a Mac the result keeps the size you set. Qwen-Image-Edit
+  2509/2511 stays at three images in all, fewer on a card with less than 16 GB,
+  LU Cloud at five photos, and a trained character still brings three of its
+  photos. On a Mac the
+  strip offers only as many images as its memory takes at the size you set, by
+  the same estimate the engine refuses a run with; images already in the strip
+  past that stay and are marked not sent. On a Mac, ten images at 640 pixels
+  each ran with the real engine in 78 seconds. On Windows and Linux ten images
+  have not run with a real model yet. (Discord)
+- **Duplicate a chat, branch from a message, and keep earlier answers (issue
+  174).** The chat list and its right click menu have Duplicate chat: a full
+  copy that opens at once, with its persona, system prompt, group members,
+  sampling values, documents and the Agent and Code settings. Every message has
+  Branch from here, which starts a new chat with the history up to that message.
+  Regenerate, and Save & resend on an edited message, keep the earlier answer as
+  a version, and the arrows on the answer switch between them. Duplicate chat is
+  not offered in Remote Access. We checked Duplicate chat, Branch from here and
+  the kept answers in the app on Windows with the LU Engine.
+- **Sampling values per persona and per group member (issue 175).** The persona
+  editor takes its own temperature, top P, top K, min P, max tokens, repeat,
+  presence and frequency penalty and DRY multiplier. An empty field follows the
+  chat. The values apply wherever the persona speaks, in a chat with the persona
+  switched on and on its seat in a group chat. Values set in the chat's Sampling
+  popup still win. The popup lists each speaker with the values that hold for it
+  and marks a value its backend does not read, and each value is only sent to a
+  backend that reads it. On Windows we checked in the app that a persona's
+  values reach the LU Engine.
+- **A ChatGPT export becomes real chats.** Settings, General, Import from other
+  chatbots takes the .zip from ChatGPT's data export, or the conversations.json
+  inside it, and shows how many conversations it holds. Pick all or some, and
+  each one becomes its own chat in the chat list with its title, its original
+  date and the messages of the thread you saw, in order. Answers you regenerated
+  or edited away stay out, and so do system prompts, reasoning and tool calls.
+  Images and files are not copied; a note such as "[Image not included in the
+  import: beach.jpg]" marks where they were. A conversation imported before is
+  marked "Already imported" and is not added twice; one you went on with in
+  ChatGPT since then is marked "Updated since last import" and refreshed. A chat
+  you went on with in LU is never replaced: a newer export of it comes in as a
+  second chat whose title ends in "(from export)", marked "Continued in LU,
+  imports as a separate chat" in the list. Large exports are read in the
+  background with progress on screen, so the window stays usable. Adding the
+  conversations to the open chat's documents, the only way before, is still
+  there as the second button. On Windows we imported an export built in
+  ChatGPT's format in the app, with a conversation whose question was edited,
+  and a second import added nothing twice. A real export from ChatGPT has not
+  been tried yet.
+- **A LoRA from a link.** Models, LoRAs, Get new has a field for a CivitAI model
+  link (with or without a version, without one LU takes the newest) or a Hugging
+  Face link to a .safetensors file. LU reads the file's name, base model (SDXL,
+  FLUX, Z-Image, Wan and others) and size from the site before anything is
+  downloaded, using your CivitAI key from Settings when one is set. The file
+  then downloads with progress and Cancel, is checked against its SHA256 when
+  the site states one, and lands in ComfyUI's models/loras folder, on a Mac in
+  the LoRA folder of the app. A checkpoint, embedding, VAE or any other model
+  that is not a LoRA is refused. A Hugging Face page that does not say LoRA is
+  refused too when it is a full diffusers model, a finetune, merge or
+  quantization of a base model, or a file above 4 GB. A base model LU does not
+  know, a Hugging Face page that does not say it is a LoRA, and on a Mac a LoRA
+  for a model the Mac does not run are named before the download, and the button
+  then reads Download anyway. A file of the same name in the LoRA folder is
+  never replaced. Only https links to civitai.com and huggingface.co are taken.
+  On Windows we downloaded a Z Image LoRA from Hugging Face in the app, checked
+  against its SHA256, and a CivitAI checkpoint and a Hugging Face base model
+  were refused.
+- **Check files and Repair for installed models.** Image and video bundles in
+  Models, Get new have a Check files button once any of their files is on disk,
+  and chat models of the LU Engine have one next to Use. It compares every file
+  with the catalog: the size always (the catalog's exact byte count, otherwise
+  the size the host states), and the SHA256 where the catalog lists one.
+  Checksums are read in the background with progress and a Cancel button, so a
+  20 GB file does not hold up the app. Each file reads OK, Missing, Wrong size,
+  Checksum mismatch, Incomplete download or Not confirmed (on disk, but nobody
+  could name its size). Repair downloads only the broken or missing files again
+  through the normal download list; a file that is there but wrong goes to the
+  Trash (Recycle Bin on Windows) first, nothing is deleted for good. A chat
+  model's image part counts as optional. Not offered for the Mac's own MLX
+  models. On Windows we ran Check files on an image bundle in the app: the file
+  on disk read OK and Repair was offered for the missing ones, but Repair has
+  not been clicked yet. (issue 113)
+- **Train a character that changes clothes.** The Train tab of local character
+  training (Windows, Linux and Mac) has a short text field under each photo. Name
+  what changes from photo to photo there, like clothes, hair or place, and it
+  goes into that photo's caption after the trigger word, so the trained
+  character keeps its face and body but not one outfit. An empty field keeps
+  the caption as it was. Describe photos fills the empty fields with the local
+  chat model picked in Chat, when that model can see images; it never sends
+  the photos to a cloud model. (Discord)
+- **Low VRAM training for cards under 12 GB.** Local character training on
+  Windows and Linux has a second setting next to the training length: Normal,
+  the 12 GB recipe as before, and Low VRAM, which trains at 512 px instead of
+  768 px, keeps 28 of the model's 30 blocks and the saved activations in
+  system memory, and trains a smaller LoRA (rank 16 instead of 32). Each step
+  takes clearly longer and fine detail comes out softer. A card with less than
+  11 GB is pointed at Low VRAM in the tab and in the trainer's own check, and
+  Low VRAM lets cards from about 8 GB train. That 8 GB is worked out from the
+  trainer's own numbers and not yet measured on such a card. (Discord)
+- **Enhance Image runs on your own machine.** On Windows and Linux, Enhance
+  Image is a local tab that runs on ComfyUI and makes a picture 2x or 4x larger.
+  Without an upscale model the stage offers Real-ESRGAN x4plus, a 67 MB download
+  that LU checks against its checksum. The result lands in the gallery with the
+  model it ran on and its real size. A Mac runs Enhance Image with a model of
+  its own, see below.
+- **Character cards become personas, with a greeting and an export.** Import a
+  character card as a PNG or JSON file (card versions 1, 2 and 3) and it becomes
+  a persona with the card picture as its tile. A new chat with that persona
+  opens with the card's greeting as the first answer, and you can switch between
+  alternate greetings with arrows until you write. A card persona exports back
+  as a version 2 JSON file. We checked it in the app with Holo and Qwen models.
+- **The gallery sorts into folders and shows how a result was made.** The
+  Folders button makes, renames and removes folders, and Move to folder sits on
+  each tile and in the large view. A folder is only a label: the files stay
+  where they are, and removing a folder keeps its pictures. While a folder is
+  open, new results land in it. Under a result, Prompt and settings lists the
+  negative prompt, model, steps, CFG, sampler, seed and size, with one button
+  that copies all of it.
+- Create shows how many images a run makes right next to the Create button. One
+  click picks 1 to 8 locally or 1 to 4 in LU Cloud; before, the number was only
+  in Advanced settings.
+- Remote Access can carry your own name for the browser tab on the phone (issue
+  19). Set it under Settings, Voice & Remote, Remote Access, Tab name on your
+  phone. Left empty, the tab keeps its name AI Terminal.
+- The Model Manager can use a GGUF file from anywhere on your drive as a chat
+  model on the LU Engine. On the Chat lane, press GGUF file next to Pull and
+  pick the file. LU links it into the LU Engine folder without copying, so the
+  file must be on the same drive as that folder (Settings, AI Backends, Model
+  Storage). The image part of a vision model comes along when it sits next to
+  the model.
+- **Use frames of a video for a character.** The lightbox and the large view of
+  a video offer Use frames for a character. LU takes 8 frames spread evenly over
+  the clip, 4 to 20 with the slider. Untick the frames that do not show the
+  figure, then train with the rest in Character Studio or save them as a
+  character. This has run in automated tests only.
+- **A trained local character can be deleted.** The Use character shelf has a
+  delete button for a character trained on this machine. It asks first, and the
+  file goes to the Recycle Bin or Trash.
+- **A character trained on LU Cloud can run on your machine.** Use locally on
+  the cloud character shelf saves a Z Image character into the LoRA folder of
+  this machine, so the local Use character shelf lists it. If a file of that
+  name is already there, LU stops and says so instead of replacing it.
+  Characters of other model families are refused with the reason. This has run
+  in automated tests only, not yet against the real service.
+- **Edit can use the photos a character was trained on.** The reference strip in
+  Edit has a Trained characters row. A click adds up to three of the photos a
+  local character was trained on as references, at most 1024 pixels each. A
+  character trained before this version has no photos there. It has not been
+  tried with a real training set yet.
+- **Animate can start from a reference picture with Wan 2.1 VACE.** With a Wan
+  2.1 VACE model installed, Animate uses your picture as the reference for the
+  clip. Phantom, MAGREF, the VACE add-on modules, Wan 2.2 VACE Fun and reference
+  files LU does not know are listed in Animate with the reason they do not run
+  yet. Wan 2.1 VACE has not run with a real model yet.
+- **Any file can go into the chat, and a file the model cannot read says so.**
+  Attaching a file that is not text, such as a program or an archive, now says
+  above the chat that models cannot read it, with its name, type and size, and
+  points to Agent or Code. In Agent and Code the file goes into the working
+  folder, and the model gets its name, type, size, SHA-256 checksum and path,
+  with the instruction not to run it unless you ask. The limit is 256 MB per
+  file, up from 64 MB.
+- **A think budget for the backends that take one.** Think budget sits next to
+  Think in the sampling popup and in Settings, Generation. It sets how many
+  tokens a model may spend on thinking. 0 keeps the automatic choice, which on
+  the LU Engine now follows the effort setting. It works with the LU Engine and with Anthropic. For Ollama, LM Studio, other
+  OpenAI-compatible servers and LU Cloud the field is off and says it is not
+  supported there. We checked it with the LU Engine on Windows; with Anthropic
+  it has run in automated tests only.
+- **Add model IDs that a server serves but does not list.** The provider card of
+  an OpenAI-compatible server has a new field, Model IDs the server does not
+  list, one per line (issue 112). They join that server's models in the picker
+  while the server is running.
+- **Several OpenAI-compatible backends at the same time.** Adding KoboldCpp
+  while LM Studio or the LU Engine is on no longer pushes the other one out
+  (issue 173). Each backend gets its own row in Settings, AI Backends, with its
+  own name, address, optional key and model IDs, and its models appear in the
+  picker under its name. A group chat can mix models from several of them. A
+  backend that an earlier version pushed onto the standby card has a Run side
+  by side button, and the startup dialog for detected backends can add all of
+  them at once. Chats and settings from before keep their models. For a model
+  of such a backend, the context window comes from that backend's own server
+  (KoboldCpp, llama.cpp, LM Studio), and so do the history budget of a chat, the
+  room for an attached file and the extra samplers; a server on your network
+  is never cut to the send limit of a paid provider. This has run in automated
+  tests and in the app on Windows with the LU Engine next to a stand-in server,
+  not yet with two real servers. Settings, Local API
+  still reaches only the LU Engine, Ollama and LM Studio.
+- **The User-Agent of web search can be set.** Settings, Search Provider has a
+  User-Agent field. Empty keeps what LU sent before. A value goes with the
+  DuckDuckGo and Wikipedia searches and with every page the agent fetches. A
+  value that cannot be sent is replaced by the default, and the field says so.
+  Search services with a key and a local SearXNG keep their own requests.
+- **The voice engine and LU's own Python can live on another drive.** Settings,
+  Model Storage has a new row, Voice and Python folder. New installs of the
+  voice engine, the read-aloud voices and LU's own Python go to the folder you
+  choose, and what is installed keeps working where it is. Move to this folder
+  copies the files, checks the copy, starts it once and only then puts the old
+  files in the Recycle Bin or Trash. Nothing is deleted for good. We moved a
+  real voice engine install on Windows and it started from the new folder.
+  Moving LU's own Python has run in automated tests only.
+- **A model too big for this machine points to LU Cloud.** In the Model Manager,
+  a model that does not fit the graphics card, or the memory of a Mac, says so
+  on its tile with one Try LU Cloud button, for example: Too big for this
+  graphics card. Videos run on LU Cloud. A chat model leads to the cloud chat
+  models, an image or video model to Create in Cloud mode on the same tab.
+  Create shows a line of the same kind when the picked local model is too big,
+  when a video model only partly fits the card, or when a video run on a Mac
+  would take long, and that line can be closed. A number of credits stands there
+  only where the app knows the price. Nothing of this shows in Cloud mode or
+  with Show Cloud features in Local mode off. This has run in automated tests
+  only.
+- **On a Mac, Use character runs characters from the Mac's LoRA folder.**
+  Character Studio's Use tab lists the characters in the Mac's LoRA folder. A
+  pick brings the Z Image model the character was trained for, and Image, the
+  video tabs and the chat tools take the character as they do on Windows. A
+  video starts from a picture of the character made on the Mac. This is on macOS
+  only.
+- **On a Mac, Train new trains a character on this Mac.** Character Studio's
+  Train tab trains a Z Image character from 4 to 100 photos with the Mac's image
+  engine and puts it into the Mac's LoRA folder, where Use character, the
+  character chip and chat find it. The first run downloads a training adapter of
+  340 MB. Training is slow on a Mac: on an M5 Pro one step takes about 7
+  seconds, so the Standard setting (1200 steps) runs a little over two hours.
+  Use frames for a character hands its photos to the same training. It needs a
+  Mac with 24 GB of memory or more; on a smaller Mac the tab says so and the run
+  does not start. This is on macOS only.
+- **On a Mac, Talking Character runs locally.** A portrait and a voice recording
+  become a clip whose lips follow the voice, as long as the recording and up to
+  10 seconds, with LTX-2.3 4-bit. It needs one more download of 11.3 GB, offered
+  on the tab. It is slow: a 4 second clip took about 10 minutes on an M5 Pro,
+  roughly 150 seconds per second of clip. It needs a Mac with 24 GB or more.
+  This is on macOS only.
+- **On a Mac, Motion Control runs locally.** A motion clip and a start image
+  become a video that follows the motion, with LTX-2.3 4-bit and the IC-LoRA
+  Union Control (about 650 MB, offered on the tab). LU turns the motion clip
+  into edges first. A 2 second clip at 512 x 512 took 103 seconds on an M5 Pro.
+  This is on macOS only.
+- **On a Mac, Enhance Image runs with SeedVR2.** Once SeedVR2 3B (7.28 GB) is
+  installed from the Model Manager, Enhance Image is a local tab with a choice
+  of 2x or 4x, and the longest side is held to 4096 pixels. Without it the tab
+  stays locked. This is on macOS only.
+- **On a Mac, Remove Background runs without a download.** The tab uses the
+  subject detection built into macOS, so it needs no model and no Python. A
+  picture without a clear subject gets a sentence instead of an empty image.
+  This is on macOS only.
+- **On a Mac, Edit paints under a mask.** With Qwen-Image 2.1, Edit on a Mac
+  offers Paint mask, Edit strength and Mask edge feather, and a result offers
+  Edit with mask. In our run with the engine on an M5 Pro with 48 GB, a hard
+  mask at full strength changed only the masked area in 189 seconds. This is on
+  macOS only.
+- **On a Mac, HiRes fix runs as a second pass.** With a model that edits, such
+  as Qwen-Image 2.1, the finished picture goes through a second pass at the
+  larger size, with the HiRes denoise and steps. The latent upscale method is
+  not offered on a Mac. This is on macOS only.
+- **On a Mac, video runs take LoRAs and a size, and Extend Video runs locally.**
+  Where the model's entry allows it, the LTX and Wan video models take a stack
+  of LoRAs and a width and height on the grid of the engine, and Wan takes 1 to
+  60 steps. Extend Video is a local tab while a video model that takes a start
+  image is installed, and the Shots slider reaches the LTX-2.5 packs. This is on
+  macOS only.
+- **On a Mac with 48 GB, an LTX clip runs up to ten seconds.** The Length slider
+  ended at 113 frames, 4.7 seconds, on every model. Video, Animate and Extend
+  with an LTX model now go to 241 frames, ten seconds, on a Mac with 48 GB of
+  memory or more. A clip of 241 frames at 768 x 512 from a start image ran on
+  an M5 Pro with 48 GB in 187 seconds and used at most 23.6 GB. A smaller Mac,
+  Wan and Motion Control keep the old limit, since none of them has run that
+  long. This is on macOS only.
+- **On a Mac, Music runs with ACE-Step 1.5.** The Music tab in Create is a local
+  tab once the music engine is installed from the Music rail of the Model
+  Manager, about 10 GB. A run takes the style, the lyrics, a length from 10
+  seconds to 4 minutes and the seed, and puts the track in the gallery. It needs
+  a Mac with 48 GB of memory; a smaller Mac is told so before anything loads.
+  This is on macOS only.
+- **On a Mac, a Qwen prompt enhancer rewrites prompts for Qwen-Image 2.1.** Two
+  enhancer packs of about 6 GB each, one for new pictures and one for edits,
+  install from the Model Manager. With one installed, a new picture or an edit
+  on Qwen-Image 2.1 can have its prompt rewritten before the run, and the edit
+  enhancer also looks at the picture. This is on macOS only.
+- **Reasoning effort for local models (issue 176).** The effort button next to
+  Think, Low, Medium, High and Max, existed only for hosted models. Local models
+  now have it in the form each server reads. The LU Engine passes the level to
+  the model's chat template as `reasoning_effort`, and Low and Medium also set a
+  think budget of 1024 and 4096 tokens unless you set one yourself; High sets
+  none, as before. LM Studio 0.4.8 and later gets `reasoning_effort` with the
+  levels it lists for each model. KoboldCpp gets `reasoning_effort` for Low,
+  Medium and High, and nothing for Max, which KoboldCpp runs without a limit. A
+  llama.cpp server of your own gets the level in the chat template when the
+  model's template reads it. Everywhere else the button is greyed and says why.
+  Until you pick a level for a local model, it keeps running the way it did
+  before. Think off still means no thinking. On Windows we checked the LU Engine
+  in the app: without a pick no level is sent, and Low sends low with a think
+  budget of 1024 tokens. LM Studio, KoboldCpp and llama.cpp have run in
+  automated tests only.
+- **The wait for the first word of a chat answer can be set (issue 177).** A
+  local chat stopped with "the backend accepted the request but sent nothing for
+  600 s", even while the backend was still reading a very long prompt. Settings,
+  General has a new section, Chat Reply Timeout, next to the image and video
+  timeouts: a number of seconds up to 24 hours, or Off, which waits as long as
+  the connection stays open. The default stays 600 seconds, and Stop always ends
+  the wait. The wait also covers a server that holds back even its first
+  headers, and a request whose wait ran out is not sent again. Progress of the
+  prompt reading is not shown yet. We checked it in the app on Windows against
+  a stand-in server: at 30 seconds each wait ended once, with or without
+  headers, and with 600 seconds or Off the answer came through.
+- **Auto compact is on by default and fits the model's window.** It used to stay
+  off until you set a threshold. It is now on, and with the threshold at 0 it
+  follows the model's context window: it runs from a 32K window up and starts
+  earlier on smaller windows than on large ones, because the summary and the
+  answer need room too. Below 32K older turns are only shortened, as before. A
+  fixed point from 30 to 95 percent runs on every window, and a new Auto-compact
+  switch in Settings, Generation turns it off. Long Agent and Code runs now also
+  summarise their older steps in the middle of a run: the newest steps stay word
+  for word, the request stays as you wrote it, and the chat says each time it
+  happened. The summary keeps every file read or changed with its path, the
+  commands that ran, IDs and numbers as they were written, the open tasks and
+  the next step, and it sees the middle of each tool result, not only its start
+  and end.
+- **A persona can carry a reminder (issue 181).** The persona editor has a
+  Reminder field and Messages from the end, 4 unless you set another number, up
+  to 50. On every send where that persona speaks, in its chat, on its seat in a
+  group chat and in Agent mode, the reminder goes into your message at that
+  depth, so the model reads it close to the end of the prompt. It is only sent,
+  never stored in the chat, so an edit applies to the next message. In a group
+  chat each member gets the reminder of its own persona. A character card brings
+  its depth prompt along as the reminder, and the export writes it back.
+- **REA, a plugin for reverse engineering in Agent and Code.** Plugins has a new
+  switch, REA (Reverse Engineer Anything, MIT license), off by default and only
+  in the desktop app. Switched on, LU fetches the official rea-agents 6.5.0
+  package, checks it against the checksum the npm registry publishes, and checks
+  it again before every start. REA needs Node.js on this computer, and the row
+  says so when none fits. Its tools reach Agent and Code behind the same
+  confirmation as every external tool, and a turn gets only the REA tools its
+  words point at, so its 207 tools do not fill the context. REA reads
+  JavaScript and Electron apps, .NET, Go and Rust programs, Flutter, SQLite and
+  WebAssembly by itself; Ghidra, Hopper, JADX and Frida are used where you have
+  them, and LU installs none of them. It works best with a model of about 27B
+  and a context window of 64K or more. Use it on software you own or are
+  allowed to examine. On a Mac, Qwen 3.8 27B on Ollama took a small test app
+  apart with REA and wrote a complete answer in 3 minutes 15 seconds. That run
+  used LU's tool code outside the app; a start from the built app has not been
+  tried yet.
+- **Typed faces become emojis.** In the composer of Chat, Agent and Code, a face
+  such as :) or :D turns into its emoji once you type a space, a new line or a
+  punctuation mark after it, or send. It turns only as a word of its own, never
+  inside a word, a link, a path or code, and one Backspace right after takes it
+  back. Settings, Appearance has a switch to turn it off. The Create prompts are
+  not affected.
+- **The window behind the Cloud switch lists the cloud models.** Signed out, or
+  with an account that cannot use them yet, the window now has one list each for
+  Chat, Code and Create (Image, Video, Edit). A model opens a short window with
+  the two ways to get it, a plan or a pack, and a model too big for this machine
+  says so. LU keeps the pick for a week and opens that model once your account
+  can use it.
+- **How it works has films for this release.** The help has new short films for
+  characters, Branch and Persona in a local chat, persona sampling, dictation
+  and your own ComfyUI workflows on Image and Motion Control. On a Mac, the
+  Image film shows the prompt enhancer, and Character with Train new, Music,
+  Talking Character, Motion Control and video have films of their own.
+
+### Changed
+
+- **Each local video family has its own clip length.** The Frames slider ran
+  from 1 to 120 for every local video model, below the default of MiniMax H3,
+  LTX 2.5 and Cosmos. MiniMax H3 now goes up to 362 frames, 15 seconds at 24
+  frames per second, and MiniMax H3 and LTX 2.5 move in the steps their runs
+  use, so the slider shows the length you get. This has not run with a real
+  video model yet.
+- **A paired phone can show the name of this computer.** The signed in status of
+  Remote Access now also gives the computer's name, cleaned and at most 48
+  characters, so a paired phone can show it instead of the address. The open
+  status without a key stays as it was.
+- **Chat Tools are always on.** The Chat Tools switch under Plugins is gone.
+  Plain chat now uses web search, files, images and video when a turn needs
+  them, for every model that can call tools, by the same rule Agent and Code go
+  by. A model that cannot call tools answers in plain chat as before and keeps
+  the hints that point to Agent mode. A stored setting for the old switch, off
+  included, is dropped.
+- **Wan 2.1 says where its clips turn restless.** On Windows and Linux the
+  Frames slider of Wan 2.1 goes to 121, but the model learned its clips at 81
+  frames. Past 81 a line under the slider now says so and points to Extend
+  Video.
+- **A click in the window behind the Cloud switch is counted.** It is counted
+  the way a press of the switch already was: that a model, a plan or a pack was
+  clicked, with platform and app version, never which model. Settings, Privacy
+  says so.
+
+### Fixed
+
+- **Motion Control and Talking Character models show under Installed.** The
+  Wan 2.2 Animate Q4 card said Installed, and the Installed tab did not list the
+  file. The tab only counted plain video models, so every Wan Animate, Wan VACE
+  and Wan S2V file was missing there, while Create's Motion Control and Talking
+  Character tabs did list them. They are listed under Video now, and the row
+  says which Create tab runs them. Renaming such a file (for example to
+  Wan2.1.gguf) made it show up but sent it through the plain video graph,
+  which cannot run it; the original name is the right one. We checked it in
+  the app on Windows with a placeholder file. (Discord)
+- **Searching Get new finds models in both catalogue tabs.** A search only
+  looked inside the open tab, so FramePack, filed under Unfiltered, was not
+  found from Mainstream. While a search is typed it now covers both. (Discord)
+- **A CivitAI hit already on disk says Installed.** A model found in the
+  CivitAI search of the Model Manager offered Download even when its file was
+  installed, and a click fetched it again. A hit now reads Installed, with no
+  download button, when a file of the same name lies in the folder the download
+  would use and, where CivitAI states a size, has that size. The same name in
+  another folder or with another size still offers Download. (Discord)
+- **An Edit with several images on ComfyUI fits the graphics card.** An Edit
+  with more than two images could end in "aimdo memory compile error" on the
+  KSampler, an error ComfyUI raises when the card has no more memory for the
+  run. With Qwen-Image 2.1 the images now share a budget by the size of the
+  card: two at full size on a card with less than 16 GB, three on a 16 GB card,
+  and four on larger cards or when LU cannot read the size. With more images,
+  each one is made smaller. Qwen-Image-Edit scales every image itself, so past
+  what the card carries the run is refused before it starts, with the card's
+  size and how many images to remove. The reference strip says the same before
+  you press Create, and the raw error now comes with a hint about graphics
+  memory. A Mac is not affected. (Discord)
+- **Motion Control has a prompt field only where the run reads one.** The
+  prompt field of Motion Control could not be typed into with only a picture or
+  only a clip in place, and it disappeared once both were in. On ComfyUI and on
+  a Mac the field now takes typing before and after the inputs are in, the
+  prompt is optional, and Create does not wait for it. LU Cloud's Motion Control
+  takes no prompt, so there the note above the field says no prompt is needed.
+  Motion Control has no negative prompt field. (Discord)
+- **A long prompt leaves the stage room for progress and the result.** The
+  prompt field grew to 220 pixels in every window, so with a long prompt the
+  progress of a run and the finished picture were cut off. It now grows to 220
+  pixels or 16 percent of the window, whichever is less, and scrolls beyond
+  that; the negative field to 120 pixels or 9 percent. (Discord)
+- **The help says what the text encoder is and what Improve my prompt does.**
+  The Text encoder row now says that the encoder is part of the image model and
+  reads the prompt on every run, and that Improve my prompt is a separate step
+  before it. With the prompt enhancer on, the switch says the same in a line
+  under it. (Discord)
+- **Every line of the log names the version that wrote it.** A log could show
+  an older version after an update, because the day's log file still held the
+  lines of the run before and only the start line named a version. Every line
+  now carries the version, and so does every record in crash.log. The app also
+  reads its version from one place. (Discord)
+- **A picture made in the chat shows on the desktop.** A current ComfyUI
+  refuses the app window's direct load of a picture from ComfyUI, so an image
+  made in the chat showed as a broken frame with a link to localhost. The chat
+  now fetches it through the app, as Create already did, and the same goes for
+  a ComfyUI picture the model repeats in its answer. Checked with tests, not
+  yet on a Windows machine with ComfyUI Desktop. (Discord)
+- **Your own ComfyUI workflow runs in Motion Control.** Motion Control always
+  used LU's own graph, even with a workflow picked for its model. A workflow
+  imported in the Workflows window and paired with a Wan Animate model now
+  runs there; LU fills in the model, prompt, seed, character picture and
+  driving video and leaves everything else as saved. The import reads the
+  model from a GGUF loader and the clip from Load Video or Video Helper Suite's
+  Load Video, files a Wan Animate graph under that model family, and the
+  Workflow picker finds it for a Motion Control model. On Video, Animate and
+  Motion Control the workflow button now reads Use your own ComfyUI workflow.
+  Checked with tests on QuantStack's Wan 2.2 Animate example workflow, not yet
+  in a real run against ComfyUI. (Discord)
+- **Read aloud speaks what the answer shows.** With a thinking model the answer
+  looked clean, but the voice also pronounced reasoning markers that stood
+  nowhere on the screen. The Read aloud button and the automatic reading of a
+  new answer now take the same cleaned text the bubble shows. A thought that
+  Gemma 4 writes into its answer goes to the thinking block and is no longer
+  part of the answer, and in Voice a thought whose marker arrives in pieces is
+  no longer spoken (issue 160). A model that loops and closes its thought many
+  times no longer leaves the extra closing markers in the answer or in the
+  voice.
+- **A trained character brings the model it was trained for.** Picking a
+  character under Create, Character, Use character left the image model as it
+  was, and on a model of another family the run left the character out. The pick
+  now sets an installed Z Image model. Where none fits, the line under the
+  character says so with a button to switch, and Create does not start a run
+  that would ignore the character. The same line now says to describe the key
+  features in the prompt too, because the trigger word alone often does not hold
+  the look (issue 161).
+- **Sending while you dictate ends the recording.** Sending a message while
+  dictation was on left the microphone recording, and the microphone button
+  stayed locked until you stopped the answer. Send and Enter now end the
+  recording first, and the microphone button stays usable while an answer runs.
+  We checked it in the app on Windows.
+- **Downloads and trained LoRAs go to the folders you set up for ComfyUI
+  (issue 183).** LU put every model it downloaded, every LoRA it trained and
+  every deleted render against the ComfyUI folder itself, even with a shared
+  model folder set up in `extra_model_paths.yaml`. LU now reads that file the
+  way ComfyUI does (`base_path`, `is_default`, several folders per kind), the
+  folders in ComfyUI's start script (`--input-directory`, `--output-directory`,
+  `--extra-model-paths-config`) and the setup of ComfyUI Desktop. A model goes
+  into the folder marked `is_default`, else the first folder you set for that
+  kind, else the ComfyUI folder as before. A ComfyUI that LU starts gets the
+  flags of your start script too. Models already in the ComfyUI folder still
+  count as installed. Settings, ComfyUI lists the folder LU uses for each kind
+  of model and for input and output. A missing or broken file changes nothing.
+  We checked it in the app on Windows with a shared folder and a stand-in
+  ComfyUI: a download landed in the shared folder and Settings named it.
+- **Create sees model files you copied in by hand.** Create read the ComfyUI
+  model and LoRA lists only when it opened, so a file copied into a ComfyUI
+  folder by hand stayed invisible until you left Create. Coming back to the app
+  now reads both lists again, at most every 30 seconds and not while a run is
+  going.
+- **The mask editor shows Ctrl shortcuts on Windows and Linux.** Undo and Redo
+  were labelled with the keys of a Mac. They now read Ctrl+Z and Ctrl+Y.
+- **Smaller fixes in Create.** A wide result fits the stage with its prompt
+  below it. Cloud mode no longer shows the load error of the local models. A
+  tooltip no longer opens when the focus comes back to its button. Rewritten by
+  names the chat model the way the picker does. The first image of a list keeps
+  its file name. A second Enhance of the same picture no longer says Queued to
+  the end when ComfyUI takes it from its cache. Erase and Edit show the mask
+  state as it is, and the mask editor no longer points Erase to a prompt field
+  it does not have. The model chip of Character says to pick a character first.
+  In the lip sync tool, the voice maker row stays inside its panel when you
+  describe a voice. Motion Control with a workflow of your own no longer shows
+  steps, size and length sliders the run does not read, and its Workflow
+  parameters list lets you change the steps, CFG, sampler, scheduler and
+  prompts it really runs with. A local training with too few photos names the
+  local limit of 100 photos, not the cloud's 30. Motion Control and Talking
+  Character no longer take a negative prompt typed on another tab, since they
+  have no field for it, and no longer offer a LoRA stack their graphs do not
+  read. A workflow of your own run from Motion Control saves its clip where
+  the gallery finds it, not in ComfyUI's temp folder. The how-to line at the
+  foot of the stage no longer makes a narrow stage with a source picture scroll.
+- **Smaller fixes in Chat.** A second message sent right after a fast answer
+  goes out instead of staying in the field without a word. An open, empty chat
+  that is the only one no longer says No chats yet.
+- **Character Studio names only the base files that are missing.** It said about
+  19 GB above the button whatever was missing. It now names the missing files
+  with their size, downloads only those, and counts the progress over them
+  alone.
+- **Create honours the image and video timeouts from Settings.** A run that
+  shows no progress is stopped after the minutes set in Settings, General;
+  before, it always waited 20 minutes for images and 60 for video. Before it
+  stops a run, LU now asks ComfyUI whether the run is still going, so a long
+  step that reports nothing, such as the decode at the end, is not cut off, and
+  the message says 1 minute instead of 1 minutes. The defaults are unchanged. We
+  checked it in the app on Windows with the limit at 1 minute.
+- **Editing an earlier message no longer sends it or deletes the rest (issue
+  172).** The check mark of an edit resent the message at once and deleted every
+  later message for good, also with no model loaded. The edit field now has
+  Cancel, Save and Save & resend. Save changes the text only and keeps every
+  later turn. Enter saves, and Ctrl or Cmd with Enter resends. Save & resend
+  keeps the old answers as a version. We checked Save, Enter and Save & resend
+  in the app on Windows with the LU Engine.
+- **The persona picked in Plugins is the one that is sent (issue 170).** A chat
+  kept a copy of the persona that was active when it was made, while the Plugins
+  menu showed and changed only the pick for new chats. The menu said one persona
+  and the request carried another. A chat now remembers its persona, a pick in
+  Plugins changes the open chat, and chat, group chat, Agent and Voice all send
+  what the menu shows. Older chats keep their saved prompt. We checked it in
+  the app on Windows with the LU Engine.
+- **Group chats keep track of who is in them and who spoke (issue 165, issue
+  169).** A member whose model is no longer in the model list stayed in the
+  group unseen, kept its turn, and its request was answered by whatever model
+  was loaded. It now sits out until its model is listed again, and the group
+  menu shows it as unavailable with a remove button. A server that lists the
+  same model twice, such as KoboldCpp in Ollama mode, gives one row. A turn now
+  carries the persona it was written as, so after a persona moves to another
+  model its older turns still count as its own. On Windows we checked in the
+  app that a member whose server stopped sits out once LU has read the model
+  list again; until then it keeps its turn and shows that server's error under
+  its own name, and no other model answers for it.
+- **A former group chat keeps who said what with group chat off (issue 180).**
+  With group chat off, a chat that holds group turns now sends the other
+  speakers' turns tagged with their names, as the group does, and tells the
+  model what the tags mean. New turns there record who wrote them, the chat's
+  persona or the model, so switching group chat back on hands them to no one
+  else. Switching group chat off and on keeps every persona tag.
+- **Two turns of one role in a row are merged on every request.** The chat
+  templates of Mistral and Devstral refuse two user or two assistant turns in a
+  row. LU merged such turns only on a request without tools, and most requests
+  carry tools now. Two plain turns of one role are now merged on every request,
+  in order and with their speaker tags; tool calls and their results keep their
+  own pairs.
+- **An attached text file fits the model's context (issue 171).** A text file
+  was cut to its first 4000 characters when it was attached, without a word. The
+  chat now keeps the whole text, up to about a million characters, and at send
+  time gives the model the whole file when it fits next to the conversation,
+  otherwise as much of its start as fits. The model is told how much it got, and
+  you see a line above the chat and a mark on the file. A new setting, Attached
+  file limit, caps the share in tokens. A group chat export now names the
+  persona and model of every answer instead of Assistant. On Windows a
+  Japanese text file of about 30,000 characters went to the LU Engine whole in
+  the app; a file too long for the window has run in automated tests only.
+- **A chat compacted more than once keeps one summary.** Every compaction added
+  its own summary, and each message sent the whole chain of them. A new
+  compaction now merges the earlier summary and the turns since then into one
+  current state, and only that state goes out with the next message (issue 151).
+  What the merge drops from the old state, such as your requests, open tasks,
+  paths and numbers, is put back. The number of recent messages kept word for
+  word now follows the model's context, between 4 and 20, and stays 6 where the
+  context is unknown. Chats saved before keep sending their chain.
+- **Numbers, hex and Base64 are counted at their real token cost.** LU counted a
+  digit at a quarter of a token. Most local models give every digit a token of
+  its own, so a chat with a long numeric log, hex or Base64 could send more than
+  the model's window holds, and the LU Engine refused it with "exceeds the
+  available context size". Digits and such encoded text are now counted at their
+  real cost, text without digits as before, and Japanese text with many numbers
+  a little higher than before. When the engine still refuses a message as too
+  long, plain chat shortens the history it sends once and tries again instead of
+  only showing the error; the chat itself keeps every message. Where auto
+  compact is on, it now writes its summary before older turns are cut to fit the
+  window, also in chats the model counts with few tokens. This has run in
+  automated tests against token counts from the Qwen 2.5 and Gemma 3 tokenizers,
+  not yet in the app.
+- **Smaller fixes in Code and Loop.** The tooltip of Accept without asking says
+  what the click changes. The plan card wraps its row instead of its words in a
+  narrow Explorer. The countdown of a loop never shows more than the pause.
+- **GPU layers -1 lets the LU Engine fit the layers itself.** On AMD and Intel
+  cards on Windows and Linux, LU only knows the total memory of the card and
+  guessed the number of layers from it, so -1 could run as slowly as the
+  processor (issue 156). With -1 the LU Engine now fits the layers against the
+  free memory it measures itself. On an NVIDIA card through the same Vulkan
+  engine, -1 put every layer on the card. We have no AMD or Intel card to check
+  it on.
+- **Unreadable answers on older graphics cards first lose Flash Attention, not
+  the card.** When the LU Engine answers in garbage, LU restarts it. For cards
+  without matrix cores (for example AMD RX 5000 and 6000 on Linux, GTX 10
+  series) the first step is to turn Flash Attention off and keep the card. The
+  engine never says whether a card has matrix cores, so this step was never
+  taken on Windows and Linux and every such card went straight to the
+  processor. LU now tries Flash Attention off first and moves to the processor
+  only when that does not help (issue 156). We checked the restart order with
+  tests, not on a card that produces garbage.
+- **ComfyUI starts when no Python on your machine has PyTorch.** With Python
+  3.15 as the only or the default Python, ComfyUI did not start, and Install,
+  Repair environment and Update asked for another Python. Install and Repair
+  environment now build ComfyUI's environment from a Python that PyTorch
+  supports, and when there is none, from LU's own Python 3.12, which needs no
+  administrator rights. A ComfyUI without its own environment starts on the
+  Python that holds its PyTorch, and the character trainer takes the same way.
+  We checked this on a Windows machine whose only Python was 3.15.
+- **A render no longer starts LM Studio.** Before a picture or a clip, LU asks
+  LM Studio to unload its models to free graphics memory. With LM Studio closed,
+  that call started LM Studio in the background. LU now checks first whether LM
+  Studio is running and skips the call when it is not.
+- **A chat model with image input no longer warns at every render.** Before a
+  render, LU saves where the chat model stands in the conversation, so the next
+  answer starts faster. The LU Engine cannot do that for a model loaded with its
+  image part, so every render tried, failed and warned. LU now skips it for such
+  a model.
+- **Importing a model follows the LU Engine folder you set.** With an LU Engine
+  folder set under Model Storage, an import now links the model into that
+  folder, and the error for a link across drives names that setting and a copy
+  into the folder as the two ways out. A model imported into LU's own folder
+  earlier still shows as imported.
+- **Voice and dictation may use the microphone on Linux.** The Linux web view
+  refused every request for the microphone, so Voice failed at once (issue 162).
+  LU now lets its own page use the microphone. A camera, a screen share and any
+  other page are still refused. On Linux, the message after a refused
+  microphone now points to the sound settings instead of a privacy switch Linux
+  does not have. We checked it in a Linux web view with a simulated microphone:
+  without the change the request was refused with the error from the report,
+  with it the sound arrived, and another page was still refused. We have not
+  tried it on a Linux desktop with a real microphone.
+- **Remote Access texts point to the right buttons.** After the 15 second tunnel
+  timeout, the text now says to click Stop and start again with Dispatch,
+  Internet, because Restart starts the server without a tunnel. A refused
+  permission on the phone points to Settings, Voice & Remote, Remote Access,
+  Permissions in the desktop app, and the help says what Dispatch does.
+- **Settings, Privacy names the real data folders on Windows and Linux.** On
+  Windows the data folder is `%LOCALAPPDATA%\lu-labs`. The chat backup and the
+  chat models of the LU Engine sit under `%APPDATA%\Locally Uncensored`, and
+  Privacy now names both instead of saying that LU writes nothing else. Linux
+  gets its own folders named the same way.
+- **A download that already held the whole file no longer fails on every
+  Retry.** When the partial file was already complete (the app ended right after
+  the last byte, or moving the finished file into place failed), every Retry
+  failed with HTTP 416. The partial now goes to the Trash or Recycle Bin and the
+  file downloads again from the start. A shared text encoder or VAE in this
+  state used to put Retry on every bundle that needs it (issue 113).
+- **A switch between Cloud and Local clears the red message of the other mode.**
+  Before, a message such as Use locally failed stayed on screen after the switch
+  to Local. We checked it in the app on Windows.
+- **A model whose server names no context length is no longer held at 4K.**
+  KoboldCpp behind its Ollama API sends no context length, so LU took 4096 as
+  the model's maximum: the context picker offered only 4K, and the history of a
+  long chat was cut to fit 4K while a much larger window from Settings went out
+  with each message. LU now also asks KoboldCpp itself and the list of loaded
+  models. When nobody names a length, the picker offers every size, says that
+  LU cannot check them, and shows the value set in Settings. In plain chat, a
+  group round and Compare, the history is now trimmed and compacted to the
+  window that is sent to Ollama, not to the model's maximum (issue 166). We
+  tested this with recorded server answers, not yet against a running KoboldCpp.
+- **LM Studio keeps the context size you picked for a model.** A size picked in
+  the context picker is now saved for that model and used whenever LU loads it,
+  also after you switch to another model and back, and it no longer changes the
+  Ollama context window. A size picked before this update needs to be picked
+  once more. Making another model the main model no longer unloads a model that
+  still speaks in the group chat on screen; outside a group chat, the previous
+  local model is unloaded as before (issue 168). We tested this with a stand in
+  for LM Studio, not yet with LM Studio itself.
+- **Japanese, Chinese and Korean text is counted closer to its real token
+  cost.** LU estimated every text at four characters per token. Japanese takes
+  about 1.4 characters per token on Gemma, so a long Japanese chat sent about
+  2.8 times more tokens than its budget (41K to 43K real tokens for a 16K
+  budget), and the trim and auto compact only started after the server had
+  already run over. The estimate now counts by script: plain English text
+  exactly as before, Japanese, Chinese and Korean at 1.25 characters per
+  token, other scripts, emoji and symbols higher. It lands a little above the real count on
+  purpose. The same estimate now also sizes the reply limit sent to OpenAI
+  compatible servers, the memory block and the cut of long tool results. In a
+  group chat the context counter no longer switches between speakers without a
+  word: it names the speaker it counts for, the one answering or the one who
+  opens the next round, and shows that speaker's own prompt over its own window
+  (issue 167). LU does not ask the server to count tokens yet. On Windows a
+  long Japanese text file on the LU Engine was estimated at 22,486 tokens in the
+  app, where the engine reported 22,383; the old rule would have said 7,724.
+- **Reset and ask again shows while a permission is missing.** In the computer
+  control permissions on a Mac, the link appeared only after Open System
+  Settings was clicked in the same view. It now shows whenever a permission is
+  missing, and the hint names the case it is for: an entry left by an older test
+  copy of LU. This is on macOS only.
+- **On a Mac, switching from Cloud to Local keeps Talking Character and
+  Character Studio open.** It jumped to Video or Image instead. Talking
+  Character stays while a model that talks is installed. This is on macOS only.
+- **On a Mac, the large LTX models render at the size Create shows.** They ran
+  at 512 x 512 whatever was asked, so a landscape clip came out square. They now
+  take the size on the grid their engine keeps. This is on macOS only.
+- **On a Mac, an edit with many pictures no longer fills the memory.** Each
+  picture of a Qwen-Image 2.1 edit takes memory of its own, and ten pictures at
+  full size left a 48 GB Mac a third free before the first step. Edit now offers
+  as many reference slots as the Mac's memory takes, and a run past that is
+  refused with the number that fits. This is on macOS only.
+- **On a Mac, Music no longer fills the memory while it decodes.** A 30 second
+  track left 1.4 GB of a 48 GB Mac free; it now leaves over 9 GB and decodes
+  faster. This is on macOS only.
+- **On a Mac, Enhance refuses a result larger than the memory takes.** At 4x a
+  1024 picture needs about 22 GB; a smaller Mac is told to pick 2x or a smaller
+  picture instead of freezing. This is on macOS only.
+- **On a Mac, Extend Video shows the Mac's video settings.** It showed the
+  ComfyUI graph's steps, sizes and frames, and a Negative switch a distilled LTX
+  does not read. This is on macOS only.
+- **The settings of a music track name its seed.** Prompt and settings named
+  only the model.
+
+- **Picking the outer folder of a ComfyUI portable build works.** The Windows
+  portable builds, the Intel and AMD ones too, unpack as one folder that holds
+  ComfyUI and python_embeded. Picking that outer folder said "main.py not
+  found", and the search on the disk only found folders named ComfyUI. LU now
+  takes the ComfyUI folder inside, whatever the outer one is called, and keeps
+  using the python_embeded beside it. We checked this in automated tests with
+  test folders; a real portable install on Windows has not been picked yet.
+  (Discord)
+
+- **Auto runs ComfyUI on an Intel Arc card.** On a machine without an NVIDIA
+  card, Auto asks the PyTorch in the ComfyUI environment whether it has a
+  usable GPU, and it only asked about CUDA. A PyTorch built for Intel XPU
+  answered no, so ComfyUI started with --cpu on a working Arc card. LU now asks
+  about XPU too. With Force GPU, the warning about a PyTorch without a GPU is
+  no longer shown when XPU is there, and it says how an Arc card gets the XPU
+  build. We checked this in automated tests without an Intel card. (Discord)
+
+- **A change of the ComfyUI GPU mode says that ComfyUI has to restart.** In
+  Settings, Hardware, switching ComfyUI GPU to Force GPU with the vendor left
+  on Auto showed nothing, and the running ComfyUI kept the mode it was started
+  with. Every change of the mode now says that ComfyUI only reads it at start,
+  with a Restart ComfyUI button. The Device line ComfyUI prints at start, such
+  as Device: xpu:0 or Device: cpu, now stands under Status in AI Backends,
+  ComfyUI (Image & Video), so you can see what it runs on. We checked this in
+  automated tests without an AMD or Intel card. (Discord)
+
+### Security
+
+- **ComfyUI and LM Studio, when LU starts them, answer to LU only.** Other pages
+  open in your browser can no longer read them.
+- **The LU Engine runs models for LU only.** Each time LU starts the engine, it
+  gets a key that only this run of LU holds, and LU's own features send it.
+  Other pages open in your browser can no longer run its model or read what it
+  is doing.
+- **A web page the agent reads reaches the model as page content.** Text from a
+  fetched page now goes to the model marked as data from that page, not as
+  instructions to follow.
+
+### Known limits
+
+- Our check in the real app ran on one Windows machine with an NVIDIA card. For
+  characters it used a stand-in LoRA, so how well a real character keeps its
+  face has not been checked, and step 2 of a character video has not run with a
+  real video model.
+- In the app on Windows we checked the workflow import, Workflow parameters,
+  node packs, a LoRA from a link, the ChatGPT import, the timeouts, images per
+  run, the tab name for the phone and a GGUF file from the drive. One template
+  with a subgraph imported there. A picture from a subgraph template, Update of
+  a node pack, a real ChatGPT export and Edit with ten images on Windows and
+  Linux have run in automated tests only.
+- A second run in the app on Windows checked Duplicate chat, Branch from here,
+  the kept answers, Save and Save & resend of an edit, the persona fix from
+  Plugins, sampling values per persona, a long Japanese text file and its token
+  count with the LU Engine (issues 167 and 170 to 175). Two backends side by
+  side and a group member that sits out were checked with the LU Engine and a
+  stand-in server, not with two real servers (issues 165 and 173). Check files
+  ran on one image bundle; Repair has not been clicked. Issue 169, a text file
+  too long for the window, the per photo text and Low VRAM for training, and the
+  name of this computer for a paired phone have run in automated tests only.
+  Low VRAM has not been measured on a card with 8 GB.
+- Use frames for a character, the Trained characters row in Edit with a real
+  training set, and Use locally against LU Cloud have run in automated tests
+  only.
+- The clip lengths per video family and Wan 2.1 VACE in Animate have not run
+  with a real video model. Phantom, MAGREF and Wan 2.2 VACE Fun are listed in
+  Animate but do not run yet.
+- The think budget ran against a real LU Engine on Windows; with Anthropic it
+  has run in automated tests only. Moving the voice engine to another folder ran
+  on Windows with a real install; moving LU's own Python has run in automated
+  tests only.
+- The microphone fix for Linux was built for Linux and has not been tried on a
+  real machine. GPU layers -1 on AMD and Intel cards has not been checked on
+  such a card.
+- Character cards were checked with Holo and Qwen models, not with Gemma.
+- Reasoning effort for local models (issue 176) ran in the app on Windows with
+  the LU Engine, and the Chat Reply Timeout (issue 177) with a stand-in server.
+  Neither has run against a real LM Studio, KoboldCpp or llama.cpp server. The
+  effort level is one setting for all models, not one per model, and there is
+  no separate None level; Think off is that.
+- A second compaction right after a few short turns now ends before it asks the
+  model. That has run in automated tests only. Auto compact by default and the
+  summary in the middle of Agent and Code runs have run in automated tests and
+  in a test against a local model, not yet in a long session in the app.
+- The persona reminder (issue 181), the former group chat with group chat off
+  (issue 180), the merged turns for Mistral and Devstral, Chat Tools always on,
+  typed faces as emojis, the model lists behind the Cloud switch and Installed
+  on a CivitAI hit have run in automated tests only.
+- REA has run on a Mac with LU's tool code outside the app, with Qwen 3.8 27B
+  and Qwen 3.5 9B on Ollama. Only the 27B model wrote a complete answer. A start
+  from the built app, Windows and Linux, and cloud models have not been tried.
+- The image budget by graphics card for an Edit on ComfyUI has run in automated
+  tests only, not on a card with less than 16 GB. So have the Motion Control
+  prompt field and the prompt field that leaves the stage room.
+- Local characters use the Z Image family. Training on a Mac has run with 10
+  photos and 100 steps on one Mac with 48 GB; the Standard and Thorough
+  settings, Macs with less memory and stopping a training in the middle have
+  not.
+- A local Enhance result in the gallery can list steps and CFG that the enhance
+  run did not use.
+- The LU Cloud line on a model too big for this machine, in the Model Manager
+  and in Create, has run in automated tests only. Create has no time estimate
+  for a video run on a PC, so there the line follows the card verdict and names
+  no time.
+- The Mac parts of this release have run in automated tests and have not been
+  clicked through in a built app yet. Mask edit, HiRes fix, Remove Background,
+  Enhance Image, an image with a LoRA, both Qwen prompt enhancers, LTX-2.3 video
+  at a chosen size, Extend Video, Music, training a character, Talking
+  Character, Motion Control and an edit with ten pictures ran with the real
+  engine on one Mac with 48 GB. The large LTX models (64 GB and more) have not
+  run on a real Mac, nor has anything on a Mac with less than 48 GB. Video LoRAs
+  and multishot have not run with real models on a Mac, and the downloads that
+  Talking Character and Motion Control offer on their tabs have run in automated
+  tests only. Ten seconds of LTX ran on one Mac with 48 GB, from a start image.
+- Music on a Mac needs 48 GB of memory. A run used about 28 GB while it
+  decoded, more than the 16 GB the catalogue named before.
+
 ## [3.0.6] - 2026-10-11
 
 You can talk to LU and hear it answer, and a model can use the mouse and

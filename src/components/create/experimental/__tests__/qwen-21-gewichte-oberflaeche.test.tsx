@@ -7,7 +7,7 @@
  * The sibling tests of each row mock the classifier and hand the type in.
  * Here the classifier is the real one, so a file the classifier does not know
  * would lose its rows: Transparent background, the Text encoder row, the
- * prompt enhancer on Edit, and the three further reference slots.
+ * prompt enhancer on Edit, and the nine further reference slots.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
@@ -63,8 +63,8 @@ describe.each(QWEN21_WEIGHTS)('the Create surface for local Qwen-Image 2.1, %s',
     expect(screen.getByRole('switch', { name: /improve my prompt/i })).toBeTruthy()
   })
 
-  it('an edit takes three further reference images', () => {
-    expect(extraReferenceSlots(classifyModel(model), model)).toBe(3)
+  it('an edit takes nine further reference images', () => {
+    expect(extraReferenceSlots(classifyModel(model), model)).toBe(9)
   })
 })
 

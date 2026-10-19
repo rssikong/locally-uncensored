@@ -147,8 +147,9 @@ describe('release.yml, a dry run step and a release step are never the same step
 
   it('and every step that is handed one stays out of a dry run', () => {
     const reaching = buildSteps.filter((s) => REACHES_OUT.test(s))
-    // Detection, Azure setup, tauri-action, Azure verify, SignPath, attach.
-    expect(reaching).toHaveLength(6)
+    // Detection, Azure setup, tauri-action, Azure verify, SignPath stage 1.
+    // The SignPath attach step moved to windows-signpath.yml (stage 3).
+    expect(reaching).toHaveLength(5)
     for (const step of reaching) {
       expect(stepIf(step), step.split('\n')[0]).toMatch(/(^|[ {(])!inputs\.dry_run\b/)
     }

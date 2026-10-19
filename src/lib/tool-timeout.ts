@@ -70,6 +70,26 @@ export interface ToolTimeoutSettings {
   videoGenTimeoutMinutes?: number
 }
 
+/**
+ * How long a Create render may go without any life sign from ComfyUI before
+ * it is called stalled, in ms. Reads the same two settings as the tool cap
+ * (Settings, Generation timeout); 20 min for images and 60 min for video
+ * when they are unset or not a number. D27: useCreate used to hard code the
+ * defaults, so raising the setting never reached the Create tab.
+ */
+export function renderStallLimitMs(kind: 'image' | 'video', settings: ToolTimeoutSettings): number {
+  const minutes = kind === 'video'
+    ? Number(settings.videoGenTimeoutMinutes) || 60
+    : Number(settings.imageGenTimeoutMinutes) || 20
+  return Math.max(1, minutes) * 60_000
+}
+
+/** The sentence a stalled Create render ends with: "1 minute", "20 minutes". */
+export function renderStallMessage(limitMs: number): string {
+  const minutes = Math.max(1, Math.round(limitMs / 60_000))
+  return `Generation stalled: no progress from ComfyUI for ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}.`
+}
+
 /** The JS race ceiling for one tool call, in ms. */
 export function toolCallCapMs(
   name: string,

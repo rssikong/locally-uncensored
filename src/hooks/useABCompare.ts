@@ -7,7 +7,7 @@ import { useCallback, useRef } from 'react'
 import { useCompareStore } from '../stores/compareStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { getProviderForModel, getProviderIdFromModel } from '../api/providers'
-import { getModelMaxTokens } from '../lib/context-compaction'
+import { getChatWindowTokens } from '../lib/context-compaction'
 import { applySendBudget, chatBudgetApplies, sharedChatSendBudget } from '../lib/chat-send-budget'
 import { sendsToALanBackend } from '../lib/lan-openai-slot'
 import { buildChatSystemPrompt } from '../lib/system-prompt'
@@ -98,11 +98,11 @@ export function useABCompare() {
             // Two local models must not buy two /api/show round trips for a
             // budget that will come back null either way.
             modelWindow: chatBudgetApplies(providerId, settings.contextDecay)
-              ? await getModelMaxTokens(m)
+              ? await getChatWindowTokens(m)
               : 0,
             sendWindowTokens: sendWindowFor(settings, m),
             contextDecay: settings.contextDecay,
-            localBackend: sendsToALanBackend(providerId),
+            localBackend: sendsToALanBackend(providerId, m),
           }
         }),
       ),

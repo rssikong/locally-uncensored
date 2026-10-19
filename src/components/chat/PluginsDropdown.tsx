@@ -1,21 +1,26 @@
-import { useRef, useState } from 'react'
+import { lazy, Suspense, useRef, useState } from 'react'
 import { usePopoverPlatz } from '../../hooks/usePopoverPlatz'
 import { useDismissOnEscape } from '../../hooks/useDismissOnEscape'
-import { Plug, ChevronDown, Bone, User, Users, Wrench, Sparkles } from 'lucide-react'
+import { Plug, ChevronDown, Bone, User, Users, Sparkles, X } from 'lucide-react'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useChatStore } from '../../stores/chatStore'
 import { useModelStore } from '../../stores/modelStore'
-import { useToolSupport } from '../../hooks/useToolSupport'
-import { GROUP_CHAT_MAX, isGroupChat, groupChatCandidates } from '../../lib/group-chat'
+import { GROUP_CHAT_MAX, isGroupChat, groupChatRows } from '../../lib/group-chat'
+import { resolveChatPersona } from '../../lib/chat-persona'
 import type { CavemanMode } from '../../types/settings'
 import { displayModelName } from '../../api/providers/registry'
 import { HINWEIS_TEXT } from '../../lib/hinweis'
 import { BetaMark } from '../ui/BetaMark'
+import { isTauri } from '../../api/backend'
 import { createChatLive, createInChatOf, createSupport, servedWindowOf } from '../../lib/create/chat-switch'
 import { useCreateChatReleased } from '../../lib/create/chat-release'
 
 /** The line next to the greyed Create switch in a group chat. */
 export const CREATE_GROUP_REASON = 'Not available in a group chat.'
+
+// REA's row loads in the desktop app only, in a chunk of its own: its name
+// and texts stay out of every bundle a browser opens.
+const ReaPluginRow = lazy(() => import('./ReaPluginRow').then((m) => ({ default: m.ReaPluginRow })))
 
 const CAVEMAN_MODES: { value: CavemanMode; label: string; desc: string }[] = [
   { value: 'off', label: 'Off', desc: 'Normal responses' },
@@ -46,19 +51,11 @@ export function PluginsDropdown({
   const [groupOpen, setGroupOpen] = useState(false)
   // Which participant's persona list is open, by model name.
   const [personaFor, setPersonaFor] = useState<string | null>(null)
-  const { getActivePersona, setActivePersona } = useSettingsStore()
-  const activePersona = getActivePersona()
+  const setActivePersona = useSettingsStore((s) => s.setActivePersona)
+  const activePersonaId = useSettingsStore((s) => s.activePersonaId)
   const allPersonas = useSettingsStore((s) => s.personas)
   const cavemanMode = useSettingsStore((s) => s.settings.cavemanMode)
-  // Chat-Tools (v2.5.3) — curated web/file/image/video tools in plain chat.
-  // Default ON (undefined → on) so the feature works out of the box; the
-  // toggle lets a user fall back to pure-text chat.
-  const chatToolsEnabledSetting = useSettingsStore((s) => s.settings.chatToolsEnabled !== false)
   const updateSettings = useSettingsStore((s) => s.updateSettings)
-  // A model with no tool channel cannot run Chat Tools no matter what the
-  // switch says, so show it off and disabled rather than on and broken.
-  const { canUseTools, reason } = useToolSupport()
-  const chatToolsEnabled = chatToolsEnabledSetting && canUseTools
   // Create in chat: its own switch, global, remembered, off by default. Only
   // in Cloud mode, and only for an account the server has released; without
   // both this menu is the one that shipped before. A model the server does
@@ -85,6 +82,15 @@ export function PluginsDropdown({
     activeConvId ? s.conversations.find((c) => c.id === activeConvId) : null
   )
   const setConversationPersonaEnabled = useChatStore((s) => s.setConversationPersonaEnabled)
+  const setConversationPersona = useChatStore((s) => s.setConversationPersona)
+  // GH #170: the persona named here is the one THIS chat sends, read through
+  // the same function the send path uses. Without an open chat it is the app
+  // wide pick, which is what the next new chat starts with.
+  const chatPersona = activeConv
+    ? resolveChatPersona(activeConv, allPersonas, activePersonaId)
+    : { persona: allPersonas.find((p) => p.id === activePersonaId), prompt: '' }
+  const activePersona = chatPersona.persona
+  const personaLabel = activePersona?.name ?? (chatPersona.prompt.trim() ? 'Saved prompt' : 'Unrestricted')
   // Default OFF: persona only counts as "active on this chat" when the
   // user has explicitly flipped it on via the toggle below. Undefined or
   // missing flag → OFF. Fixes the "Devil's Advocate hijacks every new
@@ -97,8 +103,14 @@ export function PluginsDropdown({
   const setGroupPersona = useChatStore((s) => s.setGroupPersona)
   const groupPersonas = activeConv?.groupPersonas
   const models = useModelStore((s) => s.models)
+  const inventoryLoaded = useModelStore((s) => s.inventoryLoaded)
   const groupModels = activeConv?.groupModels ?? []
   const isGroupActive = isGroupChat(activeConv?.groupModels)
+  // GH #165: members whose model left the model list stay visible here,
+  // marked unavailable, and are counted apart from the ones that answer.
+  const groupRows = groupChatRows(models, groupModels, inventoryLoaded)
+  const unavailableCount = groupRows.filter((r) => r.unavailable).length
+  const answering = groupModels.length - unavailableCount
   // A group round is a conversation between models and never carries the
   // Create tools (hooks/useChat.ts).
   const create = createBase.shown && isGroupActive
@@ -107,10 +119,14 @@ export function PluginsDropdown({
   const createOn = create.available && createSetting
 
   const isCavemanActive = cavemanMode && cavemanMode !== 'off'
-  const isPersonaActive = activePersona && activePersona.id !== 'unrestricted' && personaEnabledOnChat
+  const isPersonaActive = personaEnabledOnChat &&
+    (activePersona ? activePersona.id !== 'unrestricted' : chatPersona.prompt.trim() !== '')
   const currentCaveman = CAVEMAN_MODES.find((m) => m.value === (cavemanMode || 'off'))
 
-  const anyPluginActive = !!(isCavemanActive || isPersonaActive || chatToolsEnabled || isGroupActive || createOn)
+  // REA (lib/plugins/rea.ts): a local process, so the desktop app only.
+  const reaShown = isTauri()
+  const reaOn = useSettingsStore((s) => s.settings.reaPluginEnabled === true) && reaShown
+  const anyPluginActive = !!(isCavemanActive || isPersonaActive || isGroupActive || createOn || reaOn)
 
   return (
     <div className="relative">
@@ -144,8 +160,8 @@ export function PluginsDropdown({
           <span>Plugins</span>
           {anyPluginActive && (
             <div className="flex gap-0.5">
-              {chatToolsEnabled && <div className="w-1 h-1 rounded-full bg-blue-400" />}
               {createOn && <div data-testid="plugins-dot-create" className="w-1 h-1 rounded-full bg-lu-accent" />}
+              {reaOn && <div data-testid="plugins-dot-rea" className="w-1 h-1 rounded-full bg-teal-400" />}
               {/* Rosa, nicht mehr Bernstein: die vier Punkte sind Kategorien,
                   keine Zustaende, und Gelb hat hier nie eine Warnung gemeint.
                   Blau, Gruen und Violett waren schon vergeben, Rot gehoert
@@ -164,39 +180,9 @@ export function PluginsDropdown({
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div ref={menuRef} style={menu.style} className={`absolute right-0 z-50 w-56 rounded-lg lu-elevated py-1.5 overflow-y-auto scrollbar-thin ${menu.nachOben ? 'bottom-full mb-1' : 'top-full mt-1'}`}>
 
-            {/* ── Chat Tools toggle (v2.5.3) ──────────────── */}
+            {/* Chat Tools are always on since 3.0.7 (lib/chat-tools-reach.ts):
+                no switch here any more. */}
             <div className="px-2.5">
-              <div className="w-full flex items-center justify-between py-1.5 gap-2">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <Wrench size={10} className={chatToolsEnabled ? 'text-blue-400' : 'text-gray-400'} />
-                  <span className="t-micro font-medium text-gray-600 dark:text-gray-300">Chat Tools</span>
-                  <span className="text-[0.5rem] text-gray-400 truncate">web · file · image · video</span>
-                </div>
-                <button
-                  onClick={(e) => { e.stopPropagation(); if (canUseTools) updateSettings({ chatToolsEnabled: !chatToolsEnabledSetting }) }}
-                  disabled={!canUseTools}
-                  title={!canUseTools ? reason : chatToolsEnabled ? 'Disable tools in plain chat' : 'Enable web/file/image/video tools in plain chat'}
-                  className={
-                    'shrink-0 flex items-center w-7 h-3.5 rounded-full transition-colors ' +
-                    (!canUseTools
-                      ? 'bg-gray-300/20 dark:bg-white/5 cursor-default justify-start'
-                      : chatToolsEnabled
-                        ? 'bg-blue-500/40 hover:bg-blue-500/55 justify-end'
-                        : 'bg-gray-300/30 dark:bg-white/10 hover:bg-gray-300/45 dark:hover:bg-white/15 justify-start')
-                  }
-                >
-                  <span className={`w-3 h-3 rounded-full shadow-sm mx-px ${canUseTools ? 'bg-white' : 'bg-white/40'}`} />
-                </button>
-              </div>
-              {!canUseTools && (
-                // Kein Fehler, nur ein Grund: dieses Modell hat keinen
-                // Werkzeugkanal. Ruhiges Grau aus `lib/hinweis.ts` statt des
-                // alten Gelbs, das aussah, als sei etwas schiefgegangen.
-                <div className={`pb-1.5 text-[0.5rem] leading-snug ${HINWEIS_TEXT.ruhig}`}>
-                  {reason}
-                </div>
-              )}
-
               {/* ── Create toggle ───────────────────────────── */}
               {create.shown && (
                 <>
@@ -236,6 +222,9 @@ export function PluginsDropdown({
                 </>
               )}
             </div>
+
+            {/* ── REA, reverse engineering for the agents ────── */}
+            {reaShown && <Suspense fallback={null}><ReaPluginRow /></Suspense>}
 
             <div className="border-t border-gray-200 dark:border-white/[0.06] my-1" />
 
@@ -297,7 +286,7 @@ export function PluginsDropdown({
                   <User size={10} className={isPersonaActive ? 'text-green-400' : 'text-gray-400'} />
                   <span className="t-micro font-medium text-gray-600 dark:text-gray-300">Persona</span>
                   <span className={`text-[0.55rem] truncate ${isPersonaActive ? 'text-green-400' : 'text-gray-500'}`}>
-                    {activePersona?.name || 'Unrestricted'}
+                    {personaLabel}
                   </span>
                   <ChevronDown size={9} className={`text-gray-500 transition-transform ${personaOpen ? 'rotate-180' : ''}`} />
                 </button>
@@ -332,7 +321,13 @@ export function PluginsDropdown({
                     return (
                       <button
                         key={p.id}
-                        onClick={() => { setActivePersona(p.id); setPersonaOpen(false) }}
+                        onClick={() => {
+                          // The app wide pick stays the start of every new
+                          // chat; the open chat takes the persona for itself.
+                          setActivePersona(p.id)
+                          if (activeConvId) setConversationPersona(activeConvId, p)
+                          setPersonaOpen(false)
+                        }}
                         className={`w-full flex items-center gap-1.5 px-2 py-1 rounded text-left transition-colors ${
                           isActive
                             ? 'bg-green-500/10 text-green-600 dark:text-green-400'
@@ -359,8 +354,10 @@ export function PluginsDropdown({
                 <div className="flex items-center gap-1.5">
                   <Users size={10} className={isGroupActive ? 'text-purple-400' : 'text-gray-400'} />
                   <span className="t-micro font-medium text-gray-600 dark:text-gray-300">Group chat</span>
-                  <span className={`text-[0.55rem] ${isGroupActive ? 'text-purple-400' : 'text-gray-500'}`}>
-                    {isGroupActive ? `${groupModels.length} models` : 'Off'}
+                  <span data-testid="group-chat-count" className={`text-[0.55rem] ${isGroupActive ? 'text-purple-400' : 'text-gray-500'}`}>
+                    {isGroupActive
+                      ? `${answering} ${answering === 1 ? 'model' : 'models'}${unavailableCount > 0 ? `, ${unavailableCount} unavailable` : ''}`
+                      : 'Off'}
                   </span>
                 </div>
                 <ChevronDown size={9} className={`text-gray-500 transition-transform ${groupOpen ? 'rotate-180' : ''}`} />
@@ -371,7 +368,7 @@ export function PluginsDropdown({
                   <p className="px-2 pb-0.5 text-[0.5rem] leading-snug text-gray-400">
                     Pick 2 to {GROUP_CHAT_MAX} models. They answer in turn on every message, and each sees what the others said. Each one can speak as its own persona.
                   </p>
-                  {groupChatCandidates(models, groupModels).map((m) => {
+                  {groupRows.map((m) => {
                     const on = groupModels.includes(m.name)
                     const full = !on && groupModels.length >= GROUP_CHAT_MAX
                     // The persona THIS participant speaks as. None picked (or a
@@ -380,10 +377,12 @@ export function PluginsDropdown({
                     const ownPersona = allPersonas.find((p) => p.id === groupPersonas?.[m.name])
                     const listOpen = on && personaFor === m.name
                     return (
-                      <div key={m.name} data-testid="group-participant" data-model={m.name}>
+                      <div key={m.name} data-testid="group-participant" data-model={m.name} data-unavailable={m.unavailable || undefined}>
                         <div
                           className={`flex items-center rounded transition-colors ${
-                            on ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400' : ''
+                            m.unavailable
+                              ? 'bg-gray-500/10 text-gray-400'
+                              : on ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400' : ''
                           }`}
                         >
                           <button
@@ -403,8 +402,21 @@ export function PluginsDropdown({
                                   : 'text-gray-500 hover:bg-gray-50 dark:hover:bg-white/[0.04] hover:text-gray-700 dark:hover:text-gray-300'
                             }`}
                           >
-                            {on && <div className="w-1 h-1 rounded-full bg-purple-400 shrink-0" />}
-                            <span className="text-[0.55rem] font-medium truncate" title={displayModelName(m.name)}>{displayModelName(m.name)}</span>
+                            {on && <div className={`w-1 h-1 rounded-full shrink-0 ${m.unavailable ? 'bg-gray-400' : 'bg-purple-400'}`} />}
+                            <span
+                              className={`text-[0.55rem] font-medium truncate ${m.unavailable ? 'line-through' : ''}`}
+                              title={m.unavailable
+                                ? `${displayModelName(m.name)} is not in the model list right now. It sits out until its model is back.`
+                                : displayModelName(m.name)}
+                            >
+                              {displayModelName(m.name)}
+                            </span>
+                            {/* GitHub #173: a model of an additional backend
+                                names that backend, so the same model on two
+                                servers is two choices the user can tell apart. */}
+                            {m.providerEntry && (
+                              <span data-testid="group-participant-backend" className="t-micro text-gray-400 truncate shrink-0 max-w-[40%]">{m.providerName}</span>
+                            )}
                           </button>
                           {on && (
                             <button
@@ -420,7 +432,28 @@ export function PluginsDropdown({
                               <ChevronDown size={8} className={`shrink-0 transition-transform ${listOpen ? 'rotate-180' : ''}`} />
                             </button>
                           )}
+                          {m.unavailable && (
+                            // Out of the group in one click, without bringing
+                            // the model back first (GH #165).
+                            <button
+                              onClick={() => {
+                                if (personaFor === m.name) setPersonaFor(null)
+                                setGroupModels(activeConvId, groupModels.filter((x) => x !== m.name))
+                              }}
+                              aria-label={`Remove ${displayModelName(m.name)} from the group`}
+                              title="Remove from the group"
+                              data-testid="group-participant-remove"
+                              className="shrink-0 p-1 rounded text-gray-400 hover:bg-gray-500/15 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+                            >
+                              <X size={9} />
+                            </button>
+                          )}
                         </div>
+                        {m.unavailable && (
+                          <p data-testid="group-participant-unavailable" className="px-2 pb-0.5 text-[0.5rem] leading-snug text-gray-400">
+                            Not in the model list right now, so it sits out.
+                          </p>
+                        )}
                         {listOpen && (
                           <div data-testid="group-persona-list" className="ml-3 my-0.5 pl-1.5 border-l border-purple-400/30 space-y-0.5">
                             {[{ id: null, name: 'Chat persona' }, ...allPersonas].map((p) => {

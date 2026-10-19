@@ -39,7 +39,7 @@ const read = (...p: string[]) => readFileSync(resolve(SRC, ...p), 'utf8')
 const byId = (items: readonly MenuAction[], id: string) => items.find(i => i.id === id)
 
 function messageHandlers(over: Partial<MessageMenuHandlers> = {}): MessageMenuHandlers {
-  return { copy: vi.fn(), edit: vi.fn(), regenerate: vi.fn(), remove: vi.fn(), ...over }
+  return { copy: vi.fn(), edit: vi.fn(), regenerate: vi.fn(), branch: vi.fn(), remove: vi.fn(), ...over }
 }
 
 describe('Nachricht: das Menü ruft die Funktionen der Aktionsleiste', () => {
@@ -51,6 +51,7 @@ describe('Nachricht: das Menü ruft die Funktionen der Aktionsleiste', () => {
     expect(byId(items, 'copy')?.run).toBe(h.copy)
     expect(byId(items, 'edit')?.run).toBe(h.edit)
     expect(byId(items, 'regenerate')?.run).toBe(h.regenerate)
+    expect(byId(items, 'branch')?.run).toBe(h.branch)
     expect(byId(items, 'delete')?.run).toBe(h.remove)
   })
 
@@ -61,6 +62,9 @@ describe('Nachricht: das Menü ruft die Funktionen der Aktionsleiste', () => {
     // Antwort, die (noch) nicht bearbeitbar ist: kein Edit.
     const noEdit = buildMessageMenu(messageHandlers({ edit: null }), state)
     expect(byId(noEdit, 'edit')).toBeUndefined()
+    // GH #174: no branch where the bar has no branch button.
+    const noBranch = buildMessageMenu(messageHandlers({ branch: null }), state)
+    expect(byId(noBranch, 'branch')).toBeUndefined()
     // Kopieren und Löschen kann man immer.
     expect(byId(noEdit, 'copy')).toBeDefined()
     expect(byId(noEdit, 'delete')).toBeDefined()

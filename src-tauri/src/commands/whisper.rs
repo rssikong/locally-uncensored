@@ -293,7 +293,7 @@ pub fn choose_dictation_python(lu: Option<(String, bool)>, voice: Option<(String
 
 /// The private Python of the Voice feature, when it is on disk.
 fn voice_python() -> Option<String> {
-    let python = crate::commands::voice_loop::layout::VoiceDirs::in_data_dir().venv_python();
+    let python = crate::commands::voice_loop::layout::VoiceDirs::current().venv_python();
     python.is_file().then(|| python.to_string_lossy().to_string())
 }
 
