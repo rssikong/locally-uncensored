@@ -33,6 +33,14 @@ describe('text nodes', () => {
     expect(document.body.textContent).toBe('  聊天  ')
   })
 
+  it('matches a sentence that wrapped over several lines', () => {
+    // JSX with an indented child carries newlines and runs of spaces; the
+    // dictionary is keyed by the sentence, not by the layout.
+    document.body.innerHTML = '<p>\n      Attach   images or files\n    </p>'
+    translateWithin(document.body)
+    expect(document.body.textContent?.trim()).toBe('添加图片或文件')
+  })
+
   it('leaves an unknown sentence exactly as it was', () => {
     document.body.innerHTML = '<p>Upstream sentence nobody translated</p>'
     translateWithin(document.body)

@@ -114,6 +114,7 @@ try {
 }
 
 const groups = []
+const wrapped = new Set() // strings already handled by an explicit t('…') call
 let uid = 0
 
 function addGroup(file, line, kind, fragments) {
@@ -126,6 +127,17 @@ function addGroup(file, line, kind, fragments) {
 }
 
 function visit(sf, file, node, inClass = false) {
+  // An explicit `t('…')` / `tr('…')` call is already translated; count it so
+  // the coverage number is not blind to the strings a human wrapped by hand.
+  if (
+    ts.isCallExpression(node) &&
+    ts.isIdentifier(node.expression) &&
+    (node.expression.text === 't' || node.expression.text === 'tr') &&
+    node.arguments.length > 0
+  ) {
+    const arg = node.arguments[0]
+    if (ts.isStringLiteral(arg) || ts.isNoSubstitutionTemplateLiteral(arg)) wrapped.add(arg.text)
+  }
   if (ts.isJsxElement(node) || ts.isJsxFragment(node)) {
     const pieces = []
     let hasText = false
@@ -211,10 +223,21 @@ for await (const file of walk(SRC)) {
 const unique = new Map()
 for (const g of groups) for (const f of g.fragments) if (!unique.has(f)) unique.set(f, g.file)
 
+const dictUrl = new URL(`file://${join(SRC, 'lib', 'i18n', 'zh-CN.ts').replace(/\\/g, '/')}`).href
+const dictionary = await import(dictUrl).then((m) => m.ZH_CN ?? {}).catch(() => ({}))
+const known = new Set(Object.keys(dictionary))
+const coveredFragments = [...unique.keys()].filter((f) => known.has(f))
+const universe = new Set([...unique.keys(), ...wrapped])
+const handled = new Set([...wrapped, ...coveredFragments])
+const percent = universe.size === 0 ? 100 : (handled.size / universe.size) * 100
+
 const payload = {
   generatedAt: new Date().toISOString(),
   groups: groups.length,
   uniqueFragments: unique.size,
+  wrapped: wrapped.size,
+  dictionary: known.size,
+  coveragePercent: Number(percent.toFixed(1)),
   skippedKeys: skip.size,
   items: groups,
 }
@@ -223,7 +246,9 @@ if (OUT) {
   await writeFile(OUT, JSON.stringify(payload, null, 2), 'utf8')
   console.log(`已写入 ${OUT}`)
 }
-console.log(`分组：${groups.length}    唯一片段：${unique.size}    跳过清单：${skip.size}`)
+console.log(
+  `分组：${groups.length}    唯一片段：${unique.size}    已有译文：${handled.size}/${universe.size}（${percent.toFixed(1)}%）    跳过清单：${skip.size}`,
+)
 
 const byFile = new Map()
 for (const g of groups) byFile.set(g.file, (byFile.get(g.file) ?? 0) + 1)

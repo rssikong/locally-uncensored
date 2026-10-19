@@ -41,12 +41,16 @@ function isSkipped(element: Element | null): boolean {
 function translateTextNode(node: Text): boolean {
   if (isSkipped(node.parentElement)) return false
   const raw = node.nodeValue ?? ''
-  const key = raw.trim()
+  // JSX text that wrapped over several lines carries its indentation; the
+  // dictionary is keyed by the sentence, so collapse first and put the
+  // original leading/trailing whitespace back afterwards.
+  const key = raw.replace(/\s+/g, ' ').trim()
   if (!key) return false
   const chinese = translate(key)
   if (chinese === null || chinese === key) return false
-  // Keep the whitespace around the sentence: inline layout depends on it.
-  node.nodeValue = raw.replace(key, chinese)
+  const lead = raw.slice(0, raw.length - raw.trimStart().length)
+  const trail = raw.slice(raw.trimEnd().length)
+  node.nodeValue = `${lead}${chinese}${trail}`
   return true
 }
 
@@ -56,7 +60,7 @@ function translateAttributes(element: Element): boolean {
   for (const name of ATTRS) {
     const value = element.getAttribute(name)
     if (!value) continue
-    const chinese = translate(value.trim())
+    const chinese = translate(value.replace(/\s+/g, ' ').trim())
     if (chinese === null || chinese === value) continue
     element.setAttribute(name, chinese)
     changed = true
