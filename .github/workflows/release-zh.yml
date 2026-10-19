@@ -209,7 +209,18 @@ jobs:
         shell: bash
         env:
           LD_LIBRARY_PATH: ${{ matrix.platform == 'ubuntu-22.04' && format('{0}/src-tauri/resources/llama/{1}', github.workspace, matrix.sidecar_triple) || '' }}
-        run: npx tauri build --config src-tauri/tauri.zh.conf.json
+        run: |
+          # A dry run has no updater key, and a config that asks for signed
+          # artefacts cannot be built without one ("A public key has been found,
+          # but no private key"). Same overlay, minus the artefacts — the build
+          # and the bundle names are what this run is testing.
+          node -e "
+            const fs = require('fs')
+            const conf = JSON.parse(fs.readFileSync('src-tauri/tauri.zh.conf.json', 'utf8'))
+            conf.bundle.createUpdaterArtifacts = false
+            fs.writeFileSync(process.env.RUNNER_TEMP + '/tauri.zh.dry.json', JSON.stringify(conf, null, 2) + '\n')
+          "
+          npx tauri build --config "$RUNNER_TEMP/tauri.zh.dry.json"
 
       - name: Keep the installers
         if: ${{ inputs.dry_run }}
