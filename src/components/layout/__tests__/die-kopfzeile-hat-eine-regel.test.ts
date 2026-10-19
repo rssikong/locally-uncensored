@@ -54,12 +54,7 @@ describe('D-S19: der Center-Slot traegt jetzt etwas, und rechts steht weniger', 
   it('und nicht mehr rechts', () => {
     // Alle sechs Ziele stehen in der Datenliste …
     for (const label of ['Chat', 'Create', 'Compare', 'Benchmark', 'Models', 'Settings']) {
-      // Seit der Uebersetzung steht das englische Wort als Argument in
-      // `tr('Chat')` statt als blankes Literal. Die Regel ist dieselbe: jedes
-      // Ziel steht mit genau dieser Beschriftung in der Datenliste.
-      expect(CODE, `${label} fehlt in NAV_TARGETS`).toMatch(
-        new RegExp(`label: (?:tr\\()?'${label}'`),
-      )
+      expect(CODE, `${label} fehlt in NAV_TARGETS`).toContain(`label: '${label}'`)
     }
     // … und die rechte Gruppe rendert keins davon mehr.
     expect(RIGHT).not.toContain('navTargets')

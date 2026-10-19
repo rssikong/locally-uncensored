@@ -468,10 +468,8 @@ describe('release.yml, a Mac dry run reaches no release and no other platform', 
   })
 
   it('leaves the release flags alone', () => {
-    // Fork: a Chinese build (`zh_release`) is a normal release on purpose, so
-    // the demotion rule adds one more condition. The rule itself is unchanged.
     expect(withoutComments(jobBlock(RELEASE_YML, 'enforce-prerelease')))
-      .toMatch(/^ {4}if:\s*\$\{\{ always\(\) && !inputs\.mac_dry_run && !inputs\.dry_run(?: && !inputs\.zh_release)? \}\}\s*$/m)
+      .toMatch(/^ {4}if:\s*\$\{\{ always\(\) && !inputs\.mac_dry_run && !inputs\.dry_run \}\}\s*$/m)
     expect(withoutComments(jobBlock(RELEASE_YML, 'demote-on-arrival')))
       .toMatch(/^ {4}if:\s*github\.event_name == 'release'\s*$/m)
   })
@@ -636,19 +634,15 @@ describe('release.yml, a dry run signs its updater archive with a key of its own
 })
 
 describe('release.yml, the release text names the Mac only behind the switch', () => {
-  /** The text the release carries while the Mac lane is off. */
+  /** The text Windows and Linux releases carried before the Mac lane. */
   const BEFORE = [
-    '## 下载',
+    '## Download',
     '',
-    '**Windows**',
-    '- `..._x64-setup.exe`（推荐）：安装时可选「仅当前用户」，无需管理员权限。',
-    '- `..._x64_zh-CN.msi`：系统级安装，适合企业统一部署。',
+    '**Windows:** Download the `.exe` installer. During setup, choose "Install for current user only" for a portable/no-install experience. Or use the `.msi` for system-wide installation.',
     '',
-    '**Linux**',
-    '- `.AppImage`：下载后 `chmod +x` 直接运行，无需安装。',
-    '- `.deb`（Debian/Ubuntu）、`.rpm`（Fedora/openSUSE）：用包管理器安装。',
+    '**Linux:** Download the `.AppImage`, make it executable (`chmod +x`), and run. No installation needed.',
     '',
-    '> 全部免管理员权限。LU by LU Labs.',
+    '> All versions are portable-friendly, no admin rights required. LU by LU Labs.',
   ].join('\n')
 
   /** The block scalar under `releaseBody: |`, indentation removed. */

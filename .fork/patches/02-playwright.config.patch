@@ -1,0 +1,16 @@
+diff --git a/playwright.config.ts b/playwright.config.ts
+index 909e282f..345ffb0f 100644
+--- a/playwright.config.ts
++++ b/playwright.config.ts
+@@ -50,5 +50,11 @@ export default defineConfig({
+     timeout: 120_000,
+     stdout: 'ignore',
+     stderr: 'pipe',
++    // The suite selects by visible copy (406 `getByText` calls and 1224
++    // accessible names). This fork ships a Chinese UI, so the web server is
++    // started in English: `src/lib/i18n` answers `en` when VITE_LU_LOCALE is
++    // set, and every existing selector keeps working. A spec that wants to
++    // assert the Chinese surface sets `locale` in its own context instead.
++    env: { VITE_LU_LOCALE: 'en' },
+   },
+ })

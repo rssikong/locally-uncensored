@@ -30,16 +30,6 @@ on:
         type: boolean
         required: false
         default: false
-      # Fork: the Chinese build. The version becomes <upstream>-zh.<n>, the four
-      # version files are patched on the runner (never committed), and the
-      # release is published as a NORMAL release: `releases/latest` — the
-      # address the updater reads — only follows non-prerelease releases, so
-      # this is what makes the fork's auto-update work at all.
-      zh_release:
-        description: 'Chinese build for this tag: version <tag>-zh.<n>, published as a normal release with updater artefacts.'
-        type: boolean
-        required: false
-        default: false
 
 permissions:
   contents: write
@@ -263,69 +253,6 @@ jobs:
           # A release keeps the default (true). A dry run uses the token for
           # nothing, so the build scripts get none to find.
           persist-credentials: ${{ !inputs.dry_run }}
-
-      # ── Fork: the Chinese build's version ────────────────────────────────
-      # <upstream tag without v>-zh.<n>, so two builds of the same upstream
-      # version still order correctly under semver and the updater moves
-      # forward (3.0.6-zh.2 > 3.0.6-zh.1, 3.0.7-zh.1 > 3.0.6-zh.9).
-      # Written into the four files the version guard compares, on the runner
-      # only — nothing is committed; the tag and the artefacts carry it.
-      - name: Chinese build version
-        id: zhver
-        if: inputs.zh_release
-        shell: bash
-        run: |
-          set -euo pipefail
-          base="${{ github.event.release.tag_name || github.event.inputs.tag }}"
-          base="${base#v}"
-          # The tag says "zh" for the humans (`v3.0.6-zh.1`), but the version the
-          # build carries must be a NUMERIC pre-release: the WiX/MSI bundler
-          # rejects anything else ("optional pre-release identifier in app
-          # version must be numeric-only"), and the Linux AppImage then shipped
-          # alone in the first attempt. `3.0.6-1` orders correctly within this
-          # channel (3.0.6-2 > 3.0.6-1, 3.0.7-1 > 3.0.6-9).
-          if [[ "$base" =~ ^(.+)-zh\.([0-9]+)$ ]]; then
-            ver="${BASH_REMATCH[1]}-${BASH_REMATCH[2]}"
-            echo "Tag names it zh.$((BASH_REMATCH[2])), version becomes $ver"
-          else
-            n=1
-            while git ls-remote --tags origin "refs/tags/v${base}-zh.${n}" | grep -q .; do
-              n=$((n + 1))
-            done
-            ver="${base}-${n}"
-          fi
-          echo "Chinese build version: $ver"
-          node - "$ver" <<'JS'
-          const fs = require('fs')
-          const ver = process.argv[2]
-          for (const file of ['package.json', 'package-lock.json']) {
-            const json = JSON.parse(fs.readFileSync(file, 'utf8'))
-            json.version = ver
-            if (json.packages && json.packages['']) json.packages[''].version = ver
-            fs.writeFileSync(file, JSON.stringify(json, null, 2) + '\n')
-          }
-          const conf = 'src-tauri/tauri.conf.json'
-          const json = JSON.parse(fs.readFileSync(conf, 'utf8'))
-          json.version = ver
-          fs.writeFileSync(conf, JSON.stringify(json, null, 2) + '\n')
-          const cargo = 'src-tauri/Cargo.toml'
-          fs.writeFileSync(
-            cargo,
-            fs.readFileSync(cargo, 'utf8').replace(/^version = ".*"$/m, `version = "${ver}"`),
-          )
-          JS
-          # The release keeps the tag the caller named (`v3.0.6-zh.1`): that is
-          # the commit the sync workflow tagged, i.e. the one carrying the
-          # translations. Only when a plain upstream tag is passed by hand do we
-          # need a tag of our own, because upstream's tag points at a commit
-          # without the dictionary.
-          if [[ "$base" =~ ^(.+)-zh\.([0-9]+)$ ]]; then
-            tag_out="v${base}"
-          else
-            tag_out="v${base}-zh.${n}"
-          fi
-          echo "version=${ver}" >> "$GITHUB_OUTPUT"
-          echo "tag=${tag_out}" >> "$GITHUB_OUTPUT"
 
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -833,11 +760,8 @@ jobs:
           # meaning there and an empty env var is harmless.
           LD_LIBRARY_PATH: ${{ matrix.platform == 'ubuntu-22.04' && format('{0}/src-tauri/resources/llama/{1}', github.workspace, matrix.sidecar_triple) || '' }}
         with:
-          # Fork: a Chinese build gets its own tag (v<upstream>-zh.<n>) so that
-          # translating the same upstream version twice does not overwrite the
-          # earlier assets or its updater signature.
-          tagName: ${{ steps.zhver.outputs.tag || github.event.release.tag_name || github.event.inputs.tag || 'v1.3.0' }}
-          releaseName: '本地 AI 工作室 中文版 ${{ steps.zhver.outputs.version || github.event.release.tag_name || github.event.inputs.tag }}（Windows / Linux）'
+          tagName: ${{ github.event.release.tag_name || github.event.inputs.tag || 'v1.3.0' }}
+          releaseName: 'LU ${{ github.event.release.tag_name || github.event.inputs.tag }}'
           # The Mac paragraph hangs on the same switch as the Mac lane
           # (vars.LU_MAC_RELEASE, see build-tauri-macos). Off, the expression
           # at the end of the Linux line is the empty string and the text is
@@ -849,22 +773,14 @@ jobs:
           # names an asset that is not there: take it out of the release text
           # by hand (RELEASE-CHECKLISTE-MAC.md, A7). Like every input of this
           # step it only applies when this run creates the release.
-          # Fork note: the text below is Chinese and lists the files per system,
-          # because the asset names alone (`..._x64_zh-CN.msi`, `.AppImage`) made
-          # people ask which one belongs to them. `mac-release-lane.test.ts`
-          # pins it byte for byte, so change both together.
           releaseBody: |
-            ## 下载
+            ## Download
 
-            **Windows**
-            - `..._x64-setup.exe`（推荐）：安装时可选「仅当前用户」，无需管理员权限。
-            - `..._x64_zh-CN.msi`：系统级安装，适合企业统一部署。
+            **Windows:** Download the `.exe` installer. During setup, choose "Install for current user only" for a portable/no-install experience. Or use the `.msi` for system-wide installation.
 
-            **Linux**
-            - `.AppImage`：下载后 `chmod +x` 直接运行，无需安装。
-            - `.deb`（Debian/Ubuntu）、`.rpm`（Fedora/openSUSE）：用包管理器安装。
+            **Linux:** Download the `.AppImage`, make it executable (`chmod +x`), and run. No installation needed.${{ vars.LU_MAC_RELEASE == '1' && format('{0}{0}**macOS (Apple Silicon, macOS 14 or newer):** Download the `.dmg`, open it and drag LU to Applications. The app is signed with an Apple Developer ID and notarized by Apple. Intel Macs are not supported.', fromJSON('"\n"')) || '' }}
 
-            > 全部免管理员权限。LU by LU Labs.${{ vars.LU_MAC_RELEASE == '1' && format('{0}{0}**macOS (Apple Silicon, macOS 14 or newer):** Download the `.dmg`, open it and drag LU to Applications. The app is signed with an Apple Developer ID and notarized by Apple. Intel Macs are not supported.', fromJSON('"\n"')) || '' }}
+            > All versions are portable-friendly, no admin rights required. LU by LU Labs.
           releaseDraft: false
           # A build is not a decision. This workflow used to publish straight to
           # a full release, so the moment CI finished, GitHub's `latest` pointed
@@ -883,11 +799,7 @@ jobs:
           # definition already exists) the action reuses the release untouched
           # and the input does nothing. The enforce-prerelease job below is what
           # actually holds the promise.
-          # Fork: a Chinese build MUST be a normal release. `releases/latest`,
-          # which is the address the updater reads, only follows non-prerelease
-          # releases; a prerelease here would leave every installed fork build
-          # without an update path.
-          prerelease: ${{ !inputs.zh_release }}
+          prerelease: true
           # The updater artefacts, and with them latest.json and the .sig files,
           # are requested HERE, in the one lane that holds the signing key, and
           # not in the checked-in tauri.conf.json: ci.yml builds that file
@@ -1822,9 +1734,7 @@ jobs:
   # meant.
   enforce-prerelease:
     needs: [build-tauri, build-tauri-macos]
-    # Fork: a Chinese build is published as a normal release on purpose (see
-    # `prerelease:` above), so the demotion rule must not run for it.
-    if: ${{ always() && !inputs.mac_dry_run && !inputs.dry_run && !inputs.zh_release }}
+    if: ${{ always() && !inputs.mac_dry_run && !inputs.dry_run }}
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1

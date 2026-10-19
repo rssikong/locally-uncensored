@@ -172,9 +172,7 @@ describe('the workflow actually calls it', () => {
     // A failed Linux lane must not leave a full release standing.
     const job = wf.slice(wf.indexOf('enforce-prerelease:'))
     // Everywhere but in a dry run, Mac or full, which touches no release.
-    // Fork: `zh_release` is a third such case (a Chinese build is published as
-    // a normal release), so only the invariant part is asserted.
-    expect(job).toContain('if: ${{ always() && !inputs.mac_dry_run && !inputs.dry_run')
+    expect(job).toContain('if: ${{ always() && !inputs.mac_dry_run && !inputs.dry_run }}')
   })
 
   it('and knows whether a release event started the run', () => {

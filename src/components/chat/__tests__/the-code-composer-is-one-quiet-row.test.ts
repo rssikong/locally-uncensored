@@ -112,18 +112,13 @@ describe('Plugins moved out of the Code composer and into the header', () => {
 
 describe('Stop never opens a second line', () => {
   const slot = INPUT.indexOf('data-testid="composer-send-slot"')
-  // Fork note: labels are translated, so each attribute may be written as a
-  // literal or through `t('…')`. The rule — one slot, Stop before Send — is
-  // unchanged.
-  const STOP_ATTR = /aria-label=(?:"Stop generation"|\{t\('Stop generation'\)\})/
-  const SEND_ATTR = /aria-label=(?:"Send message"|\{t\('Send message'\)\})/
-  const stop = INPUT.search(STOP_ATTR)
-  const send = INPUT.search(SEND_ATTR)
+  const stop = INPUT.indexOf('aria-label="Stop generation"')
+  const send = INPUT.indexOf('aria-label="Send message"')
 
   it('Send and Stop are the same single slot, not two places in the row', () => {
     expect(INPUT.match(/data-testid="composer-send-slot"/g)).toHaveLength(1)
-    expect(INPUT.match(new RegExp(STOP_ATTR.source, 'g'))).toHaveLength(1)
-    expect(INPUT.match(new RegExp(SEND_ATTR.source, 'g'))).toHaveLength(1)
+    expect(INPUT.match(/aria-label="Stop generation"/g)).toHaveLength(1)
+    expect(INPUT.match(/aria-label="Send message"/g)).toHaveLength(1)
     expect(slot).toBeGreaterThan(-1)
     expect(stop).toBeGreaterThan(slot)
     expect(send).toBeGreaterThan(stop)

@@ -218,10 +218,7 @@ describe('a longer gate must not mean a longer window at Latest', () => {
     expect(late).toMatch(/^\s*needs:\s*\[build-tauri, build-tauri-macos\]\s*$/m)
     // `always()` is what makes it run after a failed build. The runs it
     // stays out of are the dry runs, which belong to no release.
-    // Fork: `zh_release` is a third way to stay out of the demotion (a Chinese
-    // build is published as a normal release). Written as an optional group so
-    // the line keeps its meaning for both the upstream and the fork workflow.
-    expect(late).toMatch(/^\s*if:\s*\$\{\{ always\(\) && !inputs\.mac_dry_run && !inputs\.dry_run(?: && !inputs\.zh_release)? \}\}\s*$/m)
+    expect(late).toMatch(/^\s*if:\s*\$\{\{ always\(\) && !inputs\.mac_dry_run && !inputs\.dry_run \}\}\s*$/m)
     expect(late).toContain('node scripts/enforce-prerelease.mjs')
   })
 })

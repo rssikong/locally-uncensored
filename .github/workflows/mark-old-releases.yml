@@ -1,0 +1,37 @@
+name: Mark old releases
+
+# Every release page stays public and Google ranks the old ones: in the two weeks
+# to 2026-08-05 the v2.5.8 and v2.5.10 pages drew more unique visitors than
+# v2.6.2. A visitor arriving there had nothing telling them the version was old,
+# and the waitlist was still logging sign-ups from 2.5.5 and 2.5.6 builds.
+#
+# So on every release the banner is re-applied across the board: stripped from
+# the new current release, added to all the others. `edited` is included because
+# flipping a prerelease to Latest is an edit, and that is when the handover
+# actually happens.
+on:
+  release:
+    types: [published, released, edited]
+  workflow_dispatch:
+
+# A release publish plus the Latest flip fire in quick succession; let the later
+# run win instead of two runs patching the same bodies at once.
+concurrency:
+  group: mark-old-releases
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  mark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: 20
+      - name: Re-mark releases
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/mark-old-releases.mjs

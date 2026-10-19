@@ -1,0 +1,268 @@
+name: Build & Release Chinese builds
+
+# The fork's own release lane. `watch-upstream.yml` is the only caller that
+# publishes; a manual run builds and keeps the installers as a workflow artifact
+# (dry_run) or, without that flag, publishes as well — the project owner asked
+# to keep that door open.
+#
+# Why a separate workflow instead of editing upstream's `release.yml`: upstream
+# owns that file and changes it often. Keeping our build here means an upstream
+# merge can never conflict on it, at the price of tracking upstream's build
+# steps by hand (a break shows up as a red run, which is loud enough).
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build, e.g. v3.0.7-zh.1. The tag carries the translations, so it must exist.'
+        type: string
+        required: true
+      dry_run:
+        description: 'Build and keep the installers as an artifact, publish nothing.'
+        type: boolean
+        default: false
+      platforms:
+        description: 'Which installers to build. Both on a real release.'
+        type: choice
+        options: [both, linux, windows]
+        default: both
+
+# Only the publish step needs write; the rest reads.
+permissions:
+  contents: write # create the release, upload assets
+  actions: write  # the retry job re-runs failed jobs
+
+concurrency:
+  group: release-zh
+  cancel-in-progress: false
+
+env:
+  # Same Vulkan SDK as upstream's release lane: ggml's Vulkan backend needs
+  # glslc, and Windows/Linux must agree on the family.
+  VULKAN_SDK_VERSION: '1.4.313.2'
+  VULKAN_SDK_SHA256: '34a921d951858274ca8e470e9d0a3b7624db41216b3908ccea9f73c8a1b7500e'
+
+jobs:
+  # A matrix cannot be filtered by an input, so the list is built here.
+  prepare:
+    runs-on: ubuntu-22.04
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+    steps:
+      - id: m
+        shell: bash
+        run: |
+          linux='{"platform":"ubuntu-22.04","sidecar_triple":"x86_64-unknown-linux-gnu"}'
+          windows='{"platform":"windows-latest","sidecar_triple":"x86_64-pc-windows-msvc"}'
+          case "${{ inputs.platforms }}" in
+            linux)   echo "matrix={\"include\":[$linux]}"   >> "$GITHUB_OUTPUT" ;;
+            windows) echo "matrix={\"include\":[$windows]}" >> "$GITHUB_OUTPUT" ;;
+            *)       echo "matrix={\"include\":[$linux,$windows]}" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+  # The same gate a release gets: upstream's own CI, run on the tag.
+  gate:
+    if: ${{ !inputs.dry_run }}
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ inputs.tag }}
+
+  build:
+    needs: [prepare, gate]
+    # `!cancelled()` stands in for the implicit `success()`, which would skip
+    # this job whenever the gate was skipped — and a dry run skips it.
+    if: ${{ !cancelled() && (needs.gate.result == 'success' || (inputs.dry_run && needs.gate.result == 'skipped')) }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout the tag
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ inputs.tag }}
+          persist-credentials: false
+
+      # <upstream>-<n>, e.g. `3.0.7-1`. The tag says `-zh.1` for humans; the
+      # version must be a NUMERIC pre-release or the WiX/MSI bundler refuses it
+      # ("optional pre-release identifier ... must be numeric-only").
+      - name: Chinese build version
+        id: ver
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${{ inputs.tag }}"
+          base="${base#v}"
+          if [[ "$base" =~ ^(.+)-zh\.([0-9]+)$ ]]; then
+            ver="${BASH_REMATCH[1]}-${BASH_REMATCH[2]}"
+          else
+            ver="${base}-1"
+          fi
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          echo "版本：$ver（tag ${{ inputs.tag }}）"
+          node - "$ver" <<'JS'
+          const fs = require('fs')
+          const ver = process.argv[2]
+          for (const file of ['package.json', 'package-lock.json']) {
+            const json = JSON.parse(fs.readFileSync(file, 'utf8'))
+            json.version = ver
+            if (json.packages && json.packages['']) json.packages[''].version = ver
+            fs.writeFileSync(file, JSON.stringify(json, null, 2) + '\n')
+          }
+          const conf = 'src-tauri/tauri.conf.json'
+          const json = JSON.parse(fs.readFileSync(conf, 'utf8'))
+          json.version = ver
+          fs.writeFileSync(conf, JSON.stringify(json, null, 2) + '\n')
+          const cargo = 'src-tauri/Cargo.toml'
+          fs.writeFileSync(
+            cargo,
+            fs.readFileSync(cargo, 'utf8').replace(/^version = ".*"$/m, `version = "${ver}"`),
+          )
+          JS
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        timeout-minutes: 20
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf \
+            libgtk-3-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libxdo-dev \
+            libxkbcommon-dev build-essential curl wget file libssl-dev
+
+      - name: Sidecar build cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ matrix.platform == 'windows-latest' && 'D:/lb' || '.llama-build' }}
+          key: llama-${{ hashFiles('scripts/build-llama.sh') }}-${{ matrix.sidecar_triple }}-v1
+
+      - name: Install Vulkan SDK (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          curl.exe -fL --retry 3 -o "$env:RUNNER_TEMP\VulkanSDK-Installer.exe" `
+            "https://sdk.lunarg.com/sdk/download/${env:VULKAN_SDK_VERSION}/windows/vulkansdk-windows-X64-${env:VULKAN_SDK_VERSION}.exe"
+          if ($LASTEXITCODE -ne 0) { throw "Vulkan SDK download failed" }
+          $got = (Get-FileHash -Algorithm SHA256 "$env:RUNNER_TEMP\VulkanSDK-Installer.exe").Hash.ToLower()
+          if ($got -ne $env:VULKAN_SDK_SHA256) { throw "Vulkan SDK installer has sha256 $got, expected $env:VULKAN_SDK_SHA256." }
+          & "$env:RUNNER_TEMP\VulkanSDK-Installer.exe" --accept-licenses --default-answer --confirm-command install
+          Add-Content $env:GITHUB_ENV "VULKAN_SDK=C:\VulkanSDK\${env:VULKAN_SDK_VERSION}"
+
+      - name: Install Vulkan toolchain (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          family="${VULKAN_SDK_VERSION%.*}"
+          wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc \
+            | sudo tee /etc/apt/trusted.gpg.d/lunarg.asc >/dev/null
+          sudo wget -qO "/etc/apt/sources.list.d/lunarg-vulkan-${family}-jammy.list" \
+            "https://packages.lunarg.com/vulkan/${family}/lunarg-vulkan-${family}-jammy.list"
+          sudo apt-get update
+          sudo apt-get install -y vulkan-sdk
+
+      - name: Build llama-server sidecar
+        shell: bash
+        env:
+          BUILD_JOBS: 2
+          LLAMA_BUILD_CACHE: ${{ matrix.platform == 'windows-latest' && 'D:/lb' || '' }}
+        run: bash scripts/build-llama.sh ${{ matrix.sidecar_triple }}
+
+      - name: Assert sidecar exists
+        shell: bash
+        run: |
+          case "${{ matrix.sidecar_triple }}" in
+            *-windows-*) test -f "src-tauri/bin/lu-llama-server-${{ matrix.sidecar_triple }}.exe" ;;
+            *)           test -x "src-tauri/bin/lu-llama-server-${{ matrix.sidecar_triple }}" ;;
+          esac
+
+      # npm's registry drops connections often enough on the Windows runners
+      # that a green build needs a retry. Three attempts, then fail loudly.
+      - name: Install npm dependencies
+        shell: bash
+        run: |
+          ok=0
+          for attempt in 1 2 3; do
+            if npm ci; then ok=1; break; fi
+            echo "npm ci failed (attempt $attempt), retrying"
+            sleep $((attempt * 15))
+          done
+          [ "$ok" = "1" ] || { echo '::error::npm ci failed after 3 attempts'; exit 1; }
+
+      - name: Build only (dry run, no release)
+        if: ${{ inputs.dry_run }}
+        shell: bash
+        env:
+          LD_LIBRARY_PATH: ${{ matrix.platform == 'ubuntu-22.04' && format('{0}/src-tauri/resources/llama/{1}', github.workspace, matrix.sidecar_triple) || '' }}
+        run: npx tauri build --config src-tauri/tauri.zh.conf.json
+
+      - name: Keep the installers
+        if: ${{ inputs.dry_run }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: zh-${{ matrix.sidecar_triple }}-${{ github.run_id }}
+          path: src-tauri/target/release/bundle
+          if-no-files-found: error
+
+      # The one step that publishes. Same values as upstream's lane, in Chinese,
+      # and with `prerelease: false` on purpose: `releases/latest` — the address
+      # the updater reads — only follows normal releases.
+      - name: Build and release
+        if: ${{ !inputs.dry_run }}
+        uses: tauri-apps/tauri-action@51a9f1156b33df106d827c3a78f8f894946c5faa # v0.5.25
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          LD_LIBRARY_PATH: ${{ matrix.platform == 'ubuntu-22.04' && format('{0}/src-tauri/resources/llama/{1}', github.workspace, matrix.sidecar_triple) || '' }}
+        with:
+          tagName: ${{ inputs.tag }}
+          releaseName: '本地 AI 工作室 中文版 ${{ steps.ver.outputs.version }}（Windows / Linux）'
+          releaseDraft: false
+          prerelease: false
+          args: --config src-tauri/tauri.zh.conf.json
+          releaseBody: |
+            ## 下载
+
+            **Windows**
+            - `..._x64-setup.exe`（推荐）：安装时可选「仅当前用户」，无需管理员权限。
+            - `..._x64_zh-CN.msi`：系统级安装，适合企业统一部署。
+
+            **Linux**
+            - `.AppImage`：下载后 `chmod +x` 直接运行，无需安装。
+            - `.deb`（Debian/Ubuntu）、`.rpm`（Fedora/openSUSE）：用包管理器安装。
+
+            > 全部免管理员权限。LU by LU Labs。
+
+  # A red run from a dropped npm connection or a flaky e2e test should not need a
+  # human. `run_attempt` is the guard: attempt 1 and 2 may re-run the failed
+  # jobs, attempt 3 does not — two automatic retries, then it stays red and the
+  # workflow that dispatched this run reports it.
+  retry:
+    needs: build
+    if: ${{ always() && failure() && github.run_attempt <= 2 }}
+    runs-on: ubuntu-22.04
+    permissions:
+      actions: write
+    steps:
+      - name: Re-run the failed jobs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "attempt ${{ github.run_attempt }} failed, re-running the failed jobs"
+          gh run rerun ${{ github.run_id }} --failed --repo ${{ github.repository }}

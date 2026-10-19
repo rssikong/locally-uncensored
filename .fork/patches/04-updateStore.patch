@@ -1,0 +1,17 @@
+diff --git a/src/stores/updateStore.ts b/src/stores/updateStore.ts
+index e2b853c2..d8b8ce21 100644
+--- a/src/stores/updateStore.ts
++++ b/src/stores/updateStore.ts
+@@ -182,7 +182,11 @@ interface UpdateState {
+ 
+ // ── Config ────────────────────────────────────────────────────
+ 
+-const GITHUB_REPO = 'purpledoubled/locally-uncensored'
++// This fork ships its own builds on its own signed update channel. Pointing
++// this at the upstream repository would offer every user of the translated
++// build the upstream release, and an upstream package verifies against the
++// upstream update key — i.e. it would install itself silently.
++const GITHUB_REPO = 'rssikong/locally-uncensored'
+ const CHECK_INTERVAL = 6 * 60 * 60 * 1000 // 6 hours
+ const INITIAL_DELAY = 5_000
+ /** Eigener, kurzer Deckel fuer die Pruefung beim Programmstart. Der

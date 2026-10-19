@@ -6,16 +6,6 @@
 
 **The all-in-one local AI studio for your desktop. Chat, images, video and a coding agent in one app. Install it, pick a model, go.**
 
-> **中文构建说明 · Chinese build notice**
-> 本仓库是 [Locally Uncensored](https://github.com/PurpleDoubleD/locally-uncensored) 的第三方 fork，仅把界面汉化为简体中文，不改动功能。
-> 本构建与上游项目及 LU Labs **无隶属关系**，不代表其发布，也不代售其云服务；上游的云功能在你的构建里仍然指向官方服务。
-> 源代码依 AGPL-3.0 提供。
->
-> **没有完全汉化**：汉化是运行时替换，覆盖绝大多数可见文案。Rust 侧的托盘与原生对话框、手机端页面、模型名与容量标识、日志与开发者错误保持原样；未命中的文案回退为英文，不会显示空白。
-> 实现方式、**未汉化清单**，以及**分叉本仓库时需要改动的地方**（更新通道、签名密钥、安装器身份、版本号），见 [`I18N.md`](I18N.md)。
->
-> This is a third-party fork that translates the interface into Simplified Chinese. It is not affiliated with the upstream project or LU Labs, and ships no cloud service of its own. **The translation is not complete** — see [`I18N.md`](I18N.md) for what stays English and what to change if you fork it.
-
 Free and open source. In local mode everything runs on your own machine. No Docker, no terminal, no config files. The platforms are listed under [Download](#download).
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
@@ -48,6 +38,7 @@ Take the latest build from [Releases](https://github.com/PurpleDoubleD/locally-u
 | Windows 10 and 11 | [`Locally.Uncensored_3.0.7_x64-setup.exe`](https://github.com/PurpleDoubleD/locally-uncensored/releases/latest/download/Locally.Uncensored_3.0.7_x64-setup.exe) (NSIS, recommended) or [`Locally.Uncensored_3.0.7_x64_en-US.msi`](https://github.com/PurpleDoubleD/locally-uncensored/releases/latest/download/Locally.Uncensored_3.0.7_x64_en-US.msi) | Tested every release, signed auto update channel |
 | Linux | [`Locally.Uncensored_3.0.7_amd64.AppImage`](https://github.com/PurpleDoubleD/locally-uncensored/releases/latest/download/Locally.Uncensored_3.0.7_amd64.AppImage), [`Locally.Uncensored_3.0.7_amd64.deb`](https://github.com/PurpleDoubleD/locally-uncensored/releases/latest/download/Locally.Uncensored_3.0.7_amd64.deb) or [`Locally.Uncensored-3.0.7-1.x86_64.rpm`](https://github.com/PurpleDoubleD/locally-uncensored/releases/latest/download/Locally.Uncensored-3.0.7-1.x86_64.rpm) | Built on every release |
 | macOS 14 or newer, Apple Silicon (Beta) | [`LU_3.0.7_aarch64.dmg`](https://github.com/PurpleDoubleD/locally-uncensored/releases/latest/download/LU_3.0.7_aarch64.dmg) | Signed with an Apple Developer ID and notarized by Apple. Intel Macs are not supported. The app has run on one Mac so far. Voice has been tried by hand in the app on a Mac and works. Computer control is in the Mac app but not fully tested yet on macOS. Remote Access and the automatic update are not confirmed on macOS |
+| Android 7.0 or newer (arm64) | [`LU-3.0.7-Android.apk`](https://github.com/PurpleDoubleD/locally-uncensored/releases/download/v3.0.7/LU-3.0.7-Android.apk) | The phone app. Not in the Play Store yet: install the file from this page. SHA-256 `2f4e2c60f2edde2705c31ca324b5ba952a84efa8eec3075f4f45f2a29a806fb6` |
 
 <!-- MAC: the macOS row above is the one place in this file that says whether there is a Mac build. This is the Mac version of the row. It is true only for the .dmg that the release run built, signed and notarized, so it goes out after that run is green. -->
 
@@ -57,7 +48,7 @@ Code signing for the Windows installers: free code signing provided by [SignPath
 
 Current release: **v3.0.7** (October 2026). Every change since 1.0.0 is in [CHANGELOG.md](CHANGELOG.md).
 
-3.0.7 lets a character you trained work in every part of Create and in chat, and on a Mac you can now train one too. ComfyUI workflows import the way ComfyUI saves them, with the node packs they need, Edit takes up to ten images, and a chat can be duplicated or branched from any message, with fixes for group chats and personas. On a Mac, Talking Character and Motion Control run on your own machine. Some of it has only been checked in tests so far; the [CHANGELOG](CHANGELOG.md) says which.
+3.0.7 brings REA (Reverse Engineer Anything) as a plugin: switch it on under Plugins in the desktop app, and Agent and Code can take apart apps and files (it needs Node.js and works best with a model of about 27B and 64K context; a full analysis has run on one Mac so far, and on Windows it has started from the built app). LU Cloud now has DeepSeek V4.1 Flash 1017, ready to pick in Chat. A chat can be duplicated or branched from any message, character cards turn into personas with their greeting, a persona can carry a reminder, group chats got a round of fixes, and auto compact is on by default. A character you trained works in every part of Create and in chat, and a Mac can train one too. ComfyUI workflows import the way ComfyUI saves them, a whole folder at once, with the node packs they need, and LU now uses the shared model folders set in ComfyUI. In Create, Edit takes as many reference images as the graphics memory holds (up to ten on a Mac), Enhance Image runs on your own machine, and on a Mac Talking Character, Motion Control, Music, Enhance Image, Remove Background and masks in Edit run locally. There is an Android app now, see [Mobile app](#mobile-app-android-iphone) below. The iPhone app is in review at the App Store. Some of it has only been checked in tests so far; the [CHANGELOG](CHANGELOG.md) says which.
 
 3.0.5 was about Create: LTX 2.5, FastH3 and YuE2 run on your own machine, Qwen-Image 2.1 gets a transparent background and its prompt enhancer, Edit, Remove Background and Enhance Image take up to 50 images in one go, and LU Cloud adds Qwen Image 2.1, LTX 2.5, MiniMax H3 and Wan 3.0 Reference. Chat takes any file, each model in a group chat can have its own persona, dropdowns stay inside the window (issue 149), and the speech install works again on Ubuntu 24.04.
 
@@ -76,6 +67,22 @@ Current release: **v3.0.7** (October 2026). Every change since 1.0.0 is in [CHAN
 - **The local model runs one conversation at a time and says so**, with a line showing how many chats are ahead. Stop works while a chat is still waiting.
 - **Temperature, Top P and Max tokens belong to the conversation you moved them in**, instead of every open chat sharing one value.
 - **Cloud video renders offer the clip lengths the picked model really supports**, read from the live catalog.
+
+## Mobile app (Android, iPhone)
+
+LU 3.0.7 is also available as an app for your phone.
+
+- **Android:** download `LU-3.0.7-Android.apk` from the [3.0.7 release](https://github.com/PurpleDoubleD/locally-uncensored/releases/tag/v3.0.7). Needs Android 7.0 or newer on a 64-bit (arm64) phone. Allow installing apps from your browser or file app when Android asks. SHA-256: `2f4e2c60f2edde2705c31ca324b5ba952a84efa8eec3075f4f45f2a29a806fb6`
+- **iPhone:** in review at the App Store.
+- **Google Play:** coming later.
+
+What the app does:
+- Run AI models on your phone and chat offline. Chats with on-device models stay on the phone.
+- Ask questions about your own documents. Memory and personas.
+- Optional LU Cloud with your account: larger hosted chat models, Create (images and video) and dictation.
+- Connect to LU on your own computer over your home Wi-Fi and chat with the models on your PC.
+
+Later APKs install over this one and keep your data. The Google Play version will be signed by Google: to switch to it, export your chats first (Settings, Data) and uninstall the APK.
 
 ## Three steps
 

@@ -1,0 +1,280 @@
+name: Watch upstream
+
+# Hourly: is there anything new upstream, and can it be merged?
+#
+#   no new commits, no new tag  -> 30 seconds, nothing else
+#   new commits                 -> merge, translate, push master (no release)
+#   new upstream tag             -> the above, then tag `v<ver>-zh.<n>` and hand
+#                                  the build to release-zh.yml
+#
+# The release itself is expensive (gate + two installers, ~50 minutes), so it
+# runs only when upstream cut a version. Everything before that is a few
+# minutes and can afford to run every hour.
+#
+# A merge conflict is not a person's job: upstream's side is taken and the fork's
+# six small patches (.fork/patches) are replayed on top. If a patch no longer
+# applies, nothing is pushed and no release happens — the fork keeps the last
+# good version and an issue says what broke.
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Release the newest upstream tag even if this fork already released it (bumps zh.<n>).'
+        type: boolean
+        default: false
+      dry_run:
+        description: 'Merge and check, but push nothing, tag nothing, release nothing.'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write # commit, tag, push
+  issues: write   # report a failure instead of failing silently
+  actions: write  # dispatch release-zh.yml
+
+concurrency:
+  group: watch-upstream
+  cancel-in-progress: false
+
+env:
+  UPSTREAM: https://github.com/PurpleDoubleD/locally-uncensored.git
+  # Non-sensitive; at workflow level so a step `if:` sees it. The token stays on
+  # the one step that needs it.
+  TRANSLATE_ENDPOINT: ${{ vars.TRANSLATE_ENDPOINT }}
+  TRANSLATE_MODEL: ${{ vars.TRANSLATE_MODEL }}
+
+jobs:
+  watch:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: master
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - name: Bot identity
+        run: |
+          git config user.name  'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream "$UPSTREAM" 2>/dev/null || true
+          git fetch --tags --prune upstream master
+
+      - name: What is new?
+        id: check
+        shell: bash
+        run: |
+          set -euo pipefail
+          behind=$(git rev-list --count HEAD..upstream/master)
+          tag=$(git describe --tags --abbrev=0 upstream/master 2>/dev/null || echo '')
+          released=''
+          if [ -n "$tag" ]; then
+            base="${tag#v}"
+            released=$(git tag --list "v${base}-zh.*" | sort -V | tail -1)
+          fi
+          {
+            echo "behind=$behind"
+            echo "upstream_tag=$tag"
+            echo "released=$released"
+          } >> "$GITHUB_OUTPUT"
+          echo "上游领先 ${behind} 个提交；最新 tag=${tag:-无}；已发布=${released:-无}"
+
+      - name: Nothing to do
+        if: steps.check.outputs.behind == '0' && (steps.check.outputs.upstream_tag == '' || (steps.check.outputs.released != '' && inputs.force != true))
+        run: echo '上游没有新提交，也没有未发布的新 tag —— 结束'
+
+      # ── Everything below needs something new ─────────────────────────────
+      - name: "Merge upstream (conflicts take upstream, then replay our patches)"
+        id: merge
+        if: steps.check.outputs.behind != '0'
+        shell: bash
+        run: |
+          set -uo pipefail
+          if git merge --no-edit upstream/master; then
+            echo "merged=clean" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "合并冲突，采用上游版本并重放补丁："
+          conflicted=$(git diff --name-only --diff-filter=U)
+          echo "$conflicted" | sed 's/^/  /'
+          # Take upstream's side for every conflicted file …
+          while IFS= read -r f; do
+            [ -n "$f" ] && git checkout --theirs -- "$f" && git add -- "$f"
+          done <<< "$conflicted"
+
+          # … then put the fork's own changes back on top.
+          failed=0
+          for patch in .fork/patches/*.patch; do
+            if git apply --3way "$patch" 2>/dev/null; then
+              echo "  重放 $(basename "$patch")"
+            elif git apply --reverse --check "$patch" 2>/dev/null; then
+              echo "  已在 $(basename "$patch") 中（未冲突）"
+            else
+              echo "::error::补丁无法重放：$(basename "$patch")"
+              failed=1
+            fi
+          done
+
+          if [ "$failed" != "0" ]; then
+            git merge --abort
+            echo "replayed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git add -A
+          echo "replayed=true" >> "$GITHUB_OUTPUT"
+
+      - name: A patch no longer applies — report and stop
+        if: steps.merge.outputs.replayed == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          scripts/ci-report.sh "上游合并冲突：补丁无法重放" "$(printf '%s\n' \
+            "自动合并时冲突，取上游后补丁重放失败，**没有推送、没有发版**，站点继续用上一个版本。" \
+            "" \
+            "- 运行：$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            "- 上游 tag：\`${{ steps.check.outputs.upstream_tag }}\`，领先 ${{ steps.check.outputs.behind }} 个提交" \
+            "" \
+            "处理：看上面日志里失败的那个补丁，修好对应文件后跑 \`node scripts/fork-patches.mjs --regenerate\`，再手动触发本工作流。")"
+          exit 1
+
+      - name: Install dependencies
+        if: steps.check.outputs.behind != '0' && steps.merge.outputs.replayed != 'false'
+        shell: bash
+        run: |
+          ok=0
+          for attempt in 1 2 3; do
+            if npm ci; then ok=1; break; fi
+            echo "npm ci failed (attempt $attempt), retrying"
+            sleep $((attempt * 15))
+          done
+          [ "$ok" = "1" ] || { echo '::error::npm ci failed after 3 attempts'; exit 1; }
+
+      - name: Extract the strings that are not translated yet
+        if: steps.check.outputs.behind != '0' && steps.merge.outputs.replayed != 'false'
+        run: node scripts/i18n-extract.mjs --out "$RUNNER_TEMP/extract.json"
+
+      - name: Translate
+        if: steps.check.outputs.behind != '0' && steps.merge.outputs.replayed != 'false' && env.TRANSLATE_ENDPOINT != ''
+        env:
+          TRANSLATE_TOKEN: ${{ secrets.TRANSLATE_TOKEN }}
+        run: |
+          node scripts/i18n-translate.mjs \
+            --in "$RUNNER_TEMP/extract.json" \
+            --out "$RUNNER_TEMP/translations.json"
+          node scripts/i18n-apply.mjs --in "$RUNNER_TEMP/translations.json"
+
+      # Cheap on purpose: the full CI (e2e, cargo) belongs to the release gate.
+      # This only answers "did the merge break the dictionary, the types, or the
+      # i18n layer" before the commit lands.
+      - name: Check the dictionary, types and the i18n tests
+        if: steps.check.outputs.behind != '0' && steps.merge.outputs.replayed != 'false'
+        shell: bash
+        run: |
+          node scripts/i18n-check.mjs
+          npx tsc -b --force
+          npx vitest run src/lib/__tests__/i18n.test.ts src/lib/__tests__/i18n-pack.test.ts src/lib/__tests__/i18n-bridge.test.ts
+
+      - name: Say what changed
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### 上游巡检'
+            echo
+            echo "| 项 | 值 |"
+            echo "|---|---|"
+            echo "| 上游新提交 | ${{ steps.check.outputs.behind }} |"
+            echo "| 上游最新 tag | \`${{ steps.check.outputs.upstream_tag }}\` |"
+            echo "| 已发布的中文 tag | \`${{ steps.check.outputs.released }}\` |"
+            echo "| 合并 | ${{ steps.merge.outputs.merged }}${{ steps.merge.outputs.replayed }} |"
+            echo "| 模式 | ${{ inputs.dry_run && 'dry run（不推送）' || '正常' }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Commit and push
+        id: commit
+        if: steps.check.outputs.behind != '0' && steps.merge.outputs.replayed != 'false' && inputs.dry_run != true
+        shell: bash
+        run: |
+          # Explicit paths only: the working tree also holds build artefacts and
+          # local notes. The replayed patches bring their own files, which the
+          # merge already staged.
+          git add src/lib/i18n/zh-CN.ts src/lib/i18n/skip.json 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo '没有需要提交的内容'
+          else
+            git commit -m "自动同步上游 $(git rev-parse --short upstream/master) 并更新中文词典"
+            git push origin HEAD:master || {
+              echo '推送被拒，rebase 后重试一次'
+              git pull --rebase origin master
+              git push origin HEAD:master
+            }
+          fi
+
+      - name: Undo the merge after a dry run
+        if: inputs.dry_run == true
+        run: git reset --hard origin/master
+
+      # ── Release, when upstream cut a tag this fork has not published ─────
+      - name: Which upstream tag is new?
+        id: tag
+        # `success()` and not `always()`: a red gate or a rejected push must not
+        # be followed by a tag and a release. When nothing changed upstream this
+        # step still runs, because every step above was legitimately skipped.
+        if: ${{ success() && steps.check.outputs.upstream_tag != '' && steps.merge.outputs.replayed != 'false' }}
+        shell: bash
+        env:
+          TAG: ${{ steps.check.outputs.upstream_tag }}
+          RELEASED: ${{ steps.check.outputs.released }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          set -euo pipefail
+          base="${TAG#v}"
+          if [ -n "$RELEASED" ] && [ "$FORCE" != 'true' ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "已发布过 ${RELEASED}，跳过"
+            exit 0
+          fi
+          n=1
+          while git tag --list "v${base}-zh.${n}" | grep -q .; do n=$((n + 1)); done
+          echo "new_tag=v${base}-zh.${n}" >> "$GITHUB_OUTPUT"
+          echo "skip=false"                >> "$GITHUB_OUTPUT"
+          echo "将发布 v${base}-zh.${n}"
+
+      - name: Tag this commit and start the release
+        if: steps.tag.outputs.skip == 'false' && inputs.dry_run != true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW_TAG: ${{ steps.tag.outputs.new_tag }}
+        run: |
+          # The tag points at OUR commit — upstream's tag would build the
+          # English tree, because release-zh.yml checks out the tag it is given.
+          git tag "$NEW_TAG"
+          git push origin "$NEW_TAG"
+          gh workflow run release-zh.yml --repo "$GITHUB_REPOSITORY" -f tag="$NEW_TAG"
+          echo "已触发 $NEW_TAG 的构建与发布"
+
+      - name: Report a red run
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          scripts/ci-report.sh "上游同步失败" "$(printf '%s\n' \
+            "巡检运行失败，**没有发版**（站点继续用上一个版本）。" \
+            "" \
+            "- 运行：$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            "- 上游 tag：\`${{ steps.check.outputs.upstream_tag }}\`，领先 ${{ steps.check.outputs.behind }} 个提交" \
+            "" \
+            "看运行日志里第一个红色步骤；常见原因：npm 网络抖动（已内置 3 次重试）、上游改到了我们补丁所在的行。")"
