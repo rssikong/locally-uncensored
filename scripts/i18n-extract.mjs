@@ -35,7 +35,13 @@ const SRC = join(root, 'src')
 const SKIP_FILE = join(SRC, 'lib', 'i18n', 'skip.json')
 
 const showAll = process.argv.includes('--all')
-const outArg = process.argv.find((a) => a.startsWith('--out='))
+/** `--out=x` and `--out x` both work: the workflow writes one, a person the other. */
+const outArg = (() => {
+  const withEquals = process.argv.find((a) => a.startsWith('--out='))
+  if (withEquals) return withEquals
+  const index = process.argv.indexOf('--out')
+  return index >= 0 ? `--out=${process.argv[index + 1] ?? ''}` : null
+})()
 const OUT = outArg ? outArg.slice('--out='.length) : null
 
 const SKIP_DIRS = new Set(['__tests__', 'node_modules', 'dist', 'target'])

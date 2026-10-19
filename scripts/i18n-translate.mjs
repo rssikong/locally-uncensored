@@ -27,9 +27,12 @@ import { fileURLToPath } from 'node:url'
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const DICT = join(root, 'src', 'lib', 'i18n', 'zh-CN.ts')
 
+/** `--in=x` and `--in x` both work: the workflow writes one, a person the other. */
 const arg = (name) => {
-  const hit = process.argv.find((a) => a.startsWith(`--${name}=`))
-  return hit ? hit.slice(name.length + 3) : null
+  const withEquals = process.argv.find((a) => a.startsWith(`--${name}=`))
+  if (withEquals) return withEquals.slice(name.length + 3)
+  const index = process.argv.indexOf(`--${name}`)
+  return index >= 0 ? (process.argv[index + 1] ?? null) : null
 }
 const IN = arg('in')
 const OUT = arg('out')
