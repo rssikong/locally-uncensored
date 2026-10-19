@@ -189,8 +189,14 @@ function looksLikeClasses(text) {
   return (text.match(CSS_TOKEN) ?? []).length >= 2
 }
 
+/** "Qwen 3.6 35B MoE" is a model name; translating it breaks the catalogue. */
+function looksLikeName(text) {
+  if (/^(?:[A-Z0-9][\w.+-]*)(?:\s+[A-Z0-9][\w.+-]*)+$/.test(text)) return true
+  return /\b\d+(?:\.\d+)?\s*[BT]\b/.test(text) && !/[a-z]{4}/.test(text)
+}
+
 function isUsableKey(key) {
-  return !looksGerman(key) && !isMatcher(key) && !looksLikeClasses(key)
+  return !looksGerman(key) && !isMatcher(key) && !looksLikeClasses(key) && !looksLikeName(key)
 }
 
 // Entries written by an earlier run are held to today's rules as well.

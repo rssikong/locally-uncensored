@@ -204,14 +204,42 @@ function looksLikeRegex(text) {
  * and letters. It is style, not copy, and translating it would change layout.
  */
 const CSS_TOKEN =
-  /(?<![\w-])(?:flex|grid|inline-flex|hidden|absolute|relative|items-(?:center|start|end|stretch)|justify-(?:center|between|start|end)|gap-[0-9.]+|(?:p|px|py|pt|pb|pl|pr|m|mx|my|mt|mb|w|h)-[0-9.[\]a-z-]+|rounded[\w-]*|border[\w-]*|shadow[\w-]*|font-(?:medium|semibold|bold|mono)|leading-\w+|tracking-\w+|transition[\w-]*|(?:hover|dark|focus|active|disabled):)/g
+  /(?<![\w-])(?:flex|grid|inline-flex|hidden|absolute|relative|items-(?:center|start|end|stretch)|justify-(?:center|between|start|end)|gap-[0-9.]+|(?:p|px|py|pt|pb|pl|pr|m|mx|my|mt|mb|w|h|text|bg|border|ring|from|via|to)-[0-9.[\]a-z/-]+|rounded[\w-]*|border[\w-]*|shadow[\w-]*|font-(?:medium|semibold|bold|mono)|leading-\w+|tracking-\w+|transition[\w-]*|(?:hover|dark|focus|active|disabled):)/g
+
+/** API-key placeholders and licence names: never shown as prose. */
+function looksLikePlaceholder(text) {
+  return (
+    /^(?:sk|gsk|tok|pk|api|xai|hf)[-_][\w.-]*$/i.test(text) ||
+    /^(?:Apache|MIT|BSD|GPL|AGPL|LGPL|CC)[-\d.]*\d\.?$/i.test(text) ||
+    /^(?:Apache|MIT|BSD)-[\d.]+$/i.test(text)
+  )
+}
+
+/** A piece that starts or ends mid-sentence came from a split description. */
+function looksLikeRemainder(text) {
+  return /^[)\].,;:!?]/.test(text) || /[([]$/.test(text)
+}
 
 function looksLikeClasses(text) {
   return (text.match(CSS_TOKEN) ?? []).length >= 2
 }
 
+/** "Qwen 3.6 35B MoE", "Gemma 4 12B HERETIC" — a name, not copy. */
+function looksLikeName(text) {
+  if (/^(?:[A-Z0-9][\w.+-]*)(?:\s+[A-Z0-9][\w.+-]*)+$/.test(text)) return true
+  return /\b\d+(?:\.\d+)?\s*[BT]\b/.test(text) && !/[a-z]{4}/.test(text)
+}
+
 function isTranslatable(text) {
-  return looksLikeCopy(text) && !looksGerman(text) && !looksLikeRegex(text) && !looksLikeClasses(text)
+  return (
+    looksLikeCopy(text) &&
+    !looksGerman(text) &&
+    !looksLikeRegex(text) &&
+    !looksLikeClasses(text) &&
+    !looksLikeName(text) &&
+    !looksLikePlaceholder(text) &&
+    !looksLikeRemainder(text)
+  )
 }
 
 function addGroup(file, line, kind, fragments) {
@@ -354,7 +382,11 @@ function catalogPieces(text) {
     // own; without this variant the key and the screen never meet.
     if (trimmed.endsWith('.')) pieces.push(trimmed.slice(0, -1))
   }
-  for (const part of text.split('·')) {
+  for (const [index, part] of text.split('·').entries()) {
+    // The segment before the first `·` is the vendor's model name
+    // ("huihui Qwen 3.8 27B abliterated"), not copy. Translating it would stop
+    // it matching the catalogue.
+    if (index === 0 && text.includes('·')) continue
     add(part)
     for (const sentence of part.split(/(?<=\.)\s+/)) {
       if (sentence.trim().length > 8) add(sentence)
