@@ -61,12 +61,12 @@ describe('what must never be touched', () => {
     expect(document.body.textContent).toBe('Chat')
   })
 
-  it('skips a textarea', () => {
-    document.body.innerHTML = '<textarea>Chat</textarea>'
+  it('skips a textarea value but still translates its placeholder', () => {
+    document.body.innerHTML = '<textarea placeholder="Chat">Chat</textarea>'
     translateWithin(document.body)
-    // The textarea's own value is what the user typed into it, never copy.
-    expect(document.body.querySelector('textarea')?.value).toBe('Chat')
-    expect(document.body.textContent).toBe('Chat')
+    const area = document.body.querySelector('textarea')!
+    expect(area.value).toBe('Chat')
+    expect(area.getAttribute('placeholder')).toBe('聊天')
   })
 })
 
@@ -98,6 +98,15 @@ describe('the observer', () => {
     span.textContent = 'Chat'
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(span.textContent).toBe('聊天')
+  })
+
+  it('translates a placeholder that is set after mount', async () => {
+    document.body.innerHTML = '<input id="later" placeholder="Chat">'
+    installI18nBridge()
+    const input = document.getElementById('later') as HTMLInputElement
+    input.setAttribute('placeholder', 'Settings')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(input.getAttribute('placeholder')).toBe('设置')
   })
 
   it('is idempotent', () => {

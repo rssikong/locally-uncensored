@@ -65,6 +65,10 @@ const OLD_NAME = /built[-\s]?in\s+(engine|embedding|model|folder|llama-server|\/
 const EXEMPT = [
   'lib/release-notes.ts',
   'lib/engine-name.ts',
+  // Fork: the Chinese dictionary is generated. It has to carry the English key
+  // "Built-in Engine" — that is how the old name gets translated — and the
+  // value it maps to is "内置引擎". Nothing here is shown untranslated.
+  'lib/i18n/zh-CN.ts',
 ]
 
 /**

@@ -5,20 +5,21 @@
  *   node scripts/i18n-apply.mjs --in=translations.json
  *   node scripts/i18n-apply.mjs --in=translations.json --dry-run
  *
- * `translations.json` is what `i18n-translate.mjs` (or a person) produces:
+ * Two kinds of group arrive here:
  *
- *   { "results": [ { "id": "g3", "text": "LU 在这里读取每一个 [[0]] 你设置的文件夹里" } ] }
- *
- * The `[[n]]` markers are split back apart, so one translated sentence becomes
- * one dictionary entry per fragment — which is exactly what the runtime bridge
- * replaces, one text node at a time.
+ *   sentence  — fixed copy. The translated sentence is split on `[[n]]` and one
+ *               dictionary entry is written per fragment, because the runtime
+ *               bridge replaces one text node at a time.
+ *   template  — assembled at runtime (`Details for ${name}`). It cannot be a
+ *               key; it becomes a pattern `Details for {0}` and the runtime
+ *               matches the shape.
  *
  * Everything is validated before a single byte is written: a group whose answer
  * has the wrong number of pieces, an empty piece, or a lost placeholder is
  * skipped and reported, never merged. The app keeps its English for that one
  * sentence, which is the safe outcome.
  */
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -26,57 +27,120 @@ const root = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const DICT = join(root, 'src', 'lib', 'i18n', 'zh-CN.ts')
 const SLOT = /\[\[(\d+)\]\]/g
 
-const inArg = process.argv.find((a) => a.startsWith('--in='))
-if (!inArg) {
+const arg = (name) => {
+  const hit = process.argv.find((a) => a.startsWith(`--${name}=`))
+  return hit ? hit.slice(name.length + 3) : null
+}
+const IN = arg('in')
+if (!IN) {
   console.error('用法: node scripts/i18n-apply.mjs --in=translations.json [--dry-run]')
   process.exit(2)
 }
 const dryRun = process.argv.includes('--dry-run')
 
-const groups = JSON.parse(await readFile(inArg.slice('--in='.length), 'utf8'))
-const results = groups.results ?? groups
+const payload = JSON.parse(await readFile(IN, 'utf8'))
+const results = payload.results ?? []
+const groupList = payload.groups ?? []
+const byId = new Map(groupList.map((group) => [group.id, group]))
 
 const dictUrl = new URL(`file://${DICT.replace(/\\/g, '/')}`).href
-const current = await import(dictUrl)
-  .then((m) => ({ ...(m.ZH_CN ?? {}) }))
-  .catch(() => ({}))
+const module = await import(dictUrl).catch(() => ({}))
+const current = { ...(module.ZH_CN ?? {}) }
+const patterns = new Map(module.ZH_PATTERNS ?? [])
 
-const placeholderTokens = (text) => (text.match(/\{\w+\}/g) ?? []).sort().join(',')
+/**
+ * A pattern is applied to every text node, so a bad one is worse than a
+ * missing one. Same rules as the extractor: short UI copy only, never a
+ * prompt paragraph, never a query string or a path.
+ */
+function isUsablePattern(key, value) {
+  const staticText = key.replace(/\{\d+\}/g, ' ')
+  if (staticText.length > 300) return false
+  if (/:\/\//.test(staticText)) return false
+  if (/[?&][a-z_]+=/.test(staticText)) return false
+  if (/^[.?&/]/.test(staticText.trim())) return false
+  if (!/[A-Za-z]{2}/.test(staticText)) return false
+  return placeholders(key) === placeholders(value)
+}
 
+const placeholders = (text) => (text.match(/\{\w+\}/g) ?? []).sort().join(',')
+const toPattern = (text) => text.replace(SLOT, (_, index) => `{${index}}`).trim()
+
+/** A translation that carries no Chinese at all, for a source that does carry
+ *  letters, is a fragment artefact ("(The" → "（"): the model translated a
+ *  sentence stub and dropped content. Keeping the English is the safe call. */
+const CJK = /[\u3400-\u9fff]/
+function isFragmentArtefact(key, value) {
+  if (CJK.test(value)) return false
+  if (!/[A-Za-z]/.test(key)) return false
+  return value !== key
+}
+
+const skipped = []
 let added = 0
 let updated = 0
-const skipped = []
+let patternsAdded = 0
+let patternsUpdated = 0
+let patternsPruned = 0
+let pruned = 0
 
 for (const result of results) {
-  const group = (groups.groups ?? []).find?.((g) => g.id === result.id)
+  const group = byId.get(result.id)
   if (!group) {
-    // A bare map of sentence → sentence is also accepted: no group context.
-    if (typeof result.source === 'string' && typeof result.text === 'string') {
-      current[result.source] = result.text
-      added += 1
-      continue
-    }
     skipped.push({ id: result.id, why: 'unknown group id' })
     continue
   }
+  const answer = String(result.text ?? '').trim()
+  if (!answer) {
+    skipped.push({ id: result.id, why: 'empty answer' })
+    continue
+  }
 
-  const parts = String(result.text ?? '').split(SLOT).filter((_, i) => i % 2 === 0)
-  if (parts.length !== group.fragments.length) {
-    skipped.push({ id: result.id, why: `expected ${group.fragments.length} pieces, got ${parts.length}` })
+  // ── template: a pattern, not a dictionary entry ────────────────────────
+  if (group.kind === 'template') {
+    const key = toPattern(group.sentence)
+    const value = toPattern(answer)
+    if (!key.includes('{')) {
+      skipped.push({ id: result.id, why: 'template without a slot' })
+      continue
+    }
+    if (!isUsablePattern(key, value)) {
+      skipped.push({ id: result.id, why: `unusable pattern: ${key.slice(0, 60)}` })
+      continue
+    }
+    if (isFragmentArtefact(key, value)) {
+      skipped.push({ id: result.id, why: 'fragment artefact' })
+      continue
+    }
+    if (patterns.has(key)) patternsUpdated += 1
+    else patternsAdded += 1
+    patterns.set(key, value)
+    continue
+  }
+
+  // ── sentence: one entry per fragment ───────────────────────────────────
+  const pieces = answer.split(SLOT).filter((_, index) => index % 2 === 0)
+  if (pieces.length !== group.fragments.length) {
+    skipped.push({ id: result.id, why: `expected ${group.fragments.length} pieces, got ${pieces.length}` })
     continue
   }
 
   const next = {}
   let bad = false
   group.fragments.forEach((fragment, index) => {
-    const piece = parts[index].trim()
+    const piece = pieces[index].trim()
     if (!piece) {
       skipped.push({ id: result.id, why: `empty piece ${index}` })
       bad = true
       return
     }
-    if (placeholderTokens(fragment) !== placeholderTokens(piece)) {
+    if (placeholders(fragment) !== placeholders(piece)) {
       skipped.push({ id: result.id, why: `placeholder mismatch in "${fragment}"` })
+      bad = true
+      return
+    }
+    if (isFragmentArtefact(fragment, piece)) {
+      skipped.push({ id: result.id, why: `fragment artefact: "${fragment}" → "${piece}"` })
       bad = true
       return
     }
@@ -92,34 +156,116 @@ for (const result of results) {
   }
 }
 
-// Fragment artefacts: a sentence cut around an inline value can leave pieces
-// that are only punctuation (",") or a sentence stub ("(The"). Storing a
-// translation for those either does nothing useful or silently drops content
-// — and the runtime bridge would then apply it everywhere that fragment
-// appears. Keep the English instead; it is the safe direction.
-const CJK = /[\u3400-\u9fff]/
-const pruned = []
+// Entries written by earlier runs keep the artefact rule too: a dictionary that
+// already contains "(The" → "（" would keep applying it everywhere.
 for (const [key, value] of Object.entries(current)) {
-  if (CJK.test(value)) continue
-  if (!/[A-Za-z]/.test(key)) continue
-  if (value === key) continue
-  pruned.push(`${JSON.stringify(key)} → ${JSON.stringify(value)}`)
+  if (!isFragmentArtefact(key, value)) continue
   delete current[key]
+  pruned += 1
+}
+
+/**
+ * This repository carries German in comments and in the patterns that read what
+ * a user typed. Such a string is a matcher, not interface copy: translating it
+ * is wrong and it trips the "no German sentences in the UI" guard.
+ */
+const GERMAN_WORDS =
+  /\b(der|die|das|den|dem|des|und|oder|nicht|kein|keine|mit|für|auf|ist|sind|wird|werden|kann|können|muss|sollen|bitte|einen|eine|einem|einer|wenn|dass|dieser|diese|dieses|noch|auch|nur|schon|jetzt|hier|dort)\b/gi
+
+function looksGerman(text) {
+  if (/[äöüß]/i.test(text)) return true
+  const hits = new Set((text.match(GERMAN_WORDS) ?? []).map((word) => word.toLowerCase()))
+  return hits.size >= 3
+}
+
+function isMatcher(text) {
+  return /\(\?:|\\[bwsd]|\[\^|\\s\+/.test(text)
+}
+
+const CSS_TOKEN =
+  /(?<![\w-])(?:flex|grid|inline-flex|hidden|absolute|relative|items-(?:center|start|end|stretch)|justify-(?:center|between|start|end)|gap-[0-9.]+|(?:p|px|py|pt|pb|pl|pr|m|mx|my|mt|mb|w|h)-[0-9.[\]a-z-]+|rounded[\w-]*|border[\w-]*|shadow[\w-]*|font-(?:medium|semibold|bold|mono)|leading-\w+|tracking-\w+|transition[\w-]*|(?:hover|dark|focus|active|disabled):)/g
+
+function looksLikeClasses(text) {
+  return (text.match(CSS_TOKEN) ?? []).length >= 2
+}
+
+function isUsableKey(key) {
+  return !looksGerman(key) && !isMatcher(key) && !looksLikeClasses(key)
+}
+
+// Entries written by an earlier run are held to today's rules as well.
+for (const [key, value] of Object.entries(current)) {
+  // A translation identical to its key does nothing at runtime (the bridge
+  // would write the same text back) and only bloats the table.
+  if (key === value) {
+    delete current[key]
+    pruned += 1
+    continue
+  }
+  if (isUsableKey(key)) continue
+  delete current[key]
+  pruned += 1
+}
+
+for (const [key, value] of [...patterns]) {
+  if (isUsablePattern(key, value) && isUsableKey(key)) continue
+  patterns.delete(key)
+  patternsPruned += 1
 }
 
 const keys = Object.keys(current).sort()
 const body = keys.map((k) => '  ' + JSON.stringify(k) + ': ' + JSON.stringify(current[k]) + ',').join('\n')
-const file = `// GENERATED FILE — do not edit by hand.\n// Written by scripts/i18n-apply.mjs. Keys are the English text the app renders,\n// values are the Chinese copy. A key that is missing here stays English at\n// runtime (the bridge never guesses), which is why adding a translation is\n// never able to break a screen.\nexport const ZH_CN: Record<string, string> = {\n${body}\n}\n\n/**\n * Dynamic strings. \`{0}\`, \`{1}\` … are captured from the rendered text and\n * substituted back, so a count or a name inside a sentence still matches.\n */\nexport const ZH_PATTERNS: ReadonlyArray<readonly [string, string]> = []\n`
+const patternKeys = [...patterns.keys()].sort()
+const patternBody = patternKeys
+  .map((key) => `  [${JSON.stringify(key)}, ${JSON.stringify(patterns.get(key))}],`)
+  .join('\n')
 
-console.log(`新增 ${added}  更新 ${updated}  跳过 ${skipped.length}  剔除片段伪译 ${pruned.length}  合计 ${keys.length}`)
-for (const s of skipped.slice(0, 20)) console.log(`  跳过 ${s.id}: ${s.why}`)
-if (skipped.length > 20) console.log(`  …还有 ${skipped.length - 20} 条`)
-for (const line of pruned.slice(0, 12)) console.log(`  剔除 ${line}`)
-if (pruned.length > 12) console.log(`  …还有 ${pruned.length - 12} 条`)
+const file = `// GENERATED FILE — do not edit by hand.
+// Written by scripts/i18n-apply.mjs. Keys are the English text the app renders,
+// values are the Chinese copy. A key that is missing here stays English at
+// runtime (the bridge never guesses), which is why adding a translation is
+// never able to break a screen.
+export const ZH_CN: Record<string, string> = {
+${body}
+}
+
+/**
+ * Dynamic strings. \`{0}\`, \`{1}\` … are captured from the rendered text and
+ * substituted back, so a count or a name inside a sentence still matches.
+ */
+export const ZH_PATTERNS: ReadonlyArray<readonly [string, string]> = [
+${patternBody}
+]
+`
+
+console.log(
+  `新增 ${added}  更新 ${updated}  跳过 ${skipped.length}  剔除 ${pruned}  ` +
+    `模式 +${patternsAdded}/~${patternsUpdated}/-${patternsPruned}  合计词条 ${keys.length}，模式 ${patternKeys.length}`,
+)
+for (const s of skipped.slice(0, 15)) console.log(`  跳过 ${s.id}: ${s.why}`)
+if (skipped.length > 15) console.log(`  …还有 ${skipped.length - 15} 条`)
 
 if (dryRun) {
   console.log('--dry-run：未写入')
 } else {
-  await writeFile(DICT, file, 'utf8')
+  // Write next to the target and rename over it. Writing the target directly
+  // truncates it first, and on Windows a locked file (an editor, a virus
+  // scanner) then leaves an empty dictionary behind — the app would boot with
+  // no translations at all.
+  const tmp = `${DICT}.tmp`
+  let written = false
+  let lastError = null
+  for (let attempt = 1; attempt <= 6 && !written; attempt += 1) {
+    try {
+      await writeFile(tmp, file, 'utf8')
+      await rename(tmp, DICT)
+      written = true
+    } catch (error) {
+      lastError = error
+      await unlink(tmp).catch(() => {})
+      await new Promise((resolve) => setTimeout(resolve, 150 * attempt))
+    }
+  }
+  if (!written) throw lastError
   console.log(`已写入 ${DICT}`)
 }

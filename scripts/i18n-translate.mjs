@@ -50,11 +50,16 @@ const BATCH = Number(process.env.TRANSLATE_BATCH ?? 60)
 const ATTEMPTS = 3
 
 const dictUrl = new URL(`file://${DICT.replace(/\\/g, '/')}`).href
-const existing = await import(dictUrl).then((m) => m.ZH_CN ?? {}).catch(() => ({}))
+const module = await import(dictUrl).catch(() => ({}))
+const existing = module.ZH_CN ?? {}
+const existingPatterns = new Set((module.ZH_PATTERNS ?? []).map(([key]) => key))
+const toPattern = (text) => text.replace(/\[\[(\d+)\]\]/g, (_, index) => `{${index}}`).trim()
 
 const extract = JSON.parse(await readFile(IN, 'utf8'))
 const pending = (extract.items ?? []).filter((group) =>
-  group.fragments.some((fragment) => !(fragment in existing)),
+  group.kind === 'template'
+    ? !existingPatterns.has(toPattern(group.sentence))
+    : group.fragments.some((fragment) => !(fragment in existing)),
 )
 
 console.log(`待译分组 ${pending.length} / 共 ${extract.items?.length ?? 0}（已有词条 ${Object.keys(existing).length}）`)

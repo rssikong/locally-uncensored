@@ -56,9 +56,11 @@ export function isTranslated(locale: Locale = resolveLocale()): boolean {
  *   1. `setLocale()` during this session (a future switch in Settings);
  *   2. `MODE === 'test'` → English. vitest sets this; CI's unit tests are the
  *      reason it is first (see the header);
- *   3. `VITE_LU_LOCALE` → pinned at build/dev time. `playwright.config.ts`
- *      sets `en` for its web server, so e2e keeps its English selectors;
- *   4. the user's saved choice;
+ *   3. the user's saved choice. It beats the build-time pin on purpose: the
+ *      gap scan (e2e/i18n-gaps.spec.ts) boots the real app in Chinese while the
+ *      Playwright web server still carries `VITE_LU_LOCALE=en` for the other
+ *      specs, and a person who picked a language should keep it;
+ *   4. `VITE_LU_LOCALE` → pinned at build/dev time;
  *   5. the default, Chinese.
  */
 export function resolveLocale(): Locale {
@@ -67,15 +69,15 @@ export function resolveLocale(): Locale {
   const env = (import.meta as { env?: Record<string, string | undefined> }).env ?? {}
   if (env.MODE === 'test') return 'en'
 
-  const forced = env.VITE_LU_LOCALE
-  if (isLocale(forced)) return forced
-
   try {
     const saved = globalThis.localStorage?.getItem(LOCALE_STORAGE_KEY)
     if (isLocale(saved)) return saved
   } catch {
     /* a locked localStorage must not decide the language */
   }
+
+  const forced = env.VITE_LU_LOCALE
+  if (isLocale(forced)) return forced
 
   return DEFAULT_LOCALE
 }

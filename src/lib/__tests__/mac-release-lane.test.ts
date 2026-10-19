@@ -468,8 +468,10 @@ describe('release.yml, a Mac dry run reaches no release and no other platform', 
   })
 
   it('leaves the release flags alone', () => {
+    // Fork: a Chinese build (`zh_release`) is a normal release on purpose, so
+    // the demotion rule adds one more condition. The rule itself is unchanged.
     expect(withoutComments(jobBlock(RELEASE_YML, 'enforce-prerelease')))
-      .toMatch(/^ {4}if:\s*\$\{\{ always\(\) && !inputs\.mac_dry_run && !inputs\.dry_run \}\}\s*$/m)
+      .toMatch(/^ {4}if:\s*\$\{\{ always\(\) && !inputs\.mac_dry_run && !inputs\.dry_run(?: && !inputs\.zh_release)? \}\}\s*$/m)
     expect(withoutComments(jobBlock(RELEASE_YML, 'demote-on-arrival')))
       .toMatch(/^ {4}if:\s*github\.event_name == 'release'\s*$/m)
   })

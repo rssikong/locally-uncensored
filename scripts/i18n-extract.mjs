@@ -44,8 +44,6 @@ const SKIP_DIRS = new Set(['__tests__', 'node_modules', 'dist', 'target'])
 const NO_TRANSLATE_PATHS = [
   /^src\/api\/agents\//,
   /^src\/api\/mcp\//,
-  /^src\/api\/discover\.ts$/,
-  /^src\/api\/model-bundles\.ts$/,
   /^src\/lib\/render\//,
   /^src\/lib\/release-notes\.ts$/,
   /^src\/lib\/no-refusals/,
@@ -69,6 +67,15 @@ const TEXT_ATTRS = new Set([
 
 const DATA_PROPS = new Set(['label', 'placeholder', 'title', 'ariaLabel', 'description', 'emptyText', 'helperText'])
 
+/**
+ * Catalog files hold model names AND their one-line descriptions. The names
+ * must stay as they are (a translated model name stops matching the catalogue);
+ * the descriptions are shown to the user and are worth translating. So these
+ * files are read, but only through this narrow list of properties.
+ */
+const CATALOG_FILES = [/^src\/api\/discover\.ts$/, /^src\/api\/model-bundles\.ts$/]
+const CATALOG_PROPS = new Set(['description', 'blurb', 'subtitle', 'kind'])
+
 /** Inline elements that only split a sentence; quotes do carry copy. */
 const INLINE_TAGS = new Set(['code', 'b', 'strong', 'em', 'i', 'span', 'a', 'kbd', 'small', 'p', 'li', 'td', 'th'])
 
@@ -88,8 +95,29 @@ function looksLikeCopy(value) {
   return true
 }
 
+/**
+ * JSX text arrives as SOURCE text, so `Download &amp; install` is what the
+ * extractor sees while the DOM shows `Download & install`. Without decoding,
+ * the dictionary key and the rendered text never meet.
+ */
+const ENTITIES = {
+  amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ',
+  mdash: '—', ndash: '–', hellip: '…', middot: '·', times: '×',
+  rarr: '→', larr: '←', uarr: '↑', darr: '↓', check: '✓', copy: '©',
+}
+
+function decodeEntities(text) {
+  return text.replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (whole, name) => {
+    if (name.startsWith('#')) {
+      const code = name[1].toLowerCase() === 'x' ? parseInt(name.slice(2), 16) : parseInt(name.slice(1), 10)
+      return Number.isFinite(code) ? String.fromCodePoint(code) : whole
+    }
+    return ENTITIES[name.toLowerCase()] ?? whole
+  })
+}
+
 function normalize(text) {
-  return text.replace(/\s+/g, ' ').trim()
+  return decodeEntities(text.replace(/\s+/g, ' ')).trim()
 }
 
 async function* walk(dir) {
@@ -117,11 +145,85 @@ const groups = []
 const wrapped = new Set() // strings already handled by an explicit t('…') call
 let uid = 0
 
+/**
+ * A sentence assembled at runtime (`Details for ${name}`) cannot be a
+ * dictionary key: the rendered text is different every time. It becomes a
+ * PATTERN instead — `Details for {0}` — and the runtime matches the shape.
+ *
+ * Two things never become patterns:
+ *   - prompt paragraphs. A model prompt written as a template is hundreds of
+ *     characters long and must not be translated at all; UI copy is short.
+ *   - query strings and paths (`&format=json&srlimit={0}`, `?after={0}`).
+ */
+const MAX_TEMPLATE_LENGTH = 300
+
+function looksLikeTemplate(sentence) {
+  const staticText = sentence.replace(/\[\[\d+\]\]/g, ' ')
+  if (staticText.length > MAX_TEMPLATE_LENGTH) return false
+  if (/:\/\//.test(staticText)) return false
+  if (/[?&][a-z_]+=/.test(staticText)) return false
+  if (/^[.?&/]/.test(staticText.trim())) return false
+  return looksLikeCopy(staticText)
+}
+
+function addTemplate(file, line, sentence) {
+  const text = normalize(sentence)
+  if (!looksLikeTemplate(text)) return
+  if (!isTranslatable(text)) return
+  if (skip.has(text)) return
+  // One marker per interpolation; the sentence already carries them.
+  const markers = text.match(/\[\[\d+\]\]/g) ?? []
+  if (markers.length === 0) return
+  groups.push({ id: `g${++uid}`, file, line, kind: 'template', fragments: [], sentence: text })
+}
+
+const seenGroups = new Set()
+
+/**
+ * This repository carries German in its comments and, in a few places, in the
+ * patterns that recognise what a user typed. None of that is interface copy:
+ * translating it would be wrong, and it trips the "no German sentences in the
+ * UI" guard. Two signals: an umlaut/ß, or three distinct function words.
+ */
+const GERMAN_WORDS =
+  /\b(der|die|das|den|dem|des|und|oder|nicht|kein|keine|mit|für|auf|ist|sind|wird|werden|kann|können|muss|sollen|bitte|einen|eine|einem|einer|wenn|dass|dieser|diese|dieses|noch|auch|nur|schon|jetzt|hier|dort)\b/gi
+
+function looksGerman(text) {
+  if (/[äöüß]/i.test(text)) return true
+  const hits = new Set((text.match(GERMAN_WORDS) ?? []).map((word) => word.toLowerCase()))
+  return hits.size >= 3
+}
+
+/** A string that encodes a regular expression is a matcher, not copy. */
+function looksLikeRegex(text) {
+  return /\(\?:|\\[bwsd]|\[\^|\\s\+/.test(text)
+}
+
+/**
+ * A Tailwind class list looks like a sentence to a naive filter: it has spaces
+ * and letters. It is style, not copy, and translating it would change layout.
+ */
+const CSS_TOKEN =
+  /(?<![\w-])(?:flex|grid|inline-flex|hidden|absolute|relative|items-(?:center|start|end|stretch)|justify-(?:center|between|start|end)|gap-[0-9.]+|(?:p|px|py|pt|pb|pl|pr|m|mx|my|mt|mb|w|h)-[0-9.[\]a-z-]+|rounded[\w-]*|border[\w-]*|shadow[\w-]*|font-(?:medium|semibold|bold|mono)|leading-\w+|tracking-\w+|transition[\w-]*|(?:hover|dark|focus|active|disabled):)/g
+
+function looksLikeClasses(text) {
+  return (text.match(CSS_TOKEN) ?? []).length >= 2
+}
+
+function isTranslatable(text) {
+  return looksLikeCopy(text) && !looksGerman(text) && !looksLikeRegex(text) && !looksLikeClasses(text)
+}
+
 function addGroup(file, line, kind, fragments) {
   const pieces = fragments.map(normalize).filter((f) => f.length > 0)
   if (pieces.length === 0) return
   if (pieces.some((f) => skip.has(f))) return
-  if (!pieces.some((f) => looksLikeCopy(f))) return
+  if (!pieces.some(isTranslatable)) return
+  // One entry per distinct sentence: the same label appears in many places and
+  // one translation decision is enough.
+  const dedupe = pieces.join('\u0001')
+  if (seenGroups.has(dedupe)) return
+  seenGroups.add(dedupe)
   const sentence = pieces.map((p, i) => (i === 0 ? p : `[[${i - 1}]] ${p}`)).join(' ')
   groups.push({ id: `g${++uid}`, file, line, kind, fragments: pieces, sentence })
 }
@@ -137,6 +239,27 @@ function visit(sf, file, node, inClass = false) {
   ) {
     const arg = node.arguments[0]
     if (ts.isStringLiteral(arg) || ts.isNoSubstitutionTemplateLiteral(arg)) wrapped.add(arg.text)
+  }
+
+  // Broad collection: a label can reach the screen through a ternary, an array
+  // of options or a constant, none of which the rules below see. The gap scan
+  // proved the cost of missing them ("Describe your image…", "No chats yet."
+  // were never extracted). Length-capped, because a long template in lib/ is a
+  // model prompt, not UI copy.
+  if (
+    (file.startsWith('src/components/') || file.startsWith('src/lib/')) &&
+    !inClass &&
+    (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node))
+  ) {
+    const parent = node.parent
+    const isWrapped =
+      ts.isCallExpression(parent) &&
+      ts.isIdentifier(parent.expression) &&
+      (parent.expression.text === 't' || parent.expression.text === 'tr')
+    const text = normalize(node.text)
+    if (!isWrapped && text.length <= 200 && isTranslatable(text)) {
+      addGroup(file, sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1, 'literal', [text])
+    }
   }
   if (ts.isJsxElement(node) || ts.isJsxFragment(node)) {
     const pieces = []
@@ -202,22 +325,69 @@ function visit(sf, file, node, inClass = false) {
   }
 
   if (ts.isTemplateExpression(node) && !inClass) {
-    const head = normalize(node.head.text)
-    if (looksLikeCopy(head)) {
-      addGroup(file, sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1, 'template-head', [head])
-    }
+    // head + [[0]] + tail … in one string, so the translator sees the sentence
+    // and apply can turn it into a `{0}` pattern.
+    let sentence = node.head.text
+    node.templateSpans.forEach((span, index) => {
+      sentence += `[[${index}]]${span.literal.text}`
+    })
+    addTemplate(file, sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1, sentence)
   }
 
   const nextInClass = inClass || (ts.isJsxAttribute(node) && /^(className|class)$/.test(node.name.getText(sf)))
   ts.forEachChild(node, (child) => visit(sf, file, child, nextInClass))
 }
 
+/**
+ * The Models view does not render a description as one paragraph: it splits it
+ * on `·` and on sentence boundaries and shows one piece. A dictionary keyed by
+ * the whole paragraph therefore never matches what is on screen, so every piece
+ * is collected too.
+ */
+function catalogPieces(text) {
+  const pieces = [text]
+  const add = (piece) => {
+    const trimmed = piece.trim()
+    if (!trimmed) return
+    pieces.push(trimmed)
+    // The Models view drops the closing period when it shows a sentence on its
+    // own; without this variant the key and the screen never meet.
+    if (trimmed.endsWith('.')) pieces.push(trimmed.slice(0, -1))
+  }
+  for (const part of text.split('·')) {
+    add(part)
+    for (const sentence of part.split(/(?<=\.)\s+/)) {
+      if (sentence.trim().length > 8) add(sentence)
+    }
+  }
+  return pieces
+}
+
+/** Catalog files: only the displayed descriptions, never the model names. */
+function visitCatalog(sf, file, node) {
+  if (ts.isPropertyAssignment(node)) {
+    const name = node.name.getText(sf).replace(/^['"]|['"]$/g, '')
+    if (CATALOG_PROPS.has(name)) {
+      const init = node.initializer
+      if ((ts.isStringLiteral(init) || ts.isNoSubstitutionTemplateLiteral(init)) && looksLikeCopy(init.text)) {
+        const line = sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1
+        for (const piece of catalogPieces(init.text)) {
+          if (looksLikeCopy(piece)) addGroup(file, line, `catalog:${name}`, [piece])
+        }
+      }
+    }
+  }
+  ts.forEachChild(node, (child) => visitCatalog(sf, file, child))
+}
+
 for await (const file of walk(SRC)) {
   const rel = relative(root, file).replace(/\\/g, '/')
-  if (NO_TRANSLATE_PATHS.some((re) => re.test(rel))) continue
+  const isCatalog = CATALOG_FILES.some((re) => re.test(rel))
+  if (!isCatalog && NO_TRANSLATE_PATHS.some((re) => re.test(rel))) continue
   const text = await readFile(file, 'utf8')
   const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS)
-  visit(sf, rel, sf)
+  if (isCatalog) visitCatalog(sf, rel, sf)
+  else visit(sf, rel, sf)
 }
 
 const unique = new Map()

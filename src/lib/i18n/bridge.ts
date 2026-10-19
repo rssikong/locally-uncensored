@@ -23,6 +23,12 @@ import { translate } from './pack'
 export const NO_TRANSLATE_ATTR = 'data-no-i18n'
 
 const SKIP_TAGS = new Set(['CODE', 'PRE', 'KBD', 'SAMP', 'SCRIPT', 'STYLE', 'TEXTAREA'])
+/**
+ * For attributes the rules are narrower: a textarea's placeholder is UI copy
+ * and must be translated, while its *value* is what the user typed and is never
+ * touched (only the four attributes below are ever written).
+ */
+const ATTR_SKIP_TAGS = new Set(['CODE', 'PRE', 'KBD', 'SAMP', 'SCRIPT', 'STYLE'])
 const ATTRS = ['placeholder', 'title', 'aria-label', 'alt'] as const
 
 let installed = false
@@ -31,10 +37,10 @@ let scheduled = false
 let applying = false
 const pending = new Set<Node>()
 
-function isSkipped(element: Element | null): boolean {
+function isSkipped(element: Element | null, forAttributes = false): boolean {
   if (!element) return true
-  if (SKIP_TAGS.has(element.tagName)) return true
-  return element.closest(`[${NO_TRANSLATE_ATTR}]`) !== null
+  if (element.closest(`[${NO_TRANSLATE_ATTR}]`) !== null) return true
+  return (forAttributes ? ATTR_SKIP_TAGS : SKIP_TAGS).has(element.tagName)
 }
 
 /** Returns true when the node actually changed. */
@@ -55,7 +61,7 @@ function translateTextNode(node: Text): boolean {
 }
 
 function translateAttributes(element: Element): boolean {
-  if (isSkipped(element)) return false
+  if (isSkipped(element, true)) return false
   let changed = false
   for (const name of ATTRS) {
     const value = element.getAttribute(name)
@@ -129,14 +135,23 @@ export function installI18nBridge(): void {
     // five-line list from turning into an endless translate/settle loop.
     if (applying) return
     for (const record of records) {
-      if (record.type === 'characterData') pending.add(record.target)
+      if (record.type === 'characterData' || record.type === 'attributes') pending.add(record.target)
       for (const node of record.addedNodes) pending.add(node)
     }
     if (pending.size === 0 || scheduled) return
     scheduled = true
     queueMicrotask(flush)
   })
-  observer.observe(document.body, { childList: true, subtree: true, characterData: true })
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+    characterData: true,
+    // A placeholder or a title is often set after mount, when the state that
+    // decides it arrives. Without this the dictionary had the string and the
+    // screen still showed English.
+    attributes: true,
+    attributeFilter: [...ATTRS],
+  })
 }
 
 /** For tests, and for a future "switch back to English without a reload". */

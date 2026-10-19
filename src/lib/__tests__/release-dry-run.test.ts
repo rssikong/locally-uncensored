@@ -110,7 +110,11 @@ describe('release.yml, which jobs a full dry run starts', () => {
   })
 
   it('leaves the release flags alone', () => {
-    expect(jobIf('enforce-prerelease')).toBe('${{ always() && !inputs.mac_dry_run && !inputs.dry_run }}')
+    // Fork: a Chinese build (`zh_release`) keeps the demotion rule out too, so
+    // the condition may carry one more term. The rule itself is unchanged.
+    expect(jobIf('enforce-prerelease')).toMatch(
+      /^\$\{\{ always\(\) && !inputs\.mac_dry_run && !inputs\.dry_run(?: && !inputs\.zh_release)? \}\}$/,
+    )
     expect(jobIf('demote-on-arrival')).toBe("github.event_name == 'release'")
   })
 
