@@ -9,9 +9,12 @@
 > **中文构建说明 · Chinese build notice**
 > 本仓库是 [Locally Uncensored](https://github.com/PurpleDoubleD/locally-uncensored) 的第三方 fork，仅把界面汉化为简体中文，不改动功能。
 > 本构建与上游项目及 LU Labs **无隶属关系**，不代表其发布，也不代售其云服务；上游的云功能在你的构建里仍然指向官方服务。
-> 源代码依 AGPL-3.0 提供；汉化方式见 `I18N.md`。
+> 源代码依 AGPL-3.0 提供。
 >
-> This is a third-party fork that translates the interface into Simplified Chinese. It is not affiliated with the upstream project or LU Labs, and ships no cloud service of its own.
+> **没有完全汉化**：汉化是运行时替换，覆盖绝大多数可见文案。Rust 侧的托盘与原生对话框、手机端页面、模型名与容量标识、日志与开发者错误保持原样；未命中的文案回退为英文，不会显示空白。
+> 实现方式、**未汉化清单**，以及**分叉本仓库时需要改动的地方**（更新通道、签名密钥、安装器身份、版本号），见 [`I18N.md`](I18N.md)。
+>
+> This is a third-party fork that translates the interface into Simplified Chinese. It is not affiliated with the upstream project or LU Labs, and ships no cloud service of its own. **The translation is not complete** — see [`I18N.md`](I18N.md) for what stays English and what to change if you fork it.
 
 Free and open source. In local mode everything runs on your own machine. No Docker, no terminal, no config files. The platforms are listed under [Download](#download).
 
