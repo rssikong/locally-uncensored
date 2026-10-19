@@ -264,17 +264,21 @@ jobs:
           set -euo pipefail
           base="${{ github.event.release.tag_name || github.event.inputs.tag }}"
           base="${base#v}"
-          if [[ "$base" == *-zh.* ]]; then
-            # The sync workflow already named this build (and tagged the commit
-            # that carries the translations). Use the name as given: renaming it
-            # here would make the release tag and the built version disagree.
-            ver="$base"
+          # The tag says "zh" for the humans (`v3.0.6-zh.1`), but the version the
+          # build carries must be a NUMERIC pre-release: the WiX/MSI bundler
+          # rejects anything else ("optional pre-release identifier in app
+          # version must be numeric-only"), and the Linux AppImage then shipped
+          # alone in the first attempt. `3.0.6-1` orders correctly within this
+          # channel (3.0.6-2 > 3.0.6-1, 3.0.7-1 > 3.0.6-9).
+          if [[ "$base" =~ ^(.+)-zh\.([0-9]+)$ ]]; then
+            ver="${BASH_REMATCH[1]}-${BASH_REMATCH[2]}"
+            echo "Tag names it zh.$((BASH_REMATCH[2])), version becomes $ver"
           else
             n=1
             while git ls-remote --tags origin "refs/tags/v${base}-zh.${n}" | grep -q .; do
               n=$((n + 1))
             done
-            ver="${base}-zh.${n}"
+            ver="${base}-${n}"
           fi
           echo "Chinese build version: $ver"
           node - "$ver" <<'JS'
@@ -296,8 +300,18 @@ jobs:
             fs.readFileSync(cargo, 'utf8').replace(/^version = ".*"$/m, `version = "${ver}"`),
           )
           JS
+          # The release keeps the tag the caller named (`v3.0.6-zh.1`): that is
+          # the commit the sync workflow tagged, i.e. the one carrying the
+          # translations. Only when a plain upstream tag is passed by hand do we
+          # need a tag of our own, because upstream's tag points at a commit
+          # without the dictionary.
+          if [[ "$base" =~ ^(.+)-zh\.([0-9]+)$ ]]; then
+            tag_out="v${base}"
+          else
+            tag_out="v${base}-zh.${n}"
+          fi
           echo "version=${ver}" >> "$GITHUB_OUTPUT"
-          echo "tag=v${ver}" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag_out}" >> "$GITHUB_OUTPUT"
 
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
