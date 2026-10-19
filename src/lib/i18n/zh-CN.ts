@@ -1552,7 +1552,7 @@ export const ZH_CN: Record<string, string> = {
   "Includes its text model and audio VAE": "包含其文本模型和音频 VAE",
   "Includes its text model and audio VAE.": "包含其文本模型和音频 VAE。",
   "Indexing runs on": "索引在",
-  "Indexing...": "索引中...",
+  "Indexing...": "正在索引…",
   "Individual cloud models…": "单个云端模型…",
   "Injected into prompt": "已注入提示词",
   "Input \"": "输入 \"",
