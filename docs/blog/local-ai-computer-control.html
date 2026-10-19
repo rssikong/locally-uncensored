@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Local AI Computer Use: Let an Agent Control Your PC and Keep the Controls</title>
+<meta name="description" content="How computer control in Locally Uncensored 3.0.6 works with a local model: switching it on, what it asks, how to pause or stop it, and what is not tested yet.">
+<meta name="keywords" content="local ai computer use, ai agent control my pc, local computer use agent, ai control mouse and keyboard, locally uncensored computer control, holo 3.1 9b">
+<meta property="og:title" content="Local AI Computer Use: Let an Agent Control Your PC and Keep the Controls">
+<meta property="og:description" content="Computer control in Locally Uncensored 3.0.6: the card in every new chat, questions per app and action, the never-touch list, pause and stop, and the limits of the beta.">
+<meta property="og:image" content="https://raw.githubusercontent.com/PurpleDoubleD/locally-uncensored/master/docs/social-preview.png">
+<meta property="og:url" content="https://locallyuncensored.com/blog/local-ai-computer-control.html">
+<meta property="og:type" content="article">
+<meta property="article:published_time" content="2026-10-18">
+<meta property="article:author" content="PurpleDoubleD">
+<meta property="article:tag" content="Guide">
+<meta property="article:tag" content="Computer Control">
+<meta property="article:tag" content="Local AI">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Local AI Computer Use: You Keep the Controls">
+<meta name="twitter:description" content="Computer control in Locally Uncensored 3.0.6: the card in every new chat, questions per app and action, the never-touch list, pause and stop, and the limits of the beta.">
+<meta name="twitter:image" content="https://raw.githubusercontent.com/PurpleDoubleD/locally-uncensored/master/docs/social-preview.png">
+<link rel="canonical" href="https://locallyuncensored.com/blog/local-ai-computer-control.html">
+<meta name="robots" content="index, follow">
+<meta name="theme-color" content="#0a0a0a">
+<link rel="icon" href="../favicon.png">
+<!-- Privacy: No external fonts loaded. Using system fonts. -->
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"BlogPosting","headline":"Local AI Computer Use: Let an Agent Control Your PC and Keep the Controls","description":"How computer control in Locally Uncensored 3.0.6 works with a local model: switching it on, what it asks, how to pause or stop it, and what is not tested yet.","image":"https://raw.githubusercontent.com/PurpleDoubleD/locally-uncensored/master/docs/social-preview.png","datePublished":"2026-10-18","dateModified":"2026-10-18","inLanguage":"en","author":{"@type":"Person","name":"PurpleDoubleD","url":"https://github.com/PurpleDoubleD"},"publisher":{"@type":"Organization","name":"Locally Uncensored","url":"https://locallyuncensored.com/"},"mainEntityOfPage":{"@type":"WebPage","@id":"https://locallyuncensored.com/blog/local-ai-computer-control.html"},"keywords":"local ai computer use, ai agent control my pc, local computer use agent, ai control mouse and keyboard, locally uncensored computer control, holo 3.1 9b"}
+</script>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Is computer control on by default?","acceptedAnswer":{"@type":"Answer","text":"No. It stays off until you switch it on under Settings, Agent, Agent Permissions, Computer control. Even then, every new chat shows the card \"Allow computer control in this chat?\" and LU looks at nothing and does nothing until you click Allow."}},{"@type":"Question","name":"How do I pause or stop it?","acceptedAnswer":{"@type":"Answer","text":"Ctrl+Alt+Space pauses and Ctrl+Alt+Esc stops at once, also during a pause. On a Mac it is Control+Option+Space and Control+Option+Esc. The Pause and Stop buttons in the small window do the same, and in an autonomous session moving the mouse pauses LU."}},{"@type":"Question","name":"Can it run without asking before every click?","acceptedAnswer":{"@type":"Answer","text":"On Windows, Autonomous for one session asks only before anything that sends, buys, deletes or changes permissions. Those always need your click, in a supervised session as in an autonomous one."}},{"@type":"Question","name":"Which apps can it never use?","acceptedAnswer":{"@type":"Answer","text":"Terminals and shells, password managers, sign-in and permission dialogs of the system, system settings for security and accounts, the Run dialog and system launchers, windows with administrator rights and LU's own window. LU also does not type into a password field."}},{"@type":"Question","name":"Does it work on a Mac or on Linux?","acceptedAnswer":{"@type":"Answer","text":"On a Mac it is in the app but not fully tested yet, and macOS has to grant Accessibility and Screen Recording first. On Linux it needs an X11 session and has not been run in the app."}}]}
+</script>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://locallyuncensored.com/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://locallyuncensored.com/blog/"},{"@type":"ListItem","position":3,"name":"Local AI Computer Use: Let an Agent Control Your PC","item":"https://locallyuncensored.com/blog/local-ai-computer-control.html"}]}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/lu.css">
+<script defer src="/assets/lu.js"></script>
+  <script data-goatcounter="https://purple47.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
+</head>
+<body>
+<nav class="lu-nav">
+  <a class="lu-nav-brand" href="/" aria-label="Locally Uncensored">
+    <span class="lu-mono" data-mono="nav" data-size="40" aria-hidden="true"></span>
+    <span class="lu-nav-word">Locally <span class="accent">Uncensored</span></span>
+  </a>
+  <div class="lu-nav-links" id="lu-nav-links">
+    <a class="lu-nav-link" href="/">Home</a>
+    <a class="lu-nav-link" href="/pricing/">Pricing</a>
+    <a class="lu-nav-link" href="/blog/">Blog</a>
+    <a class="lu-nav-link" href="/guide/">Guide</a>
+    <a class="lu-nav-link" href="/remote-access/">Remote</a>
+  </div>
+  <div class="lu-nav-right">
+    <a class="lu-nav-icon" href="https://github.com/PurpleDoubleD/locally-uncensored" title="GitHub" aria-label="GitHub"><svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.37.5 0 5.87 0 12.5c0 5.3 3.44 9.8 8.21 11.39.6.11.82-.26.82-.58 0-.29-.01-1.04-.02-2.05-3.34.73-4.04-1.61-4.04-1.61-.55-1.39-1.33-1.76-1.33-1.76-1.09-.75.08-.73.08-.73 1.2.08 1.84 1.24 1.84 1.24 1.07 1.83 2.81 1.3 3.5.99.11-.78.42-1.3.76-1.6-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.13-.3-.54-1.52.11-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 6.01 0c2.29-1.55 3.3-1.23 3.3-1.23.65 1.66.24 2.88.12 3.18.77.84 1.23 1.91 1.23 3.22 0 4.61-2.8 5.63-5.48 5.92.43.37.81 1.1.81 2.22 0 1.6-.01 2.9-.01 3.29 0 .32.21.7.82.58A12.01 12.01 0 0 0 24 12.5C24 5.87 18.63.5 12 .5Z"/></svg><span class="lu-nav-badge">2000+&#8202;⭐</span></a>
+    <a class="lu-nav-icon discord" href="https://locallyuncensored.com/discord" target="_blank" rel="noopener" title="Discord" aria-label="Discord"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.32 4.37A19.8 19.8 0 0 0 15.45 3c-.2.36-.44.85-.6 1.23a18.3 18.3 0 0 0-5.7 0c-.16-.38-.4-.87-.6-1.23a19.7 19.7 0 0 0-4.87 1.37C.55 8.9-.32 13.3.11 17.63a19.9 19.9 0 0 0 6 3.03c.48-.66.9-1.36 1.27-2.1-.7-.26-1.36-.58-1.99-.96.17-.12.33-.25.49-.38a14.2 14.2 0 0 0 12.24 0c.16.13.32.26.49.38-.63.38-1.3.7-2 .96.37.74.8 1.44 1.27 2.1a19.8 19.8 0 0 0 6-3.03c.5-5.03-.85-9.39-3.55-13.26ZM8.02 15c-1.18 0-2.15-1.09-2.15-2.42 0-1.34.95-2.43 2.15-2.43 1.2 0 2.17 1.09 2.15 2.43 0 1.33-.95 2.42-2.15 2.42Zm7.96 0c-1.18 0-2.15-1.09-2.15-2.42 0-1.34.95-2.43 2.15-2.43 1.2 0 2.17 1.09 2.15 2.43 0 1.33-.94 2.42-2.15 2.42Z"/></svg><span class="lu-nav-badge">1100+&#8202;<span style="font-size:0.715em">🟢</span></span></a>
+    <span class="lu-nav-sep"></span>
+    <div class="switch" id="theme-switch" role="button" aria-label="Toggle theme"></div>
+    <a class="he-cta" href="/pricing/" aria-label="LU Cloud plans and what they include"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>Cloud</a>
+    <a class="lu-nav-dl" href="https://github.com/PurpleDoubleD/locally-uncensored/releases/latest"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>Download</a>
+    <button type="button" class="lu-nav-toggle" aria-label="Menu"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+  </div>
+</nav>
+<div class="container lu-doc">
+  <div class="breadcrumb"><a href="../">Locally Uncensored</a> / <a href="./">Blog</a> / This Post</div>
+
+  <div class="post-meta">
+    <span class="post-tag">Guide</span>
+    <span>October 18, 2026</span>
+    <span>&middot;</span>
+    <span>7 min read</span>
+  </div>
+
+  <article>
+    <h1>Local AI Computer Use: Let an Agent Control Your PC and Keep the Controls</h1>
+
+    <p>Since version 3.0.6, <a href="https://github.com/PurpleDoubleD/locally-uncensored">Locally Uncensored</a> can let a model look at your screen and use the mouse and the keyboard in apps you approve. We call it computer control. It works with a local model, it is off until you switch it on, and it runs in the foreground with your real pointer, so you see every move.</p>
+
+    <p>Computer control is in beta. It is new and not proven in every app yet, so watch what it does and stop it when it goes wrong. Our check in the real app ran on Windows. On a Mac it is in the app but not fully tested yet, and on Linux it has not been run in the app.</p>
+
+    <h2>Step 1: Switch It On</h2>
+
+    <p>Go to Settings, Agent, Agent Permissions, Computer control. From then on the agent chat can use it. The <a href="/guide/agent/">agent chapter of the handbook</a> explains the permission levels around it.</p>
+
+    <p>In Voice, a session can use the screen once Where it may work is set to Whole computer, and choosing that level also switches computer control on. Voice is a beta too, and English only. The <a href="talk-to-local-llm-voice-chat.html">Voice guide</a> covers that side.</p>
+
+    <h2>Step 2: Ask for Something</h2>
+
+    <p>Write the task in the agent chat the way you would explain it to a person at your desk. For example:</p>
+
+    <ul>
+      <li>"Open Notepad and type a shopping list with milk, bread and coffee."</li>
+      <li>"Scroll the open web page down to the comments."</li>
+    </ul>
+
+    <p>Start with short tasks in one app. Small local models misjudge when a task is finished, so a task can end as stopped although the work on the screen is done.</p>
+
+    <h2>Step 3: The Card in Every New Chat</h2>
+
+    <p>The first time a chat wants the screen, a card in the conversation asks "Allow computer control in this chat?" with Allow and Deny. Until you click, LU looks at nothing and does nothing: no screenshot, no list of windows, no click.</p>
+
+    <p>The yes holds for that one chat. A new chat asks again, and so does every chat after the app was restarted. No setting, no permission level and no autonomous session skips the card, and neither does a key or a spoken word. With Deny the model is told that you did not allow it.</p>
+
+    <p>Before you click Allow, close what the model should not see. A picture of the screen shows the whole display, including windows of apps you have not allowed.</p>
+
+    <h2>Step 4: Questions per App and per Action</h2>
+
+    <p><strong>Per app.</strong> LU asks before it touches an app for the first time. You can allow the app once, for this session or always, or decline. The question starts with the focus on Deny.</p>
+
+    <p><strong>Per action.</strong> By default a session is supervised: you confirm each click and each piece of typing. The question stands directly above the input field. You answer it with the mouse, so the app LU works in keeps the focus.</p>
+
+    <h3>Supervised or Autonomous</h3>
+
+    <p>Switch on Autonomous in a question or in the bar, and LU asks only before anything that sends, buys, deletes or changes permissions. That holds for the session and ends with it. The autonomous mode exists on Windows only.</p>
+
+    <table>
+      <thead><tr><th>Mode</th><th>What LU asks</th></tr></thead>
+      <tbody>
+        <tr><td>Supervised (default)</td><td>Every click and every piece of typing</td></tr>
+        <tr><td>Autonomous (one session, Windows)</td><td>Only sensitive actions</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Sensitive Actions Always Need Your Click</h3>
+
+    <p>Anything that sends, buys, deletes or changes permissions is asked with the reason in red, in a supervised session as in an autonomous one. The same goes for a click whose target LU cannot name, a button or link without a name, and typing when LU cannot check which field has the focus. On Windows and Linux, Alt with a letter is asked too, because it can press a button or open a menu wherever the focus is in the window. A double click on a program, an installer, a script or a shortcut asks first as well.</p>
+
+    <h2>What LU Never Touches</h2>
+
+    <p>These are fixed and cannot be allowed:</p>
+
+    <ul>
+      <li>Terminals and shells</li>
+      <li>Password managers</li>
+      <li>Sign-in and permission dialogs of the system</li>
+      <li>System settings for security and accounts</li>
+      <li>The Run dialog and system launchers</li>
+      <li>Windows that run with administrator rights</li>
+      <li>LU's own window</li>
+    </ul>
+
+    <p>LU does not type into a password field, and no screenshot is taken while a password field has the focus.</p>
+
+    <h2>Pause, Take Over, Stop</h2>
+
+    <table>
+      <thead><tr><th>What you do</th><th>Windows and Linux</th><th>Mac</th></tr></thead>
+      <tbody>
+        <tr><td>Pause</td><td>Ctrl+Alt+Space</td><td>Control+Option+Space</td></tr>
+        <tr><td>Stop at once, also during a pause</td><td>Ctrl+Alt+Esc</td><td>Control+Option+Esc</td></tr>
+      </tbody>
+    </table>
+
+    <p>The Pause and Stop buttons in the small window do the same. In an autonomous session, moving the mouse also pauses LU.</p>
+
+    <p>A paused LU does nothing. It shows what it did so far and asks: Take over or Let it continue. You can add an instruction for the rest of the task. With Let it continue, LU looks at the screen again before it acts, because you may have changed something. With Take over the task ends like a stop. After a stop nothing stays pressed and nothing more is sent.</p>
+
+    <h2>What You See While It Works</h2>
+
+    <p>On Windows the LU window shrinks to a small window in the top right corner of the screen LU works on. It shows the current step, what the model does and the pictures it saw, and it names the two shortcuts. The edge of that screen glows softly in purple while LU works there. Neither the small window nor the glow is in the pictures the model gets.</p>
+
+    <p>On Linux the window stays as it is, and a bar at the top says "LU is controlling this computer" with a Stop button.</p>
+
+    <p>Each look at the screen appears as a small picture on the block of its tool call. The pictures are kept in memory only, at most 24, and are not written to the conversation. With a cloud model as the model that looks at the screen, the screenshots go to that provider.</p>
+
+    <h2>Which Model Sees the Screen</h2>
+
+    <p>The setting is Settings, Agent, Agent Permissions, Computer control, Model that looks at the screen. The default is Same as the chat model.</p>
+
+    <ul>
+      <li>A model that can see images gets the screenshots, and on Windows the list of buttons and fields of the window next to them</li>
+      <li>A model that cannot see images works on Windows from that list alone</li>
+      <li>On macOS and Linux there is no such list, so the model needs image input there</li>
+    </ul>
+
+    <p>A local model sees images only while it is loaded with its image part, a second file next to the model. You can also pick another local model or a cloud model with image input.</p>
+
+    <p>We compared the two ways on Windows on two tasks, three runs each. Both finished all six runs. The runs with the picture took 497 seconds against 381 for the list alone. Two tasks are a small sample, so treat this as a hint.</p>
+
+    <p>In our Windows test, a local 9B chat model without image input worked from the list. Typing a note in Notepad by voice took 11 to 22 seconds from the end of the command to the spoken result. That was measured before the card in every new chat existed, so your click on Allow comes on top.</p>
+
+    <p>Holo 3.1 9B is in the model catalog as a screen model, marked Beta. In our test on Windows it finished a simple typing task in 1 of 3 runs. It is recommended from 16 GB of video memory and does not fit next to a 9B chat model on a 12 GB card.</p>
+
+    <h2>Limits of a Task</h2>
+
+    <p>A screen task ends after at most 25 steps or 8 minutes, and the time you take to answer a question counts. There is no background mode.</p>
+
+    <h2>Where It Has Been Tested</h2>
+
+    <table>
+      <thead><tr><th>System</th><th>State</th></tr></thead>
+      <tbody>
+        <tr><td>Windows</td><td>Checked point by point in the real app on one Windows 10 machine</td></tr>
+        <tr><td>macOS</td><td>In the app but not fully tested yet. No list of buttons and fields</td></tr>
+        <tr><td>Linux</td><td>Not run in the app. X11 sessions only</td></tr>
+      </tbody>
+    </table>
+
+    <p>On a Mac, macOS has to grant LU two permissions first: Accessibility and Screen Recording. They come on top of the card in every chat. Screen Recording takes effect only after LU was quit and opened again. This permission path has not been confirmed in the running app on a real Mac yet. Because LU cannot name what a click would press on a Mac, every click there is asked as a sensitive action.</p>
+
+    <p>Under Wayland on Linux an app cannot see other windows or send them input, and LU says so.</p>
+
+    <div class="callout info">
+      <div class="callout-title">Known limits</div>
+      Eight corrections and ten security fixes made after the Windows check have run in automated tests only. Text on the screen can try to give the model instructions. LU marks what it reads from the screen as untrusted and asks before sensitive actions, but for anything that matters, stay in the supervised mode. The words LU uses to spot a sensitive button are a list, and a wording the list does not know is not recognised.
+    </div>
+
+    <h2>Related</h2>
+
+    <ul>
+      <li><a href="locally-uncensored-v3-0-6-release.html">v3.0.6 release notes</a>, everything else in this release</li>
+      <li><a href="talk-to-local-llm-voice-chat.html">Talk to a local LLM</a>, the Voice guide</li>
+      <li><a href="/vs/lm-studio/">Locally Uncensored vs LM Studio</a>, the comparison page</li>
+    </ul>
+
+    <hr>
+
+    <p><em>Locally Uncensored is AGPL-3.0 licensed and built by <a href="https://github.com/PurpleDoubleD">PurpleDoubleD</a>. Corrections welcome on <a href="https://github.com/PurpleDoubleD/locally-uncensored/discussions">GitHub Discussions</a> or in the <a href="https://locallyuncensored.com/discord">Discord</a>.</em></p>
+    <h2>In the handbook</h2>
+
+    <ul>
+      <li><a href="/guide/agent/">Agent</a>, the tools, Agent Permissions and approvals</li>
+      <li><a href="/guide/settings-and-troubleshooting/">Settings and troubleshooting</a>, every settings tab and where the log file is</li>
+    </ul>
+  </article>
+
+  <div class="post-footer">
+    <p>Locally Uncensored is free, open source and runs on your own machine</p>
+    <p style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin:0">
+      <a href="https://github.com/PurpleDoubleD/locally-uncensored/releases/latest/download/Locally.Uncensored_3.0.6_x64-setup.exe" class="cta-btn" download>Download for Windows</a>
+      <a href="https://github.com/PurpleDoubleD/locally-uncensored/releases/latest/download/LU_3.0.6_aarch64.dmg" class="cta-btn" download>Download for Mac (Apple Silicon)</a>
+      <a href="https://github.com/PurpleDoubleD/locally-uncensored/releases/latest/download/Locally.Uncensored_3.0.6_amd64.AppImage" class="cta-btn" download>Download for Linux</a>
+    </p>
+    <p style="margin-top:14px;margin-bottom:0">No GPU? LU Cloud runs in a browser, paid from credit packs that start at 15 EUR and need no subscription. <a href="/pricing/">See what it costs</a> or <a href="https://lu-labs.ai/pricing?tab=credits&amp;src=luc-local-ai-computer-contro-end" target="_blank" rel="noopener">open LU Cloud</a>.</p>
+  </div>
+</div>
+
+<footer>
+  <div class="footer-row footer-meta"><span>&copy; 2026 &middot; Locally Uncensored &middot; AGPL-3.0</span></div>
+  <div class="footer-row footer-links">
+    <a href="https://locallyuncensored.com/blog/">Blog</a>
+    <a href="https://locallyuncensored.com/guide/">Guide</a>
+    <a href="https://locallyuncensored.com/pricing/">Pricing</a>
+    <a href="https://locallyuncensored.com/cloud/">LU Cloud</a>
+    <a href="https://locallyuncensored.com/uncensored-ai-chat-online/">Uncensored AI chat online</a>
+    <a href="https://locallyuncensored.com/uncensored-ai-image-generator-online/">Image generator online</a>
+    <a href="https://locallyuncensored.com/uncensored-ai-video-generator-online/">Video generator online</a>
+    <a href="https://locallyuncensored.com/alternatives/">Alternatives</a>
+    <a href="https://locallyuncensored.com/is-locally-uncensored-safe/">Is it safe?</a>
+    <a href="https://locallyuncensored.com/remote-access/">Remote access</a>
+    <a href="https://locallyuncensored.com/discord" target="_blank" rel="noopener">Discord</a>
+    <a href="https://github.com/PurpleDoubleD/locally-uncensored">GitHub</a>
+    <a href="https://github.com/PurpleDoubleD/locally-uncensored/discussions">Discussions</a>
+    <a href="https://github.com/PurpleDoubleD/locally-uncensored/issues">Issues</a>
+    <a href="https://reddit.com/user/GroundbreakingMall54">Reddit</a>
+    <a href="https://www.linkedin.com/in/david-drobnitza-locallyuncensored/" rel="me noopener" target="_blank">LinkedIn</a>
+    <a href="https://locallyuncensored.com/privacy/">Privacy</a>
+    <a href="https://locallyuncensored.com/terms/">Terms</a>
+    <a href="https://locallyuncensored.com/impressum/">Impressum</a>
+  </div>
+</footer>
+</body>
+</html>

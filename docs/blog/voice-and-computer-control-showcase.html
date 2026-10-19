@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Voice Plus Computer Control: A Note in Notepad, Start to Finish</title>
+<meta name="description" content="One measured example of a local AI voice assistant controlling the computer: a note typed into Notepad by voice in 11 to 22 seconds, step by step, with limits.">
+<meta name="keywords" content="ai voice assistant control computer local, local voice assistant computer control, voice control pc local ai, locally uncensored voice computer control">
+<meta property="og:title" content="Voice Plus Computer Control: A Note in Notepad, Start to Finish">
+<meta property="og:description" content="Talk to a local model and let it type a note in Notepad: the card you click, the questions you answer by voice, how to pause, and what has not been tested.">
+<meta property="og:image" content="https://raw.githubusercontent.com/PurpleDoubleD/locally-uncensored/master/docs/social-preview.png">
+<meta property="og:url" content="https://locallyuncensored.com/blog/voice-and-computer-control-showcase.html">
+<meta property="og:type" content="article">
+<meta property="article:published_time" content="2026-10-18">
+<meta property="article:author" content="PurpleDoubleD">
+<meta property="article:tag" content="Guide">
+<meta property="article:tag" content="Voice">
+<meta property="article:tag" content="Computer Control">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Voice Plus Computer Control, Start to Finish">
+<meta name="twitter:description" content="Talk to a local model and let it type a note in Notepad: the card you click, the questions you answer by voice, how to pause, and what has not been tested.">
+<meta name="twitter:image" content="https://raw.githubusercontent.com/PurpleDoubleD/locally-uncensored/master/docs/social-preview.png">
+<link rel="canonical" href="https://locallyuncensored.com/blog/voice-and-computer-control-showcase.html">
+<meta name="robots" content="index, follow">
+<meta name="theme-color" content="#0a0a0a">
+<link rel="icon" href="../favicon.png">
+<!-- Privacy: No external fonts loaded. Using system fonts. -->
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"BlogPosting","headline":"Voice Plus Computer Control: A Note in Notepad, Start to Finish","description":"One measured example of a local AI voice assistant controlling the computer: a note typed into Notepad by voice in 11 to 22 seconds, step by step, with limits.","image":"https://raw.githubusercontent.com/PurpleDoubleD/locally-uncensored/master/docs/social-preview.png","datePublished":"2026-10-18","dateModified":"2026-10-18","inLanguage":"en","author":{"@type":"Person","name":"PurpleDoubleD","url":"https://github.com/PurpleDoubleD"},"publisher":{"@type":"Organization","name":"Locally Uncensored","url":"https://locallyuncensored.com/"},"mainEntityOfPage":{"@type":"WebPage","@id":"https://locallyuncensored.com/blog/voice-and-computer-control-showcase.html"},"keywords":"ai voice assistant control computer local, local voice assistant computer control, voice control pc local ai, locally uncensored voice computer control"}
+</script>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"How long does a voice task on the screen take?","acceptedAnswer":{"@type":"Answer","text":"In our test on Windows, typing a note in Notepad by voice took 11 to 22 seconds from the end of the command to the spoken result, with a local 9B model working from the list of buttons and fields. That was measured before the card in every new chat existed, so your click on Allow comes on top."}},{"@type":"Question","name":"Can I allow computer control by saying yes?","acceptedAnswer":{"@type":"Answer","text":"No. The card \"Allow computer control in this chat?\" needs a click on Allow. A spoken yes gets the answer \"This one needs your click on the screen.\", and a spoken no or stop declines."}},{"@type":"Question","name":"What can I confirm by voice?","acceptedAnswer":{"@type":"Answer","text":"An ordinary action such as a click, a scroll or text in a field. A sensitive action, anything that sends, buys, deletes or changes permissions, always needs your click."}},{"@type":"Question","name":"How do I pause a voice task?","acceptedAnswer":{"@type":"Answer","text":"Say stop or wait, or hold on or pause. Only the word alone pauses. The paused view is then answered with a click."}},{"@type":"Question","name":"Does this work on a Mac or Linux?","acceptedAnswer":{"@type":"Answer","text":"On a Mac, computer control is in the app but not fully tested yet, and every click there needs your click. On Linux, Voice and computer control have not been run in the app. Voice is English only and in beta."}}]}
+</script>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://locallyuncensored.com/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://locallyuncensored.com/blog/"},{"@type":"ListItem","position":3,"name":"Voice Plus Computer Control: A Note in Notepad","item":"https://locallyuncensored.com/blog/voice-and-computer-control-showcase.html"}]}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/lu.css">
+<script defer src="/assets/lu.js"></script>
+  <script data-goatcounter="https://purple47.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
+</head>
+<body>
+<nav class="lu-nav">
+  <a class="lu-nav-brand" href="/" aria-label="Locally Uncensored">
+    <span class="lu-mono" data-mono="nav" data-size="40" aria-hidden="true"></span>
+    <span class="lu-nav-word">Locally <span class="accent">Uncensored</span></span>
+  </a>
+  <div class="lu-nav-links" id="lu-nav-links">
+    <a class="lu-nav-link" href="/">Home</a>
+    <a class="lu-nav-link" href="/pricing/">Pricing</a>
+    <a class="lu-nav-link" href="/blog/">Blog</a>
+    <a class="lu-nav-link" href="/guide/">Guide</a>
+    <a class="lu-nav-link" href="/remote-access/">Remote</a>
+  </div>
+  <div class="lu-nav-right">
+    <a class="lu-nav-icon" href="https://github.com/PurpleDoubleD/locally-uncensored" title="GitHub" aria-label="GitHub"><svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.37.5 0 5.87 0 12.5c0 5.3 3.44 9.8 8.21 11.39.6.11.82-.26.82-.58 0-.29-.01-1.04-.02-2.05-3.34.73-4.04-1.61-4.04-1.61-.55-1.39-1.33-1.76-1.33-1.76-1.09-.75.08-.73.08-.73 1.2.08 1.84 1.24 1.84 1.24 1.07 1.83 2.81 1.3 3.5.99.11-.78.42-1.3.76-1.6-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.13-.3-.54-1.52.11-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 6.01 0c2.29-1.55 3.3-1.23 3.3-1.23.65 1.66.24 2.88.12 3.18.77.84 1.23 1.91 1.23 3.22 0 4.61-2.8 5.63-5.48 5.92.43.37.81 1.1.81 2.22 0 1.6-.01 2.9-.01 3.29 0 .32.21.7.82.58A12.01 12.01 0 0 0 24 12.5C24 5.87 18.63.5 12 .5Z"/></svg><span class="lu-nav-badge">2000+&#8202;⭐</span></a>
+    <a class="lu-nav-icon discord" href="https://locallyuncensored.com/discord" target="_blank" rel="noopener" title="Discord" aria-label="Discord"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.32 4.37A19.8 19.8 0 0 0 15.45 3c-.2.36-.44.85-.6 1.23a18.3 18.3 0 0 0-5.7 0c-.16-.38-.4-.87-.6-1.23a19.7 19.7 0 0 0-4.87 1.37C.55 8.9-.32 13.3.11 17.63a19.9 19.9 0 0 0 6 3.03c.48-.66.9-1.36 1.27-2.1-.7-.26-1.36-.58-1.99-.96.17-.12.33-.25.49-.38a14.2 14.2 0 0 0 12.24 0c.16.13.32.26.49.38-.63.38-1.3.7-2 .96.37.74.8 1.44 1.27 2.1a19.8 19.8 0 0 0 6-3.03c.5-5.03-.85-9.39-3.55-13.26ZM8.02 15c-1.18 0-2.15-1.09-2.15-2.42 0-1.34.95-2.43 2.15-2.43 1.2 0 2.17 1.09 2.15 2.43 0 1.33-.95 2.42-2.15 2.42Zm7.96 0c-1.18 0-2.15-1.09-2.15-2.42 0-1.34.95-2.43 2.15-2.43 1.2 0 2.17 1.09 2.15 2.43 0 1.33-.94 2.42-2.15 2.42Z"/></svg><span class="lu-nav-badge">1100+&#8202;<span style="font-size:0.715em">🟢</span></span></a>
+    <span class="lu-nav-sep"></span>
+    <div class="switch" id="theme-switch" role="button" aria-label="Toggle theme"></div>
+    <a class="he-cta" href="/pricing/" aria-label="LU Cloud plans and what they include"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>Cloud</a>
+    <a class="lu-nav-dl" href="https://github.com/PurpleDoubleD/locally-uncensored/releases/latest"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>Download</a>
+    <button type="button" class="lu-nav-toggle" aria-label="Menu"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+  </div>
+</nav>
+<div class="container lu-doc">
+  <div class="breadcrumb"><a href="../">Locally Uncensored</a> / <a href="./">Blog</a> / This Post</div>
+
+  <div class="post-meta">
+    <span class="post-tag">Guide</span>
+    <span>October 18, 2026</span>
+    <span>&middot;</span>
+    <span>4 min read</span>
+  </div>
+
+  <article>
+    <h1>Voice Plus Computer Control: A Note in Notepad, Start to Finish</h1>
+
+    <p>In Locally Uncensored 3.0.6 you can talk to your model, and a model can use the mouse and the keyboard in apps you approve. The two work together. This post follows one task we measured from the first word to the spoken result: typing a note in Notepad by voice.</p>
+
+    <p>Both features are in beta. Voice is English only. Our check in the real app ran on Windows. On a Mac, computer control is in the app but not fully tested yet, and on Linux neither feature has been run in the app.</p>
+
+    <h2>What We Measured</h2>
+
+    <p>In our test on Windows, typing a note in Notepad by voice took 11 to 22 seconds from the end of the command to the spoken result. It succeeded in 6 of 6 runs. The model was a local 9B chat model without image input, working from the list of buttons and fields that the app exposes.</p>
+
+    <p>That number was measured before the card that asks in every new chat existed. In a new chat your click on Allow comes on top.</p>
+
+    <h2>Step by Step</h2>
+
+    <h3>1. Give Voice the Screen</h3>
+
+    <p>Open Voice. Next to the title sit four switches. Agent has to be on, and Where it may work has to be set to Whole computer. Workspace only, the default, has no screen at all.</p>
+
+    <p>The first time you choose Whole computer, LU asks in a dialog titled "Let Voice work on the whole computer?". Your system asks once more each time LU was started. Choosing that level also switches computer control on.</p>
+
+    <h3>2. Say the Task</h3>
+
+    <p>Start a session and say what you want, for example: "Open Notepad and write: call the dentist on Monday."</p>
+
+    <h3>3. Click Allow on the Card</h3>
+
+    <p>The first screen task brings a card onto the voice surface: "Allow computer control in this chat?" LU says aloud: "Before I use this computer, I need your permission. Please click Allow or Deny on the screen."</p>
+
+    <p>This is the one step you cannot do by voice. A spoken yes does not allow it. LU answers with "This one needs your click on the screen." and the model does not hear the yes. A spoken no or stop declines, like Deny. Until you click Allow, LU looks at nothing and does nothing.</p>
+
+    <h3>4. Answer the Questions</h3>
+
+    <p>On Windows the LU window shrinks to a small window in the top right corner, and the edge of the screen glows softly in purple. LU asks its questions aloud. For an ordinary action, a click, a scroll or text in a field, you can answer yes or no. A spoken no is always taken.</p>
+
+    <p>A sensitive action never takes a spoken yes. Anything that sends, buys, deletes or changes permissions needs your click, because speech recognition can mishear and the microphone hears the whole room. A button without a name counts as sensitive, and so does Alt with a letter on Windows and Linux.</p>
+
+    <h3>5. Pause if Something Looks Wrong</h3>
+
+    <p>Say "stop" or "wait" while the task runs and it pauses. "Hold on" and "pause" work too. Only the word alone does that: "Wait, what is two plus two?" is a question for the model. The paused view asks whether you take over or let LU continue, and that view is answered with a click. Ctrl+Alt+Space pauses as well, and Ctrl+Alt+Esc stops at once.</p>
+
+    <h3>6. Hear the Result</h3>
+
+    <p>When the note is typed, LU tells you the result aloud. The screen task and its pictures stay in the transcript as a block you can open. The pictures live in memory only.</p>
+
+    <div class="callout info">
+      <div class="callout-title">Where this was tested</div>
+      Voice and computer control were checked together on one Windows 10 machine. For most of that check the speech was a recording played into the app as the microphone. On a Mac, computer control is in the app but not fully tested yet, and every click there needs your click, also in a voice session. On Linux, Voice and computer control have not been run in the app. Voice is English only and in beta.
+    </div>
+
+    <h2>Things to Try</h2>
+
+    <p>These are ideas, not results. We have not measured them, so start supervised and watch what happens.</p>
+
+    <ul>
+      <li>"Open Notepad and write a shopping list with three items." Then ask for one more item</li>
+      <li>"Scroll the open page down to the end." A plain scroll is an ordinary action, so a spoken yes can confirm it</li>
+    </ul>
+
+    <p>Small local models misjudge when a task is finished. A task can end as stopped although the note is already on the screen. A screen task also ends after 8 minutes at the latest.</p>
+
+    <h2>Which Model to Use</h2>
+
+    <p>A 9B model such as Qwen 3.5 9B is a good start on a 12 GB card. On a Mac there is no list of buttons and fields, so the model needs image input there. The <a href="local-ai-computer-control.html">computer control guide</a> explains the screen model setting, and the <a href="talk-to-local-llm-voice-chat.html">Voice guide</a> covers setup, voices and the four switches.</p>
+
+    <h2>Related</h2>
+
+    <ul>
+      <li><a href="local-ai-computer-control.html">Local AI computer use</a>, every question LU asks and how to stop it</li>
+      <li><a href="talk-to-local-llm-voice-chat.html">Talk to a local LLM</a>, the full Voice guide</li>
+      <li><a href="/alternatives/">Alternatives</a>, how LU compares with other local AI apps</li>
+    </ul>
+
+    <hr>
+
+    <p><em>Locally Uncensored is AGPL-3.0 licensed and built by <a href="https://github.com/PurpleDoubleD">PurpleDoubleD</a>. Corrections welcome on <a href="https://github.com/PurpleDoubleD/locally-uncensored/discussions">GitHub Discussions</a> or in the <a href="https://locallyuncensored.com/discord">Discord</a>.</em></p>
+    <h2>In the handbook</h2>
+
+    <ul>
+      <li><a href="/guide/agent/">Agent</a>, the tools and permissions a voice session shares</li>
+      <li><a href="/guide/chat/">Chat</a>, the model picker and dictation</li>
+    </ul>
+  </article>
+
+  <div class="post-footer">
+    <p>Locally Uncensored is free, open source and runs on your own machine</p>
+    <p style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin:0">
+      <a href="https://github.com/PurpleDoubleD/locally-uncensored/releases/latest/download/Locally.Uncensored_3.0.6_x64-setup.exe" class="cta-btn" download>Download for Windows</a>
+      <a href="https://github.com/PurpleDoubleD/locally-uncensored/releases/latest/download/LU_3.0.6_aarch64.dmg" class="cta-btn" download>Download for Mac (Apple Silicon)</a>
+      <a href="https://github.com/PurpleDoubleD/locally-uncensored/releases/latest/download/Locally.Uncensored_3.0.6_amd64.AppImage" class="cta-btn" download>Download for Linux</a>
+    </p>
+    <p style="margin-top:14px;margin-bottom:0">No GPU? LU Cloud runs in a browser, paid from credit packs that start at 15 EUR and need no subscription. <a href="/pricing/">See what it costs</a> or <a href="https://lu-labs.ai/pricing?tab=credits&amp;src=luc-voice-and-computer-contr-end" target="_blank" rel="noopener">open LU Cloud</a>.</p>
+  </div>
+</div>
+
+<footer>
+  <div class="footer-row footer-meta"><span>&copy; 2026 &middot; Locally Uncensored &middot; AGPL-3.0</span></div>
+  <div class="footer-row footer-links">
+    <a href="https://locallyuncensored.com/blog/">Blog</a>
+    <a href="https://locallyuncensored.com/guide/">Guide</a>
+    <a href="https://locallyuncensored.com/pricing/">Pricing</a>
+    <a href="https://locallyuncensored.com/cloud/">LU Cloud</a>
+    <a href="https://locallyuncensored.com/uncensored-ai-chat-online/">Uncensored AI chat online</a>
+    <a href="https://locallyuncensored.com/uncensored-ai-image-generator-online/">Image generator online</a>
+    <a href="https://locallyuncensored.com/uncensored-ai-video-generator-online/">Video generator online</a>
+    <a href="https://locallyuncensored.com/alternatives/">Alternatives</a>
+    <a href="https://locallyuncensored.com/is-locally-uncensored-safe/">Is it safe?</a>
+    <a href="https://locallyuncensored.com/remote-access/">Remote access</a>
+    <a href="https://locallyuncensored.com/discord" target="_blank" rel="noopener">Discord</a>
+    <a href="https://github.com/PurpleDoubleD/locally-uncensored">GitHub</a>
+    <a href="https://github.com/PurpleDoubleD/locally-uncensored/discussions">Discussions</a>
+    <a href="https://github.com/PurpleDoubleD/locally-uncensored/issues">Issues</a>
+    <a href="https://reddit.com/user/GroundbreakingMall54">Reddit</a>
+    <a href="https://www.linkedin.com/in/david-drobnitza-locallyuncensored/" rel="me noopener" target="_blank">LinkedIn</a>
+    <a href="https://locallyuncensored.com/privacy/">Privacy</a>
+    <a href="https://locallyuncensored.com/terms/">Terms</a>
+    <a href="https://locallyuncensored.com/impressum/">Impressum</a>
+  </div>
+</footer>
+</body>
+</html>
