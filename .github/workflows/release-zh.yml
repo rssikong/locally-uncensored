@@ -249,20 +249,10 @@ jobs:
 
             > 全部免管理员权限。LU by LU Labs。
 
-  # A red run from a dropped npm connection or a flaky e2e test should not need a
-  # human. `run_attempt` is the guard: attempt 1 and 2 may re-run the failed
-  # jobs, attempt 3 does not — two automatic retries, then it stays red and the
-  # workflow that dispatched this run reports it.
-  retry:
-    needs: build
-    if: ${{ always() && failure() && github.run_attempt <= 2 }}
-    runs-on: ubuntu-22.04
-    permissions:
-      actions: write
-    steps:
-      - name: Re-run the failed jobs
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          echo "attempt ${{ github.run_attempt }} failed, re-running the failed jobs"
-          gh run rerun ${{ github.run_id }} --failed --repo ${{ github.repository }}
+  # No automatic re-run job here on purpose. GitHub refuses to re-run a run that
+  # is still in progress, and a job inside that run is by definition still in it
+  # ("Cannot rerun a run that is in progress"). The retry that works is the
+  # hourly one: `watch-upstream.yml` treats a zh tag with no GitHub release as
+  # unfinished work and dispatches this workflow again — same tag, next hour.
+  # Step-level retries (`npm ci`, three attempts) still happen immediately.
+

@@ -75,21 +75,32 @@ jobs:
       - name: What is new?
         id: check
         shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           behind=$(git rev-list --count HEAD..upstream/master)
           tag=$(git describe --tags --abbrev=0 upstream/master 2>/dev/null || echo '')
+          zh_tag=''
           released=''
           if [ -n "$tag" ]; then
             base="${tag#v}"
-            released=$(git tag --list "v${base}-zh.*" | sort -V | tail -1)
+            zh_tag=$(git tag --list "v${base}-zh.*" | sort -V | tail -1)
+            # A tag alone is not a release. `gh run rerun` cannot re-run a run
+            # that is still in progress, so the retry lives here: a zh tag with
+            # no GitHub release means the build finished red, and the next
+            # hourly run dispatches it again.
+            if [ -n "$zh_tag" ] && gh release view "$zh_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              released="$zh_tag"
+            fi
           fi
           {
             echo "behind=$behind"
             echo "upstream_tag=$tag"
+            echo "zh_tag=$zh_tag"
             echo "released=$released"
           } >> "$GITHUB_OUTPUT"
-          echo "上游领先 ${behind} 个提交；最新 tag=${tag:-无}；已发布=${released:-无}"
+          echo "上游领先 ${behind} 个提交；最新 tag=${tag:-无}；中文 tag=${zh_tag:-无}；已发布=${released:-无}"
 
       - name: Nothing to do
         if: steps.check.outputs.behind == '0' && (steps.check.outputs.upstream_tag == '' || (steps.check.outputs.released != '' && inputs.force != true))
@@ -237,6 +248,7 @@ jobs:
         shell: bash
         env:
           TAG: ${{ steps.check.outputs.upstream_tag }}
+          ZH_TAG: ${{ steps.check.outputs.zh_tag }}
           RELEASED: ${{ steps.check.outputs.released }}
           FORCE: ${{ inputs.force }}
         run: |
@@ -245,6 +257,14 @@ jobs:
           if [ -n "$RELEASED" ] && [ "$FORCE" != 'true' ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "已发布过 ${RELEASED}，跳过"
+            exit 0
+          fi
+          # A tag that exists without a release is a build that ended red: keep
+          # that tag and try again, instead of inventing zh.2 for the same commit.
+          if [ -n "$ZH_TAG" ] && [ "$FORCE" != 'true' ]; then
+            echo "new_tag=${ZH_TAG}" >> "$GITHUB_OUTPUT"
+            echo "skip=false"        >> "$GITHUB_OUTPUT"
+            echo "上次发布未完成，重试 ${ZH_TAG}"
             exit 0
           fi
           n=1
@@ -261,8 +281,13 @@ jobs:
         run: |
           # The tag points at OUR commit — upstream's tag would build the
           # English tree, because release-zh.yml checks out the tag it is given.
-          git tag "$NEW_TAG"
-          git push origin "$NEW_TAG"
+          # On a retry the tag is already there; pushing it again would fail.
+          if git tag --list "$NEW_TAG" | grep -q .; then
+            echo "tag 已存在（上次发布未完成），直接重试"
+          else
+            git tag "$NEW_TAG"
+            git push origin "$NEW_TAG"
+          fi
           gh workflow run release-zh.yml --repo "$GITHUB_REPOSITORY" -f tag="$NEW_TAG"
           echo "已触发 $NEW_TAG 的构建与发布"
 
