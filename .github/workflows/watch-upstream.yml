@@ -223,16 +223,35 @@ jobs:
           # local notes. The replayed patches bring their own files, which the
           # merge already staged.
           git add src/lib/i18n/zh-CN.ts src/lib/i18n/skip.json 2>/dev/null || true
-          if git diff --cached --quiet; then
-            echo '没有需要提交的内容'
-          else
+
+          # A clean merge has already made its commit, and a docs-only upstream
+          # change leaves the dictionary byte-identical — so "nothing staged"
+          # says nothing about whether there is something to push. The push used
+          # to live inside the `else`, which meant every docs-only sync merged,
+          # translated, passed the gate, reported success, and threw the merge
+          # away: `behind` stayed at 1 forever.
+          if ! git diff --cached --quiet; then
             git commit -m "自动同步上游 $(git rev-parse --short upstream/master) 并更新中文词典"
-            git push origin HEAD:master || {
-              echo '推送被拒，rebase 后重试一次'
-              git pull --rebase origin master
-              git push origin HEAD:master
-            }
+          else
+            echo '词典没有新变化，只推送合并提交'
           fi
+
+          if git rev-parse --verify --quiet origin/master >/dev/null; then
+            ahead=$(git rev-list --count HEAD --not origin/master)
+          else
+            ahead='?'
+          fi
+          echo "待推送提交：${ahead}"
+          if [ "$ahead" = '0' ]; then
+            echo '本地没有新提交，跳过推送'
+            exit 0
+          fi
+
+          git push origin HEAD:master || {
+            echo '推送被拒，rebase 后重试一次'
+            git pull --rebase origin master
+            git push origin HEAD:master
+          }
 
       - name: Undo the merge after a dry run
         if: inputs.dry_run == true
