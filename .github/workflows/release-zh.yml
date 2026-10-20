@@ -118,6 +118,26 @@ jobs:
           ref: ${{ inputs.tag }}
           persist-credentials: false
 
+      # Tags older than 73230695 predate `tauri.zh.conf.json`, and both the dry
+      # run and the release hand it to `tauri build` — so building such a tag
+      # died in the first second with "Provided config path … does not exist".
+      # Materialise it for those tags only; a tag that carries the file keeps
+      # using its own copy, byte for byte.
+      #
+      # The payload must stay identical to src-tauri/tauri.zh.conf.json. It is
+      # duplicated because a tag's tree is what gets checked out: there is no
+      # path to the current file from inside an old tag.
+      - name: Chinese build config
+        shell: bash
+        run: |
+          if [ -f src-tauri/tauri.zh.conf.json ]; then
+            echo '这是自带中文构建配置的 tag，按仓库里的那份构建'
+            exit 0
+          fi
+          echo '::warning::这条 tag 早于中文构建配置（73230695 才加入），补一份到工作区；内容与 src-tauri/tauri.zh.conf.json 一致'
+          printf '%s\n' '{"bundle":{"createUpdaterArtifacts":"v1Compatible","windows":{"wix":{"language":["zh-CN"]},"nsis":{"languages":["SimpChinese"]}}}}' \
+            > src-tauri/tauri.zh.conf.json
+
       # <upstream>-<n>, e.g. `3.0.7-1`. The tag says `-zh.1` for humans; the
       # version must be a NUMERIC pre-release or the WiX/MSI bundler refuses it
       # ("optional pre-release identifier ... must be numeric-only").
