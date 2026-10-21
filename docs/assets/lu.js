@@ -278,14 +278,18 @@
     box.className = "lu-phone-app";
     box.setAttribute("aria-label", "Locally Uncensored on your phone");
     box.setAttribute("data-kind", kind);
-    box.innerHTML = kind === "android"
-      ? '<p class="lu-phone-app-title">LU is on your phone now</p>' +
-        '<p>The iPhone app is in review at the App Store, and Google Play follows in the next days to two weeks. On Android you can download it now.</p>' +
-        '<a class="lu-phone-app-cta" href="' + APK_URL + '">Download for Android</a>' +
-        '<p class="lu-phone-app-note">Android 7.0 or newer, 64-bit, about 27 MB. <a href="/android/">How to install</a></p>'
-      : '<p class="lu-phone-app-title">LU for iPhone is on its way</p>' +
-        '<p>The app is in review at the App Store and should arrive there in the next days to two weeks. Until then, use LU Cloud right here in your browser.</p>' +
-        '<a class="lu-phone-app-cta" href="https://lu-labs.ai/app?src=luc-phone-banner">Open LU Cloud</a>';
+    // One slim row (20.10.2026, a third of the old height): phone icon,
+    // two short lines, a compact button, close.
+    var icon = '<svg class="lu-phone-app-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
+      '<rect x="6.5" y="2.5" width="11" height="19" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/>' +
+      '<path d="M10.5 18.2h3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+    box.innerHTML = icon + (kind === "android"
+      ? '<div class="lu-phone-app-text"><p class="lu-phone-app-title">LU on your phone</p>' +
+        '<p class="lu-phone-app-note">iPhone in review, Play soon. <a href="/android/">Install help</a></p></div>' +
+        '<a class="lu-phone-app-cta" href="' + APK_URL + '" aria-label="Download the Android app (APK, about 27 MB)">Get APK</a>'
+      : '<div class="lu-phone-app-text"><p class="lu-phone-app-title">LU for iPhone soon</p>' +
+        '<p class="lu-phone-app-note">In App Store review. Try LU&nbsp;Cloud.</p></div>' +
+        '<a class="lu-phone-app-cta" href="https://lu-labs.ai/app?src=luc-phone-banner">LU Cloud</a>');
     var x = document.createElement("button");
     x.type = "button"; x.className = "lu-phone-app-x"; x.setAttribute("aria-label", "Close"); x.textContent = "\u2715";
     x.addEventListener("click", function () {
