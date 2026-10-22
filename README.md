@@ -223,10 +223,44 @@ The macOS row of the [Download](#download) table says whether the current releas
 
 ## Roadmap
 
-- [ ] Face ID and PuLID in Create, so a character keeps one face across images
-- [ ] Upscale and Erase Object as local lanes; both run in the cloud today
+Updated 22 October 2026. Everything up to 3.0.7 has shipped; [Releases](https://github.com/PurpleDoubleD/locally-uncensored/releases) has the history.
 
-Everything that used to be on this list has shipped. See [Releases](https://github.com/PurpleDoubleD/locally-uncensored/releases) for the history.
+**Now: 3.0.8, built and in testing**
+
+- Videos made in chat play in the chat
+- New web search in chat that keeps working when one search source blocks it
+- Change LU settings by asking in chat, with a confirmation card and undo
+- A picture attached in chat reaches the image tools
+- Create tools in chat and agent hardened: attachments, file names, model choice, error messages, stop and timeouts
+- Exact VRAM planning for local models, with a hint and one click fixes when a model does not fit
+- Less RAM in use while idle on Windows
+- Upscale in Edit
+- Choose where models, the gallery and the runtime are stored
+- Binary files in chat, such as ROMs, reach the tools with their full path
+- AMD graphics cards in ComfyUI
+- Faster start of an answer when the model is already loaded
+- Light mode: icons that were hard to see are fixed
+- Security basics: automated code and dependency checks
+
+**Phone**
+
+- Android: the APK is available now, Google Play follows
+- iPhone: the app is in review at the App Store
+
+**Soon**
+
+- Two graphics cards at once: chat stays usable on one card while a video renders on the other
+- Remove refusals from a local model inside the app (abliteration), with the result in the Model Manager
+- Partner program
+- Complete remote access via the mobile app: Chat, Agent, Code and all of Create from your phone, running on your PC
+
+**Later**
+
+- Ideas from the community, for example a roleplay mode. Add yours in [Discussions](https://github.com/PurpleDoubleD/locally-uncensored/discussions/categories/ideas) or in #feature-requests on Discord
+
+**Last**
+
+- Our own model
 
 ## Tech stack
 
