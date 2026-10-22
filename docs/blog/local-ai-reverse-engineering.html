@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reverse Engineering With a Local, Uncensored Model: REA as a Plugin for Your Agent</title>
+<meta name="description" content="Why reverse engineering with REA works best when the model runs on your own machine, which uncensored 27B models fit, and how Locally Uncensored hands REA to its agent as a plugin.">
+<meta name="keywords" content="local ai reverse engineering, reverse engineering llm local, uncensored model reverse engineering, rea reverse engineer anything, mcp reverse engineering local model, offline reverse engineering ai, qwen 3.8 27b abliterated agent, decompile with local llm, electron app analysis ai, locally uncensored rea">
+<meta property="og:title" content="Reverse Engineering With a Local, Uncensored Model: REA as a Plugin for Your Agent">
+<meta property="og:description" content="REA (Reverse Engineer Anything) analyzes apps locally, but with a cloud agent its findings still go to a cloud model. In Locally Uncensored the model runs on your machine too: one plugin switch, Qwen 3.8 27B or an uncensored build of it, and nothing leaves the computer.">
+<meta property="og:image" content="https://raw.githubusercontent.com/PurpleDoubleD/locally-uncensored/master/docs/social-preview.png">
+<meta property="og:url" content="https://locallyuncensored.com/blog/local-ai-reverse-engineering.html">
+<meta property="og:type" content="article">
+<meta property="article:published_time" content="2026-10-22">
+<meta property="article:author" content="PurpleDoubleD">
+<meta property="article:tag" content="Agents">
+<meta property="article:tag" content="Plugins">
+<meta property="article:tag" content="Uncensored Models">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Reverse Engineering With a Local, Uncensored Model">
+<meta name="twitter:description" content="REA (Reverse Engineer Anything) analyzes apps locally, but with a cloud agent its findings still go to a cloud model. In Locally Uncensored the model runs on your machine too: one plugin switch, Qwen 3.8 27B or an uncensored build of it, and nothing leaves the computer.">
+<meta name="twitter:image" content="https://raw.githubusercontent.com/PurpleDoubleD/locally-uncensored/master/docs/social-preview.png">
+<link rel="canonical" href="https://locallyuncensored.com/blog/local-ai-reverse-engineering.html">
+<meta name="robots" content="index, follow">
+<meta name="theme-color" content="#0a0a0a">
+<link rel="icon" href="../favicon.png">
+<!-- Privacy: No external fonts loaded. Using system fonts. -->
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"BlogPosting","headline":"Reverse Engineering With a Local, Uncensored Model: REA as a Plugin for Your Agent","description":"Why reverse engineering with REA works best when the model runs on your own machine, which uncensored 27B models fit, and how Locally Uncensored hands REA to its agent as a plugin.","image":"https://raw.githubusercontent.com/PurpleDoubleD/locally-uncensored/master/docs/social-preview.png","datePublished":"2026-10-22","dateModified":"2026-10-22","inLanguage":"en","author":{"@type":"Person","name":"PurpleDoubleD","url":"https://github.com/PurpleDoubleD"},"publisher":{"@type":"Organization","name":"Locally Uncensored","url":"https://locallyuncensored.com/"},"mainEntityOfPage":{"@type":"WebPage","@id":"https://locallyuncensored.com/blog/local-ai-reverse-engineering.html"},"keywords":"local ai reverse engineering, reverse engineering llm local, uncensored model reverse engineering, rea reverse engineer anything, mcp reverse engineering local model, offline reverse engineering ai, qwen 3.8 27b abliterated agent, decompile with local llm, electron app analysis ai, locally uncensored rea"}
+</script>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Does REA send my app to the cloud?","acceptedAnswer":{"@type":"Answer","text":"REA's analysis runs locally. What it finds goes to whatever model drives the agent. With a cloud agent that is a cloud model; in Locally Uncensored with a local model, it stays on your machine."}},{"@type":"Question","name":"Which local model works with REA?","acceptedAnswer":{"@type":"Answer","text":"A model of about 27B with a 64K context window. Qwen 3.8 27B on Ollama with 64K context took a test app apart and wrote a complete answer in 3 minutes 15 seconds. Qwen 3.5 9B at 32K ran out of context before an answer."}},{"@type":"Question","name":"Can I use an uncensored model with REA?","acceptedAnswer":{"@type":"Answer","text":"Yes, any local model with tool calling can drive it. The catalog has uncensored builds of Qwen 3.8 27B, such as Qwen 3.8 27B Abliterated and Qwen 3.8 27B HauhauCS Aggressive. Our tested run used the stock model; the uncensored builds have not been run with REA yet."}},{"@type":"Question","name":"Is reverse engineering with REA legal?","acceptedAnswer":{"@type":"Answer","text":"Use it on software you own or are allowed to examine. The rules depend on your country and the license of the software."}},{"@type":"Question","name":"Do I need Ghidra or IDA?","acceptedAnswer":{"@type":"Answer","text":"Not for JavaScript and Electron apps, .NET, Go and Rust programs, Flutter, SQLite and WebAssembly. Ghidra, Hopper, JADX and Frida are used where you have them installed; LU installs none of them."}}]}
+</script>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://locallyuncensored.com/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://locallyuncensored.com/blog/"},{"@type":"ListItem","position":3,"name":"Local AI Reverse Engineering","item":"https://locallyuncensored.com/blog/local-ai-reverse-engineering.html"}]}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/lu.css">
+<script defer src="/assets/lu.js"></script>
+  <script data-goatcounter="https://purple47.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
+</head>
+<body>
+<nav class="lu-nav">
+  <a class="lu-nav-brand" href="/" aria-label="Locally Uncensored">
+    <span class="lu-mono" data-mono="nav" data-size="40" aria-hidden="true"></span>
+    <span class="lu-nav-word">Locally <span class="accent">Uncensored</span></span>
+  </a>
+  <div class="lu-nav-links" id="lu-nav-links">
+    <a class="lu-nav-link" href="/">Home</a>
+    <a class="lu-nav-link" href="/pricing/">Pricing</a>
+    <a class="lu-nav-link" href="/blog/">Blog</a>
+    <a class="lu-nav-link" href="/guide/">Guide</a>
+    <a class="lu-nav-link" href="/remote-access/">Remote</a>
+  </div>
+  <div class="lu-nav-right">
+    <a class="lu-nav-icon" href="https://github.com/PurpleDoubleD/locally-uncensored" title="GitHub" aria-label="GitHub"><svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.37.5 0 5.87 0 12.5c0 5.3 3.44 9.8 8.21 11.39.6.11.82-.26.82-.58 0-.29-.01-1.04-.02-2.05-3.34.73-4.04-1.61-4.04-1.61-.55-1.39-1.33-1.76-1.33-1.76-1.09-.75.08-.73.08-.73 1.2.08 1.84 1.24 1.84 1.24 1.07 1.83 2.81 1.3 3.5.99.11-.78.42-1.3.76-1.6-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.13-.3-.54-1.52.11-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 6.01 0c2.29-1.55 3.3-1.23 3.3-1.23.65 1.66.24 2.88.12 3.18.77.84 1.23 1.91 1.23 3.22 0 4.61-2.8 5.63-5.48 5.92.43.37.81 1.1.81 2.22 0 1.6-.01 2.9-.01 3.29 0 .32.21.7.82.58A12.01 12.01 0 0 0 24 12.5C24 5.87 18.63.5 12 .5Z"/></svg><span class="lu-nav-badge">2000+&#8202;⭐</span></a>
+    <a class="lu-nav-icon discord" href="https://locallyuncensored.com/discord" target="_blank" rel="noopener" title="Discord" aria-label="Discord"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.32 4.37A19.8 19.8 0 0 0 15.45 3c-.2.36-.44.85-.6 1.23a18.3 18.3 0 0 0-5.7 0c-.16-.38-.4-.87-.6-1.23a19.7 19.7 0 0 0-4.87 1.37C.55 8.9-.32 13.3.11 17.63a19.9 19.9 0 0 0 6 3.03c.48-.66.9-1.36 1.27-2.1-.7-.26-1.36-.58-1.99-.96.17-.12.33-.25.49-.38a14.2 14.2 0 0 0 12.24 0c.16.13.32.26.49.38-.63.38-1.3.7-2 .96.37.74.8 1.44 1.27 2.1a19.8 19.8 0 0 0 6-3.03c.5-5.03-.85-9.39-3.55-13.26ZM8.02 15c-1.18 0-2.15-1.09-2.15-2.42 0-1.34.95-2.43 2.15-2.43 1.2 0 2.17 1.09 2.15 2.43 0 1.33-.95 2.42-2.15 2.42Zm7.96 0c-1.18 0-2.15-1.09-2.15-2.42 0-1.34.95-2.43 2.15-2.43 1.2 0 2.17 1.09 2.15 2.43 0 1.33-.94 2.42-2.15 2.42Z"/></svg><span class="lu-nav-badge">1200+&#8202;<span style="font-size:0.715em">🟢</span></span></a>
+    <span class="lu-nav-sep"></span>
+    <div class="switch" id="theme-switch" role="button" aria-label="Toggle theme"></div>
+    <a class="he-cta" href="/pricing/" aria-label="LU Cloud plans and what they include"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>Cloud</a>
+    <a class="lu-nav-dl" href="https://github.com/PurpleDoubleD/locally-uncensored/releases/latest"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>Download</a>
+    <button type="button" class="lu-nav-toggle" aria-label="Menu"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+  </div>
+</nav>
+<div class="container lu-doc">
+  <div class="breadcrumb"><a href="../">Locally Uncensored</a> / <a href="./">Blog</a> / This Post</div>
+
+  <div class="post-meta">
+    <span class="post-tag">Guide</span>
+    <span>October 22, 2026</span>
+    <span>&middot;</span>
+    <span>7 min read</span>
+  </div>
+
+  <article>
+    <h1>Reverse Engineering With a Local, Uncensored Model: REA as a Plugin for Your Agent</h1>
+
+    <p>REA, short for Reverse Engineer Anything, is an open source MCP server that lets an AI agent look inside apps and files: what an Electron app sends and where, how a .NET program is put together, what a binary calls. Its analysis runs on your machine. The model that reads the results and decides the next step usually does not. <a href="https://github.com/PurpleDoubleD/locally-uncensored">Locally Uncensored</a> 3.0.7 closes that gap: REA is a plugin you switch on for the agent, and the agent can run on a local model, including an uncensored one.</p>
+
+    <div class="callout info"><div class="callout-title">What has been tried</div>
+    <p>A full analysis with an answer has run on one Mac, with stock Qwen 3.8 27B on Ollama and LU's tool code outside the app. On Windows, the built app has started REA and handed its tools to a model. The uncensored builds named below have not been run with REA yet. Use REA on software you own or are allowed to examine.</p>
+    </div>
+
+    <h2>Where Your Findings Go</h2>
+
+    <p>REA itself is local in every setup. The difference is the model that drives it:</p>
+
+    <table>
+      <thead><tr><th></th><th>REA with a cloud agent</th><th>REA in LU with a local model</th></tr></thead>
+      <tbody>
+        <tr><td>The analysis</td><td>On your machine</td><td>On your machine</td></tr>
+        <tr><td>Tool results the model reads</td><td>Sent to the cloud model</td><td>Stay on your machine</td></tr>
+        <tr><td>Your questions about the app</td><td>Sent to the cloud model</td><td>Stay on your machine</td></tr>
+        <tr><td>Setup</td><td><code>npx rea-agents setup</code> writes into your agent's settings</td><td>One switch under Plugins</td></tr>
+      </tbody>
+    </table>
+
+    <p>For a closed program from your employer, a client's app under audit or your own unreleased build, that second column is the reason to do it locally. The strings, endpoints and code fragments REA pulls out never leave the computer.</p>
+
+    <h2>Why an Uncensored Model</h2>
+
+    <p>Reverse engineering talk is full of words that safety training reacts to: decompile, bypass, patch, crack the format. A model with its refusals removed answers the question you asked instead of judging the vocabulary. That matters most in long agent runs, where one refusal in step seven ends the whole analysis.</p>
+
+    <p>We have not measured how often a stock model refuses REA tasks. On our test app, stock Qwen 3.8 27B did not refuse and finished the job. An uncensored build is the safer bet when your questions sound rougher than "how does search work".</p>
+
+    <h2>Which Local Models Fit</h2>
+
+    <p>REA works best with a model of about 27B and a context window of 64K or more. Smaller models often stop before they write an answer: Qwen 3.5 9B at 32K ran out of context in our run. These Qwen 3.8 27B builds are in LU's model catalog, all marked for agents:</p>
+
+    <table>
+      <thead><tr><th>Model in the catalog</th><th>What it is</th><th>Size</th></tr></thead>
+      <tbody>
+        <tr><td>Qwen 3.8 27B</td><td>The stock model, tools and switchable thinking. Our tested run used this base on Ollama</td><td>16 GB (UD-Q4_K_M)</td></tr>
+        <tr><td>Qwen 3.8 27B Abliterated (Ollama)</td><td>huihui's abliterated build, one-command pull, vision, tools and thinking</td><td>18 GB</td></tr>
+        <tr><td>Qwen 3.8 27B Abliterated</td><td>The same build as GGUF, from Q2_K for 12 GB cards up to Q8_0</td><td>11 to 29 GB</td></tr>
+        <tr><td>Qwen 3.8 27B HauhauCS Aggressive</td><td>An uncensored build with vision, tool calling and thinking, recommended quant IQ4_XS</td><td>16 GB (IQ4_XS)</td></tr>
+      </tbody>
+    </table>
+
+    <p>Give the model enough memory for a 64K context on top of its file size. The Context window menu in the composer sets it, and the model reloads when you change it.</p>
+
+    <h2>How LU Makes a Local Model Finish</h2>
+
+    <p>Plugging REA into a local model is not enough on its own. In the first real runs, Qwen 3.8 27B picked the right steps in the right order and never wrote an answer. LU now does three things for REA's tools:</p>
+
+    <ul>
+      <li><strong>Only the tools a turn points at.</strong> REA has 207 tools. A turn gets the ones its words point at, so an Electron question does not carry the .NET tools.</li>
+      <li><strong>References instead of copies.</strong> Some tools take an earlier result either whole, some 7,000 characters, or as a short reference. LU offers the model the reference only, as REA's own guide recommends.</li>
+      <li><strong>Facts instead of provenance.</strong> One analysis of a four file app came back with 343,583 characters, mostly hashes. LU hands the model the facts, 32,792 characters in that case, with the id of the full record.</li>
+    </ul>
+
+    <p>With that, stock Qwen 3.8 27B at 64K took the test app apart in ten steps and 3 minutes 15 seconds, and its answer named the version, both endpoints and both IPC channels.</p>
+
+    <h2>The Agent Stays on a Leash</h2>
+
+    <p>Every REA tool sits behind the same confirmation as any external tool in Agent and Code. The model proposes a call, you see it, and it runs once you allow it. LU fetches one pinned REA version, checks it against the checksum the npm registry publishes before every start, and never runs REA's own setup, which would write into other apps' settings.</p>
+
+    <h2>What REA Reads</h2>
+
+    <p>By itself: JavaScript and Electron apps, .NET, Go and Rust programs, Flutter, SQLite and WebAssembly. Ghidra, Hopper, JADX and Frida are used where you have them installed. LU installs none of them. The step by step setup is in the guide <a href="reverse-engineer-an-app-with-a-local-model.html">Reverse engineer an app with a local model</a>.</p>
+
+    <h2>Limits</h2>
+
+    <ul>
+      <li>The complete answer came from one Mac with stock Qwen 3.8 27B and LU's tool code outside the app</li>
+      <li>On Windows the built app has started REA and passed its tools to a model; a full analysis there, any run on Linux, cloud models and the uncensored builds have not been tried</li>
+      <li>REA needs Node.js 22.19 or newer within 22, 24.11 or newer within 24, or 26 and later</li>
+      <li>Use it on software you own or are allowed to examine</li>
+    </ul>
+
+    <h2>Questions</h2>
+
+    <h3>Does REA send my app to the cloud?</h3>
+    <p>REA's analysis runs locally. What it finds goes to whatever model drives the agent. With a cloud agent that is a cloud model; in Locally Uncensored with a local model, it stays on your machine.</p>
+
+    <h3>Which local model works with REA?</h3>
+    <p>A model of about 27B with a 64K context window. Qwen 3.8 27B on Ollama with 64K context took a test app apart and wrote a complete answer in 3 minutes 15 seconds. Qwen 3.5 9B at 32K ran out of context before an answer.</p>
+
+    <h3>Can I use an uncensored model with REA?</h3>
+    <p>Yes, any local model with tool calling can drive it. The catalog has uncensored builds of Qwen 3.8 27B, such as Qwen 3.8 27B Abliterated and Qwen 3.8 27B HauhauCS Aggressive. Our tested run used the stock model; the uncensored builds have not been run with REA yet.</p>
+
+    <h3>Is reverse engineering with REA legal?</h3>
+    <p>Use it on software you own or are allowed to examine. The rules depend on your country and the license of the software.</p>
+
+    <h3>Do I need Ghidra or IDA?</h3>
+    <p>Not for JavaScript and Electron apps, .NET, Go and Rust programs, Flutter, SQLite and WebAssembly. Ghidra, Hopper, JADX and Frida are used where you have them installed; LU installs none of them.</p>
+
+    <h2>Related</h2>
+
+    <ul>
+      <li><a href="reverse-engineer-an-app-with-a-local-model.html">Guide: reverse engineer an app with a local model, step by step</a></li>
+      <li><a href="rea-plugin-reverse-engineering.html">The REA plugin in Locally Uncensored</a></li>
+      <li><a href="local-ai-computer-control.html">Local AI computer use</a></li>
+      <li><a href="https://github.com/morluto/rea">REA on GitHub</a></li>
+    </ul>
+  </article>
+
+  <div class="post-footer">
+    <p>Locally Uncensored is free, open source and runs on your own machine</p>
+    <p style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin:0">
+      <a href="https://github.com/PurpleDoubleD/locally-uncensored/releases/latest/download/Locally.Uncensored_3.0.7_x64-setup.exe" class="cta-btn" download>Download for Windows</a>
+      <a href="https://github.com/PurpleDoubleD/locally-uncensored/releases/latest/download/LU_3.0.7_aarch64.dmg" class="cta-btn" download>Download for Mac (Apple Silicon)</a>
+      <a href="https://github.com/PurpleDoubleD/locally-uncensored/releases/latest/download/Locally.Uncensored_3.0.7_amd64.AppImage" class="cta-btn" download>Download for Linux</a>
+    </p>
+    <p style="margin-top:14px;margin-bottom:0">No GPU? LU Cloud runs in a browser, paid from credit packs that start at 15 EUR and need no subscription. <a href="/pricing/">See what it costs</a> or <a href="https://lu-labs.ai/pricing?tab=credits&amp;src=luc-local-ai-reverse-enginee-end" target="_blank" rel="noopener">open LU Cloud</a>.</p>
+  </div>
+</div>
+
+<footer>
+  <div class="footer-row footer-meta"><span>&copy; 2026 &middot; Locally Uncensored &middot; AGPL-3.0</span></div>
+  <div class="footer-row footer-links">
+    <a href="https://locallyuncensored.com/blog/">Blog</a>
+    <a href="https://locallyuncensored.com/guide/">Guide</a>
+    <a href="https://locallyuncensored.com/pricing/">Pricing</a>
+    <a href="https://locallyuncensored.com/cloud/">LU Cloud</a>
+    <a href="https://locallyuncensored.com/uncensored-ai-chat-online/">Uncensored AI chat online</a>
+    <a href="https://locallyuncensored.com/uncensored-ai-image-generator-online/">Image generator online</a>
+    <a href="https://locallyuncensored.com/uncensored-ai-video-generator-online/">Video generator online</a>
+    <a href="https://locallyuncensored.com/alternatives/">Alternatives</a>
+    <a href="https://locallyuncensored.com/is-locally-uncensored-safe/">Is it safe?</a>
+    <a href="https://locallyuncensored.com/remote-access/">Remote access</a>
+    <a href="https://locallyuncensored.com/discord" target="_blank" rel="noopener">Discord</a>
+    <a href="https://github.com/PurpleDoubleD/locally-uncensored">GitHub</a>
+    <a href="https://github.com/PurpleDoubleD/locally-uncensored/discussions">Discussions</a>
+    <a href="https://github.com/PurpleDoubleD/locally-uncensored/issues">Issues</a>
+    <a href="https://reddit.com/user/GroundbreakingMall54">Reddit</a>
+    <a href="https://www.linkedin.com/in/david-drobnitza-locallyuncensored/" rel="me noopener" target="_blank">LinkedIn</a>
+    <a href="https://locallyuncensored.com/privacy/">Privacy</a>
+    <a href="https://locallyuncensored.com/terms/">Terms</a>
+    <a href="https://locallyuncensored.com/impressum/">Impressum</a>
+  </div>
+</footer>
+</body>
+</html>
