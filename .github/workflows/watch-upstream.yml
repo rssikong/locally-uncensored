@@ -29,6 +29,10 @@ on:
         description: 'Merge and check, but push nothing, tag nothing, release nothing.'
         type: boolean
         default: false
+      retranslate:
+        description: 'Translate whatever is still pending and commit the dictionary, without merging upstream. Recovers translations a lost run threw away.'
+        type: boolean
+        default: false
 
 permissions:
   contents: write # commit, tag, push
@@ -162,7 +166,7 @@ jobs:
           exit 1
 
       - name: Install dependencies
-        if: steps.check.outputs.behind != '0' && steps.merge.outputs.replayed != 'false'
+        if: (steps.check.outputs.behind != '0' || inputs.retranslate) && steps.merge.outputs.replayed != 'false'
         shell: bash
         run: |
           ok=0
@@ -174,11 +178,11 @@ jobs:
           [ "$ok" = "1" ] || { echo '::error::npm ci failed after 3 attempts'; exit 1; }
 
       - name: Extract the strings that are not translated yet
-        if: steps.check.outputs.behind != '0' && steps.merge.outputs.replayed != 'false'
+        if: (steps.check.outputs.behind != '0' || inputs.retranslate) && steps.merge.outputs.replayed != 'false'
         run: node scripts/i18n-extract.mjs --out "$RUNNER_TEMP/extract.json"
 
       - name: Translate
-        if: steps.check.outputs.behind != '0' && steps.merge.outputs.replayed != 'false' && env.TRANSLATE_ENDPOINT != ''
+        if: (steps.check.outputs.behind != '0' || inputs.retranslate) && steps.merge.outputs.replayed != 'false' && env.TRANSLATE_ENDPOINT != ''
         env:
           TRANSLATE_TOKEN: ${{ secrets.TRANSLATE_TOKEN }}
         run: |
@@ -191,7 +195,7 @@ jobs:
       # This only answers "did the merge break the dictionary, the types, or the
       # i18n layer" before the commit lands.
       - name: Check the dictionary, types and the i18n tests
-        if: steps.check.outputs.behind != '0' && steps.merge.outputs.replayed != 'false'
+        if: (steps.check.outputs.behind != '0' || inputs.retranslate) && steps.merge.outputs.replayed != 'false'
         shell: bash
         run: |
           node scripts/i18n-check.mjs
@@ -216,22 +220,37 @@ jobs:
 
       - name: Commit and push
         id: commit
-        if: steps.check.outputs.behind != '0' && steps.merge.outputs.replayed != 'false' && inputs.dry_run != true
+        if: (steps.check.outputs.behind != '0' || inputs.retranslate) && steps.merge.outputs.replayed != 'false' && inputs.dry_run != true
         shell: bash
         run: |
           # Explicit paths only: the working tree also holds build artefacts and
           # local notes. The replayed patches bring their own files, which the
           # merge already staged.
-          git add src/lib/i18n/zh-CN.ts src/lib/i18n/skip.json 2>/dev/null || true
+          #
+          # `git add a b` fails as a whole when one of the paths is missing, and
+          # that is how run 39659346340 lost 825 fresh translations: skip.json
+          # has never existed in this repo, so the add staged nothing and the
+          # step reported "the dictionary did not change". Stage what is there.
+          for f in src/lib/i18n/zh-CN.ts src/lib/i18n/skip.json; do
+            if [ -e "$f" ]; then git add -- "$f"; fi
+          done
+
+          # If the dictionary was rewritten but nothing reached the index, fail
+          # loudly instead of throwing the translations away a second time.
+          if ! git diff --quiet -- src/lib/i18n/zh-CN.ts && git diff --cached --quiet; then
+            echo '::error::词典已被改写，但没有进入暂存区——不要静默丢弃译文'
+            exit 1
+          fi
 
           # A clean merge has already made its commit, and a docs-only upstream
           # change leaves the dictionary byte-identical — so "nothing staged"
-          # says nothing about whether there is something to push. The push used
-          # to live inside the `else`, which meant every docs-only sync merged,
-          # translated, passed the gate, reported success, and threw the merge
-          # away: `behind` stayed at 1 forever.
+          # says nothing about whether there is something to push.
           if ! git diff --cached --quiet; then
-            git commit -m "自动同步上游 $(git rev-parse --short upstream/master) 并更新中文词典"
+            if [ "${{ steps.check.outputs.behind }}" = '0' ]; then
+              git commit -m "汉化：补齐待译词条"
+            else
+              git commit -m "自动同步上游 $(git rev-parse --short upstream/master) 并更新中文词典"
+            fi
           else
             echo '词典没有新变化，只推送合并提交'
           fi
