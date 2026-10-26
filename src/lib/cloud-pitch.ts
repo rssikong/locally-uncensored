@@ -72,10 +72,18 @@ export interface CloudPitchNumbers {
   flashModels: number
   /** Taegliche Obergrenze der Flash-Klasse, Ein- und Ausgabe zusammen. */
   flashDailyTokens: number
-  /** Bildmodelle. */
+  /**
+   * Bildmodelle, die ein Bild erzeugen: die klassischen Zeilen ohne `ops` und
+   * die Generatoren des Create-Studios. Dieselbe Menge wie die Gruppe "Image
+   * generation" der Komplettliste auf docs/pricing/index.html (Davids
+   * Entscheid 24.10.2026): seit die offenen Zahlen das Studio mitzaehlen,
+   * muss es die Gesamtzahl auch, sonst nennt das Panel mehr offene als alle.
+   */
   imageModels: number
   /**
-   * Videomodelle im Katalog.
+   * Videomodelle im Katalog, die einen Clip erzeugen, Studio-Generatoren
+   * eingeschlossen: die Gruppe "Video generation" der Komplettliste (Davids
+   * Entscheid 24.10.2026, wie bei `imageModels`).
    *
    * ACHTUNG, gewollte Abweichung: die Kaufseite auf lu-labs.ai nennt eine
    * KLEINERE Zahl. Sie zaehlt nicht den Katalog, sondern was sie auf dieser
@@ -201,18 +209,18 @@ export interface CloudPitchNumbers {
 }
 
 export const CLOUD_PITCH: CloudPitchNumbers = {
-  chatModels: 47,
-  measuredChatModels: 46,
+  chatModels: 48,
+  measuredChatModels: 44,
   unfilteredChatModels: 19,
-  heldBackChatModels: 24,
+  heldBackChatModels: 22,
   refusedAnswers: 9,
   scoredAnswers: 188,
   flashModels: 12,
   flashDailyTokens: 500_000,
-  imageModels: 10,
-  videoModels: 15,
-  openImageModels: 7,
-  openVideoModels: 14,
+  imageModels: 18,
+  videoModels: 32,
+  openImageModels: 9,
+  openVideoModels: 17,
   hostedMonthlyEUR: 19,
   hostedCredits: 900_000,
 }

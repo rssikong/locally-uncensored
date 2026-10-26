@@ -78,6 +78,8 @@
   <article>
     <h1>Can You Run DeepSeek V4.1 Flash Locally? The Honest Hardware Math</h1>
 
+    <p><strong>Update, October 24, 2026:</strong> an uncensored build is now in LU Cloud. <a href="deepseek-v4-1-flash-uncensored.html">DeepSeek V4.1 Flash Uncensored</a> is this model with the refusals removed in the weights, in the Uncensored group in Chat, Agent and Code, no GPU needed. The setup is in <a href="how-to-use-deepseek-v4-1-flash-uncensored.html">how to use DeepSeek V4.1 Flash Uncensored in LU</a>.</p>
+
     <p><strong>Short answer:</strong> not today, and the reason is not your graphics card. There are two walls. The smallest quantised build on the Hub right now is <strong>168.9 GB</strong>, and no released runtime can execute any of these files yet. The llama.cpp work is a draft pull request that opened on the same day as the weights.</p>
 
     <p>That is the honest version. The rest of this page is the arithmetic behind it, checked against the actual files and the actual pull request rather than the announcement.</p>

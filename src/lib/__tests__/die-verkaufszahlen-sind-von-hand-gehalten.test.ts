@@ -42,12 +42,12 @@ import {
  * sonst faellt es durch.
  */
 const ERWARTET = {
-  chatModels: 47,
-  measuredChatModels: 46,
+  chatModels: 48,
+  measuredChatModels: 44,
   flashModels: 12,
   flashDailyTokens: 500_000,
-  imageModels: 10,
-  videoModels: 15,
+  imageModels: 18,
+  videoModels: 32,
   // 13.09.2026, Verkaufs-Panel: die zwei Teilmengen ohne eingebaute
   // Inhaltsschranke (`adult: true` im Medienkatalog des Web-Repos) und die
   // zwei Zahlen des Einstiegsabos, die der Kaufknopf und der Abo-Satz nennen.
@@ -68,8 +68,8 @@ const ERWARTET = {
   //
   // Ein Baum, der den Katalogumbau vom 13.09.2026 nicht hat, zaehlt sechs;
   // einer ohne den Create-Studio-Katalog zehn.
-  openImageModels: 7,
-  openVideoModels: 14,
+  openImageModels: 9,
+  openVideoModels: 17,
   hostedMonthlyEUR: 19,
   hostedCredits: 900_000,
 } as const

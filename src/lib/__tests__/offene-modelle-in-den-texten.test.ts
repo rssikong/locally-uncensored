@@ -52,7 +52,7 @@ const neuesterAbschnitt = () => {
   const ende = text.indexOf('\n## [', start + 1)
   return ende === -1 ? text.slice(start) : text.slice(start, ende)
 }
-const ZAHLWORT: Record<number, string> = { 3: 'three', 6: 'six', 7: 'seven', 10: 'ten', 14: 'fourteen', 15: 'fifteen' }
+const ZAHLWORT: Record<number, string> = { 3: 'three', 6: 'six', 7: 'seven', 9: 'nine', 10: 'ten', 14: 'fourteen', 15: 'fifteen', 17: 'seventeen' }
 
 /**
  * Die alte Aussage, an ihrer Form erkannt statt an einem festen Satz: ein
@@ -85,7 +85,7 @@ const alsText = (html: string) =>
  * Die Bildtabelle hatte diese Regel nie: `chroma`, `prefect-pony` und
  * `neta-lumina` heissen seit jeher ohne Zusatz.
  */
-const OFFEN_OHNE_SPICY_IM_NAMEN = new Set(['open-video', 'open-video-lora'])
+const OFFEN_OHNE_SPICY_IM_NAMEN = new Set(['open-video', 'open-video-lora', 'minimax-h3-singularity', 'minimax-h3-singularity-ref'])
 
 const blatt = () => new DOMParser().parseFromString(lies('docs/pricing/index.html'), 'text/html')
 
@@ -199,10 +199,10 @@ describe('die Zahl der offenen Modelle', () => {
     }
 
     // Die Herleitung aus dem Kommentar in cloud-pitch.ts, Zahl fuer Zahl.
-    expect(teile('[data-open-video-row]', 'clipCredits')).toEqual({ klassisch: 10, ausDemStudio: 4 })
-    expect(teile('[data-open-image-row]', 'imageCredits')).toEqual({ klassisch: 3, ausDemStudio: 4 })
-    expect(CLOUD_PITCH.openVideoModels).toBe(10 + 4)
-    expect(CLOUD_PITCH.openImageModels).toBe(3 + 4)
+    expect(teile('[data-open-video-row]', 'clipCredits')).toEqual({ klassisch: 11, ausDemStudio: 6 })
+    expect(teile('[data-open-image-row]', 'imageCredits')).toEqual({ klassisch: 3, ausDemStudio: 6 })
+    expect(CLOUD_PITCH.openVideoModels).toBe(11 + 6)
+    expect(CLOUD_PITCH.openImageModels).toBe(3 + 6)
   })
 
   it('und das Blatt liest die Zahl, statt sie zu tippen', () => {

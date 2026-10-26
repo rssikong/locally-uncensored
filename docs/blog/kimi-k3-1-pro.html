@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kimi K3.1 Pro: What It Can Do, and How to Use It in LU Today</title>
+<meta name="description" content="Kimi K3.1 Pro: 2.8T MoE, 104B active, 1M context, fourth on the Artificial Analysis index. How to use it today in LU Cloud on desktop, web and phone, and what running it locally will take.">
+<meta name="keywords" content="kimi k3.1 pro, kimi k3.1 pro benchmarks, kimi k3.1 pro open weights, kimi k3.1 pro local, run kimi k3.1 pro locally, kimi k3.1 pro hardware requirements, kimi k3.1 pro vs kimi k3, kimi k3.1 pro price, kimi k3.1 pro online, moonshot kimi k3.1, locally uncensored kimi">
+<meta property="og:title" content="Kimi K3.1 Pro: What It Can Do, and How to Use It in LU Today">
+<meta property="og:description" content="Moonshot's Kimi K3.1 Pro is the post-trained successor to Kimi K3, built for coding agents and long agent runs. It is in LU Cloud in Chat, Agent and Code. Open weights are promised by November 4; the hardware math for running it at home is here too.">
+<meta property="og:image" content="https://raw.githubusercontent.com/PurpleDoubleD/locally-uncensored/master/docs/social-preview.png">
+<meta property="og:url" content="https://locallyuncensored.com/blog/kimi-k3-1-pro.html">
+<meta property="og:type" content="article">
+<meta property="article:published_time" content="2026-10-24">
+<meta property="article:author" content="PurpleDoubleD">
+<meta property="article:tag" content="Cloud">
+<meta property="article:tag" content="Kimi">
+<meta property="article:tag" content="Models">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Kimi K3.1 Pro: What It Can Do, and How to Use It Today">
+<meta name="twitter:description" content="Moonshot's Kimi K3.1 Pro is the post-trained successor to Kimi K3, built for coding agents and long agent runs. It is in LU Cloud in Chat, Agent and Code. Open weights are promised by November 4; the hardware math for running it at home is here too.">
+<meta name="twitter:image" content="https://raw.githubusercontent.com/PurpleDoubleD/locally-uncensored/master/docs/social-preview.png">
+<link rel="canonical" href="https://locallyuncensored.com/blog/kimi-k3-1-pro.html">
+<meta name="robots" content="index, follow">
+<meta name="theme-color" content="#0a0a0a">
+<link rel="icon" href="../favicon.png">
+<!-- Privacy: No external fonts loaded. Using system fonts. -->
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"BlogPosting","headline":"Kimi K3.1 Pro: What It Can Do, and How to Use It in LU Today","description":"Kimi K3.1 Pro: 2.8T MoE, 104B active, 1M context, fourth on the Artificial Analysis index. How to use it today in LU Cloud on desktop, web and phone, and what running it locally will take.","image":"https://raw.githubusercontent.com/PurpleDoubleD/locally-uncensored/master/docs/social-preview.png","datePublished":"2026-10-24","dateModified":"2026-10-24","inLanguage":"en","author":{"@type":"Person","name":"PurpleDoubleD","url":"https://github.com/PurpleDoubleD"},"publisher":{"@type":"Organization","name":"Locally Uncensored","url":"https://locallyuncensored.com/"},"mainEntityOfPage":{"@type":"WebPage","@id":"https://locallyuncensored.com/blog/kimi-k3-1-pro.html"},"keywords":"kimi k3.1 pro, kimi k3.1 pro benchmarks, kimi k3.1 pro open weights, kimi k3.1 pro local, run kimi k3.1 pro locally, kimi k3.1 pro hardware requirements, kimi k3.1 pro vs kimi k3, kimi k3.1 pro price, kimi k3.1 pro online, moonshot kimi k3.1, locally uncensored kimi"}
+</script>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Is Kimi K3.1 Pro open source?","acceptedAnswer":{"@type":"Answer","text":"Not yet. Moonshot has promised the full weights by November 4, 2026. Today it is available through APIs only, including LU Cloud."}},{"@type":"Question","name":"Can I run Kimi K3.1 Pro locally?","acceptedAnswer":{"@type":"Answer","text":"Not yet, and on a desktop not in a useful way after the release either. It has the same 2.8 trillion parameters as Kimi K3, whose smallest GGUF is 466 GB, the 2-bit build 861 GB and Q4 about 1.5 TB."}},{"@type":"Question","name":"How do I use Kimi K3.1 Pro in Locally Uncensored?","acceptedAnswer":{"@type":"Answer","text":"Sign in to LU Cloud in Settings, switch the header to Cloud and pick Kimi K3.1 Pro in the model picker. It works in Chat, Agent and Code. In the browser it is on lu-labs.ai, on Android in the LU app."}},{"@type":"Question","name":"What does Kimi K3.1 Pro cost in LU Cloud?","acceptedAnswer":{"@type":"Answer","text":"0.3 credits per input token and 1.5 credits per output token, about 5 percent more than Kimi K3. Every plan and every credit pack reaches it, from a 15 EUR pack."}}]}
+</script>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://locallyuncensored.com/"},{"@type":"ListItem","position":2,"name":"Blog","item":"https://locallyuncensored.com/blog/"},{"@type":"ListItem","position":3,"name":"Kimi K3.1 Pro","item":"https://locallyuncensored.com/blog/kimi-k3-1-pro.html"}]}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/lu.css">
+<script defer src="/assets/lu.js"></script>
+  <script data-goatcounter="https://purple47.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
+</head>
+<body>
+<nav class="lu-nav">
+  <a class="lu-nav-brand" href="/" aria-label="Locally Uncensored">
+    <span class="lu-mono" data-mono="nav" data-size="40" aria-hidden="true"></span>
+    <span class="lu-nav-word">Locally <span class="accent">Uncensored</span></span>
+  </a>
+  <div class="lu-nav-links" id="lu-nav-links">
+    <a class="lu-nav-link" href="/">Home</a>
+    <a class="lu-nav-link" href="/pricing/">Pricing</a>
+    <a class="lu-nav-link" href="/blog/">Blog</a>
+    <a class="lu-nav-link" href="/guide/">Guide</a>
+    <a class="lu-nav-link" href="/remote-access/">Remote</a>
+  </div>
+  <div class="lu-nav-right">
+    <a class="lu-nav-icon" href="https://github.com/PurpleDoubleD/locally-uncensored" title="GitHub" aria-label="GitHub"><svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.37.5 0 5.87 0 12.5c0 5.3 3.44 9.8 8.21 11.39.6.11.82-.26.82-.58 0-.29-.01-1.04-.02-2.05-3.34.73-4.04-1.61-4.04-1.61-.55-1.39-1.33-1.76-1.33-1.76-1.09-.75.08-.73.08-.73 1.2.08 1.84 1.24 1.84 1.24 1.07 1.83 2.81 1.3 3.5.99.11-.78.42-1.3.76-1.6-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.13-.3-.54-1.52.11-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 6.01 0c2.29-1.55 3.3-1.23 3.3-1.23.65 1.66.24 2.88.12 3.18.77.84 1.23 1.91 1.23 3.22 0 4.61-2.8 5.63-5.48 5.92.43.37.81 1.1.81 2.22 0 1.6-.01 2.9-.01 3.29 0 .32.21.7.82.58A12.01 12.01 0 0 0 24 12.5C24 5.87 18.63.5 12 .5Z"/></svg><span class="lu-nav-badge">2000+&#8202;⭐</span></a>
+    <a class="lu-nav-icon discord" href="https://locallyuncensored.com/discord" target="_blank" rel="noopener" title="Discord" aria-label="Discord"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.32 4.37A19.8 19.8 0 0 0 15.45 3c-.2.36-.44.85-.6 1.23a18.3 18.3 0 0 0-5.7 0c-.16-.38-.4-.87-.6-1.23a19.7 19.7 0 0 0-4.87 1.37C.55 8.9-.32 13.3.11 17.63a19.9 19.9 0 0 0 6 3.03c.48-.66.9-1.36 1.27-2.1-.7-.26-1.36-.58-1.99-.96.17-.12.33-.25.49-.38a14.2 14.2 0 0 0 12.24 0c.16.13.32.26.49.38-.63.38-1.3.7-2 .96.37.74.8 1.44 1.27 2.1a19.8 19.8 0 0 0 6-3.03c.5-5.03-.85-9.39-3.55-13.26ZM8.02 15c-1.18 0-2.15-1.09-2.15-2.42 0-1.34.95-2.43 2.15-2.43 1.2 0 2.17 1.09 2.15 2.43 0 1.33-.95 2.42-2.15 2.42Zm7.96 0c-1.18 0-2.15-1.09-2.15-2.42 0-1.34.95-2.43 2.15-2.43 1.2 0 2.17 1.09 2.15 2.43 0 1.33-.94 2.42-2.15 2.42Z"/></svg><span class="lu-nav-badge">1200+&#8202;<span style="font-size:0.715em">🟢</span></span></a>
+    <span class="lu-nav-sep"></span>
+    <div class="switch" id="theme-switch" role="button" aria-label="Toggle theme"></div>
+    <a class="he-cta" href="/pricing/" aria-label="LU Cloud plans and what they include"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>Cloud</a>
+    <a class="lu-nav-dl" href="https://github.com/PurpleDoubleD/locally-uncensored/releases/latest"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>Download</a>
+    <button type="button" class="lu-nav-toggle" aria-label="Menu"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+  </div>
+</nav>
+<div class="container lu-doc">
+  <div class="breadcrumb"><a href="../">Locally Uncensored</a> / <a href="./">Blog</a> / This Post</div>
+
+  <div class="post-meta">
+    <span class="post-tag">Guide</span>
+    <span>October 24, 2026</span>
+    <span>&middot;</span>
+    <span>7 min read</span>
+  </div>
+
+  <article>
+    <h1>Kimi K3.1 Pro: What It Can Do, and How to Use It in LU Today</h1>
+
+    <p>Moonshot AI released Kimi K3.1 Pro on October 23, 2026. It is the post-trained successor to <a href="kimi-k3-explained.html">Kimi K3</a>: the same 2.8 trillion parameter model, trained further for long coding sessions and agents that work through many steps. Since October 24 it is in LU Cloud, so you can use it in <a href="https://github.com/PurpleDoubleD/locally-uncensored">Locally Uncensored</a> on the desktop, in the browser and on your phone. Running it on your own machine has to wait for the weights, and even then the numbers below apply.</p>
+
+    <div class="callout info"><div class="callout-title">Short version</div>
+    <p>2.8T parameters, about 104B active per token, 1M token context, text and image input, native tool calls. Fourth on the Artificial Analysis Intelligence Index with 55 points. In LU Cloud on every plan and every credit pack, in Chat, Agent and Code. Open weights are promised by November 4. Not local yet.</p>
+    </div>
+
+    <h2>What Changed From Kimi K3</h2>
+
+    <p>The architecture did not change. K3.1 Pro is still a mixture of experts with 2.8 trillion parameters, of which about 104 billion work on each token, and a context window of one million tokens. What changed is the training on top of it, and that shows most in agent work.</p>
+
+    <table>
+      <thead>
+        <tr><th>Benchmark (Artificial Analysis)</th><th>Kimi K3</th><th>Kimi K3.1 Pro</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Intelligence Index</td><td>44</td><td>55</td></tr>
+        <tr><td>Terminal-Bench 4.0 (coding agents)</td><td>13%</td><td>67%</td></tr>
+        <tr><td>GDPval-AA (agentic work tasks)</td><td>1,534 Elo</td><td>1,846 Elo</td></tr>
+        <tr><td>AutomationBench-AA (SaaS workflows)</td><td>58%</td><td>73%</td></tr>
+        <tr><td>Humanity's Last Exam</td><td>47%</td><td>52%</td></tr>
+        <tr><td>Hallucination rate (AA-Omniscience)</td><td>53%</td><td>44%</td></tr>
+      </tbody>
+    </table>
+
+    <p>On the Intelligence Index only Claude Opus 5.5 (58), Claude Sonnet 5.5 (56) and Muse Wonder Full (56) score higher. On Terminal-Bench 4.0 Artificial Analysis measured the highest score of any model so far. Moonshot's own figure for that test is 65.7%, just behind Opus 5.5 at 66.4% by Moonshot's count. Once the weights are out, it will be the highest scoring open weight model on the index.</p>
+
+    <p>Two more things from the launch. Moonshot says it removed cyberattack related material from the training data before the open release, and its own exploit test dropped from 90.5% for the version without that cut to 81% for the released model. And there is a Highspeed variant on Moonshot's own API, two to three times faster at twice the price. LU Cloud carries the standard model.</p>
+
+    <h2>What It Is Good At</h2>
+
+    <ul>
+      <li><strong>Coding agents.</strong> Long sessions in a repository: read the code, plan, edit, run the tests, fix what broke. This is where the jump from K3 is largest.</li>
+      <li><strong>Agents with many steps.</strong> Native tool calls, so the model calls web search, files and commands directly, with no prompt translation in between.</li>
+      <li><strong>Long input.</strong> One million tokens of context fits a large codebase or a stack of documents in one conversation.</li>
+      <li><strong>Images.</strong> Screenshots, diagrams and photos as input, next to text.</li>
+    </ul>
+
+    <p>It reasons before it answers by default. You can switch the thinking off for short questions, and that switch really stops the reasoning on this model.</p>
+
+    <h2>How to Use It Today in LU</h2>
+
+    <p>K3.1 Pro runs in LU Cloud, the hosted side of LU, on the same account everywhere. Every plan and every credit pack reaches it; the smallest way in is a 15 EUR credit pack with no subscription.</p>
+
+    <h3>In the desktop app</h3>
+
+    <p>In Locally Uncensored 3.0.7 on Windows, Mac or Linux, sign in under Settings, General, LU Cloud Account. Click the Cloud switch in the header twice, and the model picker shows the hosted models. Pick Kimi K3.1 Pro there. It works in Chat, in Agent mode and in the Code tab. The list comes from the server, so you do not need an update for it. One click on the switch brings you back to your local models.</p>
+
+    <h3>In the browser</h3>
+
+    <p>Open <a href="https://lu-labs.ai/kimi-k3-1-pro-online" target="_blank" rel="noopener">lu-labs.ai</a>, sign in, and pick Kimi K3.1 Pro in the model picker. Nothing to install, and it works the same on a Mac, a Chromebook or an old laptop.</p>
+
+    <h3>On your phone</h3>
+
+    <p>On Android, the <a href="/android/">LU app</a> reaches LU Cloud with your account, and K3.1 Pro is in its list of hosted chat models. On iPhone the app is <a href="/ios/">in review</a>; until it is out, lu-labs.ai works in Safari.</p>
+
+    <p>The step by step version for all three, with the settings that matter in Agent and Code, is in the guide <a href="how-to-use-kimi-k3-1-pro-in-lu.html">How to use Kimi K3.1 Pro in LU</a>.</p>
+
+    <h2>What It Costs</h2>
+
+    <p>K3.1 Pro is the priciest model in the LU Cloud catalog per token, about 5 percent above Kimi K3. It draws 0.3 credits per input token and 1.5 credits per output token, so 300,000 credits per million tokens in and 1,500,000 per million out. Parts of a prompt that repeat, such as the history of a long chat, are billed at a tenth of the input price. A 15 EUR pack carries 450,000 credits.</p>
+
+    <p>Thinking tokens are output tokens. On a question that does not need reasoning, switch Think off or set the effort to Low; that is the largest lever on the bill. For volume work a cheaper model in the same picker does the job.</p>
+
+    <h2>Can You Run It Locally?</h2>
+
+    <p>Not yet. Moonshot has announced the weights for November 4, 2026, and until they are published there is nothing to download. After that, the honest answer for a desktop is still no, for the same reason as with K3.</p>
+
+    <p>K3.1 Pro has the same architecture and size as K3, so the K3 conversions are a fair guide to what to expect:</p>
+
+    <table>
+      <thead>
+        <tr><th>Build (as for Kimi K3)</th><th>Size on disk</th><th>What it needs</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>1-bit GGUF (UD-Q1_0)</td><td>466 GB</td><td>More memory than a 512 GB Mac Studio leaves free, once the context is counted</td></tr>
+        <tr><td>1-bit GGUF (UD-IQ1_S)</td><td>594 GB</td><td>A server with 768 GB of RAM, or two linked 512 GB machines</td></tr>
+        <tr><td>2-bit GGUF (UD-Q2_K_XL)</td><td>861 GB</td><td>A server with about 1 TB of RAM</td></tr>
+        <tr><td>4-bit (Q4)</td><td>about 1.5 TB</td><td>A multi GPU server</td></tr>
+      </tbody>
+    </table>
+
+    <p>The context comes on top of that. And the mixture of experts saves compute, not memory: all 2.8 trillion parameters have to be loaded, because any of them can be needed for the next token.</p>
+
+    <p>Speed follows memory bandwidth. At 2 bits, the 104B active parameters mean roughly 30 GB read per token. With the whole model in memory at 800 GB/s, the bandwidth of the fastest unified memory machines, that is a ceiling of about 25 tokens a second; a dual socket DDR5 server lands well below that. Real runs reach a fraction of the ceiling. For comparison, LU Cloud served it at about 55 tokens a second in our test.</p>
+
+    <p>A coming version of LU lists K3.1 Pro in the Model Manager once a loadable GGUF is published and the built-in engine reads the Kimi K3 architecture. The bundled llama.cpp does not read it yet, so the entry stays hidden until both are true. The full arithmetic for K3 is in <a href="can-you-run-kimi-k3-locally.html">Can you run Kimi K3 locally</a>.</p>
+
+    <h2>Questions</h2>
+
+    <h3>Is Kimi K3.1 Pro open source?</h3>
+    <p>Not yet. Moonshot has promised the full weights by November 4, 2026. Today it is available through APIs only, including LU Cloud.</p>
+
+    <h3>Does K3 stay in LU Cloud?</h3>
+    <p>Yes. Both models are in the catalog. K3.1 Pro takes K3's place as the recommended flagship.</p>
+
+    <h3>Which plan do I need?</h3>
+    <p>Any of them. Every plan and every credit pack reaches the whole chat catalog, K3.1 Pro included.</p>
+
+    <h3>Can I call it from my own code?</h3>
+    <p>Yes. Create an API key under Cloud API keys on lu-labs.ai, point any OpenAI compatible client at https://lu-labs.ai/api/inference/v1 and use the model id moonshotai/Kimi-K3.1-Pro.</p>
+
+    <h2>Related reading</h2>
+
+    <ul>
+      <li><a href="how-to-use-kimi-k3-1-pro-in-lu.html">How to use Kimi K3.1 Pro in LU</a>, step by step for Chat, Agent and Code</li>
+      <li><a href="kimi-k3-explained.html">Kimi K3 explained</a>, the base model and its architecture</li>
+      <li><a href="can-you-run-kimi-k3-locally.html">Can you run Kimi K3 locally</a>, the hardware math in detail</li>
+      <li><a href="kimi-k3-online-guide.html">Kimi K3 online</a>, browser, desktop app and API key</li>
+    </ul>
+
+    <h2>In the handbook</h2>
+
+    <ul>
+      <li><a href="/kimi/">All Kimi guides</a>, every generation on one page</li>
+      <li><a href="/guide/cloud/">LU Cloud</a>, the account, the switch, plans, packs and API keys</li>
+      <li><a href="/guide/agent/">Agent mode</a>, tools, workspace folder and approvals</li>
+      <li><a href="/guide/code/">The Code tab</a>, plan bar, folder rules and the diff</li>
+    </ul>
+
+    <p><em>Sources: Moonshot's launch post, <a href="https://artificialanalysis.ai/articles/kimi-k3-1-pro-launch-benchmarks" target="_blank" rel="noopener">Artificial Analysis</a>, <a href="https://simonwillison.net/2026/Oct/23/kimi-k31-pro/" target="_blank" rel="noopener">Simon Willison</a> and <a href="https://thenextweb.com/news/moonshot-kimi-k3-1-pro-open-weight-cyber" target="_blank" rel="noopener">The Next Web</a>, all October 23, 2026, plus our own measurements in LU Cloud on October 24.</em></p>
+  </article>
+
+  <div class="post-footer">
+    <p>Locally Uncensored is free, open source and runs on your own machine</p>
+    <p style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin:0">
+      <a href="https://github.com/PurpleDoubleD/locally-uncensored/releases/latest/download/Locally.Uncensored_3.0.7_x64-setup.exe" class="cta-btn" download>Download for Windows</a>
+      <a href="https://github.com/PurpleDoubleD/locally-uncensored/releases/latest/download/LU_3.0.7_aarch64.dmg" class="cta-btn" download>Download for Mac (Apple Silicon)</a>
+      <a href="https://github.com/PurpleDoubleD/locally-uncensored/releases/latest/download/Locally.Uncensored_3.0.7_amd64.AppImage" class="cta-btn" download>Download for Linux</a>
+    </p>
+    <p style="margin-top:14px;margin-bottom:0">No GPU? LU Cloud runs in a browser, paid from credit packs that start at 15 EUR and need no subscription. <a href="/pricing/">See what it costs</a> or <a href="https://lu-labs.ai/pricing?tab=credits&amp;src=luc-kimi-k3-1-pro-end" target="_blank" rel="noopener">open LU Cloud</a>.</p>
+  </div>
+</div>
+
+<footer>
+  <div class="footer-row footer-meta"><span>&copy; 2026 &middot; Locally Uncensored &middot; AGPL-3.0</span></div>
+  <div class="footer-row footer-links">
+    <a href="https://locallyuncensored.com/blog/">Blog</a>
+    <a href="https://locallyuncensored.com/guide/">Guide</a>
+    <a href="https://locallyuncensored.com/pricing/">Pricing</a>
+    <a href="https://locallyuncensored.com/cloud/">LU Cloud</a>
+    <a href="https://locallyuncensored.com/uncensored-ai-chat-online/">Uncensored AI chat online</a>
+    <a href="https://locallyuncensored.com/uncensored-ai-image-generator-online/">Image generator online</a>
+    <a href="https://locallyuncensored.com/uncensored-ai-video-generator-online/">Video generator online</a>
+    <a href="https://locallyuncensored.com/alternatives/">Alternatives</a>
+    <a href="https://locallyuncensored.com/is-locally-uncensored-safe/">Is it safe?</a>
+    <a href="https://locallyuncensored.com/remote-access/">Remote access</a>
+    <a href="https://locallyuncensored.com/discord" target="_blank" rel="noopener">Discord</a>
+    <a href="https://github.com/PurpleDoubleD/locally-uncensored">GitHub</a>
+    <a href="https://github.com/PurpleDoubleD/locally-uncensored/discussions">Discussions</a>
+    <a href="https://github.com/PurpleDoubleD/locally-uncensored/issues">Issues</a>
+    <a href="https://reddit.com/user/GroundbreakingMall54">Reddit</a>
+    <a href="https://www.linkedin.com/in/david-drobnitza-locallyuncensored/" rel="me noopener" target="_blank">LinkedIn</a>
+    <a href="https://locallyuncensored.com/privacy/">Privacy</a>
+    <a href="https://locallyuncensored.com/terms/">Terms</a>
+    <a href="https://locallyuncensored.com/impressum/">Impressum</a>
+  </div>
+</footer>
+</body>
+</html>

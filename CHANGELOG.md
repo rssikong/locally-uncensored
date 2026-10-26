@@ -15,8 +15,8 @@ Edit. Auto compact is on by default now, a persona can carry a reminder, and
 Agent and Code can take apart apps and files with the REA plugin. Our check in
 the real app ran on one Windows machine, and the Mac parts
 ran with the real engine on one Mac. What has only run in automated tests is
-listed under Known limits. LU Cloud keeps its open models: fourteen video models
-and seven image models in the cloud catalogue.
+listed under Known limits. LU Cloud keeps its open models: seventeen video models
+and nine image models in the cloud catalogue.
 
 ### Added
 

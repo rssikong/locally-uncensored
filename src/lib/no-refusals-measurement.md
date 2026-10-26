@@ -56,7 +56,6 @@ direction. 19 rows are `full` since then, 24 are `partial`.
 | deepseek-ai/DeepSeek-V3.1 | full | full | full |
 | deepseek-ai/DeepSeek-V4-Flash-0731 | full | full | partial |
 | deepseek-ai/DeepSeek-V4-Pro-0813 | full | partial | partial |
-| deepseek-ai/DeepSeek-R1-0528 | partial | full | partial |
 | Qwen/Qwen3-32B | full | partial | partial |
 | Qwen/Qwen3-235B-A22B-Instruct-2507 | partial | full | partial |
 | Qwen/Qwen3.5-9B | full | full | full |
@@ -74,7 +73,6 @@ direction. 19 rows are `full` since then, 24 are `partial`.
 | google/gemma-4-31B-it-turbo | full | full | full |
 | zai-org/GLM-4.7 | full | full | full |
 | zai-org/GLM-5 | full | partial | partial |
-| zai-org/GLM-5.1 | partial | full | partial |
 | zai-org/GLM-5.2 | partial | full | partial |
 | zai-org/GLM-5.3 | partial | full | partial |
 | nvidia/NVIDIA-Nemotron-3-Super-120B-A12B | full | partial | partial |
