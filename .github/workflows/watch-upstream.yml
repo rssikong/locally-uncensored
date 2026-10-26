@@ -1,4 +1,4 @@
-name: Watch upstream
+name: 上游巡检
 
 # Hourly: is there anything new upstream, and can it be merged?
 #
@@ -52,31 +52,34 @@ env:
 
 jobs:
   watch:
+    name: 巡检
     runs-on: ubuntu-22.04
     timeout-minutes: 40
 
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: 检出代码
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: master
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - name: 安装 Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
 
-      - name: Bot identity
+      - name: 设置机器人身份
         run: |
           git config user.name  'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
 
-      - name: Fetch upstream
+      - name: 拉取上游
         run: |
           git remote add upstream "$UPSTREAM" 2>/dev/null || true
           git fetch --tags --prune upstream master
 
-      - name: What is new?
+      - name: 有什么新东西
         id: check
         shell: bash
         env:
@@ -106,12 +109,12 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "上游领先 ${behind} 个提交；最新 tag=${tag:-无}；中文 tag=${zh_tag:-无}；已发布=${released:-无}"
 
-      - name: Nothing to do
+      - name: 无事可做
         if: steps.check.outputs.behind == '0' && (steps.check.outputs.upstream_tag == '' || (steps.check.outputs.released != '' && inputs.force != true))
         run: echo '上游没有新提交，也没有未发布的新 tag —— 结束'
 
       # ── Everything below needs something new ─────────────────────────────
-      - name: "Merge upstream (conflicts take upstream, then replay our patches)"
+      - name: 合并上游（冲突取上游，再重放补丁）
         id: merge
         if: steps.check.outputs.behind != '0'
         shell: bash
@@ -151,7 +154,7 @@ jobs:
           git add -A
           echo "replayed=true" >> "$GITHUB_OUTPUT"
 
-      - name: A patch no longer applies — report and stop
+      - name: 补丁无法重放：报告并停止
         if: steps.merge.outputs.replayed == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -165,7 +168,7 @@ jobs:
             "处理：看上面日志里失败的那个补丁，修好对应文件后跑 \`node scripts/fork-patches.mjs --regenerate\`，再手动触发本工作流。")"
           exit 1
 
-      - name: Install dependencies
+      - name: 安装依赖
         if: (steps.check.outputs.behind != '0' || inputs.retranslate) && steps.merge.outputs.replayed != 'false'
         shell: bash
         run: |
@@ -177,11 +180,11 @@ jobs:
           done
           [ "$ok" = "1" ] || { echo '::error::npm ci failed after 3 attempts'; exit 1; }
 
-      - name: Extract the strings that are not translated yet
+      - name: 抽取还没翻译的文案
         if: (steps.check.outputs.behind != '0' || inputs.retranslate) && steps.merge.outputs.replayed != 'false'
         run: node scripts/i18n-extract.mjs --out "$RUNNER_TEMP/extract.json"
 
-      - name: Translate
+      - name: 翻译
         if: (steps.check.outputs.behind != '0' || inputs.retranslate) && steps.merge.outputs.replayed != 'false' && env.TRANSLATE_ENDPOINT != ''
         env:
           TRANSLATE_TOKEN: ${{ secrets.TRANSLATE_TOKEN }}
@@ -194,7 +197,7 @@ jobs:
       # Cheap on purpose: the full CI (e2e, cargo) belongs to the release gate.
       # This only answers "did the merge break the dictionary, the types, or the
       # i18n layer" before the commit lands.
-      - name: Check the dictionary, types and the i18n tests
+      - name: 校验词典、类型与 i18n 单测
         if: (steps.check.outputs.behind != '0' || inputs.retranslate) && steps.merge.outputs.replayed != 'false'
         shell: bash
         run: |
@@ -202,7 +205,7 @@ jobs:
           npx tsc -b --force
           npx vitest run src/lib/__tests__/i18n.test.ts src/lib/__tests__/i18n-pack.test.ts src/lib/__tests__/i18n-bridge.test.ts
 
-      - name: Say what changed
+      - name: 汇总说明
         if: always()
         shell: bash
         run: |
@@ -218,7 +221,7 @@ jobs:
             echo "| 模式 | ${{ inputs.dry_run && 'dry run（不推送）' || '正常' }} |"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Commit and push
+      - name: 提交并推送
         id: commit
         if: (steps.check.outputs.behind != '0' || inputs.retranslate) && steps.merge.outputs.replayed != 'false' && inputs.dry_run != true
         shell: bash
@@ -272,12 +275,12 @@ jobs:
             git push origin HEAD:master
           }
 
-      - name: Undo the merge after a dry run
+      - name: dry run 后撤销合并
         if: inputs.dry_run == true
         run: git reset --hard origin/master
 
       # ── Release, when upstream cut a tag this fork has not published ─────
-      - name: Which upstream tag is new?
+      - name: 上游有没有新 tag
         id: tag
         # `success()` and not `always()`: a red gate or a rejected push must not
         # be followed by a tag and a release. When nothing changed upstream this
@@ -311,7 +314,7 @@ jobs:
           echo "skip=false"                >> "$GITHUB_OUTPUT"
           echo "将发布 v${base}-zh.${n}"
 
-      - name: Tag this commit and start the release
+      - name: 打 tag 并启动发布
         if: steps.tag.outputs.skip == 'false' && inputs.dry_run != true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -329,7 +332,7 @@ jobs:
           gh workflow run release-zh.yml --repo "$GITHUB_REPOSITORY" -f tag="$NEW_TAG"
           echo "已触发 $NEW_TAG 的构建与发布"
 
-      - name: Report a red run
+      - name: 失败时开 issue
         if: failure()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

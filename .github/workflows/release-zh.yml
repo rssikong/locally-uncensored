@@ -1,4 +1,4 @@
-name: Build & Release Chinese builds
+name: 构建与发布中文版
 
 # The fork's own release lane. `watch-upstream.yml` is the only caller that
 # publishes; a manual run builds and keeps the installers as a workflow artifact
@@ -45,11 +45,13 @@ env:
 jobs:
   # A matrix cannot be filtered by an input, so the list is built here.
   prepare:
+    name: 准备
     runs-on: ubuntu-22.04
     outputs:
       matrix: ${{ steps.m.outputs.matrix }}
     steps:
-      - id: m
+      - name: 生成构建矩阵
+        id: m
         shell: bash
         run: |
           linux='{"platform":"ubuntu-22.04","sidecar_triple":"x86_64-unknown-linux-gnu"}'
@@ -70,20 +72,23 @@ jobs:
   # install, type-check, hold a valid dictionary, and pass the unit suite?
   # Upstream's CI still runs on every push, independently of any release.
   gate:
+    name: 发布门禁
     if: ${{ !inputs.dry_run }}
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: 检出 tag
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ inputs.tag }}
           persist-credentials: false
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - name: 安装 Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
 
-      - name: Install npm dependencies
+      - name: 安装依赖
         shell: bash
         run: |
           ok=0
@@ -94,13 +99,14 @@ jobs:
           done
           [ "$ok" = "1" ] || { echo '::error::npm ci failed after 3 attempts'; exit 1; }
 
-      - name: Dictionary, types and the unit suite
+      - name: 词典、类型与全量单测
         run: |
           node scripts/i18n-check.mjs
           npx tsc -b --force
           npx vitest run
 
   build:
+    name: 打包 ${{ matrix.platform }}
     needs: [prepare, gate]
     # `!cancelled()` stands in for the implicit `success()`, which would skip
     # this job whenever the gate was skipped — and a dry run skips it.
@@ -112,7 +118,7 @@ jobs:
     timeout-minutes: 120
 
     steps:
-      - name: Checkout the tag
+      - name: 检出 tag
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ inputs.tag }}
@@ -127,7 +133,7 @@ jobs:
       # The payload must stay identical to src-tauri/tauri.zh.conf.json. It is
       # duplicated because a tag's tree is what gets checked out: there is no
       # path to the current file from inside an old tag.
-      - name: Chinese build config
+      - name: 中文构建配置
         shell: bash
         run: |
           if [ -f src-tauri/tauri.zh.conf.json ]; then
@@ -141,7 +147,7 @@ jobs:
       # <upstream>-<n>, e.g. `3.0.7-1`. The tag says `-zh.1` for humans; the
       # version must be a NUMERIC pre-release or the WiX/MSI bundler refuses it
       # ("optional pre-release identifier ... must be numeric-only").
-      - name: Chinese build version
+      - name: 中文构建版本号
         id: ver
         shell: bash
         run: |
@@ -175,20 +181,20 @@ jobs:
           )
           JS
 
-      - name: Setup Node.js
+      - name: 安装 Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
 
-      - name: Install Rust stable
+      - name: 安装 Rust stable
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
-      - name: Rust cache
+      - name: Rust 缓存
         uses: swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: './src-tauri -> target'
 
-      - name: Install Linux dependencies
+      - name: 安装 Linux 依赖
         if: matrix.platform == 'ubuntu-22.04'
         timeout-minutes: 20
         env:
@@ -200,13 +206,13 @@ jobs:
             libgtk-3-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libxdo-dev \
             libxkbcommon-dev build-essential curl wget file libssl-dev
 
-      - name: Sidecar build cache
+      - name: sidecar 构建缓存
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ matrix.platform == 'windows-latest' && 'D:/lb' || '.llama-build' }}
           key: llama-${{ hashFiles('scripts/build-llama.sh') }}-${{ matrix.sidecar_triple }}-v1
 
-      - name: Install Vulkan SDK (Windows)
+      - name: 安装 Vulkan SDK（Windows）
         if: matrix.platform == 'windows-latest'
         shell: pwsh
         run: |
@@ -218,7 +224,7 @@ jobs:
           & "$env:RUNNER_TEMP\VulkanSDK-Installer.exe" --accept-licenses --default-answer --confirm-command install
           Add-Content $env:GITHUB_ENV "VULKAN_SDK=C:\VulkanSDK\${env:VULKAN_SDK_VERSION}"
 
-      - name: Install Vulkan toolchain (Linux)
+      - name: 安装 Vulkan 工具链（Linux）
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           family="${VULKAN_SDK_VERSION%.*}"
@@ -229,14 +235,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y vulkan-sdk
 
-      - name: Build llama-server sidecar
+      - name: 编译 llama-server 侧车
         shell: bash
         env:
           BUILD_JOBS: 2
           LLAMA_BUILD_CACHE: ${{ matrix.platform == 'windows-latest' && 'D:/lb' || '' }}
         run: bash scripts/build-llama.sh ${{ matrix.sidecar_triple }}
 
-      - name: Assert sidecar exists
+      - name: 确认侧车已生成
         shell: bash
         run: |
           case "${{ matrix.sidecar_triple }}" in
@@ -246,7 +252,7 @@ jobs:
 
       # npm's registry drops connections often enough on the Windows runners
       # that a green build needs a retry. Three attempts, then fail loudly.
-      - name: Install npm dependencies
+      - name: 安装依赖
         shell: bash
         run: |
           ok=0
@@ -257,7 +263,7 @@ jobs:
           done
           [ "$ok" = "1" ] || { echo '::error::npm ci failed after 3 attempts'; exit 1; }
 
-      - name: Build only (dry run, no release)
+      - name: 仅构建（dry run，不发布）
         if: ${{ inputs.dry_run }}
         shell: bash
         env:
@@ -275,7 +281,7 @@ jobs:
           "
           npx tauri build --config "$RUNNER_TEMP/tauri.zh.dry.json"
 
-      - name: Keep the installers
+      - name: 保存安装包
         if: ${{ inputs.dry_run }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -293,7 +299,7 @@ jobs:
       # The one step that publishes. Same values as upstream's lane, in Chinese,
       # and with `prerelease: false` on purpose: `releases/latest` — the address
       # the updater reads — only follows normal releases.
-      - name: Build and release
+      - name: 构建并发布
         if: ${{ !inputs.dry_run }}
         uses: tauri-apps/tauri-action@51a9f1156b33df106d827c3a78f8f894946c5faa # v0.5.25
         env:
