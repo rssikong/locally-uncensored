@@ -12,7 +12,7 @@ name: 上游巡检
 # minutes and can afford to run every hour.
 #
 # A merge conflict is not a person's job: upstream's side is taken and the fork's
-# six small patches (.fork/patches) are replayed on top. If a patch no longer
+# small patches (.fork/patches) are replayed on top. If a patch no longer
 # applies, nothing is pushed and no release happens — the fork keeps the last
 # good version and an issue says what broke.
 
@@ -156,6 +156,10 @@ jobs:
 
       - name: 补丁无法重放：报告并停止
         if: steps.merge.outputs.replayed == 'false'
+        # Reporting must never be the thing that hides the failure: if the issue
+        # cannot be opened (issues switched off, token without scope), the run is
+        # already red and the log above says which patch failed.
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -334,6 +338,7 @@ jobs:
 
       - name: 失败时开 issue
         if: failure()
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

@@ -4,7 +4,7 @@ The fork tries to own as little as possible of upstream. Everything here is the
 machinery that keeps that true.
 
 ```
-patches/    the six files upstream also owns, as diffs against upstream/master
+patches/    the few files upstream also owns, as diffs against upstream/master
 README.md   this file
 ```
 
@@ -13,11 +13,17 @@ README.md   this file
 | Patch | File | Why |
 |---|---|---|
 | 01 | `src/main.tsx` | one call to `applyDocumentLocale()` before React mounts |
-| 02 | `playwright.config.ts` | e2e web server runs in English, so the 1600+ existing selectors keep working |
-| 03 | `src-tauri/tauri.conf.json` | the updater endpoint and public key point at **this** repository |
-| 04 | `src/stores/updateStore.ts` | the update check asks **this** repository |
-| 05 | `src/components/layout/UpdateBadge.tsx` | the "view release" link points at **this** repository |
-| 06–07 | two guard tests | they walk every string under `src/`; the generated dictionary has to be exempt or it is read as UI copy |
+| 02 | `src-tauri/tauri.conf.json` | the updater endpoint and public key point at **this** repository |
+| 03 | `src/stores/updateStore.ts` | the update check asks **this** repository |
+| 04 | `src/components/layout/UpdateBadge.tsx` | the "view release" link points at **this** repository |
+| 05–06 | two guard tests | they walk every string under `src/`; the generated dictionary has to be exempt or it is read as UI copy |
+
+> `playwright.config.ts` used to be a seventh patch (it started the e2e web
+> server in English and retried two geometry specs). It was **dropped on
+> 3.0.8**: this fork no longer runs e2e, and upstream rewrites that file often —
+> 3.0.8 turned `webServer` into an array for the mobile project, which is
+> exactly the change that made the patch stop applying. One fewer file that can
+> block a sync.
 
 Everything else the fork adds is a **new file**: `src/lib/i18n/*`, `scripts/i18n-*`,
 `scripts/fork-patches.mjs`, `e2e/i18n-gaps.spec.ts`, `.github/workflows/watch-upstream.yml`,
