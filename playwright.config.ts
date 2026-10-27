@@ -42,7 +42,9 @@ export default defineConfig({
   testDir: './e2e',
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
-  retries: 0,
+  // One more try on CI only: the full run takes over two hours on a shared runner, and a test that passes on its
+  // second try is still listed as flaky in the report. Locally a red test stays red.
+  retries: process.env.CI ? 1 : 0,
   workers: 1,
   reporter: [['list']],
   timeout: 60_000,

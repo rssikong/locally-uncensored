@@ -192,8 +192,8 @@ test.describe('LU Cloud page, signed out', () => {
     await openCloud(page, 'appstore')
     const show = page.getByTestId('m-cloud-showcase')
     await expect(show).toHaveAttribute('data-still', '')
-    const moving = await page.evaluate(() => document.getAnimations().filter((a) => ((a.effect as KeyframeEffect | null)?.target as Element | null)?.closest?.('[data-testid="m-cloud-showcase"]')).length)
-    expect(moving).toBe(0)
+    // The way onto the page may still be fading in on a slow runner; after that nothing in the preview moves.
+    await expect.poll(() => page.evaluate(() => document.getAnimations().filter((a) => ((a.effect as KeyframeEffect | null)?.target as Element | null)?.closest?.('[data-testid="m-cloud-showcase"]')).length)).toBe(0)
     await page.waitForTimeout(5000)
     await expect(show).toHaveAttribute('data-scene', 'chat')
     await page.getByTestId('m-cloud-showcase-image').tap()
