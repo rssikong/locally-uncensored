@@ -79,13 +79,20 @@ const fake = vi.hoisted(() => ({
   calls: [] as Array<[string, unknown]>,
   connectError: null as Error | null,
   reply: 'ok',
+  /** What the Rust guard answers; the strings it was asked about. */
+  guard: null as string | null,
+  guardAsked: [] as string[][],
 }))
 
 vi.mock('../../../api/backend', async (orig) => ({
   ...((await orig()) as Record<string, unknown>),
   isTauri: () => true,
-  backendCall: vi.fn(async (cmd: string) => {
+  backendCall: vi.fn(async (cmd: string, args?: unknown) => {
     if (cmd === 'plugin_rea_fetch' || cmd === 'plugin_rea_status') return fake.status
+    if (cmd === 'plugin_rea_guard') {
+      fake.guardAsked.push((args as { strings: string[] }).strings)
+      return fake.guard
+    }
     throw new Error(`unexpected ${cmd}`)
   }),
 }))
@@ -119,7 +126,7 @@ const reaTools = () => toolRegistry.getAll().filter((t) => t.serverId === REA_PL
 describe('the REA switch', () => {
   beforeEach(async () => {
     await stopRea()
-    Object.assign(fake, { status: ready, connects: 0, disconnects: 0, exit: null, calls: [], connectError: null, reply: 'ok' })
+    Object.assign(fake, { status: ready, connects: 0, disconnects: 0, exit: null, calls: [], connectError: null, reply: 'ok', guard: null, guardAsked: [] })
   })
 
   it('on gives the agents its tools, as external tools behind a confirmation', async () => {
@@ -142,6 +149,22 @@ describe('the REA switch', () => {
     expect(fake.calls.at(-1)).toEqual(['rea_trace', { application: { kind: 'retained-evidence', evidence_id: `ev_${'1'.repeat(64)}` } }])
     expect(out).toContain('notes:save')
     expect(out).not.toContain('f'.repeat(64))
+  })
+
+  it('LU itself is refused before REA runs anything (David, 27.10.2026)', async () => {
+    await startRea()
+    fake.guard = 'REA does not analyze Locally Uncensored itself'
+    const out = await toolRegistry.execute('rea_inspect', { path: '/Applications/LU.app', nested: { also: ['https://lu-labs.ai'] } })
+    expect(out).toContain('does not analyze Locally Uncensored')
+    expect(fake.calls).toEqual([])
+    expect(fake.guardAsked.at(-1)).toEqual(['/Applications/LU.app', 'https://lu-labs.ai'])
+  })
+
+  it('any other target goes through to REA', async () => {
+    await startRea()
+    await toolRegistry.execute('rea_inspect', { path: '/tmp/a37probe' })
+    expect(fake.guardAsked.at(-1)).toEqual(['/tmp/a37probe'])
+    expect(fake.calls).toEqual([['rea_inspect', { path: '/tmp/a37probe' }]])
   })
 
   it('off takes the tools away and ends the process', async () => {
@@ -189,6 +212,7 @@ describe('the REA switch', () => {
       Object.assign(REA_NODE_RETRY, saved)
       vi.mocked(backend.backendCall).mockImplementation(async (cmd: string) => {
         if (cmd === 'plugin_rea_fetch' || cmd === 'plugin_rea_status') return fake.status
+        if (cmd === 'plugin_rea_guard') return fake.guard
         throw new Error(`unexpected ${cmd}`)
       })
     }

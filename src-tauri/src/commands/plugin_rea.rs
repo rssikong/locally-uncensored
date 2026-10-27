@@ -321,6 +321,140 @@ pub async fn plugin_rea_fetch() -> Result<Value, String> {
     plugin_rea_status().await
 }
 
+// ── REA does not analyze LU itself ──────────────────────────────────────────
+//
+// David, 27.10.2026: REA and Ghidra are not pointed at Locally Uncensored's
+// own programs, nor at lu-labs.ai or LU Cloud. A hurdle, not a lock: the
+// desktop app is open source (AGPL), anyone can read it without REA. What
+// actually protects LU is that the client carries no secrets. The check
+// runs before every REA call, on every string the model passed.
+
+/// What the model is told instead of a result. One sentence, English.
+pub const LU_TARGET_REFUSAL: &str = "REA does not analyze LU itself (its app, its helper programs, lu-labs.ai or LU Cloud), so this call was not run; any other program or site works as usual.";
+
+/// Names only LU's own files, folders and services carry. Desktop only: the
+/// long name stays out of a phone build (mobile-name-im-programm.test.ts),
+/// and REA does not run on a phone.
+#[cfg(not(mobile))]
+const LU_NAMES: &[&str] = &[
+    "locally uncensored",
+    "locally-uncensored",
+    "locally_uncensored",
+    "lu-llama-server",
+    "lu-llama-quantize",
+    "lu-labs.ai",
+    "lrrhheztdytyfpizvuup",
+];
+
+#[cfg(mobile)]
+const LU_NAMES: &[&str] = &["lu-labs.ai"];
+
+/// The bundle identifier of the Mac app and every test build of it.
+#[cfg(not(mobile))]
+const LU_BUNDLE_ID: &str = "com.purpledoubled.locally-uncensored";
+#[cfg(mobile)]
+const LU_BUNDLE_ID: &str = "lu-labs.ai";
+
+/// Larger files are not hashed: no LU program is near this size.
+const MAX_HASHED_BYTES: u64 = 512 * 1024 * 1024;
+
+fn sha256_of(path: &Path) -> Option<[u8; 32]> {
+    use sha2::{Digest, Sha256};
+    let meta = std::fs::metadata(path).ok()?;
+    if !meta.is_file() || meta.len() > MAX_HASHED_BYTES {
+        return None;
+    }
+    let mut file = std::fs::File::open(path).ok()?;
+    let mut hasher = Sha256::new();
+    std::io::copy(&mut file, &mut hasher).ok()?;
+    Some(hasher.finalize().into())
+}
+
+/// The programs this LU ships: its own executable and the files beside it
+/// (the llama.cpp sidecars). Hashed once, so a copy under another name is
+/// still recognised.
+fn own_program_hashes() -> &'static Vec<[u8; 32]> {
+    static HASHES: std::sync::OnceLock<Vec<[u8; 32]>> = std::sync::OnceLock::new();
+    HASHES.get_or_init(|| {
+        let Ok(exe) = std::env::current_exe() else { return Vec::new() };
+        let mut out: Vec<[u8; 32]> = sha256_of(&exe).into_iter().collect();
+        if let Some(dir) = exe.parent() {
+            if let Ok(entries) = std::fs::read_dir(dir) {
+                for e in entries.flatten() {
+                    let p = e.path();
+                    if p != exe {
+                        if let Some(h) = sha256_of(&p) {
+                            out.push(h);
+                        }
+                    }
+                }
+            }
+        }
+        out
+    })
+}
+
+/// The folders the running LU lives in: beside its executable, and the
+/// whole .app on a Mac.
+fn own_install_dirs() -> Vec<PathBuf> {
+    let Ok(exe) = std::env::current_exe().and_then(|p| p.canonicalize()) else { return Vec::new() };
+    let mut dirs: Vec<PathBuf> = exe.parent().map(Path::to_path_buf).into_iter().collect();
+    if let Some(app) = exe.ancestors().find(|a| a.extension().is_some_and(|x| x == "app")) {
+        dirs.push(app.to_path_buf());
+    }
+    dirs
+}
+
+/// A .app on the way to `path` whose Info.plist names LU's bundle id.
+fn inside_lu_app_bundle(path: &Path) -> bool {
+    path.ancestors()
+        .filter(|a| a.extension().is_some_and(|x| x == "app"))
+        .any(|app| {
+            std::fs::read(app.join("Contents/Info.plist"))
+                .map(|b| String::from_utf8_lossy(&b).contains(LU_BUNDLE_ID))
+                .unwrap_or(false)
+        })
+}
+
+/// Is this one string an LU target? `own_dirs` and `own_hashes` are passed
+/// in so a test does not depend on the binary running it.
+pub fn is_lu_target(s: &str, own_dirs: &[PathBuf], own_hashes: &[[u8; 32]]) -> bool {
+    let lower = s.to_lowercase();
+    if LU_NAMES.iter().any(|n| lower.contains(n)) {
+        return true;
+    }
+    let path = Path::new(s.trim());
+    if !path.is_absolute() {
+        return false;
+    }
+    let real = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    if own_dirs.iter().any(|d| real.starts_with(d)) || inside_lu_app_bundle(&real) {
+        return true;
+    }
+    if own_hashes.is_empty() {
+        return false;
+    }
+    sha256_of(&real).is_some_and(|h| own_hashes.contains(&h))
+}
+
+/// The refusal when any of `strings` is an LU target, else None.
+pub fn lu_target_refusal(strings: &[String], own_dirs: &[PathBuf], own_hashes: &[[u8; 32]]) -> Option<&'static str> {
+    strings
+        .iter()
+        .any(|s| is_lu_target(s, own_dirs, own_hashes))
+        .then_some(LU_TARGET_REFUSAL)
+}
+
+/// Asked before every REA call with every string of its arguments.
+#[tauri::command]
+pub async fn plugin_rea_guard(strings: Vec<String>) -> Result<Option<String>, String> {
+    tokio::task::spawn_blocking(move || {
+        lu_target_refusal(&strings, &own_install_dirs(), own_program_hashes()).map(str::to_string)
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -331,8 +465,11 @@ mod tests {
         d
     }
 
-    fn rand_suffix() -> u128 {
-        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+    fn rand_suffix() -> String {
+        // Tests run in parallel: the clock alone gave two of them one folder.
+        static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        format!("{}-{n}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos())
     }
 
     #[test]
@@ -456,6 +593,64 @@ mod tests {
         let dirs: Vec<_> = manager_node_dirs(&home).into_iter().filter(|d| d.starts_with(&home)).collect();
         assert_eq!(dirs.len(), 2, "{dirs:?}");
         assert!(dirs[0].to_string_lossy().contains("v24.22.0"), "newest first: {dirs:?}");
+    }
+
+    #[test]
+    fn lu_itself_is_refused_by_name_folder_bundle_and_hash() {
+        let dir = temp();
+        // Its own folder, as the running app sees it.
+        let own = dir.join("LU-install");
+        std::fs::create_dir_all(&own).unwrap();
+        let exe = own.join("lu-main");
+        std::fs::write(&exe, b"pretend LU executable").unwrap();
+        let dirs = vec![own.canonicalize().unwrap()];
+        let hashes = vec![sha256_of(&exe).unwrap()];
+        for target in [
+            exe.to_string_lossy().into_owned(),
+            "/Applications/Locally Uncensored.app/Contents/MacOS/locally-uncensored".into(),
+            r"C:\Program Files\Locally Uncensored\lu-llama-server-x86_64-pc-windows-msvc.exe".into(),
+            "https://lu-labs.ai/blog/some-post".into(),
+            "https://lrrhheztdytyfpizvuup.supabase.co/rest/v1/".into(),
+        ] {
+            assert_eq!(lu_target_refusal(std::slice::from_ref(&target), &dirs, &hashes), Some(LU_TARGET_REFUSAL), "{target}");
+        }
+        // A copy under another name is recognised by its hash.
+        let copy = dir.join("innocent.bin");
+        std::fs::copy(&exe, &copy).unwrap();
+        assert!(is_lu_target(&copy.to_string_lossy(), &dirs, &hashes));
+        // A .app whose Info.plist carries LU's bundle id, wherever it lies.
+        let app = dir.join("Renamed.app/Contents");
+        std::fs::create_dir_all(app.join("MacOS")).unwrap();
+        std::fs::write(app.join("Info.plist"), format!("<string>{LU_BUNDLE_ID}.a37</string>")).unwrap();
+        std::fs::write(app.join("MacOS/x"), b"x").unwrap();
+        assert!(is_lu_target(&app.join("MacOS/x").to_string_lossy(), &dirs, &hashes));
+    }
+
+    #[test]
+    fn any_other_program_passes() {
+        let dir = temp();
+        let own = dir.join("LU-install");
+        std::fs::create_dir_all(&own).unwrap();
+        let exe = own.join("lu-main");
+        std::fs::write(&exe, b"pretend LU executable").unwrap();
+        let dirs = vec![own.canonicalize().unwrap()];
+        let hashes = vec![sha256_of(&exe).unwrap()];
+        let other = dir.join("a37probe");
+        std::fs::write(&other, b"some other program").unwrap();
+        let other_app = dir.join("Other.app/Contents");
+        std::fs::create_dir_all(&other_app).unwrap();
+        std::fs::write(other_app.join("Info.plist"), b"<string>com.example.other</string>").unwrap();
+        let strings: Vec<String> = vec![
+            other.to_string_lossy().into_owned(),
+            other_app.to_string_lossy().into_owned(),
+            "/usr/bin/ls".into(),
+            "GIFAnimator.exe".into(),
+            "https://example.com".into(),
+            "decompile main".into(),
+            "lu".into(),
+            "/Users/someone/projects/lucid/app".into(),
+        ];
+        assert_eq!(lu_target_refusal(&strings, &dirs, &hashes), None);
     }
 
     #[test]

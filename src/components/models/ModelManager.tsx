@@ -393,12 +393,12 @@ export function ModelManager() {
           {!showMlxPanel && !showMacLoras && tab === 'installed' && (
             <>
               {ablStatus?.status === 'running' && !ablDialogOpen && (
-                <skin.QuietLine>
-                  <span data-testid="remove-refusals-strip">
-                    Removing refusals from {ablStatus.modelName}: {ablStatus.phaseLabel || 'starting'}.{' '}
-                    <button type="button" className="underline" onClick={() => openRemoveRefusals(ablStatus.sourcePath)}>Open</button>
-                  </span>
-                </skin.QuietLine>
+                // One quiet line above the list, not the empty-state block:
+                // the list stays where it was while the run goes on.
+                <p data-testid="remove-refusals-strip" className="t-body text-gray-500 dark:text-gray-400 mb-2">
+                  Removing refusals from {ablStatus.modelName}: {ablStatus.phaseLabel || 'starting'}.{' '}
+                  <button type="button" className="underline hover:text-gray-900 dark:hover:text-white" onClick={() => openRemoveRefusals(ablStatus.sourcePath)}>Open</button>
+                </p>
               )}
               {counterView(installedCount, inventoryState).kind === 'loading' ? (
                 // The empty state is the same claim the counter makes, in

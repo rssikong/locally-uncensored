@@ -50,6 +50,7 @@ pub const BLOCKED: &[&str] = &[
     "comfy_torch_plan",
     "plugin_rea_status",
     "plugin_rea_fetch",
+    "plugin_rea_guard",
     "storage_status",
     "storage_plan",
     "storage_apply",

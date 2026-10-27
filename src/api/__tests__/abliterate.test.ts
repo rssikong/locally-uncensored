@@ -22,6 +22,7 @@ describe('numbers in the dialog', () => {
     expect(gb(988_097_824)).toBe('1.0 GB')
     expect(gb(27_900_000_000)).toBe('28 GB')
     expect(gb(null)).toBe('?')
+    expect(gb(22_011_023)).toBe('22 MB')
     expect(phaseShare({ step: 50, total: 200 })).toBe(0.25)
     expect(phaseShare({ step: 5, total: 0 })).toBeNull()
   })

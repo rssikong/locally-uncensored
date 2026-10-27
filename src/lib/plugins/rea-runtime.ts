@@ -7,7 +7,7 @@ import { create } from 'zustand'
 import { toolRegistry } from '../../api/mcp/tool-registry'
 import type { MCPExternalClient } from '../../api/mcp/external-client'
 import { isTauri } from '../../api/backend'
-import { REA_PLUGIN, reaFetch, reaServerConfig, reaStatus } from './rea'
+import { REA_PLUGIN, reaFetch, reaGuard, reaServerConfig, reaStatus } from './rea'
 import { reaArgsFromModel, reaResultForModel, reaToolForModel } from './rea-model'
 
 export type ReaPhase = 'off' | 'fetching' | 'starting' | 'on' | 'error'
@@ -75,7 +75,12 @@ export async function startRea(): Promise<void> {
     toolRegistry.registerExternal(
       REA_PLUGIN.serverId,
       offered,
-      async (name, args) => reaResultForModel(await next.callTool(name, reaArgsFromModel(schemas.get(name), args) as typeof args), name),
+      async (name, args) => {
+        // LU itself is not a target: refused before anything runs.
+        const refusal = await reaGuard(args)
+        if (refusal) return refusal
+        return reaResultForModel(await next.callTool(name, reaArgsFromModel(schemas.get(name), args) as typeof args), name)
+      },
     )
     set({ phase: 'on', tools: tools.length, error: null })
   } catch (err) {

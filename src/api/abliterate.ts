@@ -193,5 +193,7 @@ export function minutesRange(low: number, high: number): string {
 export function gb(bytes: number | null | undefined): string {
   if (bytes == null) return '?'
   const v = bytes / 1e9
+  // LU's own Python (23 MB) read "0.0 GB of 0.0 GB" on the box.
+  if (v < 0.1) return `${Math.max(1, Math.round(bytes / 1e6))} MB`
   return v < 10 ? `${v.toFixed(1)} GB` : `${Math.round(v)} GB`
 }

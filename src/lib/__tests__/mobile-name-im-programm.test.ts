@@ -51,6 +51,30 @@ type Allowed = { file: string; has: string; klasse: 'c' | 'd'; grund: string }
  */
 const ALLOWED: Allowed[] = [
   {
+    file: 'src-tauri/src/commands/plugin_rea.rs',
+    has: '"locally uncensored",',
+    klasse: 'd',
+    grund: 'REA-Sperre gegen LU als Ziel (A37, 27.10.2026): Name, an dem LUs eigene Dateien zu erkennen sind. Unter cfg(not(mobile)), REA laeuft nur am Rechner.',
+  },
+  {
+    file: 'src-tauri/src/commands/plugin_rea.rs',
+    has: '"locally-uncensored",',
+    klasse: 'd',
+    grund: 'REA-Sperre gegen LU als Ziel (A37, 27.10.2026): Name, an dem LUs eigene Dateien zu erkennen sind. Unter cfg(not(mobile)), REA laeuft nur am Rechner.',
+  },
+  {
+    file: 'src-tauri/src/commands/plugin_rea.rs',
+    has: '"locally_uncensored",',
+    klasse: 'd',
+    grund: 'REA-Sperre gegen LU als Ziel (A37, 27.10.2026): Name, an dem LUs eigene Dateien zu erkennen sind. Unter cfg(not(mobile)), REA laeuft nur am Rechner.',
+  },
+  {
+    file: 'src-tauri/src/commands/plugin_rea.rs',
+    has: 'const LU_BUNDLE_ID: &str = "com.purpledoubled.locally-uncensored";',
+    klasse: 'd',
+    grund: 'REA-Sperre gegen LU als Ziel (A37, 27.10.2026): Name, an dem LUs eigene Dateien zu erkennen sind. Unter cfg(not(mobile)), REA laeuft nur am Rechner.',
+  },
+  {
     file: 'src-tauri/src/commands/search_tier_tests.rs',
     has: 'client=locally-uncensored/',
     klasse: 'c',

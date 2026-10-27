@@ -1190,12 +1190,41 @@ fn keep_line(tail: &Arc<Mutex<VecDeque<String>>>, line: String) {
     if !bar {
         log(line.clone());
     }
+    // pip shows no progress outside a terminal, and the CUDA build of
+    // PyTorch is 2 GB: on the box the phase read "Installing PyTorch" for
+    // twenty minutes with nothing moving. Say at least how big it is.
+    if let Some(size) = big_download(&line) {
+        with_run(|r| {
+            if r.phase == "setup" {
+                let base = r.phase_label.split(" (").next().unwrap_or_default().to_string();
+                r.phase_label = format!("{base} ({size} download, this takes a while)");
+            }
+        });
+    }
     if let Ok(mut t) = tail.lock() {
         t.push_back(line);
         while t.len() > 40 {
             t.pop_front();
         }
     }
+}
+
+/// "2.0 GB" for pip's "Downloading <file> (1990.6 MB)" when the file is
+/// 100 MB or more, else None.
+fn big_download(line: &str) -> Option<String> {
+    let rest = line.trim_start().strip_prefix("Downloading ")?;
+    let inner = rest.rsplit_once(" (")?.1.strip_suffix(')')?;
+    let (num, unit) = inner.split_once(' ')?;
+    let n: f64 = num.parse().ok()?;
+    let mb = match unit {
+        "MB" => n,
+        "GB" => n * 1000.0,
+        _ => return None,
+    };
+    if mb < 100.0 {
+        return None;
+    }
+    Some(if mb >= 1000.0 { format!("{:.1} GB", mb / 1000.0) } else { format!("{mb:.0} MB") })
 }
 
 /// The sentence for a failed step: a known cause in plain words, else the
@@ -1469,6 +1498,16 @@ mod tests {
         assert_ne!(a, c);
         assert!(a.starts_with("Qwen-Qwen3-4B-"));
         assert!(!a.contains('/'));
+    }
+
+    #[test]
+    fn a_big_pip_download_is_named_with_its_size() {
+        let line = "Downloading https://download-r2.pytorch.org/whl/cu130/torch-2.14.1%2Bcu130-cp312-cp312-win_amd64.whl (1990.6 MB)";
+        assert_eq!(big_download(line).as_deref(), Some("2.0 GB"));
+        assert_eq!(big_download("  Downloading numpy-2.5.4-cp312-cp312-win_amd64.whl (12.6 MB)"), None);
+        assert_eq!(big_download("  Downloading mpmath-1.3.0-py3-none-any.whl.metadata (8.6 kB)"), None);
+        assert_eq!(big_download("Downloading x.whl (250.0 MB)").as_deref(), Some("250 MB"));
+        assert_eq!(big_download("Collecting torch"), None);
     }
 
     #[test]

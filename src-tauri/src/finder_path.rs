@@ -207,8 +207,15 @@ pub fn child_path() -> &'static std::ffi::OsStr {
 /// holds nothing a shell profile adds. Only asked when a program the app
 /// needs (Node for REA) is not on its own PATH, so it is not cached: a Node
 /// installed while the app runs is found at the next switch.
-#[cfg(any(all(unix, not(target_os = "macos")), all(test, unix)))]
+#[cfg(all(unix, not(target_os = "macos")))]
 pub fn linux_login_path() -> Option<String> {
+    linux_login_path_within(std::time::Duration::from_secs(3))
+}
+
+/// The same with a deadline of the caller's choice: a test on a busy machine
+/// must not fail because a real login shell took longer than an app may wait.
+#[cfg(any(all(unix, not(target_os = "macos")), all(test, unix)))]
+fn linux_login_path_within(max: std::time::Duration) -> Option<String> {
     let shell = std::env::var("SHELL").ok();
     let shell = shell
         .as_deref()
@@ -217,7 +224,7 @@ pub fn linux_login_path() -> Option<String> {
         .filter(|p| p.as_os_str() != "/bin/zsh" || p.exists())
         .unwrap_or_else(|| PathBuf::from("/bin/bash"));
     let shell = if shell.exists() { shell } else { PathBuf::from("/bin/sh") };
-    read_login_path(&shell, std::time::Duration::from_secs(3))
+    read_login_path(&shell, max)
 }
 
 #[cfg(all(test, unix))]
@@ -316,7 +323,7 @@ mod tests {
     fn the_linux_login_path_comes_back_from_the_users_shell() {
         // Built for Linux; the same code runs here against this machine's
         // shell, which is enough to see it asks with -l -c and parses.
-        let path = linux_login_path().expect("a login PATH");
+        let path = linux_login_path_within(std::time::Duration::from_secs(30)).expect("a login PATH");
         assert!(path.split(':').any(|p| p == "/usr/bin"), "{path}");
     }
 

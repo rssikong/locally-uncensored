@@ -68,6 +68,25 @@ export function reaFetch(): Promise<ReaStatus> {
   return backendCall<ReaStatus>('plugin_rea_fetch')
 }
 
+/** Every string in a tool call's arguments, at any depth. */
+export function reaArgStrings(args: unknown, out: string[] = []): string[] {
+  if (typeof args === 'string') out.push(args)
+  else if (Array.isArray(args)) for (const a of args) reaArgStrings(a, out)
+  else if (args && typeof args === 'object') for (const v of Object.values(args)) reaArgStrings(v, out)
+  return out
+}
+
+/**
+ * REA does not analyze LU itself (David, 27.10.2026): its app, its helper
+ * programs, lu-labs.ai or LU Cloud. The Rust process decides by name, folder,
+ * bundle id and the hash of LU's own programs (commands/plugin_rea.rs) and
+ * answers with the one sentence the model gets instead of a result, or null.
+ * A hurdle and no more: the desktop app is open source.
+ */
+export function reaGuard(args: unknown): Promise<string | null> {
+  return backendCall<string | null>('plugin_rea_guard', { strings: reaArgStrings(args) })
+}
+
 /** Why REA cannot start with this status, or null when it can. */
 export function reaNotStartable(status: ReaStatus): string | null {
   // Where LU looked, so "node -v works in my terminal" has an answer (A37):

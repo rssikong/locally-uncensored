@@ -217,17 +217,17 @@ function PlanView({ path, onClose }: { path: string; onClose: () => void }) {
         The original file stays as it is. It runs on this computer with Heretic {plan.heretic} and nothing is uploaded.
       </p>
 
-      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 t-label">
-        <dt className="text-gray-500 dark:text-gray-400">Original weights</dt>
+      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 t-body">
+        <dt className="t-label pt-0.5 text-gray-500 dark:text-gray-400">Original weights</dt>
         <dd className="text-gray-800 dark:text-gray-100 min-w-0">
           <button type="button" className="inline-flex items-center gap-1 hover:underline break-all text-left" onClick={() => void openExternal(`https://huggingface.co/${src.repo}`)}>
             {src.repo} <ExternalLink size={12} />
           </button>
           <span className="text-gray-500 dark:text-gray-400"> · {SOURCE_FROM[src.from] ?? ''}</span>
         </dd>
-        <dt className="text-gray-500 dark:text-gray-400">Size</dt>
+        <dt className="t-label pt-0.5 text-gray-500 dark:text-gray-400">Size</dt>
         <dd className="text-gray-800 dark:text-gray-100">{(src.params / 1e9).toFixed(1)}B parameters · {gb(src.downloadBytes)} to download</dd>
-        <dt className="text-gray-500 dark:text-gray-400">License</dt>
+        <dt className="t-label pt-0.5 text-gray-500 dark:text-gray-400">License</dt>
         <dd className="text-gray-800 dark:text-gray-100">{lic.label}</dd>
       </dl>
 
@@ -235,7 +235,7 @@ function PlanView({ path, onClose }: { path: string; onClose: () => void }) {
         <fieldset className="space-y-1">
           <legend className="t-label text-gray-700 dark:text-gray-200 mb-1">Run on</legend>
           {plan.devices.map((d) => (
-            <label key={d.device.id} className={`flex items-start gap-2 t-label ${d.device.supported ? 'text-gray-800 dark:text-gray-100' : 'text-gray-400 dark:text-gray-500'}`}>
+            <label key={d.device.id} className={`flex items-start gap-2 t-body ${d.device.supported ? 'text-gray-800 dark:text-gray-100' : 'text-gray-400 dark:text-gray-500'}`}>
               <input type="radio" name="abl-device" checked={device === d.device.id} disabled={!d.device.supported} onChange={() => setDevice(d.device.id)} />
               <span>
                 {d.device.name}{d.device.memoryBytes ? ` · ${gb(d.device.memoryBytes)}` : ''}
@@ -289,19 +289,19 @@ function PlanView({ path, onClose }: { path: string; onClose: () => void }) {
       </div>
 
       {est && (
-        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 t-label" data-testid="remove-refusals-needs">
-          <dt className="text-gray-500 dark:text-gray-400">Time</dt>
+        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 t-body" data-testid="remove-refusals-needs">
+          <dt className="t-label pt-0.5 text-gray-500 dark:text-gray-400">Time</dt>
           <dd className="text-gray-800 dark:text-gray-100">about {minutes ? minutesRange(minutes.minutesLow, minutes.minutesHigh) : '?'} on this machine, plus the download</dd>
-          <dt className="text-gray-500 dark:text-gray-400">{chosen?.device.kind === 'apple' ? 'Memory' : 'Graphics memory'}</dt>
+          <dt className="t-label pt-0.5 text-gray-500 dark:text-gray-400">{chosen?.device.kind === 'apple' ? 'Memory' : 'Graphics memory'}</dt>
           <dd className="text-gray-800 dark:text-gray-100">
             about {gb(est.memoryNeededBytes)}{est.memoryAvailableBytes != null ? ` of ${gb(est.memoryAvailableBytes)} it can use` : ''}
             {est.quantization === 'bnb4bit' ? ' (loaded in 4 bit to fit)' : ''}
           </dd>
-          <dt className="text-gray-500 dark:text-gray-400">Disk</dt>
+          <dt className="t-label pt-0.5 text-gray-500 dark:text-gray-400">Disk</dt>
           <dd className="text-gray-800 dark:text-gray-100">
             {gb(est.diskNeededBytes)} during the run, {gb(est.diskAfterBytes)} for the copy afterwards{est.diskFreeBytes != null ? ` · ${gb(est.diskFreeBytes)} free` : ''}
           </dd>
-          <dt className="text-gray-500 dark:text-gray-400">Result</dt>
+          <dt className="t-label pt-0.5 text-gray-500 dark:text-gray-400">Result</dt>
           <dd className="text-gray-800 dark:text-gray-100">
             {plan.model.name} (refusals removed), {plan.quantizeTool || ['Q8_0', 'F16', 'BF16'].includes(est.outputQuant) ? est.outputQuant : 'Q8_0'}, next to the original
           </dd>
@@ -319,7 +319,7 @@ function PlanView({ path, onClose }: { path: string; onClose: () => void }) {
         </p>
       )}
 
-      <p className={`t-label ${HINWEIS_TEXT.ruhig}`}>{CLAIM}</p>
+      <p className={`t-body ${HINWEIS_TEXT.ruhig}`}>{CLAIM}</p>
       <p className={`t-micro ${HINWEIS_TEXT.ruhig}`}>
         The chat model is unloaded while the run works. Before and after, LU asks both versions the same 150 short
         questions and shows you the counts; the questions and answers are not kept.
@@ -327,19 +327,19 @@ function PlanView({ path, onClose }: { path: string; onClose: () => void }) {
 
       {needsLicense && (
         <div className="space-y-1">
-          <p className="t-label text-gray-800 dark:text-gray-100">{lic.note}</p>
+          <p className="t-body text-gray-800 dark:text-gray-100">{lic.note}</p>
           {lic.link && (
-            <button type="button" className="inline-flex items-center gap-1 t-label text-gray-600 dark:text-gray-300 hover:underline" onClick={() => void openExternal(lic.link!)}>
+            <button type="button" className="inline-flex items-center gap-1 t-body text-gray-600 dark:text-gray-300 hover:underline" onClick={() => void openExternal(lic.link!)}>
               Read the license <ExternalLink size={12} />
             </button>
           )}
-          <label className="flex items-start gap-2 t-label text-gray-800 dark:text-gray-100">
+          <label className="flex items-start gap-2 t-body text-gray-800 dark:text-gray-100">
             <input type="checkbox" checked={licenseOk} onChange={(e) => setLicenseOk(e.target.checked)} data-testid="remove-refusals-license" />
             <span>I have read the license and will stay within it.</span>
           </label>
         </div>
       )}
-      <label className="flex items-start gap-2 t-label text-gray-800 dark:text-gray-100">
+      <label className="flex items-start gap-2 t-body text-gray-800 dark:text-gray-100">
         <input type="checkbox" checked={adult} onChange={(e) => setAdult(e.target.checked)} data-testid="remove-refusals-adult" />
         <span>I am 18 or older, and I am responsible for what I do with the copy.</span>
       </label>
@@ -396,7 +396,7 @@ function RunView({ run, onClose, onUse, onModelsChanged }: { run: RunStatus } & 
             {run.etaSecs != null && ` · about ${roughDuration(run.etaSecs)} left`}
           </p>
           {run.best && (
-            <p className="t-label text-gray-800 dark:text-gray-100" data-testid="remove-refusals-best">
+            <p className="t-body text-gray-800 dark:text-gray-100" data-testid="remove-refusals-best">
               Best so far: trial {run.best.trial}, {run.best.refusals}
               {run.prompts ? ` of ${run.prompts}` : ''} test prompts refused
               {run.baseRefusals != null ? ` (the original: ${run.baseRefusals})` : ''}, KL {run.best.kl.toFixed(2)}
@@ -423,7 +423,7 @@ function RunView({ run, onClose, onUse, onModelsChanged }: { run: RunStatus } & 
           Took {roughDuration(r.seconds)}. Saved as {r.quant} next to the original{r.quantNote ? `. ${r.quantNote}` : ''}.
           Refusals are counted by keywords, so evasive answers can slip through as answered.
         </p>
-        <p className={`t-label ${HINWEIS_TEXT.ruhig}`}>{CLAIM}</p>
+        <p className={`t-body ${HINWEIS_TEXT.ruhig}`}>{CLAIM}</p>
         {note && <p className={`t-body ${HINWEIS_TEXT.fehler}`}>{note}</p>}
         <ModalActions>
           {!r.discarded && (
@@ -527,7 +527,7 @@ function ResultTable({ r }: { r: RunRecord }) {
   )
   const of = (c: Check | null, k: keyof Check) => (c ? `${c[k]} of ${c.n}` : '–')
   return (
-    <table className="w-full t-label" data-testid="remove-refusals-result">
+    <table className="w-full t-body" data-testid="remove-refusals-result">
       <thead>
         <tr className="text-gray-500 dark:text-gray-400">
           <th className="text-left font-normal pb-1" />
