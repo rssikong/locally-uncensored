@@ -17,11 +17,15 @@
 
 import { isLinux, isMacOS } from '../api/backend'
 import { isAndroid, isIOS, isMobile } from './device-kind'
+import { MOBILE_BUILD } from './mobile-host'
 
 /** A local ComfyUI can exist on this device. Desktop: everywhere but the Mac,
- *  where local media is MLX only. Never on a phone. */
+ *  where local media is MLX only. Never on a phone, and never in a phone
+ *  build: a phone build in a desktop browser (the Playwright project mobile on
+ *  a Linux runner) reports no phone and used to ask a ComfyUI that cannot be
+ *  there. */
 export function hasComfy(): boolean {
-  return !isMobile() && !isMacOS()
+  return !MOBILE_BUILD && !isMobile() && !isMacOS()
 }
 
 /** The Apple MLX image and video runtime can exist here. Mac only. An iPhone

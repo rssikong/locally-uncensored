@@ -385,6 +385,16 @@ fn secs_per_trial_per_b(kind: DeviceKind, q: Quantization) -> f64 {
     if q == Quantization::Bnb4bit { base * 1.3 } else { base }
 }
 
+/// Small models do not get faster below a point: every trial still answers
+/// the same prompts. The box (RTX 3060, 0.5B) took about 25 s per trial.
+fn min_secs_per_trial(kind: DeviceKind) -> f64 {
+    match kind {
+        DeviceKind::Apple => 12.0,
+        DeviceKind::Nvidia => 20.0,
+        DeviceKind::Amd => 25.0,
+    }
+}
+
 pub fn estimate(input: &EstimateInput<'_>) -> Estimate {
     let p_b = input.params as f64 / GB;
     let device = input.device;
@@ -418,7 +428,7 @@ pub fn estimate(input: &EstimateInput<'_>) -> Estimate {
     };
     let disk_needed = (3.0 * d + output_bytes as f64 + env + 1.5 * GB) as u64;
 
-    let per_trial = secs_per_trial_per_b(device.kind, quantization) * p_b.max(0.3);
+    let per_trial = (secs_per_trial_per_b(device.kind, quantization) * p_b).max(min_secs_per_trial(device.kind));
     let search = per_trial * input.trials as f64;
     // Loading, the refusal directions, the shard merge, conversion and the
     // two checks of 150 short prompts each.
@@ -659,6 +669,16 @@ mod tests {
         // About 8 GB download, three times that for a moment, plus the output.
         assert!(e.disk_needed_bytes > 24_000_000_000 && e.disk_needed_bytes < 30_000_000_000);
         assert!(e.disk_after_bytes < 3_000_000_000);
+    }
+
+    #[test]
+    fn a_half_b_model_on_the_box_lands_near_the_measured_time() {
+        let d = nvidia(12);
+        let mut i = input(494_000_000, &d, None);
+        i.trials = 100;
+        let e = estimate(&i);
+        // RTX 3060: 53 min search, about 58 min with merge, conversion and checks.
+        assert!(e.minutes_low <= 58 && 58 <= e.minutes_high, "{}..{}", e.minutes_low, e.minutes_high);
     }
 
     #[test]

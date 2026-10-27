@@ -236,9 +236,17 @@ const trayRow = (page: Page, kind: string) => page.locator(`[data-mlx-install="$
 const NOTHING_RUNNING = '[data-downloads-active="0"]'
 
 async function openTray(page: Page, kind: string) {
-  // The tray opens itself when a download starts. A click would close it.
-  if (!(await trayRow(page, kind).isVisible().catch(() => false))) await tray(page).click()
-  await expect(trayRow(page, kind)).toBeVisible()
+  // The tray opens itself when a download starts, and a click on an open tray
+  // closes it. Looked at once, a tray still opening read as closed and the
+  // click shut it (red on the Linux runner, 3.0.8 release run), so look again
+  // after every click until the row is there.
+  await expect(async () => {
+    if (!(await trayRow(page, kind).isVisible().catch(() => false))) {
+      await tray(page).click()
+      await page.waitForTimeout(300)
+    }
+    await expect(trayRow(page, kind)).toBeVisible({ timeout: 1000 })
+  }).toPass({ timeout: 15_000 })
 }
 
 test('the download tray has a Stop for a running model download: the row is gone with the click, without an error', async ({ page }) => {

@@ -51,8 +51,8 @@ test('without a session one click opens the sales panel, not a login form', asyn
   // Die drei gezaehlten Zeilen.
   const lines = page.getByTestId('cloud-sales-lines')
   await expect(lines).toContainText('19 No Filter chat models')
-  await expect(lines).toContainText('14 uncensored video models')
-  await expect(lines).toContainText('7 uncensored image models')
+  await expect(lines).toContainText('17 uncensored video models')
+  await expect(lines).toContainText('9 uncensored image models')
 
   // Der Abo-Satz unter dem Knopf.
   await expect(panel(page)).toContainText(
