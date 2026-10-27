@@ -28,7 +28,7 @@ import {
   type Command,
   type CommandContext,
 } from '../ui/command-actions'
-import { SHORTCUT_ACTIONS, shortcutKeys, type ShortcutId } from '../../hooks/useKeyboardShortcuts'
+import { SHORTCUT_ACTIONS, platformKeys, shortcutKeys, type ShortcutId } from '../../hooks/useKeyboardShortcuts'
 
 const SRC = resolve(__dirname, '..', '..')
 const read = (...p: string[]) => readFileSync(resolve(SRC, ...p), 'utf8')
@@ -69,7 +69,12 @@ describe('jeder Eintrag hat eine vorhandene Aktion dahinter', () => {
   it('und sie zeigen die Beschriftung aus DERSELBEN Liste', () => {
     const cmds = buildCommands(ctxWith())
     expect(byId(cmds, 'new-conversation')?.keys).toBe(shortcutKeys('new-conversation'))
-    expect(byId(cmds, 'toggle-theme')?.keys).toBe('Ctrl+Shift+D')
+    // In the spelling of the machine the test runs on: since the phone branch
+    // the Mac question is asked of lib/capabilities, and that answers yes
+    // under Node on a Mac. Both spellings are held by name.
+    expect(byId(cmds, 'toggle-theme')?.keys).toBe(platformKeys('Ctrl+Shift+D'))
+    expect(platformKeys('Ctrl+Shift+D', false)).toBe('Ctrl+Shift+D')
+    expect(platformKeys('Ctrl+Shift+D', true)).toBe('\u21E7\u2318D')
   })
 
   it('Navigation ruft setView der Kopfzeile, mit dem richtigen Ziel', () => {

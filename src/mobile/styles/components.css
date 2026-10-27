@@ -1,0 +1,2483 @@
+/* Components of src/mobile/ui. One block per component, in the order of
+   DESIGN.md section 8. Every target is at least 44 by 44 px (--m-touch). */
+
+/* ---------- IconButton ---------- */
+.m-ib {
+  width: var(--m-touch);
+  height: var(--m-touch);
+  min-width: var(--m-touch);
+  min-height: var(--m-touch);
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--m-r-md);
+  color: var(--m-t2);
+  position: relative;
+}
+.m-ib:disabled {
+  opacity: 0.4;
+}
+.m-ib-dot {
+  position: absolute;
+  top: 3px;
+  right: 1px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--m-accent);
+  color: var(--m-on-accent);
+  font-family: var(--m-font);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+}
+
+/* ---------- Button ---------- */
+.m-btn {
+  min-height: var(--m-touch);
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--m-s2);
+  padding: var(--m-s2) var(--m-s4);
+  border: 1px solid var(--m-edge);
+  border-radius: var(--m-r-lg);
+  color: var(--m-t1);
+  font-size: var(--m-text-control);
+  font-weight: 500;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+.m-app .m-btn {
+  border: 1px solid var(--m-edge);
+  padding: var(--m-s2) var(--m-s4);
+  text-align: center;
+}
+.m-app .m-btn--primary {
+  background: var(--m-accent);
+  color: var(--m-on-accent);
+  border-color: var(--m-accent-edge);
+  font-weight: 600;
+}
+.m-app .m-btn--cloud {
+  background: var(--m-cloud-edge);
+  color: #ffffff;
+  border-color: var(--m-cloud-edge);
+  font-weight: 600;
+}
+.m-app .m-btn--quiet {
+  border-color: transparent;
+  color: var(--m-t2);
+}
+.m-app .m-btn--link {
+  border-color: transparent;
+  background: none;
+  color: var(--m-accent-text);
+  font-weight: 500;
+}
+.m-app .m-btn--danger {
+  color: var(--m-err);
+  border-color: var(--m-err);
+}
+/* "Sign in with Apple", after Apple's rules for this button: white on a dark
+   page, black on a light one, the logo in front of the prescribed words, the
+   font of the system. The two colours are Apple's and no token of the shell. */
+.m-app .m-btn--apple {
+  background: #ffffff;
+  color: #000000;
+  border-color: #ffffff;
+  font-family: -apple-system, 'SF Pro Text', system-ui, sans-serif;
+  font-weight: 600;
+}
+html[data-shell='mobile'].light .m-app .m-btn--apple {
+  background: #000000;
+  color: #ffffff;
+  border-color: #000000;
+}
+/* U+F8FF is the Apple logo in the system font of an Apple device, the only place this button exists. */
+.m-apple-logo {
+  margin-right: 0.3em;
+  font-family: -apple-system, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+  font-size: 1.15em;
+  line-height: 1;
+}
+.m-btn--block {
+  display: flex;
+  width: 100%;
+}
+.m-btn--compact {
+  padding-left: var(--m-s3);
+  padding-right: var(--m-s3);
+}
+.m-btn:disabled,
+.m-btn[aria-disabled='true'] {
+  opacity: 0.4;
+}
+.m-btn[aria-busy='true'] {
+  opacity: 1;
+}
+.m-btn-hint {
+  display: block;
+  font-size: var(--m-text-caption);
+  font-weight: 400;
+  opacity: 0.8;
+}
+
+/* ---------- Progress ring (indeterminate) ---------- */
+/* A symbol in a line of text grows with the text or has room, and it reads as what it is at every size.
+   The ring grows with the text (--m-icon-sm, 18 px up to 30 px at the text zoom of Android). Its line grows
+   with it, and the track is a share of the colour of the text. It was 2 px in 8 percent black at every size:
+   at 30 px a still picture showed only the quarter that turns, an open arc that looked cut off ("the ring
+   before Loading is cut on the left", acceptance row 5.8). A box of its own, also where the parent is no flex row. */
+.m-ring {
+  display: inline-block;
+  vertical-align: middle;
+  box-sizing: border-box;
+  width: var(--m-icon-sm);
+  height: var(--m-icon-sm);
+  flex: none;
+  border-radius: 50%;
+  border: max(2px, calc(var(--m-icon-sm) / 9)) solid color-mix(in srgb, currentColor 26%, transparent);
+  border-top-color: currentColor;
+  animation: m-spin 800ms linear infinite;
+}
+.m-ring--lg {
+  width: 28px;
+  height: 28px;
+  border-width: 3px;
+  color: var(--m-accent);
+}
+
+/* ---------- Progress bar ---------- */
+.m-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.m-progress-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--m-s1) var(--m-s3);
+  color: var(--m-t3);
+}
+.m-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--m-fill-2);
+  overflow: hidden;
+}
+.m-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--m-accent);
+  transition: width var(--m-slow) linear;
+}
+.m-bar--cloud > i {
+  background: var(--m-cloud-edge);
+}
+.m-bar--paused > i {
+  background: var(--m-t3);
+}
+.m-bar--error > i {
+  background: var(--m-err);
+}
+
+/* ---------- Segmented ---------- */
+.m-seg {
+  display: flex;
+  flex-wrap: wrap;
+  padding: 2px;
+  gap: 2px;
+  background: var(--m-fill);
+  border-radius: var(--m-r-lg);
+}
+.m-seg-opt {
+  flex: 1 1 auto;
+  min-height: var(--m-touch);
+  min-width: var(--m-touch);
+  padding: var(--m-s1) var(--m-s2);
+  border-radius: 11px;
+  color: var(--m-t3);
+  font-size: var(--m-text-control);
+  font-weight: 500;
+  line-height: 1.2;
+}
+.m-app .m-seg-opt {
+  padding: var(--m-s1) var(--m-s2);
+  text-align: center;
+}
+/* The options do not fit next to each other (ui/Segmented measures it): all of them go under each other. */
+.m-seg[data-stacked] {
+  flex-direction: column;
+}
+.m-seg[data-stacked] .m-seg-opt {
+  width: 100%;
+}
+.m-seg-label {
+  display: inline-block;
+  max-width: 100%;
+  overflow-wrap: break-word;
+  -webkit-hyphens: manual;
+  hyphens: manual;
+}
+.m-seg[data-measuring] .m-seg-label {
+  max-width: none;
+  white-space: nowrap;
+}
+.m-seg-opt[aria-checked='true'] {
+  background: var(--m-segment);
+  color: var(--m-t1);
+  box-shadow: 0 0 0 1px var(--m-hair);
+  transition: background var(--m-fast) var(--m-ease);
+}
+.m-seg-opt:disabled {
+  opacity: 0.4;
+}
+/* Tabs (round 57, David): no grey box around the switch. The halves stand on a hairline, the chosen one has full
+   text and a 2 px line under it, both in the accent text colour (clear in light and dark). Same touch height and the
+   same measure for "fits next to each other". */
+.m-seg--tabs {
+  padding: 0;
+  gap: 0;
+  background: none;
+  border-radius: 0;
+  box-shadow: inset 0 -1px 0 var(--m-hair);
+}
+.m-seg--tabs .m-seg-opt {
+  flex: 1 1 0;
+  border-radius: 0;
+}
+.m-seg--tabs .m-seg-opt[aria-checked='true'] {
+  background: none;
+  color: var(--m-accent-text);
+  font-weight: 600;
+  box-shadow: inset 0 -2px 0 var(--m-accent-text);
+}
+/* Under each other (large text): the line stands at the side of the chosen one. */
+.m-seg--tabs[data-stacked] {
+  box-shadow: inset 1px 0 0 var(--m-hair);
+}
+.m-seg--tabs[data-stacked] .m-seg-opt[aria-checked='true'] {
+  box-shadow: inset 2px 0 0 var(--m-accent-text);
+}
+
+/* ---------- Chip ---------- */
+.m-chips {
+  display: flex;
+  gap: var(--m-s2);
+  overflow-x: auto;
+  padding: 0 var(--m-gutter);
+  scroll-padding: 0 var(--m-gutter);
+}
+.m-chips--wrap {
+  flex-wrap: wrap;
+  overflow-x: visible;
+}
+.m-chip {
+  flex: none;
+  min-height: var(--m-touch);
+  /* A chip with a very short label ("1:1") is still a full target. */
+  min-width: var(--m-touch);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: var(--m-r-pill);
+  color: var(--m-t2);
+  font-size: var(--m-text-control);
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.m-app .m-chip {
+  padding: 0 var(--m-s3);
+  border: 1px solid var(--m-hair);
+}
+.m-app .m-chip[aria-pressed='true'],
+.m-app .m-chip[aria-checked='true'] {
+  background: var(--m-fill-2);
+  border-color: var(--m-edge);
+  color: var(--m-t1);
+}
+/* Status chip in the composer: looks 28 px high, its target is 44 px. */
+.m-app .m-chip--mini {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: var(--m-text-caption);
+  font-weight: 400;
+}
+.m-chip--mini > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 2px 10px;
+  border: 1px solid var(--m-hair);
+  border-radius: var(--m-r-pill);
+}
+.m-chip--ok {
+  color: var(--m-ok);
+}
+.m-app .m-chip--ok:not(.m-chip--mini),
+.m-chip--ok.m-chip--mini > span {
+  border-color: color-mix(in srgb, var(--m-ok) 45%, transparent);
+}
+.m-chip--cloud {
+  color: var(--m-cloud);
+}
+.m-app .m-chip--cloud:not(.m-chip--mini),
+.m-chip--cloud.m-chip--mini > span {
+  border-color: color-mix(in srgb, var(--m-cloud-edge) 55%, transparent);
+  background: var(--m-cloud-soft);
+}
+.m-chip--warn {
+  color: var(--m-warn);
+}
+.m-chip:disabled {
+  opacity: 0.4;
+}
+
+/* ---------- Field, TextArea ---------- */
+.m-fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.m-field-label {
+  font-size: var(--m-text-caption);
+  font-weight: 500;
+  color: var(--m-t2);
+}
+.m-field {
+  display: flex;
+  align-items: center;
+  gap: var(--m-s2);
+  min-height: var(--m-touch);
+  padding: 0 var(--m-s1) 0 var(--m-s3);
+  background: var(--m-fill);
+  border: 1px solid transparent;
+  border-radius: var(--m-r-lg);
+  color: var(--m-t3);
+}
+.m-field:focus-within {
+  border-color: var(--m-accent);
+}
+.m-field[data-invalid] {
+  border-color: var(--m-err);
+}
+.m-field input {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--m-touch);
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: var(--m-t1);
+  /* At least 16 px, or iOS zooms on focus (DESIGN.md 7.2). */
+  font-size: max(var(--m-text-body), 16px);
+  /* An example that is longer than the field ends in an ellipsis, not in half a letter. */
+  text-overflow: ellipsis;
+}
+.m-app .m-field input:focus-visible,
+.m-app .m-textarea textarea:focus-visible {
+  outline: none;
+}
+.m-field input::placeholder,
+.m-textarea textarea::placeholder,
+.m-composer textarea::placeholder {
+  color: var(--m-t3);
+  opacity: 1;
+}
+.m-field-pad {
+  width: var(--m-s2);
+  flex: none;
+}
+.m-textarea {
+  display: flex;
+  padding: var(--m-s3);
+  background: var(--m-fill);
+  border: 1px solid transparent;
+  border-radius: var(--m-r-lg);
+}
+.m-textarea:focus-within {
+  border-color: var(--m-accent);
+}
+.m-textarea[data-invalid] {
+  border-color: var(--m-err);
+}
+.m-textarea textarea {
+  flex: 1;
+  min-width: 0;
+  min-height: calc(5.8 * var(--m-u));
+  padding: 0;
+  border: 0;
+  outline: 0;
+  resize: none;
+  background: none;
+  color: var(--m-t1);
+  font-size: max(var(--m-text-body), 16px);
+  line-height: 1.45;
+}
+/* A field that is higher than the room above the keyboard is capped while it has the focus
+   (ui/field-in-view.ts, fitFieldHeight). Its text scrolls inside. */
+.m-textarea textarea[data-m-capped],
+.m-app textarea[data-m-fits-room][data-m-capped] {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.m-field-error {
+  font-size: var(--m-text-caption);
+  color: var(--m-err);
+}
+.m-field-hint {
+  font-size: var(--m-text-caption);
+  color: var(--m-t3);
+}
+
+/* ---------- Switch ---------- */
+.m-sw {
+  flex: none;
+  width: 51px;
+  height: 31px;
+  border-radius: 16px;
+  background: var(--m-fill-2);
+  position: relative;
+  transition: background var(--m-fast) var(--m-ease);
+}
+.m-sw::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 27px;
+  height: 27px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  transition: left var(--m-fast) var(--m-ease);
+}
+[aria-checked='true'] > .m-sw,
+[aria-checked='true'] .m-row-end > .m-sw {
+  background: var(--m-accent);
+}
+[aria-checked='true'] > .m-sw::after,
+[aria-checked='true'] .m-row-end > .m-sw::after {
+  left: 22px;
+}
+[aria-checked='true'] > .m-sw--cloud,
+[aria-checked='true'] .m-row-end > .m-sw--cloud {
+  background: var(--m-cloud-edge);
+}
+/* A switch that stands alone (not inside a Row) still gets a 44 px target. */
+.m-switch {
+  min-height: var(--m-touch);
+  min-width: var(--m-touch);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--m-s2);
+  font-size: var(--m-text-control);
+  font-weight: 500;
+  color: var(--m-t2);
+}
+.m-switch:disabled,
+.m-switch[aria-disabled='true'] {
+  opacity: 0.5;
+}
+.m-app .m-switch--pill {
+  padding: 0 6px 0 var(--m-s3);
+  border: 1px solid var(--m-hair);
+  border-radius: var(--m-r-pill);
+}
+.m-switch--pill .m-sw {
+  transform: scale(0.8);
+  transform-origin: right center;
+  margin-left: -6px;
+}
+.m-app .m-switch--pill.m-switch--cloud[aria-checked='true'] {
+  border-color: var(--m-cloud-edge);
+  background: var(--m-cloud-soft);
+  color: var(--m-cloud);
+}
+
+/* ---------- List, ListGroup, Row ---------- */
+.m-group-label {
+  padding: var(--m-s4) var(--m-s5) var(--m-s2);
+}
+.m-group {
+  margin: 0 var(--m-gutter) var(--m-s4);
+  background: var(--m-surface);
+  border: 1px solid var(--m-card-edge);
+  border-radius: var(--m-r-lg);
+  overflow: hidden;
+}
+.m-sheet .m-group {
+  background: var(--m-fill);
+  border-color: transparent;
+}
+/* A flat list (ListGroup flat, round 57): no card, the rows run from edge to edge, a hairline between two rows
+   starts at the text and runs to the edge, as in the lists of iOS and Android. The row keeps its 52 px and its
+   targets; only the box around it and its inset go. */
+.m-group--flat,
+.m-sheet .m-group--flat {
+  margin: 0 0 var(--m-s3);
+  background: none;
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+}
+.m-app .m-group--flat .m-row {
+  padding-left: var(--m-gutter);
+}
+.m-group--flat .m-row + .m-row::before,
+.m-group--flat .m-rowwrap + .m-rowwrap::before {
+  left: var(--m-gutter);
+}
+.m-group-label--flat {
+  padding-left: var(--m-gutter);
+  padding-right: var(--m-gutter);
+}
+.m-row {
+  width: 100%;
+  min-height: var(--m-row);
+  display: flex;
+  /* At large text the value moves under the title instead of squeezing it into single letters. */
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--m-s1) var(--m-s3);
+  position: relative;
+}
+.m-app .m-row {
+  padding: var(--m-s2) var(--m-s3) var(--m-s2) var(--m-s4);
+}
+.m-row + .m-row::before,
+.m-rowwrap + .m-rowwrap::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: var(--m-s4);
+  right: 0;
+  border-top: 1px solid var(--m-hair);
+}
+.m-rowwrap {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+}
+.m-rowwrap > .m-row {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
+.m-rowwrap > .m-row::before {
+  display: none;
+}
+.m-rowwrap > .m-direct {
+  align-self: center;
+}
+.m-rowwrap > .m-ib {
+  align-self: center;
+  margin-right: var(--m-s1);
+}
+.m-row > svg:first-child {
+  color: var(--m-t3);
+}
+.m-row-text {
+  flex: 1 1 calc(5 * var(--m-u));
+  min-width: 0;
+}
+.m-row-title {
+  display: block;
+  font-size: var(--m-text-body);
+  font-weight: 500;
+  /* A word longer than the row is hyphenated, not cut where the row ends ("Troubleshoot-ing"). */
+  overflow-wrap: break-word;
+  -webkit-hyphens: manual;
+  hyphens: manual;
+}
+.m-row-sub {
+  display: block;
+  font-size: var(--m-text-caption);
+  line-height: 1.4;
+  color: var(--m-t3);
+  overflow-wrap: break-word;
+}
+.m-row-end {
+  flex: 0 1 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--m-s2);
+  max-width: 100%;
+  margin-left: auto;
+}
+.m-row-val {
+  min-width: 0;
+  font-size: var(--m-text-control);
+  color: var(--m-t3);
+  text-align: right;
+  overflow-wrap: break-word;
+}
+.m-row-chev {
+  color: var(--m-t3);
+  opacity: 0.7;
+}
+.m-row[aria-disabled='true'] .m-row-title,
+.m-row:disabled .m-row-title {
+  color: var(--m-t3);
+}
+.m-row--danger .m-row-title,
+.m-row--danger > svg:first-child {
+  color: var(--m-err);
+}
+.m-radio {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--m-edge);
+  border-radius: 50%;
+}
+[aria-checked='true'] > .m-radio,
+[aria-checked='true'] .m-row-end > .m-radio {
+  border-color: var(--m-accent);
+}
+[aria-checked='true'] > .m-radio::after,
+[aria-checked='true'] .m-row-end > .m-radio::after {
+  content: '';
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--m-accent);
+}
+
+/* ---------- Card ---------- */
+.m-card {
+  margin: 0 var(--m-gutter) var(--m-s3);
+  /* 12 px, as the cards of Create and the notes: a card holds its content, it does not pad it out (round 57). */
+  padding: var(--m-s3);
+  background: var(--m-surface);
+  border: 1px solid var(--m-card-edge);
+  border-radius: var(--m-r-lg);
+}
+.m-card-title {
+  font-size: var(--m-text-title);
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: break-word;
+  -webkit-hyphens: manual;
+  hyphens: manual;
+}
+.m-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.m-tag {
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: var(--m-fill-2);
+  color: var(--m-t2);
+  font-size: var(--m-text-label);
+  font-weight: 600;
+  line-height: 1.3;
+}
+.m-tag--accent {
+  background: var(--m-accent-soft);
+  color: var(--m-accent-text);
+}
+/* The mark "Direct" (policy/DirectMark.tsx): a tag one can tap, with a target of its own. */
+.m-direct {
+  flex: none;
+  min-width: var(--m-touch);
+  min-height: var(--m-touch);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 var(--m-s1);
+  border-radius: var(--m-r-md);
+}
+
+/* ---------- Beta mark ---------- */
+.m-beta {
+  display: inline-block;
+  padding: 1px 6px;
+  border: 1px solid var(--m-card-edge);
+  border-radius: 5px;
+  color: var(--m-t2);
+  font-size: var(--m-text-label);
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.m-group-label-mark {
+  margin-left: var(--m-s2);
+}
+
+/* ---------- FitBadge ---------- */
+.m-fit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--m-text-caption);
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--m-t3);
+}
+.m-fit > i {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: currentColor;
+}
+.m-fit--fits {
+  color: var(--m-ok);
+}
+.m-fit--tight {
+  color: var(--m-tight);
+}
+.m-fit--too-large {
+  color: var(--m-err);
+}
+
+/* ---------- Notice ---------- */
+.m-note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--m-s2);
+  margin: 0 var(--m-gutter) var(--m-s3);
+  padding: var(--m-s2) var(--m-s3);
+  border-radius: var(--m-r-lg);
+  background: var(--m-fill);
+  color: var(--m-t2);
+  font-size: var(--m-text-caption);
+  line-height: 1.4;
+  /* A title or a sentence may carry an address or a file name, one word without a place to break
+     ("192.168.178.20:11435"). At the largest text it ran out of the box (check on the iPhone, round 22, N10). */
+  overflow-wrap: anywhere;
+}
+.m-note > svg {
+  color: var(--m-t3);
+  margin-top: 1px;
+}
+.m-note--error {
+  background: var(--m-err-soft);
+}
+.m-note--error > svg {
+  color: var(--m-err);
+}
+.m-note--warn {
+  background: var(--m-warn-soft);
+}
+.m-note--warn > svg {
+  color: var(--m-warn);
+}
+.m-note-title {
+  display: block;
+  color: var(--m-t1);
+  font-size: var(--m-text-control);
+  font-weight: 600;
+  line-height: 1.3;
+}
+.m-note-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--m-s2);
+  margin-top: var(--m-s2);
+}
+
+/* ---------- Banner ---------- */
+.m-banner {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
+  align-items: center;
+  gap: 0 var(--m-s2);
+  padding: var(--m-s2) var(--m-gutter);
+  background: var(--m-fill);
+  color: var(--m-t1);
+  font-size: var(--m-text-caption);
+  line-height: 1.4;
+}
+.m-banner > svg {
+  color: var(--m-t3);
+}
+/* The sentence keeps most of the line. With large text the buttons go under it instead of pressing
+   it into a column of two words a line (acceptance on the small iPhone, round 5, N3). */
+.m-banner > .m-grow {
+  flex-basis: 60%;
+}
+.m-banner--warn {
+  background: var(--m-warn-soft);
+}
+.m-banner--warn > svg {
+  color: var(--m-warn);
+}
+.m-banner--error {
+  background: var(--m-err-soft);
+}
+.m-banner--error > svg {
+  color: var(--m-err);
+}
+/* One or two buttons at the end. They go under the text together when the line is full. */
+.m-banner-actions {
+  flex: 0 1 auto;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0 var(--m-s1);
+  max-width: 100%;
+  margin-left: auto;
+}
+.m-banner-action {
+  flex: 0 1 auto;
+  max-width: 100%;
+  overflow-wrap: break-word;
+  min-height: var(--m-touch);
+  min-width: var(--m-touch);
+  font-weight: 600;
+  color: var(--m-accent-text);
+}
+.m-app .m-banner-action {
+  padding: 0 var(--m-s2);
+}
+
+/* ---------- EmptyState ---------- */
+.m-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--m-s3);
+  padding: var(--m-s8) var(--m-s6);
+  color: var(--m-t3);
+  text-align: center;
+}
+.m-empty-title {
+  font-family: var(--m-font-display);
+  font-size: var(--m-text-display);
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--m-t1);
+  overflow-wrap: break-word;
+  -webkit-hyphens: manual;
+  hyphens: manual;
+}
+.m-empty-mark {
+  color: var(--m-t1);
+  opacity: 0.9;
+}
+.m-empty-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--m-s2);
+  width: 100%;
+  max-width: calc(20 * var(--m-u));
+  margin-top: var(--m-s2);
+}
+/* A link under the sentence stands in the middle, as wide as its words; the text above sets the line it sits on. */
+.m-empty-actions > .m-btn--link {
+  align-self: center;
+  margin-top: calc(-1 * var(--m-s2));
+}
+
+/* ---------- Little content stands in the middle ---------- */
+/* A page that shows little (a hint, an empty state, one action) has it in the middle of the free
+   area between the header and the footer, the tab bar or the composer, not at the top with the
+   room below it (MOBILE-ZIEL.md 3.5, round 20). The rule is in the kit and no screen writes it:
+    - an EmptyState, and anything else marked data-m-sparse (ui/Layout.tsx, Sparse), takes the
+      free room above and below itself in equal parts,
+    - the scrolling body of a page that holds one, with or without the standard wrapper, becomes
+      a column that is as high as the free area. A box in between (the list area of a tab root, a
+      transcript) passes that on with data-m-sparse-box.
+   What stands above it (a notice, a search field, a row of chips) stays at the top, and the middle
+   is that of the room below it. A footer at the end of the scrolling content (a phone on its side,
+   ui/Page.tsx) keeps the lower edge, and the middle is that of the room above it.
+   The margins are `auto`, not `justify-content: center`: when the content is higher than the room
+   (large text, a phone on its side) there is nothing to share, it starts at the top and scrolls,
+   and no first line lies out of reach above the edge. The shell is as high as what is visible
+   (platform/keyboard.ts, --m-vh), so with the keyboard open the middle is that of the area above
+   the keyboard. Lists and forms of settings do not carry the mark: they start at the top.
+   A hero at the head of a longer page uses the look of .m-empty without the mark and stays put. */
+.m-body:has(> [data-m-sparse], > [data-m-sparse-box], > .m-body-inner > [data-m-sparse], > .m-body-inner > [data-m-sparse-box]),
+.m-body-inner:has(> [data-m-sparse], > [data-m-sparse-box]),
+[data-m-sparse-box] {
+  display: flex;
+  flex-direction: column;
+}
+/* Nothing in such a column gives way: what does not fit scrolls. Without weight, so a part that sets its own wins. */
+:where(.m-body:has(> [data-m-sparse], > [data-m-sparse-box], > .m-body-inner > [data-m-sparse], > .m-body-inner > [data-m-sparse-box])) > :where(*),
+:where(.m-body-inner:has(> [data-m-sparse], > [data-m-sparse-box])) > :where(*),
+:where([data-m-sparse-box]) > :where(*) {
+  flex-shrink: 0;
+}
+.m-body > .m-body-inner:has(> [data-m-sparse], > [data-m-sparse-box]),
+.m-body > [data-m-sparse-box],
+.m-body-inner > [data-m-sparse-box],
+[data-m-sparse-box] > [data-m-sparse-box] {
+  flex-grow: 1;
+}
+[data-m-sparse] {
+  margin-top: auto;
+  margin-bottom: auto;
+}
+
+/* ---------- Skeleton ---------- */
+.m-skel {
+  display: block;
+  border-radius: var(--m-r-sm);
+  background: var(--m-fill-2);
+  animation: m-skel 1200ms ease-in-out infinite;
+}
+@keyframes m-skel {
+  50% {
+    opacity: 0.45;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .m-skel {
+    animation: none;
+  }
+}
+.m-skel-row {
+  min-height: var(--m-row);
+  display: flex;
+  align-items: center;
+  gap: var(--m-s3);
+  padding: var(--m-s2) var(--m-s4);
+}
+.m-skel-lines {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ---------- Overlays: scrim, Sheet, Dialog ---------- */
+.m-overlays {
+  position: absolute;
+  inset: 0;
+  z-index: 70;
+  pointer-events: none;
+}
+.m-scrim {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  background: var(--m-scrim);
+  pointer-events: auto;
+  animation: m-fade var(--m-base) var(--m-ease);
+}
+.m-scrim-hit {
+  position: absolute;
+  inset: 0;
+}
+.m-sheet {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  max-height: 88%;
+  margin-top: var(--m-safe-top);
+  padding-bottom: var(--m-bottom);
+  background: var(--m-sheet);
+  border-top: 1px solid var(--m-hair);
+  border-radius: var(--m-r-xl) var(--m-r-xl) 0 0;
+  box-shadow: var(--m-shadow-sheet);
+  animation: m-sheet-up var(--m-slow) var(--m-ease);
+}
+@media (prefers-reduced-motion: reduce) {
+  .m-sheet {
+    animation: m-fade var(--m-fast) linear;
+  }
+}
+/* On its way in the sheet moves under the finger: its content takes taps
+   once it stands still (ui/Sheet.tsx). Close and the scrim work at once. */
+.m-sheet[data-m-settling] > .m-sheet-body,
+.m-sheet[data-m-settling] > .m-sheet-foot {
+  pointer-events: none;
+}
+.m-app[data-orient='land'] .m-sheet {
+  width: min(480px, 100%);
+  max-height: 94%;
+  margin-left: auto;
+  margin-right: auto;
+}
+.m-sheet-grab {
+  flex: none;
+  display: flex;
+  justify-content: center;
+  padding: 8px 0 0;
+  touch-action: none;
+}
+.m-sheet-grab > i {
+  width: 36px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--m-fill-2);
+}
+.m-sheet-hdr {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--m-s1);
+  min-height: var(--m-touch);
+  padding: 0 var(--m-s2) 0 var(--m-s4);
+}
+.m-sheet-hdr[data-sub] {
+  padding-left: var(--m-s2);
+}
+.m-sheet-title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--m-text-title);
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: break-word;
+  -webkit-hyphens: manual;
+  hyphens: manual;
+}
+/* No rubber band in a sheet (check iOS package 11, F9): while the list springs back at its end, WebKit may keep
+   scrollTop at the end, and a tap on the row the eye sees lands on its neighbour. The guard against taps into
+   coasting content (ui/Sheet.tsx) sees only what is reported as scrolling. none also keeps the scroll in the sheet. */
+.m-sheet-body {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: none;
+  padding-bottom: var(--m-s3);
+}
+.m-sheet-foot {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s2);
+  padding: var(--m-s2) var(--m-s4) var(--m-s3);
+  border-top: 1px solid var(--m-hair);
+}
+.m-scrim--center {
+  justify-content: center;
+  align-items: center;
+  padding: max(var(--m-s5), var(--m-safe-top)) var(--m-s5) max(var(--m-s5), var(--m-bottom));
+}
+.m-dlg {
+  position: relative;
+  width: 100%;
+  max-width: 340px;
+  max-height: 100%;
+  overflow-y: auto;
+  padding: var(--m-s5);
+  background: var(--m-sheet);
+  border: 1px solid var(--m-hair);
+  border-radius: var(--m-r-xl);
+  box-shadow: var(--m-shadow-dialog);
+  animation: m-up var(--m-base) var(--m-ease);
+}
+.m-dlg-title {
+  margin-bottom: var(--m-s2);
+  font-size: var(--m-text-title);
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: break-word;
+  -webkit-hyphens: manual;
+  hyphens: manual;
+}
+.m-app .m-dlg-title {
+  margin-bottom: var(--m-s2);
+}
+.m-dlg-text {
+  color: var(--m-t2);
+  font-size: var(--m-text-control);
+  overflow-wrap: anywhere;
+}
+.m-app .m-dlg-text {
+  margin-bottom: var(--m-s4);
+}
+.m-dlg-field {
+  margin-bottom: var(--m-s4);
+}
+.m-dlg-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s2);
+}
+
+/* ---------- Toast ---------- */
+.m-toast-layer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 90;
+  display: flex;
+  justify-content: center;
+  padding: 0 var(--m-gutter) calc(var(--m-bottom) + 76px);
+  pointer-events: none;
+}
+/* While a sheet or a dialog is open the toast moves to the top: at the bottom
+   it would lie on their buttons, in landscape on the buttons of every
+   dialog (the window is barely higher than the dialog there). */
+.m-app[data-covered] .m-toast-layer {
+  bottom: auto;
+  top: 0;
+  padding: calc(var(--m-safe-top) + var(--m-s2)) calc(var(--m-gutter) + var(--m-safe-right)) 0
+    calc(var(--m-gutter) + var(--m-safe-left));
+}
+/* On a page with a composer or a footer the toast sits at the top of the
+   content (ui/Toast measures where that is): at the bottom it would lie on
+   the composer or on the end of the list. An open sheet or dialog still
+   wins, the rule above is the more specific one. */
+/* data-place='gap': neither end of the page is free of controls, the toast
+   lies in the room between them (ui/Toast, freeSpot). That also holds under
+   a sheet whose own buttons reach the top. */
+.m-toast-layer[data-place='top'],
+.m-toast-layer[data-place='gap'],
+.m-app[data-covered] .m-toast-layer[data-place='gap'] {
+  bottom: auto;
+  top: var(--m-toast-top, 0px);
+  padding: 0 calc(var(--m-gutter) + var(--m-safe-right)) 0 calc(var(--m-gutter) + var(--m-safe-left));
+}
+.m-toast {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--m-s1) var(--m-s3);
+  width: 100%;
+  max-width: calc(30 * var(--m-u));
+  padding: var(--m-s2) var(--m-s2) var(--m-s2) var(--m-s4);
+  min-height: var(--m-row);
+  background: var(--m-overlay);
+  color: var(--m-t1);
+  border: 1px solid var(--m-hair);
+  border-radius: var(--m-r-lg);
+  box-shadow: var(--m-shadow-toast);
+  font-size: var(--m-text-control);
+  line-height: 1.3;
+  pointer-events: auto;
+  animation: m-toast-in var(--m-base) var(--m-ease);
+}
+/* Away from the bottom the toast only fades in. Rising 24 px it would travel
+   over the control right under its place for the first frames, and a quick
+   tap there would hit the toast (re-check Android 8 GB, A-22 a). One
+   animation with a distance and not two animations: ui/Toast tries the
+   places one after the other, and another animation name would start the
+   entry again every time. */
+@keyframes m-toast-in {
+  from {
+    transform: translateY(var(--m-toast-rise, 24px));
+    opacity: 0;
+  }
+}
+.m-toast-layer[data-place='top'] .m-toast,
+.m-toast-layer[data-place='gap'] .m-toast {
+  --m-toast-rise: 0px;
+}
+.m-toast-text {
+  flex: 1 1 calc(7 * var(--m-u));
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.m-toast--error > svg {
+  color: var(--m-err);
+}
+.m-toast-action {
+  flex: 0 1 auto;
+  max-width: 100%;
+  margin-left: auto;
+  overflow-wrap: anywhere;
+  min-height: var(--m-touch);
+  min-width: var(--m-touch);
+  font-weight: 600;
+  color: var(--m-accent-text);
+}
+.m-app .m-toast-action {
+  padding: 0 var(--m-s2);
+  text-align: center;
+}
+
+/* ---------- Slider, NumberField ---------- */
+/* Round 57: a slider stands on the line of the text around it (a card, a block of a page) and adds no inset of its
+   own; only in a list group, beside rows, it takes the inset of a row. */
+.m-slider {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s1);
+  padding: var(--m-s1) 0;
+}
+.m-group > .m-slider {
+  padding: var(--m-s2) var(--m-s4);
+}
+.m-slider-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--m-s1) var(--m-s3);
+}
+.m-slider-name {
+  font-size: var(--m-text-body);
+  font-weight: 500;
+}
+.m-slider-row {
+  display: flex;
+  align-items: center;
+  gap: var(--m-s1);
+}
+.m-slider input[type='range'] {
+  flex: 1;
+  min-width: 0;
+  height: var(--m-touch);
+  margin: 0;
+  border-radius: 0;
+  -webkit-appearance: none;
+  appearance: none;
+  /* The track is drawn here, 4 px high in the middle of a 44 px target. */
+  background: linear-gradient(
+      to right,
+      var(--m-accent) 0,
+      var(--m-accent) var(--m-slider-at, 0%),
+      var(--m-edge) var(--m-slider-at, 0%),
+      var(--m-edge) 100%
+    )
+    center / 100% 4px no-repeat;
+}
+.m-slider input[type='range']::-webkit-slider-runnable-track {
+  height: var(--m-touch);
+  background: none;
+}
+.m-slider input[type='range']::-moz-range-track {
+  height: 4px;
+  background: none;
+}
+.m-slider input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 24px;
+  height: 24px;
+  margin-top: 10px;
+  border: 2px solid var(--m-accent);
+  border-radius: 50%;
+  background: var(--m-t1);
+  box-shadow: none;
+}
+.m-slider input[type='range']::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--m-accent);
+  border-radius: 50%;
+  background: var(--m-t1);
+}
+.m-app .m-slider input[type='range']:focus-visible {
+  outline: none;
+}
+.m-slider input[type='range']:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--m-accent);
+  outline-offset: 2px;
+}
+.m-slider input[type='range']:disabled {
+  opacity: 0.45;
+}
+.m-num {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--m-s1);
+}
+.m-num input {
+  width: calc(4.5 * var(--m-u));
+  min-height: var(--m-touch);
+  padding: 0 var(--m-s2);
+  border: 1px solid transparent;
+  border-radius: var(--m-r-md);
+  background: var(--m-fill);
+  color: var(--m-t1);
+  text-align: center;
+  font-family: var(--m-font-mono);
+  font-size: max(var(--m-text-body), 16px);
+  font-variant-numeric: tabular-nums;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.m-num input::-webkit-outer-spin-button,
+.m-num input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.m-app .m-num input:focus-visible {
+  outline: none;
+  border-color: var(--m-accent);
+}
+.m-ib--edge {
+  border: 1px solid var(--m-edge);
+}
+/* NumberField with its visible title: title left, control right, the control under the title when both do not fit. */
+.m-numrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--m-s2) var(--m-s3);
+  padding: var(--m-s2) var(--m-s4);
+}
+.m-numrow-text {
+  flex: 1 1 calc(6 * var(--m-u));
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.m-numrow-title {
+  font-size: var(--m-text-body);
+  font-weight: 500;
+  overflow-wrap: break-word;
+  -webkit-hyphens: manual;
+  hyphens: manual;
+}
+.m-numrow-hint {
+  font-size: var(--m-text-caption);
+  line-height: 1.4;
+  color: var(--m-t3);
+  overflow-wrap: break-word;
+}
+.m-numrow > .m-num {
+  margin-left: auto;
+}
+
+/* ---------- ModelChip ---------- */
+.m-mchip {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--m-touch);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: var(--m-r-md);
+  color: var(--m-t2);
+  font-size: var(--m-text-control);
+  line-height: 1.2;
+}
+.m-app .m-mchip {
+  padding: 0 var(--m-s2);
+}
+.m-mchip > i {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--m-ok);
+}
+.m-mchip--cloud > i {
+  background: var(--m-cloud);
+}
+.m-mchip--none > i {
+  background: var(--m-t3);
+}
+.m-mchip-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.m-mchip > svg {
+  color: var(--m-t3);
+}
+
+/* ---------- Composer ---------- */
+.m-composer-wrap {
+  flex: none;
+  padding: var(--m-s2) var(--m-s3);
+}
+.m-composer {
+  container-type: inline-size;
+  background: var(--m-surface);
+  border: 1px solid var(--m-hair);
+  border-radius: var(--m-r-xl);
+}
+.m-composer--cloud {
+  border-color: color-mix(in srgb, var(--m-cloud-edge) 55%, transparent);
+}
+/* The chips wrap. In one scrolling line the last one was cut at the edge ("Persona: Code E",
+   acceptance on the small iPhone, N10) and nothing said that there was more.
+   Two lines at most: with large type on a small phone more lines took the list away,
+   the rest scrolls inside. */
+.m-composer-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 0 10px;
+  max-height: calc(var(--m-touch) * 2 + 2px);
+  overflow-y: auto;
+}
+.m-composer-status:empty {
+  display: none;
+}
+.m-composer textarea {
+  display: block;
+  width: 100%;
+  /* One line of text, and never lower than a touch target (48 px on Android). */
+  min-height: max(var(--m-touch), calc(2.75 * var(--m-u)));
+  max-height: calc(9 * var(--m-u));
+  padding: 12px 14px 4px;
+  border: 0;
+  outline: 0;
+  resize: none;
+  background: none;
+  color: var(--m-t1);
+  font-size: max(var(--m-text-body), 16px);
+  line-height: 1.45;
+}
+.m-app .m-composer textarea:focus-visible {
+  outline: none;
+}
+.m-composer-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px 4px;
+}
+.m-composer-spacer {
+  flex: 1;
+}
+.m-send {
+  width: var(--m-touch);
+  height: var(--m-touch);
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--m-accent);
+  color: var(--m-on-accent);
+}
+.m-send--stop {
+  background: var(--m-t1);
+  color: var(--m-canvas);
+}
+.m-send--mic {
+  background: none;
+  color: var(--m-t2);
+}
+.m-send:disabled {
+  opacity: 0.4;
+}
+/* Below 16rem of width the model choice gets a row of its own (DESIGN.md 8). */
+@container (max-width: 16rem) {
+  .m-composer-row .m-mchip {
+    order: -1;
+    flex: 1 0 100%;
+  }
+}
+/* The phone on its side is about 390 px high. The composer takes at most a
+   third of that: the status row moves into the control row and the field
+   keeps to what is left (one line at 200 percent text, two at 100). */
+.m-app[data-orient='land'] .m-composer {
+  display: grid;
+  grid-template-columns: fit-content(45%) minmax(0, 1fr);
+  grid-template-areas: 'field field' 'top row';
+  align-items: center;
+}
+.m-app[data-orient='land'] .m-composer > * {
+  grid-area: field;
+  min-width: 0;
+}
+.m-app[data-orient='land'] .m-composer > .m-composer-top {
+  grid-area: top;
+  display: flex;
+  overflow-x: auto;
+}
+.m-app[data-orient='land'] .m-composer-top > .m-composer-status {
+  flex: none;
+  /* On its side the phone has the width and not the height: the chips stay in one line there. */
+  flex-wrap: nowrap;
+  overflow: visible;
+}
+.m-app[data-orient='land'] .m-composer > .m-composer-row {
+  grid-area: row;
+  flex-wrap: nowrap;
+}
+.m-app[data-orient='land'] .m-composer-row .m-mchip {
+  order: 0;
+  flex: 1 1 0;
+}
+.m-app[data-orient='land'] .m-composer textarea {
+  min-height: var(--m-touch);
+  /* Never lower than one line as it is drawn: at 200 percent text a third of
+     a low window is less than that, and the text lay on the control row. */
+  max-height: max(var(--m-touch), calc(max(var(--m-text-body), 16px) * 1.45 * var(--m-zoom) + 12px), calc(var(--m-vh) / 3 - 72px));
+  padding-top: 8px;
+}
+/* A small phone on its side is 320 px high: two rows of full targets leave
+   18 px of the third, so the frame around the composer gets thinner. */
+@media (max-height: 340px) {
+  .m-app[data-orient='land'] .m-composer-wrap {
+    padding-top: var(--m-s1);
+    padding-bottom: var(--m-s1);
+  }
+}
+/* ---------- Room: little visible height (ui/room.ts) ----------
+   data-m-room on <html> counts the visible height in text units: "tight"
+   under 28, "cramped" under 16. A media query cannot do it, because iOS
+   keeps the layout viewport as high as the screen while the keyboard is
+   open, and because pixels say nothing at a large text size. */
+
+/* Keyboard open on a short screen: the chips give way to the messages.
+   Attachments stay, they are part of what is being sent. */
+html.m-kb-open[data-m-room] .m-composer-status--chips {
+  display: none;
+}
+@media (max-height: 600px) {
+  html.m-kb-open .m-composer-status--chips {
+    display: none;
+  }
+}
+/* Little room without the keyboard (large type on a small phone): the chips keep one line and scroll
+   inside it. With two lines of chips and a model chip that wraps under large type, the composer took
+   more than half of the screen and a toast lay on the end of the list. */
+html[data-m-room] .m-app:not([data-orient='land']) .m-composer-status {
+  max-height: var(--m-touch);
+}
+/* The text field starts at one line and grows to about a fifth of what is visible. Upright only:
+   on its side the composer has its own, tighter rule (a third of the height for the whole composer). */
+html[data-m-room] .m-app:not([data-orient='land']) .m-composer textarea {
+  min-height: var(--m-touch);
+  max-height: max(var(--m-touch), calc(var(--m-vh) * 0.22));
+}
+/* The notice lines under the header share at most a quarter of the page
+   and scroll inside beyond that, so they never push the content out. */
+.m-banners {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+/* A line under the notices: without it the transcript, cut at this edge while it scrolls, looked
+   as if it shone through them (acceptance on the small iPhone, N17). */
+.m-banners:not(:empty) {
+  border-bottom: 1px solid var(--m-edge);
+}
+html[data-m-room] .m-banners {
+  max-height: 26%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+/* Without the keyboard there is room: a notice in large text is several lines long, and at a
+   quarter of the page its sentence ended in the middle of a line (round 5, N3). The transcript
+   starts under the notices, they never lie on it. */
+html[data-m-room]:not(.m-kb-open) .m-banners {
+  max-height: 60%;
+}
+/* On its side there is no height to give: two notices at 60% and the composer left no strip for the transcript
+   (short check of package 10, iOS, F4: "This chat ran on X before" and the note about a model that did not start).
+   They keep about a quarter of the page and scroll inside beyond that, so a message stays in view. */
+html[data-m-room]:not(.m-kb-open) .m-app[data-orient='land'] .m-banners {
+  max-height: 28%;
+}
+/* Little room (a phone on its side, very large text): the empty chat starts right under the notice
+   lines, so its heading is the first thing in the page and not half a screen of air (round 6, G6). */
+html[data-m-room] .m-chat-scroll > .m-empty {
+  padding-top: var(--m-s3);
+  padding-bottom: var(--m-s3);
+}
+html[data-m-room='cramped'] .m-chat-scroll > .m-empty {
+  padding-top: var(--m-s1);
+}
+/* Very large text and a notice above the chat: the notice and the composer leave the greeting a strip, and
+   at its full size "Ask LU anything" was half under the composer and the line below it out of sight (small
+   iPhone, K10). In little room the greeting is a heading of the size of a title with its line right under it,
+   and the mark, which is decoration, gives its room away. */
+html[data-m-room] .m-chat-scroll > .m-empty {
+  gap: var(--m-s1);
+}
+html[data-m-room] .m-chat-scroll > .m-empty > .m-empty-title {
+  font-size: var(--m-text-title);
+}
+/* The mark is decoration. Where a heading barely fits, the heading has the room.
+   The mark sets its own display inline (ui/Icon.tsx), so this has to win over it.
+   Whether it fits is measured, not guessed from the text size: with the largest text on a tall
+   phone there is room for it above the three lines (iPhone, package 8, B1). The chat page says so
+   with data-m-mark-fits (screens/chat/parts/mark-room.ts).
+   Check Android package 18, A1 rest: outside little room (320x487 upright, text zoom 1.0, a notice above) the mark
+   that did not fit stayed in its place, only invisible under data-m-greeting, and pushed "Ask LU anything" under the
+   composer; the measure counts the greeting without it. So wherever it does not fit, it goes. */
+html[data-m-room] .m-chat-scroll:not([data-m-mark-fits]) > .m-empty > .m-empty-mark,
+.m-chat-scroll[data-m-greeting] > .m-empty > .m-empty-mark {
+  display: none !important;
+}
+/* Check Android package 17, A1: on its side at 511x272, text zoom 2.0 and a notice above, "Ask LU anything" lay
+   half under the composer. A greeting without buttons shows what fits whole: the heading alone, or nothing (the
+   notice and the composer say what to do). Measured like the mark (screens/chat/parts/mark-room.ts); hidden keeps
+   the place, so the measure stays the same. */
+.m-chat-scroll[data-m-greeting='title'] > .m-empty > :not(.m-empty-title) {
+  visibility: hidden;
+}
+.m-chat-scroll[data-m-greeting='none'] > .m-empty {
+  visibility: hidden;
+}
+/* Typing on a small screen: a failed model start is not a line to scroll, and it must not push Send under the
+   keyboard (check on Android, package 9 and short check 7: the long sentence and its buttons took the room of the
+   page, Send lay half under the keyboard, or the notice was folded away altogether). So the note about a model file
+   that is not on the phone becomes one short line right above the composer, without icon and buttons; the whole
+   sentence and "Pick another model" come back with the keyboard gone. Every other notice waits, as before. */
+.m-note-short {
+  display: none;
+}
+html.m-kb-open[data-m-room] .m-note-short {
+  display: inline;
+}
+html.m-kb-open[data-m-room] .m-note-full {
+  display: none;
+}
+html.m-kb-open[data-m-room] .m-screen > .m-banners:has([data-testid='m-engine-notice-failed']) {
+  order: 1;
+  max-height: none;
+  overflow: visible;
+}
+html.m-kb-open[data-m-room] .m-screen > .m-chat-dock {
+  order: 2;
+}
+/* With the line above it the composer keeps its whole height: the share of a half page that the dock has otherwise
+   cut Send on a screen as low as a phone on its side. */
+html.m-kb-open[data-m-room] .m-app .m-screen:has(.m-banners [data-testid='m-engine-notice-failed']) > .m-chat-dock {
+  max-height: none;
+  overflow: visible;
+}
+html.m-kb-open[data-m-room] .m-banners [data-testid='m-engine-notice-failed'] {
+  margin: 0;
+  padding: var(--m-s1) var(--m-s3);
+  border-radius: 0;
+}
+html.m-kb-open[data-m-room='cramped'] .m-banners [data-testid='m-engine-notice-failed'] {
+  padding-top: 2px;
+  padding-bottom: 2px;
+  line-height: 1.25;
+}
+html.m-kb-open[data-m-room] .m-banners [data-testid='m-engine-notice-failed'] > svg,
+html.m-kb-open[data-m-room] .m-banners [data-testid='m-engine-notice-failed'] .m-note-actions {
+  display: none;
+}
+/* Check Android package 11, E6 rest: at the text zoom of Android 2.0 on 320x568 on its side 86 px are seen above
+   the keyboard, and the line with its padding and the composer were 4 to 8 px more than that: the line lay under
+   the status bar. On a cramped screen the line sits without padding, and the composer under it gives up the
+   padding around its row (Send keeps its whole touch size). */
+html.m-kb-open[data-m-room='cramped'] .m-banners [data-testid='m-engine-notice-failed'] {
+  padding-top: 0;
+  padding-bottom: 0;
+  line-height: 1.2;
+}
+html.m-kb-open[data-m-room='cramped'] .m-app .m-screen:has(.m-banners [data-testid='m-engine-notice-failed']) .m-composer-wrap {
+  padding-top: 0;
+  padding-bottom: 2px;
+}
+html.m-kb-open[data-m-room='cramped'] .m-app .m-screen:has(.m-banners [data-testid='m-engine-notice-failed']) .m-composer > .m-composer-row {
+  padding-bottom: 2px;
+}
+/* And without the keyboard at the same sizes the whole sentence and its buttons were higher than the room the
+   notices have (a quarter of the page on its side): "Pick another model" came only after scrolling inside the
+   notices, and upright the composer was pushed past the bottom edge. Wherever room is short (data-m-room) the note
+   is the short line with its buttons; the buttons always show, and the notices keep their height for them. */
+html[data-m-room]:not(.m-kb-open) .m-note-short {
+  display: inline;
+}
+html[data-m-room]:not(.m-kb-open) .m-note-full {
+  display: none;
+}
+html[data-m-room]:not(.m-kb-open) .m-banners [data-testid='m-engine-notice-failed'] {
+  margin-top: var(--m-s1);
+  margin-bottom: var(--m-s1);
+  padding-top: var(--m-s1);
+  padding-bottom: var(--m-s1);
+}
+html[data-m-room]:not(.m-kb-open) .m-banners [data-testid='m-engine-notice-failed'] .m-note-actions {
+  margin-top: var(--m-s1);
+}
+html[data-m-room]:not(.m-kb-open) .m-screen > .m-banners:has([data-testid='m-engine-notice-failed']) {
+  max-height: none;
+  overflow: visible;
+}
+/* Check Android package 15, N1: with the notices at their full height the composer under them went past the bottom
+   edge at the text zoom of Android 2.0 on 320x568 (between the bars of the system 320x487 upright, 520x272 on its
+   side): Send upright, the field on its side. Where room is cramped the composer is then one line, field and buttons,
+   as it is above the keyboard; the model chip waits, "Pick another model" in the note is the same way. On its side
+   the note gives its icon and some padding to the width, so that its two buttons stand in one line. */
+html[data-m-room='cramped']:not(.m-kb-open) .m-app .m-screen:has(.m-banners [data-testid='m-engine-notice-failed']) .m-composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: 'top top' 'field row';
+  align-items: end;
+}
+html[data-m-room='cramped']:not(.m-kb-open) .m-app .m-screen:has(.m-banners [data-testid='m-engine-notice-failed']) .m-composer > * {
+  grid-area: field;
+  min-width: 0;
+}
+html[data-m-room='cramped']:not(.m-kb-open) .m-app .m-screen:has(.m-banners [data-testid='m-engine-notice-failed']) .m-composer > .m-composer-top {
+  grid-area: top;
+}
+html[data-m-room='cramped']:not(.m-kb-open) .m-app .m-screen:has(.m-banners [data-testid='m-engine-notice-failed']) .m-composer > .m-composer-row {
+  grid-area: row;
+  flex-wrap: nowrap;
+  padding: 0 4px 4px 0;
+}
+html[data-m-room='cramped']:not(.m-kb-open) .m-app .m-screen:has(.m-banners [data-testid='m-engine-notice-failed']) .m-composer-row > .m-mchip,
+html[data-m-room='cramped']:not(.m-kb-open) .m-app .m-screen:has(.m-banners [data-testid='m-engine-notice-failed']) .m-composer-row > .m-composer-spacer {
+  display: none;
+}
+html[data-m-room='cramped']:not(.m-kb-open) .m-app .m-screen:has(.m-banners [data-testid='m-engine-notice-failed']) .m-composer-wrap {
+  padding-top: var(--m-s1);
+  padding-bottom: var(--m-s1);
+}
+html[data-m-room='cramped']:not(.m-kb-open) .m-app[data-orient='land'] .m-banners [data-testid='m-engine-notice-failed'] {
+  padding-left: var(--m-s2);
+  padding-right: var(--m-s2);
+}
+html[data-m-room='cramped']:not(.m-kb-open) .m-app[data-orient='land'] .m-banners [data-testid='m-engine-notice-failed'] > svg {
+  display: none;
+}
+/* Check Android package 16, N1 rest: on its side the phone takes its gesture bar from the width too, the WebView had
+   511x272 and not 520x272. "Pick another model" and "Dismiss" no longer fit in one line, the note grew by a line of
+   buttons and pushed the field and Send half under the bottom edge. Two things, so it does not rest on a few pixels:
+   where room is cramped "Pick another model" says "Pick another" (its name stays the whole label), and the composer
+   comes first: if the note is still too high, the notices give way and scroll inside, the composer keeps its place. */
+.m-btn-short {
+  display: none;
+}
+html[data-m-room='cramped']:not(.m-kb-open) .m-banners [data-testid='m-engine-notice-failed'] .m-btn-long {
+  display: none;
+}
+html[data-m-room='cramped']:not(.m-kb-open) .m-banners [data-testid='m-engine-notice-failed'] .m-btn-short {
+  display: inline;
+}
+html[data-m-room='cramped']:not(.m-kb-open) .m-screen > .m-banners:has([data-testid='m-engine-notice-failed']) {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+/* The other notices wait meanwhile, as they do above the keyboard: next to the note they left the transcript no
+   strip on its side (iOS, F4). They come back when the note is dismissed or the model starts. Only while the note
+   is there: without it the processor notice and the others show as before. */
+html[data-m-room]:not(.m-kb-open) .m-banners:has([data-testid='m-engine-notice-failed']) > :not(:has([data-testid='m-engine-notice-failed'])),
+html[data-m-room]:not(.m-kb-open) .m-banners > [data-testid='m-engine-notices']:has(> [data-testid='m-engine-notice-failed']) > :not([data-testid='m-engine-notice-failed']) {
+  display: none;
+}
+html.m-kb-open[data-m-room] .m-banners:not(:has([data-testid='m-engine-notice-failed'])) {
+  /* the other notices keep their rule above (a quarter of the page), and on a cramped screen they wait */
+}
+html.m-kb-open[data-m-room='cramped'] .m-banners:not(:has([data-testid='m-engine-notice-failed'])) {
+  display: none;
+}
+html.m-kb-open[data-m-room='cramped'] .m-banners > :not(:has([data-testid='m-engine-notice-failed'])),
+html.m-kb-open[data-m-room='cramped'] .m-banners > [data-testid='m-engine-notices'] > :not([data-testid='m-engine-notice-failed']) {
+  display: none;
+}
+/* Typing on a cramped screen: the composer is one row, field and Send, so
+   Send is never under the keyboard. Attach, options and the model choice
+   come back when the keyboard closes; on its side the phone has the width
+   to keep Attach and options. */
+html.m-kb-open[data-m-room='cramped'] .m-app .m-composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: 'top top' 'field row';
+  align-items: end;
+}
+html.m-kb-open[data-m-room='cramped'] .m-app .m-composer > * {
+  grid-area: field;
+  min-width: 0;
+}
+html.m-kb-open[data-m-room='cramped'] .m-app .m-composer > .m-composer-top {
+  grid-area: top;
+  display: block;
+  overflow: visible;
+}
+html.m-kb-open[data-m-room='cramped'] .m-app .m-composer > .m-composer-row {
+  grid-area: row;
+  flex-wrap: nowrap;
+  padding: 0 4px 4px 0;
+}
+html.m-kb-open[data-m-room='cramped'] .m-app .m-composer-row > :not(.m-send) {
+  display: none;
+}
+html.m-kb-open[data-m-room='cramped'] .m-app[data-orient='land'] .m-composer-row > .m-ib {
+  display: inline-flex;
+}
+html.m-kb-open[data-m-room='cramped'] .m-app .m-composer textarea {
+  padding-top: 8px;
+  max-height: max(var(--m-touch), calc(var(--m-vh) * 0.3));
+}
+html.m-kb-open[data-m-room='cramped'] .m-app .m-composer-wrap {
+  padding-top: var(--m-s1);
+  padding-bottom: var(--m-s1);
+}
+
+/* ---------- MediaViewer ---------- */
+.m-viewer {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  background: #000000;
+  color: #f3f4f6;
+  padding: var(--m-safe-top) var(--m-safe-right) var(--m-safe-bottom) var(--m-safe-left);
+}
+.m-viewer .m-ib {
+  color: #f3f4f6;
+}
+.m-viewer-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--m-s1);
+  min-height: var(--m-touch);
+  padding: var(--m-s1) var(--m-s2);
+}
+/* One tap on the picture gives it the whole screen. The way back of the system and one more tap still work. */
+.m-viewer[data-m-whole] .m-viewer-bar,
+.m-viewer[data-m-whole] .m-k-viewer-foot {
+  display: none;
+}
+.m-viewer-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+  font-size: min(var(--m-text-title), calc(26px / var(--m-zoom)));
+  font-weight: 600;
+}
+.m-viewer-stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  touch-action: none;
+}
+.m-viewer-stage img,
+.m-viewer-stage video {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  transform-origin: center;
+}
+.m-viewer-stage audio {
+  width: min(100% - 32px, calc(30 * var(--m-u)));
+}
+
+/* ---------- Dev catalogue and placeholder screens ---------- */
+.m-ph {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s3);
+  padding: var(--m-s4) var(--m-gutter);
+}
+.m-ph-code {
+  align-self: flex-start;
+  padding: 2px 8px;
+  border-radius: var(--m-r-sm);
+  background: var(--m-accent-soft);
+  color: var(--m-accent-text);
+}
+.m-ph-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.m-dev-section {
+  padding: var(--m-s4) 0 0;
+}
+.m-dev-title {
+  padding: 0 var(--m-gutter) var(--m-s2);
+  font-size: var(--m-text-title);
+  font-weight: 600;
+}
+.m-dev-box {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s3);
+  padding: 0 var(--m-gutter) var(--m-s3);
+}
+.m-dev-report {
+  margin: 0;
+  padding: var(--m-s3);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--m-fill);
+  border-radius: var(--m-r-md);
+  color: var(--m-t2);
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* ---------- store building blocks (src/mobile/policy) ---------- */
+.m-policy-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s3);
+  padding-top: var(--m-s2);
+  padding-bottom: var(--m-s3);
+  color: var(--m-t2);
+  overflow-wrap: anywhere;
+}
+.m-policy-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s2);
+}
+.m-age-body {
+  display: flex;
+  flex-direction: column;
+}
+/* Centred while it fits. With large text on a small phone it is higher than
+   the screen: auto margins then give way and the page scrolls from its first
+   line, where `justify-content: center` would cut the top off for good. */
+.m-age-body > * {
+  flex: none;
+  margin-top: auto;
+  margin-bottom: auto;
+}
+/* The two answers never leave the screen: they have a footer of their own
+   and the text scrolls above it (at 200 percent text "No" was below the
+   lower edge, on its side both buttons were). The footer may take more of
+   the page than the usual 46 percent, the question is all this page is for. */
+.m-age-foot {
+  max-height: 70%;
+}
+.m-age-foot > .m-btn {
+  max-width: calc(24 * var(--m-u));
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+}
+/* On its side the two answers stand next to each other and the text keeps the height. */
+@media (orientation: landscape) {
+  .m-age-foot {
+    flex-direction: row;
+    align-items: stretch;
+    justify-content: center;
+  }
+  .m-age-foot > .m-btn {
+    flex: 1 1 0;
+    margin-left: 0;
+    margin-right: 0;
+  }
+  .m-age-body .m-empty {
+    padding-top: var(--m-s4);
+    padding-bottom: var(--m-s4);
+  }
+}
+
+/* ---------- "there is more below" ---------- */
+/* A scrolling area marked data-m-scroll-hint shows a soft shadow at an edge
+   while content lies beyond that edge, and none once the end is reached. Two
+   covers in the colour of the page travel with the content (local) and hide
+   the two shadows, which stay at the edges (scroll). No script. */
+[data-m-scroll-hint] {
+  background:
+    linear-gradient(var(--m-canvas) 40%, transparent) center top / 100% 28px no-repeat local,
+    linear-gradient(transparent, var(--m-canvas) 60%) center bottom / 100% 28px no-repeat local,
+    linear-gradient(var(--m-scroll-hint), transparent) center top / 100% 14px no-repeat scroll,
+    linear-gradient(transparent, var(--m-scroll-hint)) center bottom / 100% 14px no-repeat scroll,
+    var(--m-canvas);
+}
+
+/* ---------- footer at the end of the content ---------- */
+/* A page or a sheet that is too low for a fixed footer (ui/screen-shape.ts,
+   useFootScrolls) puts it here, as the last thing that scrolls. */
+.m-foot--scrolls {
+  max-height: none;
+  overflow: visible;
+  border-top: 0;
+  background: none;
+  padding-top: var(--m-s2);
+}
+.m-sheet-foot--scrolls {
+  border-top: 0;
+}
+/* While that footer is out of sight a round button at the lower right leads to it
+   (ui/FootJump.tsx). It stands in a strip of its own under the scrolling content and never on the
+   content: over the corner of the content it lay on a word of the running text ("Connect to
+   desktop" on its side at the largest text, short check on the iPhone, package 8, B3). The strip
+   is as high as the button and goes with it once the footer is on screen. */
+.m-foot-jump-slot {
+  flex: none;
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--m-s1) calc(var(--m-gutter) + var(--m-safe-right)) var(--m-s1) var(--m-gutter);
+  position: relative;
+  z-index: 2;
+}
+.m-foot-jump {
+  flex: none;
+  width: var(--m-row);
+  height: var(--m-row);
+  min-width: 48px;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: var(--m-on-accent);
+  background: var(--m-accent);
+  box-shadow: var(--m-shadow-sheet);
+}
+/* With the keyboard open every line counts and the field with the focus has the room: there the
+   button hangs over the corner as before and takes none. */
+html.m-kb-open .m-foot-jump-slot {
+  display: block;
+  height: 0;
+  padding: 0;
+}
+html.m-kb-open .m-foot-jump {
+  position: absolute;
+  right: calc(var(--m-gutter) + var(--m-safe-right));
+  bottom: var(--m-s3);
+}
+/* A page of text to write (Edit answer): there the button would lie over the end of the text. */
+html.m-kb-open .m-screen[data-m-nojump-kb] .m-foot-jump {
+  display: none;
+}
+.m-foot-jump > svg {
+  width: var(--m-icon);
+  height: var(--m-icon);
+}
+
+/* ---------- a sheet above the keyboard where room is cramped ---------- */
+/* A phone on its side with the keyboard open shows about 100 px. The grabber
+   and the title of a sheet take 57 of them, and a field of 44 px then lay
+   with its lower edge under the keyboard, whatever the content scrolled to
+   (acceptance Android, second part, F13). So in that room the sheet takes
+   the whole visible height and scrolls as one piece: its title moves out of
+   the way like any other line, and ui/field-in-view.ts puts the field with
+   the focus fully above the keyboard. The title and Close are back when the
+   keyboard goes. */
+html.m-kb-open[data-m-room='cramped'] .m-app .m-sheet {
+  max-height: calc(100% - var(--m-safe-top));
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: none;
+}
+html.m-kb-open[data-m-room='cramped'] .m-app .m-sheet > .m-sheet-body {
+  flex: none;
+  overflow: visible;
+}
+
+/* ---------- fixed footer where room is tight ---------- */
+/* Large text on a small phone: the footer stays fixed, so the main button of
+   the page is always there, and gives the content what it can spare. */
+html[data-m-room] .m-foot:not(.m-foot--scrolls) {
+  padding-top: var(--m-s2);
+  padding-bottom: var(--m-s2);
+}
+/* A fixed footer that holds more than its 46 percent scrolls inside (base.css).
+   Its main button does not scroll away with the rest: it stays at the edge of
+   the footer it is nearest to, and the other buttons pass behind it. */
+.m-foot:not(.m-foot--scrolls) > .m-btn--primary {
+  position: sticky;
+  top: 0;
+  bottom: 0;
+  z-index: 1;
+}
+
+/* ---------- large text ---------- */
+/* From 130 percent on the root carries data-m-text="large" (ui/text-zoom.ts).
+   The model choice shows its whole name on up to two lines instead of
+   "Qwen3...", and takes a row of its own in the composer: the container
+   query above counts in rem, which does not grow on Android. */
+html[data-m-text='large'] .m-mchip {
+  padding-top: var(--m-s1);
+  padding-bottom: var(--m-s1);
+}
+html[data-m-text='large'] .m-mchip-name {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  text-align: left;
+}
+html[data-m-text='large'] .m-app:not([data-orient='land']) .m-composer-row .m-mchip {
+  order: -1;
+  flex: 1 0 100%;
+}
+/* On its side the composer keeps to a third of the height: one line for the name there. */
+html[data-m-text='large'] .m-app[data-orient='land'] .m-composer-row .m-mchip {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+html[data-m-text='large'] .m-app[data-orient='land'] .m-composer-row .m-mchip-name {
+  display: block;
+  white-space: nowrap;
+}
+/* A chip in a row that wraps may break its label instead of leaving the screen. */
+html[data-m-text='large'] .m-chips--wrap > .m-chip {
+  flex: 0 1 auto;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  padding-top: var(--m-s1);
+  padding-bottom: var(--m-s1);
+  text-align: left;
+}
+
+/* ---------- MiddleEllipsis ---------- */
+/* One line. The head gives way and ends in an ellipsis, the tail (the file ending) always stays. */
+.m-mid {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  white-space: pre;
+}
+.m-mid-head {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.m-mid-tail {
+  flex: none;
+}
+
+/* ---------- Block, Hint, Heading, Strip ---------- */
+.m-block {
+  gap: var(--m-s3);
+  margin-bottom: var(--m-s4);
+}
+.m-block--lead {
+  padding-top: var(--m-s3);
+}
+.m-hint {
+  font-size: var(--m-text-caption);
+  line-height: 1.4;
+  color: var(--m-t3);
+  overflow-wrap: break-word;
+}
+.m-hint--strong {
+  font-size: inherit;
+  line-height: inherit;
+  color: var(--m-t2);
+}
+.m-heading {
+  font-size: var(--m-text-title);
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--m-t1);
+  overflow-wrap: break-word;
+  -webkit-hyphens: manual;
+  hyphens: manual;
+}
+.m-strip {
+  display: flex;
+  align-items: center;
+  gap: var(--m-s2);
+  padding: 0 var(--m-gutter);
+  scroll-padding: 0 var(--m-gutter);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.m-strip--flush {
+  padding: 0;
+  scroll-padding: 0;
+}
+.m-strip > * {
+  flex: none;
+}
+
+/* ---------- Fold ---------- */
+.m-fold {
+  min-width: 0;
+}
+.m-fold-top {
+  display: flex;
+  align-items: center;
+  gap: var(--m-s1);
+  min-width: 0;
+}
+.m-fold-head {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: var(--m-touch);
+  display: flex;
+  align-items: center;
+  gap: var(--m-s2);
+  color: var(--m-t2);
+  font-size: var(--m-text-control);
+  line-height: 1.3;
+}
+.m-app .m-fold-head {
+  padding: var(--m-s1) 0;
+  text-align: left;
+}
+.m-fold-top > :not(.m-fold-head) {
+  flex: none;
+}
+.m-fold-head > svg {
+  flex: none;
+  color: var(--m-t3);
+}
+.m-fold-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+.m-fold-title small {
+  display: block;
+  font-size: var(--m-text-caption);
+  color: var(--m-t3);
+}
+.m-fold-meta {
+  flex: none;
+  font-family: var(--m-font-mono);
+  font-size: var(--m-text-mono);
+  color: var(--m-t3);
+}
+.m-fold-chev {
+  flex: none;
+  transition: transform var(--m-fast) var(--m-ease);
+}
+.m-fold-head[aria-expanded='true'] .m-fold-chev {
+  transform: rotate(180deg);
+}
+.m-fold-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s2);
+  min-width: 0;
+  margin-left: 9px;
+  padding: var(--m-s1) 0 var(--m-s3) var(--m-s3);
+  border-left: 2px solid var(--m-hair);
+}
+.m-fold[data-state='failed'] .m-fold-head > svg:first-child,
+.m-fold[data-state='denied'] .m-fold-head > svg:first-child {
+  color: var(--m-err);
+}
+.m-fold[data-state='done'] .m-fold-head > svg:first-child {
+  color: var(--m-ok);
+}
+
+/* ---------- PermissionRow ---------- */
+.m-perm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s2);
+  padding: var(--m-s3) var(--m-s4);
+  border-top: 1px solid var(--m-hair);
+}
+.m-perm:first-child {
+  border-top: 0;
+}
+.m-perm-title {
+  font-size: var(--m-text-body);
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--m-t1);
+  overflow-wrap: break-word;
+}
+.m-perm-sub {
+  font-size: var(--m-text-caption);
+  line-height: 1.4;
+  color: var(--m-t3);
+  overflow-wrap: break-word;
+}
+
+/* ---------- Markdown ---------- */
+.m-md {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s3);
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+.m-md h1,
+.m-md h2,
+.m-md h3,
+.m-md h4,
+.m-md h5,
+.m-md h6 {
+  margin: var(--m-s1) 0 0;
+  color: var(--m-t1);
+  font-family: var(--m-font-display);
+  font-weight: 600;
+  line-height: 1.25;
+  overflow-wrap: break-word;
+}
+.m-md h1 {
+  font-size: 1.375rem;
+}
+.m-md h2 {
+  font-size: 1.1875rem;
+}
+.m-md h3,
+.m-md h4,
+.m-md h5,
+.m-md h6 {
+  font-size: var(--m-text-title);
+}
+.m-app .m-md ul,
+.m-app .m-md ol {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 1.4em;
+}
+.m-app .m-md ul {
+  list-style: disc;
+}
+.m-app .m-md ol {
+  list-style: decimal;
+}
+.m-md li > ul,
+.m-md li > ol {
+  margin-top: 6px;
+}
+.m-app .m-md li.task-list-item {
+  list-style: none;
+  margin-left: -1.2em;
+}
+.m-md input[type='checkbox'] {
+  margin-right: 6px;
+}
+.m-md blockquote {
+  margin: 0;
+  padding: 2px 0 2px var(--m-s3);
+  border-left: 3px solid var(--m-hair);
+  color: var(--m-t2);
+}
+.m-md hr {
+  width: 100%;
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--m-hair);
+}
+.m-md strong {
+  font-weight: 600;
+}
+.m-md img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--m-r-md);
+}
+.m-md :not(pre) > code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--m-fill-2);
+  font-family: var(--m-font-mono);
+  font-size: 0.9em;
+  overflow-wrap: anywhere;
+}
+/* A link is a target: the padding makes it 44 px high without moving the line. */
+.m-md-link {
+  display: inline;
+  padding: 12px 0;
+  margin: -12px 0;
+  color: var(--m-accent-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  overflow-wrap: anywhere;
+}
+.m-md-table {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--m-hair);
+  border-radius: var(--m-r-md);
+}
+.m-md-table table {
+  border-collapse: collapse;
+  font-size: var(--m-text-caption);
+}
+.m-md-table th,
+.m-md-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--m-hair);
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+}
+.m-md-table th {
+  background: var(--m-fill);
+  font-weight: 600;
+}
+.m-md-table tr:last-child td {
+  border-bottom: 0;
+}
+
+/* ---------- code block of the Markdown ---------- */
+.m-code {
+  max-width: 100%;
+  min-width: 0;
+  border: 1px solid var(--m-hair);
+  border-radius: var(--m-r-lg);
+  background: var(--m-surface);
+  overflow: hidden;
+}
+.m-code-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--m-s1);
+  padding: 0 var(--m-s1) 0 var(--m-s3);
+  border-bottom: 1px solid var(--m-hair);
+  color: var(--m-t3);
+  font-family: var(--m-font-mono);
+  font-size: var(--m-text-label);
+}
+.m-code-lang {
+  flex: 1 1 calc(3 * var(--m-u));
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.m-code-btn {
+  min-height: var(--m-touch);
+  min-width: var(--m-touch);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--m-t2);
+  font-family: var(--m-font);
+  font-size: var(--m-text-caption);
+  font-weight: 500;
+}
+.m-app .m-code-btn {
+  padding: 0 var(--m-s2);
+}
+.m-code-scroll {
+  padding: var(--m-s3);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.m-code-scroll pre {
+  margin: 0;
+  font-family: var(--m-font-mono);
+  font-size: var(--m-text-mono);
+  line-height: 1.5;
+  color: var(--m-t1);
+  white-space: pre;
+  tab-size: 2;
+}
+.m-code-scroll pre code {
+  font: inherit;
+}
+
+/* ---------- break points of long words in titles (ui/hyphenate.tsx) ---------- */
+/* A soft hyphen as generated content: no text of the document, and it shows
+   only where the line breaks. */
+.m-shy::after {
+  content: '\00AD';
+}

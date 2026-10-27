@@ -1,7 +1,7 @@
 /**
  * GH #122 (2026-08-28): "Custom location not detecting my models".
  *
- * The folder under Settings → Model Storage was a download TARGET and nothing
+ * The folder under Settings → Storage was a download TARGET and nothing
  * else. `hfDownloadPathOverride` was read by the downloader and by onboarding,
  * and by no scan anywhere, so a GGUF already sitting in `G:\AI\Models` was
  * never looked at: Models tab empty, model not loadable, no way to tell why.
@@ -53,7 +53,7 @@ beforeEach(() => {
   setFolder('')
 })
 
-describe('the folder under Model Storage reaches the scan', () => {
+describe('the folder under Storage reaches the scan', () => {
   it('hands the Windows path to the backend, verbatim', async () => {
     setFolder(WINDOWS_FOLDER)
     expect(customModelDirs()).toEqual([WINDOWS_FOLDER])

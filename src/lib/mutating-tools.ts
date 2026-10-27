@@ -30,6 +30,8 @@ export const MUTATING_TOOLS = new Set([
   // Astra computer use: clicks and types anywhere the user approved.
   'computer_use',
   'computer_task',
+  // A11: changes an app setting (after the user's yes on the card).
+  'set_setting',
 ])
 
 /** May this tool stay in the catalog during a read-only turn? */

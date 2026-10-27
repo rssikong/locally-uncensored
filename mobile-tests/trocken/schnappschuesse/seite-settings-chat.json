@@ -1,0 +1,178 @@
+{
+ "name": "/settings/chat",
+ "art": "seite",
+ "quelle": "integ-306",
+ "route": "/settings/chat",
+ "strang": "settings",
+ "code": "E5",
+ "lage": {
+  "route": "/settings/chat",
+  "screen": "m-settings-chat-screen",
+  "blaetter": [],
+  "dialog": [],
+  "reiter": null,
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back-under",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-chat-screen",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-chat-temperature",
+   "tag": "input",
+   "rolle": "slider",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Temperature",
+   "el": "E5.1",
+   "box": [
+    222,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-chat-top-p",
+   "tag": "input",
+   "rolle": "slider",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Top P",
+   "el": "E5.2",
+   "box": [
+    222,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-chat-top-k",
+   "tag": "input",
+   "rolle": "slider",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Top K",
+   "el": "E5.3",
+   "box": [
+    222,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-chat-max-tokens",
+   "tag": "input",
+   "rolle": "slider",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Max length",
+   "el": "E5.4",
+   "box": [
+    222,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-chat-compact",
+   "tag": "input",
+   "rolle": "textbox",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Compact automatically at",
+   "el": "E5.5",
+   "box": [
+    72,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-chat-compact-value",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    23,
+    17
+   ]
+  },
+  {
+   "id": "m-settings-chat-read-aloud",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Read every answer aloud Switched under Voice, with the voice that reads Off",
+   "el": "E5.6",
+   "box": [
+    356,
+    76
+   ]
+  },
+  {
+   "id": "m-settings-chat-reset",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Reset chat defaults",
+   "risiko": "destructive",
+   "el": "E5.7",
+   "box": [
+    358,
+    48
+   ]
+  }
+ ]
+}

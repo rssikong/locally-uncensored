@@ -139,7 +139,20 @@ function notifyQuotaExceeded(key: string): void {
  * attempts to free space by pruning old conversations, and retries once.
  * Falls back to default localStorage behavior if unavailable (e.g., tests).
  */
-export function createSafeStorage(): StateStorage {
+export interface SafeStorageOptions {
+  /**
+   * Leave the disk alone when the blob to write is the one already stored.
+   *
+   * zustand's persist writes after EVERY set(), whatever partialize keeps. A
+   * store with fields that tick (the create store's progress, every 2.5 s and
+   * every second of a render) therefore rewrote its whole persisted slice,
+   * gallery included, on each tick, although nothing in that slice had moved.
+   * What ends up stored is byte for byte the same with and without this flag.
+   */
+  skipUnchanged?: boolean
+}
+
+export function createSafeStorage(opts: SafeStorageOptions = {}): StateStorage {
   return {
     getItem(name: string): string | null {
       const ls = getLS()
@@ -148,6 +161,15 @@ export function createSafeStorage(): StateStorage {
     setItem(name: string, value: string): void {
       const ls = getLS()
       if (!ls) return
+      if (opts.skipUnchanged) {
+        // Compared against what is really stored, not against a remembered
+        // copy: a blob somebody else replaced or removed is written again.
+        try {
+          if (ls.getItem(name) === value) return
+        } catch {
+          // A read that fails decides nothing, the write below still runs.
+        }
+      }
       try {
         ls.setItem(name, value)
       } catch (err) {
@@ -203,6 +225,6 @@ export function createSafeStorage(): StateStorage {
  * Generic so each store keeps its own partialized type; the returned object is
  * stateless, so sharing the shape across stores costs nothing.
  */
-export function safeJSONStorage<S>(): PersistStorage<S> | undefined {
-  return createJSONStorage<S>(() => createSafeStorage())
+export function safeJSONStorage<S>(opts: SafeStorageOptions = {}): PersistStorage<S> | undefined {
+  return createJSONStorage<S>(() => createSafeStorage(opts))
 }

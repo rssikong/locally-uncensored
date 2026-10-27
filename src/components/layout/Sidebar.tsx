@@ -1,6 +1,6 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Plus, Search, Trash2, Edit3, Check, X, MessageSquare, Code, Radio, Copy, RefreshCw, Square, Wifi, Globe, QrCode, PanelLeftOpen, PanelLeftClose } from 'lucide-react'
+import { Plus, Search, Trash2, Edit3, Check, X, MessageSquare, Code, Radio, Copy, RefreshCw, Square, Wifi, Globe, QrCode, PanelLeftOpen, PanelLeftClose, Smartphone } from 'lucide-react'
 import { useChatStore } from '../../stores/chatStore'
 import { HowItWorks } from '../ui/HowItWorks'
 import { HOWTO } from '../../lib/howto'
@@ -11,6 +11,7 @@ import { useModelStore } from '../../stores/modelStore'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useCodexStore } from '../../stores/codexStore'
 import { useRemoteStore, REMOTE_DEV_MODE_ERROR } from '../../stores/remoteStore'
+import { RemoteFirewallNotice } from '../remote/RemoteFirewallNotice'
 import { workspaceRejectedMessage } from '../../lib/workspace-rejected'
 import { CHAT_BASE_SYSTEM_PROMPT } from '../../lib/system-prompt'
 import { backendCall, isTauri } from '../../api/backend'
@@ -50,7 +51,10 @@ export function Sidebar() {
   const passcodeExpiresAt = useRemoteStore((s) => s.passcodeExpiresAt)
   const lanUrl = useRemoteStore((s) => s.lanUrl)
   const mobileUrl = useRemoteStore((s) => s.mobileUrl)
-  const qrPngBase64 = useRemoteStore((s) => s.qrPngBase64)
+  const browserQrPngBase64 = useRemoteStore((s) => s.qrPngBase64)
+  const appQrPngBase64 = useRemoteStore((s) => s.appQrPngBase64)
+  const appQrExpiresAt = useRemoteStore((s) => s.appQrExpiresAt)
+  const fetchAppQr = useRemoteStore((s) => s.fetchAppQr)
   const remoteLoading = useRemoteStore((s) => s.loading)
   const remoteError = useRemoteStore((s) => s.error)
   const tunnelActive = useRemoteStore((s) => s.tunnelActive)
@@ -86,6 +90,10 @@ export function Sidebar() {
   const [countdown, setCountdown] = useState('')
   const [dispatchPicker, setDispatchPicker] = useState(false)
   const [qrModalOpen, setQrModalOpen] = useState(false)
+  // Which QR the panel shows: the LU app's (sealed channel, QR v2 with a
+  // ticket) or the browser page's. Over the tunnel only the app's exists:
+  // the browser page is not reachable from the internet any more (E3).
+  const [qrKind, setQrKind] = useState<'app' | 'browser'>('app')
   // Dieselbe Luecke wie in ChatView: das Zeilenmenue weiter unten hatte seinen
   // Escape-Pfad, diese beiden Flaechen nie. Eine Datei mit drei Flaechen kam
   // durch, weil EINE davon gepflegt war.
@@ -374,6 +382,30 @@ export function Sidebar() {
     const t = setInterval(refreshDevices, 2000)
     return () => clearInterval(t)
   }, [remoteEnabled, qrVisible, refreshDevices])
+
+  const showAppQr = !!appQrPngBase64 && (tunnelActive || qrKind === 'app')
+  const qrPngBase64 = showAppQr ? appQrPngBase64 : (tunnelActive ? '' : browserQrPngBase64)
+  // Over the tunnel there is no page to open, only the address the app uses.
+  const shownAddress = tunnelActive && tunnelUrl ? tunnelUrl : (mobileUrl || lanUrl)
+
+  // A code (and the app's ticket) exists only while the QR panel or the
+  // large QR shows: opening makes one, closing ends it on the server.
+  const setPairingWindow = useRemoteStore((s) => s.setPairingWindow)
+  const pairingWindowOpen = remoteEnabled && (qrVisible || qrModalOpen)
+  const pairingWindowSent = useRef(false)
+  useEffect(() => {
+    if (!pairingWindowOpen && !pairingWindowSent.current) return
+    pairingWindowSent.current = pairingWindowOpen
+    void setPairingWindow(pairingWindowOpen)
+  }, [pairingWindowOpen, setPairingWindow])
+
+  // The ticket in the app's QR lasts five minutes: renew it while it shows.
+  useEffect(() => {
+    if (!remoteEnabled || !appQrExpiresAt || !(qrVisible || qrModalOpen)) return
+    const wait = Math.max(5, appQrExpiresAt - Math.floor(Date.now() / 1000) - 30) * 1000
+    const t = setTimeout(() => { void fetchAppQr() }, wait)
+    return () => clearTimeout(t)
+  }, [remoteEnabled, appQrExpiresAt, qrVisible, qrModalOpen, fetchAppQr])
 
   // Passcode countdown
   useEffect(() => {
@@ -748,17 +780,35 @@ export function Sidebar() {
                 </div>
               </div>
 
+              {/* Windows can drop the Wi-Fi way for LU (win_firewall.rs). */}
+              <RemoteFirewallNotice />
+
               {/* QR Code — hidden until Cloudflare is verified up (internet
                   mode); shown immediately for LAN. 2026-06-15: never
                   flash a QR that points at the LAN IP while the tunnel is
                   still coming up. */}
               {awaitingTunnel ? (
                 <div className="w-full flex flex-col items-center justify-center gap-1.25 py-5 text-center">
-                  <RefreshCw size={20} className="animate-spin text-emerald-400/70" />
+                  <RefreshCw size={20} className="animate-spin text-emerald-600/70 dark:text-emerald-400/70" />
                   <span className="text-[11px] text-emerald-400/80">Connecting to Cloudflare…</span>
                   <span className="text-[9px] text-gray-500 leading-snug px-2.5">The QR appears once the tunnel is live</span>
                 </div>
               ) : qrPngBase64 ? (
+                <>
+                {appQrPngBase64 && !tunnelActive && (
+                  <div className="flex justify-center gap-1.25" role="group" aria-label="QR code for">
+                    {(['app', 'browser'] as const).map((kind) => (
+                      <button
+                        key={kind}
+                        onClick={() => setQrKind(kind)}
+                        aria-pressed={qrKind === kind}
+                        className={`t-micro px-[7.5px] py-[2.5px] rounded border transition-colors ${qrKind === kind ? 'border-green-500/40 text-green-400' : 'border-transparent text-gray-500 hover:text-gray-300'}`}
+                      >
+                        {kind === 'app' ? 'LU app' : 'Browser'}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <button
                   onClick={() => setQrModalOpen(true)}
                   title="Show large QR code"
@@ -768,6 +818,12 @@ export function Sidebar() {
                     <img src={`data:image/png;base64,${qrPngBase64}`} alt="QR" className="w-[90px] h-[90px]" />
                   </div>
                 </button>
+                {showAppQr && (
+                  <p className="t-micro text-gray-500 text-center leading-snug">
+                    Scan with the LU app. You confirm the phone here.
+                  </p>
+                )}
+                </>
               ) : null}
 
               {/* Passcode. Bis zum 04.09.2026 stand er in einem mittleren Gelb,
@@ -811,10 +867,10 @@ export function Sidebar() {
                 ) : (
                   <>
                     <code className={`text-[10px] truncate flex-1 ${tunnelActive ? 'text-emerald-400' : 'text-blue-400'}`}>
-                      {tunnelActive && tunnelUrl ? `${tunnelUrl}/mobile` : (mobileUrl || lanUrl)}
+                      {shownAddress}
                     </code>
                     <button
-                      onClick={() => copyToClipboard(tunnelActive && tunnelUrl ? `${tunnelUrl}/mobile` : (mobileUrl || lanUrl), 'panel-url')}
+                      onClick={() => copyToClipboard(shownAddress, 'panel-url')}
                       className="p-[2.5px] hover:bg-white/10 rounded-[5px] shrink-0"
                       aria-label={copied === 'panel-url' ? 'Address copied' : 'Copy address'}
                       title={copied === 'panel-url' ? 'Copied' : 'Copy address'}
@@ -994,6 +1050,11 @@ export function Sidebar() {
                           Dokument stehen, deshalb kann `title=` hier jetzt das
                           Ganze zeigen. */}
                       <p className="text-[13px] truncate flex-1 min-w-0" title={conv.title}>{conv.title}</p>
+                      {conv.shared && (
+                        <span title="Shared with your phone" aria-label="Shared with your phone" className="shrink-0 text-gray-500 dark:text-gray-400">
+                          <Smartphone size={12} />
+                        </span>
+                      )}
                       {/* Already formatted in the projection — see SidebarRow.
                           Das Datum weicht, wenn die Aktionsleiste kommt: die
                           Leiste liegt seit D-S15 UEBER diesem Slot (62,66 von
@@ -1196,14 +1257,14 @@ export function Sidebar() {
                     >
                       <button
                         onClick={() => handleDispatch('lan')}
-                        className="flex-1 flex items-center justify-center gap-1.25 h-[var(--control-h-lg)] rounded-[8px] text-[11px] font-medium text-gray-400 border border-zinc-300/40 dark:border-zinc-500/40 hover:bg-white/[0.05] hover:text-zinc-100 hover:border-zinc-300/60 dark:hover:border-zinc-400/60 transition-all cursor-pointer"
+                        className="flex-1 flex items-center justify-center gap-1.25 h-[var(--control-h-lg)] rounded-[8px] text-[11px] font-medium text-gray-400 border border-zinc-300/40 dark:border-zinc-500/40 hover:bg-white/[0.05] hover:text-gray-900 dark:hover:text-zinc-100 hover:border-zinc-300/60 dark:hover:border-zinc-400/60 transition-all cursor-pointer"
                       >
                         <Wifi size={12} className="text-zinc-400" />
                         LAN
                       </button>
                       <button
                         onClick={() => handleDispatch('internet')}
-                        className="flex-1 flex items-center justify-center gap-1.25 h-[var(--control-h-lg)] rounded-[8px] text-[11px] font-medium text-gray-400 border border-zinc-300/40 dark:border-zinc-500/40 hover:bg-white/[0.05] hover:text-zinc-100 hover:border-zinc-300/60 dark:hover:border-zinc-400/60 transition-all cursor-pointer"
+                        className="flex-1 flex items-center justify-center gap-1.25 h-[var(--control-h-lg)] rounded-[8px] text-[11px] font-medium text-gray-400 border border-zinc-300/40 dark:border-zinc-500/40 hover:bg-white/[0.05] hover:text-gray-900 dark:hover:text-zinc-100 hover:border-zinc-300/60 dark:hover:border-zinc-400/60 transition-all cursor-pointer"
                       >
                         <Globe size={12} className="text-zinc-400" />
                         Internet
@@ -1278,6 +1339,22 @@ export function Sidebar() {
               <Edit3 size={15} />
               <span>Rename</span>
             </button>
+            {!isRemoteMode && (() => {
+              const shared = rows.find((r) => r.id === rowMenu.id)?.shared ?? false
+              return (
+                <button
+                  role="menuitem"
+                  onClick={() => {
+                    useChatStore.getState().setRemoteShared(rowMenu.id, !shared)
+                    setRowMenu(null)
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3.75 py-[7.5px] text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/[0.06]"
+                >
+                  <Smartphone size={15} />
+                  <span>{shared ? 'Stop sharing with phone' : 'Continue on phone'}</span>
+                </button>
+              )
+            })()}
             {!isRemoteMode && (
               <button
                 role="menuitem"
@@ -1394,10 +1471,10 @@ export function Sidebar() {
 
             <div className="w-full flex items-center gap-2.5 px-3.75 py-2.5 rounded-[5px] bg-white/[0.04] border border-white/5">
               <code className={`text-[13px] truncate flex-1 ${tunnelActive ? 'text-emerald-700 dark:text-emerald-400' : 'text-blue-700 dark:text-blue-400'}`}>
-                {tunnelActive && tunnelUrl ? `${tunnelUrl}/mobile` : (mobileUrl || lanUrl)}
+                {shownAddress}
               </code>
               <button
-                onClick={() => copyToClipboard(tunnelActive && tunnelUrl ? `${tunnelUrl}/mobile` : (mobileUrl || lanUrl), 'modal-url')}
+                onClick={() => copyToClipboard(shownAddress, 'modal-url')}
                 className="p-1.25 rounded-[5px] hover:bg-white/10 text-gray-400 hover:text-white transition-colors shrink-0"
                 aria-label={copied === 'modal-url' ? 'Address copied' : 'Copy address'}
                 title={copied === 'modal-url' ? 'Copied' : 'Copy address'}
@@ -1407,7 +1484,9 @@ export function Sidebar() {
             </div>
 
             <p className="text-[12px] text-gray-500 text-center">
-              Scan the QR or enter the 6-digit code on your phone.
+              {showAppQr
+                ? 'Scan the QR with the LU app, then allow the phone here. At home the app can also pair with the 6-digit code.'
+                : 'Scan the QR or enter the 6-digit code on your phone.'}
             </p>
           </motion.div>
         </motion.div>

@@ -1,0 +1,158 @@
+{
+ "name": "/settings/privacy",
+ "art": "seite",
+ "quelle": "integ-306",
+ "route": "/settings/privacy",
+ "strang": "settings",
+ "code": "E17",
+ "lage": {
+  "route": "/settings/privacy",
+  "screen": "m-settings-privacy-screen",
+  "blaetter": [],
+  "dialog": [],
+  "reiter": null,
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back-under",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-privacy-screen",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-privacy-counter",
+   "tag": "button",
+   "rolle": "switch",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Send anonymous switch count Counts presses of the Cloud switch, nothing else",
+   "el": "E17.1",
+   "box": [
+    356,
+    76
+   ]
+  },
+  {
+   "id": "m-settings-privacy-counter-state",
+   "tag": "p",
+   "rolle": "p",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    358,
+    18
+   ]
+  },
+  {
+   "id": "m-settings-privacy-ai",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    356,
+    76
+   ]
+  },
+  {
+   "id": "m-settings-privacy-ai-state",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    358,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-privacy-ai-allow",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Allow now",
+   "box": [
+    358,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-privacy-nothing-else",
+   "tag": "p",
+   "rolle": "p",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    358,
+    70
+   ]
+  },
+  {
+   "id": "m-settings-privacy-policy",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Open privacy policy",
+   "risiko": "leaves-app",
+   "el": "E17.2",
+   "box": [
+    358,
+    48
+   ]
+  }
+ ]
+}

@@ -1,0 +1,789 @@
+{
+ "name": "/settings/voice",
+ "art": "seite",
+ "quelle": "integ-306",
+ "route": "/settings/voice",
+ "strang": "settings",
+ "code": "E11",
+ "lage": {
+  "route": "/settings/voice",
+  "screen": "m-settings-voice-screen",
+  "blaetter": [],
+  "dialog": [],
+  "reiter": null,
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back-under",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-voice-screen",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-voice-state",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "signed-out",
+   "box": [
+    390,
+    2371
+   ]
+  },
+  {
+   "id": "m-settings-voice-intro",
+   "tag": "p",
+   "rolle": "p",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    358,
+    36
+   ]
+  },
+  {
+   "id": "m-settings-voice-signed-out",
+   "tag": "div",
+   "rolle": "status",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    358,
+    154
+   ]
+  },
+  {
+   "id": "m-settings-voice-signin",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Sign in",
+   "box": [
+    109,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-voice-dictation",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    356,
+    76
+   ]
+  },
+  {
+   "id": "m-settings-voice-read-aloud",
+   "tag": "button",
+   "rolle": "switch",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Read aloud Show the speaker button on answers",
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-settings-voice-auto",
+   "tag": "button",
+   "rolle": "switch",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Read every answer aloud Turn on Read aloud first",
+   "el": "E11.4",
+   "deaktiviert": true,
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-settings-voice-dictation-state",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "signed-out",
+   "box": [
+    390,
+    55
+   ]
+  },
+  {
+   "id": "m-settings-voice-phone",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    1027
+   ]
+  },
+  {
+   "id": "m-settings-voice-phone-list",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    437
+   ]
+  },
+  {
+   "id": "m-settings-voice-phone-pick-default",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Default voice of this phone",
+   "box": [
+    304,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-voice-phone-preview-default",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Preview Default voice of this phone",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-voice-phone-pick-0",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Albert en-US",
+   "mId": "Albert",
+   "box": [
+    304,
+    57
+   ]
+  },
+  {
+   "id": "m-settings-voice-phone-preview-0",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Preview Albert",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-voice-phone-pick-1",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Bad News en-US",
+   "mId": "Bad News",
+   "box": [
+    304,
+    57
+   ]
+  },
+  {
+   "id": "m-settings-voice-phone-preview-1",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Preview Bad News",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-voice-phone-pick-2",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Bahh en-US",
+   "mId": "Bahh",
+   "box": [
+    304,
+    57
+   ]
+  },
+  {
+   "id": "m-settings-voice-phone-preview-2",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Preview Bahh",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-voice-phone-pick-3",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Bells en-US",
+   "mId": "Bells",
+   "box": [
+    304,
+    57
+   ]
+  },
+  {
+   "id": "m-settings-voice-phone-preview-3",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Preview Bells",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-voice-phone-pick-4",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Boing en-US",
+   "mId": "Boing",
+   "box": [
+    304,
+    57
+   ]
+  },
+  {
+   "id": "m-settings-voice-phone-preview-4",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Preview Boing",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-voice-phone-pick-5",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Bubbles en-US",
+   "mId": "Bubbles",
+   "box": [
+    304,
+    57
+   ]
+  },
+  {
+   "id": "m-settings-voice-phone-preview-5",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Preview Bubbles",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-voice-phone-all",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Show all 180 voices",
+   "box": [
+    358,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-voice-system",
+   "tag": "button",
+   "rolle": "switch",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Use the system voice when Cloud is off The voice built into this phone, free and",
+   "el": "E11.5",
+   "box": [
+    356,
+    99
+   ]
+  },
+  {
+   "id": "m-settings-voice-speed",
+   "tag": "input",
+   "rolle": "slider",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Speed",
+   "el": "E11.2",
+   "box": [
+    222,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-voice-pitch",
+   "tag": "input",
+   "rolle": "slider",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Pitch",
+   "el": "E11.3",
+   "box": [
+    222,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-voice-system-state",
+   "tag": "p",
+   "rolle": "p",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    358,
+    46
+   ]
+  },
+  {
+   "id": "m-settings-voice-test-system",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Test system voice",
+   "box": [
+    358,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-voice-list",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "el": "E11.1",
+   "box": [
+    390,
+    664
+   ]
+  },
+  {
+   "id": "m-settings-voice-pick-Wise_Woman",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Wise Woman",
+   "box": [
+    304,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-voice-preview-Wise_Woman",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Preview Wise Woman",
+   "risiko": "paid",
+   "deaktiviert": true,
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-voice-pick-Calm_Woman",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Calm Woman",
+   "box": [
+    304,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-voice-preview-Calm_Woman",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Preview Calm Woman",
+   "risiko": "paid",
+   "deaktiviert": true,
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-voice-pick-Lively_Girl",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Lively Girl",
+   "box": [
+    304,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-voice-preview-Lively_Girl",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Preview Lively Girl",
+   "risiko": "paid",
+   "deaktiviert": true,
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-voice-pick-Lovely_Girl",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Lovely Girl",
+   "box": [
+    304,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-voice-preview-Lovely_Girl",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Preview Lovely Girl",
+   "risiko": "paid",
+   "deaktiviert": true,
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-voice-pick-Sweet_Girl_2",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Sweet Girl",
+   "box": [
+    304,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-voice-preview-Sweet_Girl_2",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Preview Sweet Girl",
+   "risiko": "paid",
+   "deaktiviert": true,
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-voice-pick-Friendly_Person",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Friendly Person",
+   "box": [
+    304,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-voice-preview-Friendly_Person",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Preview Friendly Person",
+   "risiko": "paid",
+   "deaktiviert": true,
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-voice-pick-Deep_Voice_Man",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Deep Voice Man",
+   "box": [
+    304,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-voice-preview-Deep_Voice_Man",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Preview Deep Voice Man",
+   "risiko": "paid",
+   "deaktiviert": true,
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-voice-pick-Casual_Guy",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Casual Guy",
+   "box": [
+    304,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-voice-preview-Casual_Guy",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Preview Casual Guy",
+   "risiko": "paid",
+   "deaktiviert": true,
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-voice-pick-Patient_Man",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Patient Man",
+   "box": [
+    304,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-voice-preview-Patient_Man",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Preview Patient Man",
+   "risiko": "paid",
+   "deaktiviert": true,
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-voice-pick-Determined_Man",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Determined Man",
+   "box": [
+    304,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-voice-preview-Determined_Man",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Preview Determined Man",
+   "risiko": "paid",
+   "deaktiviert": true,
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-voice-pick-Elegant_Man",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Elegant Man",
+   "box": [
+    304,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-voice-preview-Elegant_Man",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Preview Elegant Man",
+   "risiko": "paid",
+   "deaktiviert": true,
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-voice-pick-Young_Knight",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Young Knight",
+   "box": [
+    304,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-voice-preview-Young_Knight",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Preview Young Knight",
+   "risiko": "paid",
+   "deaktiviert": true,
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-voice-cost",
+   "tag": "p",
+   "rolle": "p",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    358,
+    36
+   ]
+  },
+  {
+   "id": "m-settings-voice-test",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Test voice Cloud voices need LU Cloud",
+   "risiko": "paid",
+   "deaktiviert": true,
+   "box": [
+    358,
+    52
+   ]
+  }
+ ]
+}

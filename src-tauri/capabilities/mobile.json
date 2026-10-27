@@ -1,0 +1,14 @@
+{
+  "identifier": "mobile",
+  "description": "Capability of the one webview a phone has (Android and iOS). No updater, because updates come through the store. No shell:allow-spawn, shell:allow-kill or shell:allow-stdin-write, because a phone starts no process. No window controls, because there is no window chrome. shell:allow-open stays for links that leave the app. lu-native:default is the native layer (share and save, device facts, lifecycle, the Remote transport, background downloads; mobile-docs/NATIVE-SCHICHT.md), deep-link:default the links that open the app (lu://oauth/callback, lu://remote).",
+  "platforms": ["android", "iOS"],
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:default",
+    "core:webview:default",
+    "shell:allow-open",
+    "lu-native:default",
+    "deep-link:default"
+  ]
+}

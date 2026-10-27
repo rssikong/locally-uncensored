@@ -1,0 +1,681 @@
+{
+ "zeit": "2026-10-19T00:58:17.310Z",
+ "quellen": [
+  {
+   "name": "integ-306",
+   "branch": "integ/mobile-306",
+   "commit": "fcf98b787",
+   "nur": null
+  }
+ ],
+ "fingerabdruck": "386c8d7b07c4",
+ "groesse": {
+  "w": 390,
+  "h": 844
+ },
+ "zahlen": {
+  "aufgenommen": 110,
+  "gescheitert": 0
+ },
+ "gesperrteAnfragen": [
+  "https://lu-labs.ai"
+ ],
+ "protokoll": [
+  {
+   "name": "/welcome",
+   "art": "seite",
+   "ok": true,
+   "grund": "7 Kennungen"
+  },
+  {
+   "name": "/setup/model",
+   "art": "seite",
+   "ok": true,
+   "grund": "67 Kennungen"
+  },
+  {
+   "name": "/setup/documents",
+   "art": "seite",
+   "ok": true,
+   "grund": "9 Kennungen"
+  },
+  {
+   "name": "/setup/done",
+   "art": "seite",
+   "ok": true,
+   "grund": "8 Kennungen"
+  },
+  {
+   "name": "/chats",
+   "art": "seite",
+   "ok": true,
+   "grund": "14 Kennungen"
+  },
+  {
+   "name": "/chat/:id",
+   "art": "seite",
+   "ok": true,
+   "grund": "13 Kennungen"
+  },
+  {
+   "name": "/chat/:id/file/:fileId",
+   "art": "seite",
+   "ok": true,
+   "grund": "6 Kennungen"
+  },
+  {
+   "name": "/chat/:id/message/:messageId/edit",
+   "art": "seite",
+   "ok": true,
+   "grund": "7 Kennungen"
+  },
+  {
+   "name": "/chat/:id/message/:messageId/text",
+   "art": "seite",
+   "ok": true,
+   "grund": "7 Kennungen"
+  },
+  {
+   "name": "/chat/:id/documents",
+   "art": "seite",
+   "ok": true,
+   "grund": "7 Kennungen"
+  },
+  {
+   "name": "/chat/:id/compare",
+   "art": "seite",
+   "ok": true,
+   "grund": "10 Kennungen"
+  },
+  {
+   "name": "/chat/:id/tasks",
+   "art": "seite",
+   "ok": true,
+   "grund": "7 Kennungen"
+  },
+  {
+   "name": "/chat/:id/preview/:blockId",
+   "art": "seite",
+   "ok": true,
+   "grund": "7 Kennungen"
+  },
+  {
+   "name": "/chat/:id/group",
+   "art": "seite",
+   "ok": true,
+   "grund": "6 Kennungen"
+  },
+  {
+   "name": "/remote/connect",
+   "art": "seite",
+   "ok": true,
+   "grund": "12 Kennungen"
+  },
+  {
+   "name": "/remote/scan",
+   "art": "seite",
+   "ok": true,
+   "grund": "8 Kennungen"
+  },
+  {
+   "name": "/remote/chat/:id",
+   "art": "seite",
+   "ok": true,
+   "grund": "7 Kennungen"
+  },
+  {
+   "name": "/remote/help",
+   "art": "seite",
+   "ok": true,
+   "grund": "7 Kennungen"
+  },
+  {
+   "name": "/create",
+   "art": "seite",
+   "ok": true,
+   "grund": "12 Kennungen"
+  },
+  {
+   "name": "/create/gallery",
+   "art": "seite",
+   "ok": true,
+   "grund": "11 Kennungen"
+  },
+  {
+   "name": "/create/item/:id",
+   "art": "seite",
+   "ok": true,
+   "grund": "7 Kennungen"
+  },
+  {
+   "name": "/create/mask",
+   "art": "seite",
+   "ok": true,
+   "grund": "8 Kennungen"
+  },
+  {
+   "name": "/create/characters",
+   "art": "seite",
+   "ok": true,
+   "grund": "7 Kennungen"
+  },
+  {
+   "name": "/create/characters/new",
+   "art": "seite",
+   "ok": true,
+   "grund": "13 Kennungen"
+  },
+  {
+   "name": "/create/presets",
+   "art": "seite",
+   "ok": true,
+   "grund": "7 Kennungen"
+  },
+  {
+   "name": "/create/showcase",
+   "art": "seite",
+   "ok": true,
+   "grund": "20 Kennungen"
+  },
+  {
+   "name": "/create/batch",
+   "art": "seite",
+   "ok": true,
+   "grund": "7 Kennungen"
+  },
+  {
+   "name": "/models",
+   "art": "seite",
+   "ok": true,
+   "grund": "164 Kennungen"
+  },
+  {
+   "name": "/models/downloads",
+   "art": "seite",
+   "ok": true,
+   "grund": "8 Kennungen"
+  },
+  {
+   "name": "/models/benchmark",
+   "art": "seite",
+   "ok": true,
+   "grund": "7 Kennungen"
+  },
+  {
+   "name": "/models/:id",
+   "art": "seite",
+   "ok": true,
+   "grund": "7 Kennungen"
+  },
+  {
+   "name": "/settings/engine",
+   "art": "seite",
+   "ok": true,
+   "grund": "21 Kennungen"
+  },
+  {
+   "name": "/settings/storage",
+   "art": "seite",
+   "ok": true,
+   "grund": "16 Kennungen"
+  },
+  {
+   "name": "/settings",
+   "art": "seite",
+   "ok": true,
+   "grund": "27 Kennungen"
+  },
+  {
+   "name": "/settings/account",
+   "art": "seite",
+   "ok": true,
+   "grund": "20 Kennungen"
+  },
+  {
+   "name": "/cloud",
+   "art": "seite",
+   "ok": true,
+   "grund": "24 Kennungen"
+  },
+  {
+   "name": "/settings/appearance",
+   "art": "seite",
+   "ok": true,
+   "grund": "13 Kennungen"
+  },
+  {
+   "name": "/settings/chat",
+   "art": "seite",
+   "ok": true,
+   "grund": "13 Kennungen"
+  },
+  {
+   "name": "/settings/voice",
+   "art": "seite",
+   "ok": true,
+   "grund": "62 Kennungen"
+  },
+  {
+   "name": "/settings/providers",
+   "art": "seite",
+   "ok": true,
+   "grund": "16 Kennungen"
+  },
+  {
+   "name": "/settings/providers/:id",
+   "art": "seite",
+   "ok": true,
+   "grund": "7 Kennungen"
+  },
+  {
+   "name": "/settings/remote",
+   "art": "seite",
+   "ok": true,
+   "grund": "9 Kennungen"
+  },
+  {
+   "name": "/settings/data",
+   "art": "seite",
+   "ok": true,
+   "grund": "12 Kennungen"
+  },
+  {
+   "name": "/settings/data/import",
+   "art": "seite",
+   "ok": true,
+   "grund": "7 Kennungen"
+  },
+  {
+   "name": "/settings/privacy",
+   "art": "seite",
+   "ok": true,
+   "grund": "12 Kennungen"
+  },
+  {
+   "name": "/settings/content-policy",
+   "art": "seite",
+   "ok": true,
+   "grund": "12 Kennungen"
+  },
+  {
+   "name": "/settings/troubleshooting",
+   "art": "seite",
+   "ok": true,
+   "grund": "31 Kennungen"
+  },
+  {
+   "name": "/settings/about",
+   "art": "seite",
+   "ok": true,
+   "grund": "18 Kennungen"
+  },
+  {
+   "name": "/whats-new",
+   "art": "seite",
+   "ok": true,
+   "grund": "8 Kennungen"
+  },
+  {
+   "name": "/settings/personas",
+   "art": "seite",
+   "ok": true,
+   "grund": "59 Kennungen"
+  },
+  {
+   "name": "/settings/personas/:id",
+   "art": "seite",
+   "ok": true,
+   "grund": "7 Kennungen"
+  },
+  {
+   "name": "/settings/memory",
+   "art": "seite",
+   "ok": true,
+   "grund": "27 Kennungen"
+  },
+  {
+   "name": "/settings/memory/:id",
+   "art": "seite",
+   "ok": true,
+   "grund": "7 Kennungen"
+  },
+  {
+   "name": "/settings/agent",
+   "art": "seite",
+   "ok": true,
+   "grund": "33 Kennungen"
+  },
+  {
+   "name": "/settings/search",
+   "art": "seite",
+   "ok": true,
+   "grund": "18 Kennungen"
+  },
+  {
+   "name": "/settings/workflows",
+   "art": "seite",
+   "ok": true,
+   "grund": "9 Kennungen"
+  },
+  {
+   "name": "/settings/workflows/:id",
+   "art": "seite",
+   "ok": true,
+   "grund": "7 Kennungen"
+  },
+  {
+   "name": "/settings/workflows/:id/step/:stepId",
+   "art": "seite",
+   "ok": true,
+   "grund": "7 Kennungen"
+  },
+  {
+   "name": "/create/styles",
+   "art": "seite",
+   "ok": true,
+   "grund": "15 Kennungen"
+  },
+  {
+   "name": "/create/presets/:id",
+   "art": "seite",
+   "ok": true,
+   "grund": "7 Kennungen"
+  },
+  {
+   "name": "/create/gallery/pick/:purpose",
+   "art": "seite",
+   "ok": true,
+   "grund": "7 Kennungen"
+  },
+  {
+   "name": "/settings/engine/advanced",
+   "art": "seite",
+   "ok": true,
+   "grund": "17 Kennungen"
+  },
+  {
+   "name": "model",
+   "art": "blatt",
+   "ok": true,
+   "grund": "27 Kennungen"
+  },
+  {
+   "name": "attach",
+   "art": "blatt",
+   "ok": true,
+   "grund": "12 Kennungen"
+  },
+  {
+   "name": "message",
+   "art": "blatt",
+   "ok": true,
+   "grund": "9 Kennungen"
+  },
+  {
+   "name": "chat-menu",
+   "art": "blatt",
+   "ok": true,
+   "grund": "9 Kennungen"
+  },
+  {
+   "name": "chat-options",
+   "art": "blatt",
+   "ok": true,
+   "grund": "28 Kennungen"
+  },
+  {
+   "name": "approval",
+   "art": "blatt",
+   "ok": true,
+   "grund": "9 Kennungen"
+  },
+  {
+   "name": "tools",
+   "art": "blatt",
+   "ok": true,
+   "grund": "22 Kennungen"
+  },
+  {
+   "name": "create-model",
+   "art": "blatt",
+   "ok": true,
+   "grund": "35 Kennungen"
+  },
+  {
+   "name": "run-settings",
+   "art": "blatt",
+   "ok": true,
+   "grund": "26 Kennungen"
+  },
+  {
+   "name": "source",
+   "art": "blatt",
+   "ok": true,
+   "grund": "13 Kennungen"
+  },
+  {
+   "name": "result",
+   "art": "blatt",
+   "ok": true,
+   "grund": "9 Kennungen"
+  },
+  {
+   "name": "credits",
+   "art": "blatt",
+   "ok": true,
+   "grund": "12 Kennungen"
+  },
+  {
+   "name": "session",
+   "art": "blatt",
+   "ok": true,
+   "grund": "11 Kennungen"
+  },
+  {
+   "name": "price",
+   "art": "blatt",
+   "ok": true,
+   "grund": "12 Kennungen"
+  },
+  {
+   "name": "link-offer",
+   "art": "blatt",
+   "ok": true,
+   "grund": "10 Kennungen"
+  },
+  {
+   "name": "report",
+   "art": "blatt",
+   "ok": true,
+   "grund": "19 Kennungen"
+  },
+  {
+   "name": "ai-consent",
+   "art": "blatt",
+   "ok": true,
+   "grund": "12 Kennungen"
+  },
+  {
+   "name": "agent-group-persona",
+   "art": "blatt",
+   "ok": true,
+   "grund": "9 Kennungen"
+  },
+  {
+   "name": "agent-memory-conflict",
+   "art": "blatt",
+   "ok": true,
+   "grund": "10 Kennungen"
+  },
+  {
+   "name": "agent-memory-export",
+   "art": "blatt",
+   "ok": true,
+   "grund": "14 Kennungen"
+  },
+  {
+   "name": "agent-add-step",
+   "art": "blatt",
+   "ok": true,
+   "grund": "9 Kennungen"
+  },
+  {
+   "name": "chat-voice-gate",
+   "art": "blatt",
+   "ok": true,
+   "grund": "11 Kennungen"
+  },
+  {
+   "name": "chat-link",
+   "art": "blatt",
+   "ok": true,
+   "grund": "12 Kennungen"
+  },
+  {
+   "name": "create-enhance",
+   "art": "blatt",
+   "ok": true,
+   "grund": "8 Kennungen"
+  },
+  {
+   "name": "create-preset",
+   "art": "blatt",
+   "ok": true,
+   "grund": "9 Kennungen"
+  },
+  {
+   "name": "create-character",
+   "art": "blatt",
+   "ok": true,
+   "grund": "8 Kennungen"
+  },
+  {
+   "name": "create-computer",
+   "art": "blatt",
+   "ok": true,
+   "grund": "10 Kennungen"
+  },
+  {
+   "name": "remote-model",
+   "art": "blatt",
+   "ok": true,
+   "grund": "9 Kennungen"
+  },
+  {
+   "name": "remote-attach",
+   "art": "blatt",
+   "ok": true,
+   "grund": "11 Kennungen"
+  },
+  {
+   "name": "remote-options",
+   "art": "blatt",
+   "ok": true,
+   "grund": "8 Kennungen"
+  },
+  {
+   "name": "remote-message",
+   "art": "blatt",
+   "ok": true,
+   "grund": "9 Kennungen"
+  },
+  {
+   "name": "remote-chat-menu",
+   "art": "blatt",
+   "ok": true,
+   "grund": "9 Kennungen"
+  },
+  {
+   "name": "remote-connection",
+   "art": "blatt",
+   "ok": true,
+   "grund": "9 Kennungen"
+  },
+  {
+   "name": "settings-licenses",
+   "art": "blatt",
+   "ok": true,
+   "grund": "11 Kennungen"
+  },
+  {
+   "name": "settings-delete-account",
+   "art": "blatt",
+   "ok": true,
+   "grund": "11 Kennungen"
+  },
+  {
+   "name": "settings-forgot-password",
+   "art": "blatt",
+   "ok": true,
+   "grund": "12 Kennungen"
+  },
+  {
+   "name": "settings-new-password",
+   "art": "blatt",
+   "ok": true,
+   "grund": "13 Kennungen"
+  },
+  {
+   "name": "settings-add-credits",
+   "art": "blatt",
+   "ok": true,
+   "grund": "10 Kennungen"
+  },
+  {
+   "name": "settings-cloud-plans",
+   "art": "blatt",
+   "ok": true,
+   "grund": "12 Kennungen"
+  },
+  {
+   "name": "frisch-open",
+   "art": "zustand",
+   "ok": true,
+   "grund": "Altersabfrage keine, Route /welcome"
+  },
+  {
+   "name": "frisch-play",
+   "art": "zustand",
+   "ok": true,
+   "grund": "Altersabfrage ask, Route null"
+  },
+  {
+   "name": "alter-rueckfrage-play",
+   "art": "zustand",
+   "ok": true
+  },
+  {
+   "name": "alter-nein-play",
+   "art": "zustand",
+   "ok": true
+  },
+  {
+   "name": "alter-ja-play",
+   "art": "zustand",
+   "ok": true,
+   "grund": "danach Route /welcome"
+  },
+  {
+   "name": "frisch-appstore",
+   "art": "zustand",
+   "ok": true,
+   "grund": "Altersabfrage ask, Route null"
+  },
+  {
+   "name": "alter-rueckfrage-appstore",
+   "art": "zustand",
+   "ok": true
+  },
+  {
+   "name": "alter-nein-appstore",
+   "art": "zustand",
+   "ok": true
+  },
+  {
+   "name": "alter-ja-appstore",
+   "art": "zustand",
+   "ok": true,
+   "grund": "danach Route /welcome"
+  }
+ ]
+}

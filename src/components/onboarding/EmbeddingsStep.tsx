@@ -181,7 +181,7 @@ export function EmbeddingsStep({ skin, scan, fleet, step, setStep }: EmbeddingsS
       {embeddingsAlreadyHave === true && !embeddingsPulled && (
         <div className={`p-3 rounded-lg border ${isDark ? 'bg-green-500/10 border-green-500/20' : 'bg-green-50 border-green-200'}`}>
           <div className="flex items-center gap-2 justify-center">
-            <Check size={14} className="text-green-400" />
+            <Check size={14} className="text-green-600 dark:text-green-400" />
             <span className="text-[0.7rem] font-medium">Embedding model already installed, Document Chat is ready.</span>
           </div>
         </div>

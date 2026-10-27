@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Das Schwarz des Desktop-Icons (src-tauri/icons/icon.png) -->
+    <color name="ic_launcher_background">#0B0B0D</color>
+</resources>

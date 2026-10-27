@@ -3,9 +3,12 @@ import { usePopoverPlatz } from '../../hooks/usePopoverPlatz'
 import { X, SlidersHorizontal } from 'lucide-react'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useChatStore } from '../../stores/chatStore'
+import { useAgentModeStore } from '../../stores/agentModeStore'
 import { HINWEIS_TEXT } from '../../lib/hinweis'
 import { useDismissOnEscape } from '../../hooks/useDismissOnEscape'
-import { SAMPLING_DEFAULTS, effectiveSampling, samplingIsChanged, hasOwnSampling } from '../../lib/sampling'
+import { SAMPLING_DEFAULTS, TEMPERATURE_MAX, AGENT_TEMPERATURE_MAX, effectiveSampling, samplingIsChanged, hasOwnSampling, isHighTemperature } from '../../lib/sampling'
+import { resetTemperatureToDefault } from '../../lib/temperature-reset'
+import { HighTemperatureWarning } from './HighTemperatureWarning'
 import type { SamplingOverrides } from '../../lib/sampling'
 import { isGroupChat } from '../../lib/group-chat'
 import { speakerSamplingLines, type SpeakerSamplingLine } from '../../lib/speaker-sampling-lines'
@@ -73,7 +76,7 @@ import {
  * arrangement the web app describes in the web app.
  */
 const FIELDS = [
-  { key: 'temperature', label: 'Temperature', min: 0, max: 2, step: 0.05 },
+  { key: 'temperature', label: 'Temperature', min: 0, max: TEMPERATURE_MAX, step: 0.05 },
   { key: 'topP', label: 'Top P', min: 0, max: 1, step: 0.01 },
 ] as const
 
@@ -174,6 +177,7 @@ export function SamplingControls() {
       : undefined
   )
   const setSampling = useChatStore((s) => s.setConversationSampling)
+  const agentMode = useAgentModeStore((s) => (activeId ? s.agentModeActive[activeId] === true : false))
   const resetSampling = useChatStore((s) => s.resetConversationSampling)
   // GH #175: who speaks in this chat, and which persona preset holds for
   // each. Only the fields the lines read, so a streaming answer does not
@@ -299,7 +303,17 @@ export function SamplingControls() {
         {value.temperature.toFixed(2)}
         {/* Ein geaenderter Regler ist kein Zwischenfall, also traegt der
             Stern den ruhigen Ton und keine eigene Warnfarbe. */}
-        {changed && <span className={`ml-1 ${HINWEIS_TEXT.ruhig}`} title="Changed from the defaults">*</span>}
+        {/* A temperature that makes noise is a problem, not a preference, so
+            from TEMPERATURE_WARN up the star takes the warning colour (A33). */}
+        {changed && (
+          <span
+            className={`ml-1 ${isHighTemperature(value.temperature) ? HINWEIS_TEXT.fehler : HINWEIS_TEXT.ruhig}`}
+            title={isHighTemperature(value.temperature) ? 'Temperature is high, answers may be random text' : 'Changed from the defaults'}
+            data-testid="sampling-changed-marker"
+          >
+            {isHighTemperature(value.temperature) ? '!' : '*'}
+          </span>
+        )}
       </button>
 
       {open && (
@@ -353,6 +367,19 @@ export function SamplingControls() {
               <span className="w-10 shrink-0 text-right tabular-nums text-gray-300">{value[f.key]}</span>
             </label>
           ))}
+
+          <HighTemperatureWarning
+            temperature={value.temperature}
+            onReset={() => {
+              setDraft(null)
+              resetTemperatureToDefault(activeId)
+            }}
+          />
+          {agentMode && value.temperature > AGENT_TEMPERATURE_MAX && (
+            <p className="text-gray-500" data-testid="agent-temperature-hint">
+              Agent turns use at most {AGENT_TEMPERATURE_MAX.toFixed(1)}, so tool calls stay valid.
+            </p>
+          )}
 
           <label className="flex items-center gap-2">
             <span className="w-20 shrink-0 text-gray-400">Max tokens</span>

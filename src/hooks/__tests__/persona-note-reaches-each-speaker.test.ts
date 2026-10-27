@@ -196,7 +196,11 @@ describe('Agent mode', () => {
     })
     expect(requests.length).toBeGreaterThan(0)
     const userTurns = requests[0].messages.filter((m) => m.role === 'user')
-    expect(userTurns.at(-1)!.content).toContain(`find the culprit\n\n${SHERLOCK_NOTE}`)
+    // Behind the user's words, at the very end: since A7 the turn note (clock,
+    // memories) sits between the two, see lib/turn-context.ts.
+    const tail = userTurns.slice(-2).map((m) => m.content).join('\n\n')
+    expect(tail).toMatch(/find the culprit[\s\S]*Date and time at the start of this run[\s\S]*/)
+    expect(tail.endsWith(SHERLOCK_NOTE)).toBe(true)
     expect(requests[0].messages[0].content).not.toContain(SHERLOCK_NOTE)
     expect(JSON.stringify(conversation(convId).messages)).not.toContain(SHERLOCK_NOTE)
   })

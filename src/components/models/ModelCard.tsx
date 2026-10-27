@@ -1,4 +1,4 @@
-import { Trash2, Info, MessageSquare, Image, Video, Loader2 } from 'lucide-react'
+import { Trash2, Info, MessageSquare, Image, Video, Loader2, ShieldOff } from 'lucide-react'
 import { useState } from 'react'
 import { formatBytes } from '../../lib/formatters'
 import { BenchmarkButton } from './ModelBenchmark'
@@ -52,6 +52,9 @@ interface Props {
   engineStopped?: boolean
   /** While that swap runs. The engine can take seconds to load a cold GGUF. */
   useBusy?: boolean
+  /** A14: open the refusal-removal tool for this file. Passed only for LU
+   *  Engine rows whose original weights the file names. */
+  onRemoveRefusals?: () => void
 }
 
 // The glyph of each kind of model. Its tone, like every other class of this
@@ -73,7 +76,7 @@ export function createTabForArchitecture(architecture: string | undefined): stri
   return null
 }
 
-export function ModelCard({ model, isActive, onSelect, onDelete, onInfo, infoTitle, canDelete = true, onUse, useBusy = false, engineStopped: luEngineRuht = false }: Props) {
+export function ModelCard({ model, isActive, onSelect, onDelete, onInfo, infoTitle, canDelete = true, onUse, useBusy = false, engineStopped: luEngineRuht = false, onRemoveRefusals }: Props) {
   const typeInfo = TYPE_CONFIG[model.type] || TYPE_CONFIG.text
   const TypeIcon = typeInfo.icon
   const look = modelSkin().card
@@ -83,7 +86,8 @@ export function ModelCard({ model, isActive, onSelect, onDelete, onInfo, infoTit
   // EIN Satz Aktionen fuer die Karte. Die sichtbaren Knoepfe unten lesen aus
   // diesem Objekt, das Kontextmenue bekommt dasselbe Objekt gereicht — es gibt
   // also keinen zweiten Aufrufweg, der irgendwann anders werden koennte.
-  const actions: ModelMenuHandlers = { select: onSelect, info: onInfo, remove: onDelete }
+  const actions: ModelMenuHandlers = { select: onSelect, info: onInfo, remove: onDelete, removeRefusals: onRemoveRefusals }
+  const refusalsRemoved = 'refusalsRemoved' in model && model.refusalsRemoved === true
   // Fremde Kennungen tragen Pfadteile und Dateiendungen mit sich, die kein
   // Kunde gewaehlt hat. Der Name selbst bleibt unangetastet (lib/model-label).
   const { head: nameKopf, tail: nameEnde } = splitForMiddleEllipsis(displayModelName(model.name))
@@ -152,6 +156,13 @@ export function ModelCard({ model, isActive, onSelect, onDelete, onInfo, infoTit
         )
       )}
 
+      {/* A14: a copy LU's refusal-removal tool made. */}
+      {refusalsRemoved && (
+        <span data-testid="model-card-refusals-removed" className={look.mark} title="LU removed the refusals of this copy. The original model is listed separately.">
+          refusals removed
+        </span>
+      )}
+
       {/* Compact meta — size · params · quant, dot-separated, mono figures */}
       <span className={look.meta}>
         {model.size > 0 && <span>{formatBytes(model.size)}</span>}
@@ -193,6 +204,17 @@ export function ModelCard({ model, isActive, onSelect, onDelete, onInfo, infoTit
         {/* A model that could take images and has no image part installed:
             one click fetches it. Draws nothing for every other row. */}
         {model.type === 'text' && <AddImageInput model={model} label={`${displayModelName(model.name)} image input`} />}
+        {actions.removeRefusals && (
+          <button
+            onClick={(e) => { e.stopPropagation(); actions.removeRefusals?.() }}
+            data-testid="model-card-remove-refusals"
+            className={look.info}
+            title="Remove refusals: make a copy of this model that refuses fewer requests"
+            aria-label={`Remove refusals from ${displayModelName(model.name)}`}
+          >
+            <ShieldOff size={ICON_SM} />
+          </button>
+        )}
         {model.type === 'text' && (
           <div onClick={(e) => e.stopPropagation()}>
             <BenchmarkButton modelName={model.name} />

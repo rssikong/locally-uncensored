@@ -1,6 +1,6 @@
 {
   "name": "locally-uncensored",
-  "version": "3.0.7",
+  "version": "3.0.8",
   "private": false,
   "description": "The all-in-one local AI studio for your desktop: chat, images, video and a coding agent in one app.",
   "license": "AGPL-3.0-only",
@@ -27,6 +27,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "dev:mobile": "VITE_LU_BUILD_TARGET=mobile vite",
+    "build:mobile": "VITE_LU_BUILD_TARGET=mobile vite build",
     "lint": "eslint .",
     "typecheck": "tsc -b --force",
     "cycles": "madge --circular --extensions ts,tsx src",
@@ -44,7 +46,6 @@
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.5.0",
     "@supabase/supabase-js": "^2.110.0",
-    "@tailwindcss/vite": "^4.2.2",
     "@tauri-apps/plugin-shell": "^2.3.5",
     "@tauri-apps/plugin-updater": "^2.10.1",
     "@types/react-syntax-highlighter": "^15.5.13",
@@ -71,8 +72,9 @@
   "devDependencies": {
     "@eslint/js": "^9.39.4",
     "@playwright/test": "^1.61.1",
+    "@tailwindcss/vite": "^4.2.2",
     "@tauri-apps/api": "^2.10.1",
-    "@tauri-apps/cli": "^2.10.1",
+    "@tauri-apps/cli": "2.11.4",
     "@testing-library/react": "^16.3.3",
     "@types/node": "^24.12.0",
     "@types/react": "^19.2.14",

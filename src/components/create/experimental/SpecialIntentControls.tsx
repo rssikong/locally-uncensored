@@ -18,7 +18,8 @@ import { listLoras, deleteLora, downloadLora, type CloudLora, type LoraDownloadP
 import { errorText } from '../../../types/json-guards'
 import {
   characterTrainerStatus, deleteLocalCharacter, installCharacterTrainer, parseLocalCharacterLora,
-  TRAINER_BASE_FILES, baseDownloadRunning, baseDownloadPercent, missingTrainerBases, missingBasesLine, aboutSize, baseBytes, type TrainerStatus,
+  TRAINER_BASE_FILES, baseDownloadRunning, baseDownloadPercent, missingTrainerBases, missingBasesLine, aboutSize, baseBytes,
+  baseStartFailedNote, basesStillMissingNote, type TrainerBaseFile, type TrainerStatus,
 } from '../../../api/trainer'
 import { startModelDownload, getDownloadProgress, catalogDigestFor } from '../../../api/discover'
 import { useDownloadStore } from '../../../stores/downloadStore'
@@ -26,7 +27,9 @@ import { refreshComfyModels } from '../../../api/comfyui'
 import { isMlxImageHost } from '../../../api/mlx-image'
 import { buildMlxVideoModels, listVideoModels, mlxTalkingEntry, mlxVideoModelIdFor } from '../../../api/mlx-video'
 import { openMlxLoraFolder } from '../../../api/mlx-loras'
-import { getMacTrainStatus, macTrainNote, type MacTrainStatus } from '../../../api/mlx-train'
+import { getMacTrainStatus, macTrainMissing, macTrainNote, type MacTrainStatus } from '../../../api/mlx-train'
+import { useUIStore } from '../../../stores/uiStore'
+import { useModelStore } from '../../../stores/modelStore'
 import { characterLoraFile, listLocalCharacters, type CharacterRef } from '../../../lib/characters'
 import { isWindows, isMacOS } from '../../../api/backend'
 import { LOCAL_MUSIC_TEXT, SECONDS_LENGTH, musicHowtoLines, musicLength, musicText } from '../../../lib/render/music-ui'
@@ -39,6 +42,7 @@ import { trainerPathPlaceholder } from '../../../lib/trainer-path-placeholder'
 import { trainerRootHint } from '../../../lib/trainer-root-hint'
 import { useCreateExp } from './CreateContext'
 import { CharacterUseLocally } from './CharacterUseLocally'
+import { CLOUD_TRAINING_FAMILY_NOTE } from '../../../api/character-import'
 import { useLocalPick } from './localPick'
 import { characterBaseModel, characterRunBlock } from '../../../lib/character-base'
 import { HINWEIS_TEXT } from '../../../lib/hinweis'
@@ -276,6 +280,11 @@ function CharacterPanel() {
           <span className="t-label text-gray-600">
             {trainImages.length}/{maxTrainImages(backend)} photos added{trainImages.length < MIN_TRAIN_IMAGES ? `, need at least ${MIN_TRAIN_IMAGES}` : ''}
           </span>
+          {/* Said before the training, not after it (3.0.8): only a Z-Image
+              character can come to this computer. */}
+          <p data-testid="cloud-train-family-note" className={`w-full text-center t-micro ${HINWEIS_TEXT.ruhig}`}>
+            {CLOUD_TRAINING_FAMILY_NOTE}
+          </p>
         </div>
       ) : (
         <div className="flex items-center justify-center gap-1.5 flex-wrap">
@@ -480,6 +489,9 @@ function LocalTrainControls() {
   const missingBases = useMemo(() => (status ? missingTrainerBases(status) : []), [status])
   const missingRef = useRef(missingBases)
   useEffect(() => { missingRef.current = missingBases }, [missingBases])
+  // Files of this click that did not start, with the reason. The progress
+  // line of the others would otherwise overwrite them two seconds later.
+  const startProblems = useRef<string[]>([])
 
   // K5 Nachbesserung, point 3: the field must always show the actually
   // valid path, not stay blank while a customized root is already active
@@ -529,7 +541,7 @@ function LocalTrainControls() {
         const pct = baseDownloadPercent(prog, fetching.length ? fetching.map((f) => f.filename) : undefined)
         if (pct !== null) {
           const size = aboutSize(baseBytes(fetching.length ? fetching : TRAINER_BASE_FILES))
-          setNote(`Downloading base files (${pct}% of ${size})...`)
+          setNote([`Downloading base files (${pct}% of ${size})...`, ...startProblems.current.map((p) => `Did not start: ${p}`)].join('\n'))
           return
         }
         const failed = TRAINER_BASE_FILES.map((f) => prog[f.filename]).find((r) => r?.status === 'error')
@@ -540,6 +552,10 @@ function LocalTrainControls() {
           setBusy(null)
         } else if (s?.basesReady) {
           setNote(null)
+          setBusy(null)
+        } else if (s) {
+          // Nothing is coming in any more and files are still missing.
+          setNote(basesStillMissingNote(missingTrainerBases(s)))
           setBusy(null)
         }
       }
@@ -585,13 +601,33 @@ function LocalTrainControls() {
     // its cancel + retry buttons never appear.
     const dl = useDownloadStore.getState()
     if (missing.length > 1) dl.setBundleGroup('Character Studio base models', missing.map((f) => f.filename))
+    startProblems.current = []
+    const alreadyThere: TrainerBaseFile[] = []
+    let started = 0
     for (const f of missing) {
       dl.setMeta(f.filename, f.url, f.subfolder)
-      try { const d = catalogDigestFor(f.filename, f.url); await startModelDownload(f.url, f.subfolder, f.filename, d.expectedBytes, d.sha256) } catch (e) {
-        setNote(e instanceof Error ? e.message : `Could not start ${f.filename}.`)
+      try {
+        const d = catalogDigestFor(f.filename, f.url)
+        const r = await startModelDownload(f.url, f.subfolder, f.filename, d.expectedBytes, d.sha256)
+        if (r?.status === 'started' || r?.status === 'already_running') started++
+        else if (r?.status === 'exists') alreadyThere.push(f)
+        else startProblems.current.push(`${f.label}: ${r?.error ?? 'the download did not start.'}`)
+      } catch (e) {
+        startProblems.current.push(`${f.label}: ${e instanceof Error ? e.message : 'the download did not start.'}`)
       }
       dl.startPolling()
     }
+    if (started > 0) {
+      if (startProblems.current.length) setNote(startProblems.current.map((p) => `Did not start: ${p}`).join('\n'))
+      return
+    }
+    // Nothing is coming in. A file the downloader found already in place
+    // may be readable to the trainer now (it asks the same folders), so look
+    // again before saying anything.
+    const s = await characterTrainerStatus().catch(() => null)
+    if (s) setStatus(s)
+    setBusy(null)
+    setNote(s?.basesReady ? null : baseStartFailedNote(alreadyThere, startProblems.current))
   }
 
   if (!status) {
@@ -724,6 +760,8 @@ function MacTrainControls() {
   const trainSteps = useCreateStore((s) => s.trainSteps)
   const setTrainSteps = useCreateStore((s) => s.setTrainSteps)
   const isGenerating = useCreateStore((s) => s.isGenerating)
+  const setView = useUIStore((s) => s.setView)
+  const setCategoryFilter = useModelStore((s) => s.setCategoryFilter)
   const [status, setStatus] = useState<MacTrainStatus | null>(null)
   const [failed, setFailed] = useState(false)
 
@@ -744,15 +782,21 @@ function MacTrainControls() {
   if (status.memoryRefusal) {
     return <div role="alert" className={cn('t-label text-center max-w-md mx-auto', HINWEIS_TEXT.fehler)} data-testid="mac-train-note">{status.memoryRefusal}</div>
   }
-  if (!status.engineReady || !status.base) {
-    return (
-      <div className="t-label text-gray-500 text-center max-w-md mx-auto" data-testid="mac-train-note">
-        Training a character on this Mac needs Z-Image Turbo. Install it in the Model Manager first, then come back here.
-      </div>
-    )
-  }
+  // GH #194: without Z-Image Turbo this used to be the whole tab, one grey
+  // line under a photo strip that still took photos, and no trigger field.
+  // The inputs stay now; the missing install sits above them with its
+  // button, like "Download base files" of the Windows trainer.
+  const missing = macTrainMissing(status)
   return (
     <div className="flex flex-col items-center gap-1.5" data-testid="mac-train-controls">
+      {missing && (
+        <div className="flex items-center justify-center gap-2 flex-wrap max-w-[560px]">
+          <span className="t-label text-gray-400 text-center" data-testid="mac-train-note">{missing}</span>
+          <Button size="sm" variant="secondary" icon={Download} onClick={() => { setCategoryFilter('image'); setView('models') }}>
+            Install Z-Image Turbo
+          </Button>
+        </div>
+      )}
       <div className="flex items-center justify-center gap-2 flex-wrap">
         <input
           value={triggerWord}

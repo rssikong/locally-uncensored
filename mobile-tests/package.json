@@ -1,0 +1,31 @@
+{
+  "name": "lu-mobile-tests",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Abnahmerahmen fuer LU Mobile (Android und iOS). Reine .mjs-Module, keine Abhaengigkeiten, braucht Node 22 oder neuer (eingebauter WebSocket und fetch).",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "selbsttest": "node selbsttest.mjs",
+    "selbsttest:ios": "PLATFORM=ios node selbsttest.mjs",
+    "inventar": "node inventory.mjs",
+    "sweep": "node sweep.mjs",
+    "layout": "node checks/layout.mjs",
+    "copy": "node checks/copy.mjs",
+    "tabelle": "node tabelle/bauen.mjs",
+    "aufnahme": "node trocken/aufnahme.mjs",
+    "trocken": "node trocken/lauf.mjs",
+    "trocken:statisch": "node trocken/statisch.mjs",
+    "trocken:rahmen": "node trocken/rahmen.mjs",
+    "alter": "node flows/alter.mjs",
+    "kundenfluss": "node flows/kundenfluss.mjs",
+    "fehlerfaelle": "node flows/fehlerfaelle.mjs",
+    "n1": "node flows/n1.mjs",
+    "persistenz": "node checks/persistenz.mjs",
+    "zurueck": "node checks/zurueck.mjs",
+    "messlatte": "node messlatte.mjs",
+    "release": "node checks/release.mjs",
+    "inventur": "node checks/vollstaendigkeit.mjs",
+    "bericht": "node report.mjs"
+  }
+}

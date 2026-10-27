@@ -1,0 +1,80 @@
+# Where a host points and whether a download may fetch from it.
+#
+# One table for the three implementations of the same rule:
+#   src/net.rs                                   (Rust, `the_shared_table_holds`)
+#   android/.../NetGuard.kt                      (Kotlin, NetGuardTest)
+#   ios/Sources/NetGuard.swift                   (Swift, scripts/mobile/native-guard-tests.sh)
+# A redirect of a download is held to this table at every hop, so the three
+# must never drift apart. Change a line here and all three tests follow.
+#
+# Columns, separated by ONE tab:
+#   address   kind   store   acceptance
+# kind:       loopback, private, localname, tunnel, reserved, public,
+#             or invalid (not an address a download can use at all)
+# store:      yes or no, may a store build download from it
+# acceptance: yes or no, may an acceptance build (feature abnahme) do so
+https://huggingface.co/a/b/resolve/main/m.gguf	public	yes	yes
+https://cas-bridge.xethub.hf.co/xet-bridge-us/abc?sig=1	public	yes	yes
+https://cdn-lfs.huggingface.co/repos/aa/bb/cc	public	yes	yes
+https://8.8.8.8/m.gguf	public	yes	yes
+https://[2606:4700::1111]/m.gguf	public	yes	yes
+https://[::ffff:8.8.8.8]/m.gguf	public	yes	yes
+https://quiet-river-1234.trycloudflare.com/m.gguf	tunnel	yes	yes
+http://huggingface.co/a/b/resolve/main/m.gguf	public	no	no
+http://quiet-river-1234.trycloudflare.com/m.gguf	tunnel	no	no
+https://127.0.0.1/m.gguf	loopback	no	yes
+http://127.0.0.1:8799/a.bin	loopback	no	yes
+https://127.255.255.254/x	loopback	no	yes
+https://127.0.0.1./x	loopback	no	yes
+https://192.168.1.20./x	private	no	yes
+https://localhost/x	loopback	no	yes
+https://LOCALHOST./x	loopback	no	yes
+https://api.localhost/x	loopback	no	yes
+https://[::1]/x	loopback	no	yes
+https://[::ffff:127.0.0.1]/x	loopback	no	yes
+https://0x7f.1/x	loopback	no	yes
+https://2130706433/x	loopback	no	yes
+https://017700000001/x	loopback	no	yes
+https://10.0.0.5/x	private	no	yes
+http://10.0.2.2:8799/a.bin	private	no	yes
+https://172.16.0.1/x	private	no	yes
+https://172.31.255.254/x	private	no	yes
+https://192.168.1.20/x	private	no	yes
+https://100.64.0.1/x	private	no	yes
+https://100.127.255.254/x	private	no	yes
+https://[fd12:3456::1]/x	private	no	yes
+https://[fe80::1]/x	private	no	yes
+https://[::ffff:192.168.1.20]/x	private	no	yes
+https://172.15.255.255/x	public	yes	yes
+https://172.32.0.1/x	public	yes	yes
+https://100.63.255.255/x	public	yes	yes
+https://100.128.0.1/x	public	yes	yes
+https://192.169.0.1/x	public	yes	yes
+https://11.0.0.1/x	public	yes	yes
+https://printer.local/x	localname	no	yes
+https://nas.lan/x	localname	no	yes
+https://box.fritz.box/x	localname	no	yes
+https://server.home.arpa/x	localname	no	yes
+https://wiki.internal/x	localname	no	yes
+https://desktop/x	localname	no	yes
+https://169.254.169.254/latest/meta-data/	reserved	no	no
+http://169.254.169.254/latest/meta-data/	reserved	no	no
+https://0xa9fea9fe/x	reserved	no	no
+https://[::ffff:169.254.169.254]/x	reserved	no	no
+https://0.0.0.0/x	reserved	no	no
+https://224.0.0.1/x	reserved	no	no
+https://255.255.255.255/x	reserved	no	no
+https://240.0.0.1/x	reserved	no	no
+https://192.0.2.7/x	reserved	no	no
+https://198.51.100.7/x	reserved	no	no
+https://203.0.113.7/x	reserved	no	no
+https://[::]/x	reserved	no	no
+https://[ff02::1]/x	reserved	no	no
+https://user:pw@huggingface.co/x	public	no	no
+https://user@huggingface.co/x	public	no	no
+https://trycloudflare.com/x	public	yes	yes
+https://trycloudflare.com.evil.example/x	public	yes	yes
+https://huggingface.co.evil.example/x	public	yes	yes
+ftp://huggingface.co/x	public	no	no
+file:///etc/passwd	invalid	no	no
+not an address	invalid	no	no

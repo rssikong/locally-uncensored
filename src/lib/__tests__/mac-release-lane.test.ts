@@ -474,9 +474,14 @@ describe('release.yml, a Mac dry run reaches no release and no other platform', 
       .toMatch(/^ {4}if:\s*github\.event_name == 'release'\s*$/m)
   })
 
-  it('has no job besides these five, so none is left unaccounted for', () => {
+  it('attaches the SBOMs and checksums only to a real release', () => {
+    expect(withoutComments(jobBlock(RELEASE_YML, 'sbom-and-checksums')))
+      .toMatch(/^ {4}if:\s*\$\{\{ always\(\) && !inputs\.mac_dry_run && !inputs\.dry_run && needs\.build-tauri\.result == 'success' \}\}\s*$/m)
+  })
+
+  it('has no job besides these six, so none is left unaccounted for', () => {
     const jobs = [...RELEASE_YML.slice(RELEASE_YML.indexOf('\njobs:\n')).matchAll(/^ {2}([a-z][a-z0-9-]*):\s*$/gm)].map((m) => m[1])
-    expect(jobs.sort()).toEqual(['build-tauri', 'build-tauri-macos', 'demote-on-arrival', 'enforce-prerelease', 'gate'])
+    expect(jobs.sort()).toEqual(['build-tauri', 'build-tauri-macos', 'demote-on-arrival', 'enforce-prerelease', 'gate', 'sbom-and-checksums'])
   })
 
   it('builds the commit the run was started on, not a tag', () => {
@@ -768,6 +773,22 @@ describe('the bundle check and the plist agree on what macOS asks the user', () 
       const text = plist.match(new RegExp(`<key>${key}</key>\\s*<string>([^<]+)</string>`))?.[1] ?? ''
       expect(text.trim().length, key).toBeGreaterThan(20)
     }
+  })
+})
+
+describe('the bundle check judges every sidecar the Mac bundles', () => {
+  // 3.0.8: lu-llama-quantize (A14) joined lu-llama-server. The check read only
+  // the first, so a release with an empty quantizer passed it.
+  const script = read('scripts/verify-mac-bundle.sh')
+  const conf = JSON.parse(read('src-tauri/tauri.macos.conf.json'))
+
+  it('reads the list from tauri.macos.conf.json instead of naming one file', () => {
+    expect(script).toContain('conf tauri.macos.conf.json bundle.externalBin')
+    expect(script).toMatch(/done <<< "\$sidecars"/)
+  })
+
+  it('the list it reads holds both programs', () => {
+    expect(conf.bundle.externalBin).toEqual(expect.arrayContaining(['bin/lu-llama-server', 'bin/lu-llama-quantize']))
   })
 })
 

@@ -10,6 +10,17 @@ use once_cell::sync::Lazy;
 use regex::RegexBuilder;
 use walkdir::WalkDir;
 
+/// A path as an error of these commands names it: the full path on a desktop,
+/// the path inside the folder of the chat on a phone (see `shown_path`).
+fn shown(path: &Path) -> String {
+    crate::shown_path::path_for_message(
+        path,
+        &crate::os_paths::agent_workspace_root(),
+        crate::app_identity::AGENT_WORKSPACE_DIR,
+        cfg!(mobile),
+    )
+}
+
 /// Strip duplicate drive-letter prefixes, e.g.
 /// `D:/a/D:/a/file.txt` → `D:/a/file.txt`. See commands/agent.rs for
 /// the full rationale — same bug surface for fs_list / fs_search.
@@ -171,10 +182,19 @@ pub(crate) fn contain_within(root: &Path, candidate: &Path) -> Result<PathBuf, S
     } else {
         // Surface BOTH sides: the #1 support question on this error is "which
         // folder does it think the workspace is?" — the raw root answers it.
+        if cfg!(mobile) {
+            // A phone has one workspace per chat and no folder to pick, so
+            // the root is not a question there, and its full path is the
+            // private folder of the app.
+            return Err(format!(
+                "Path escapes the allowed workspace.\n  workspace root: the folder of this chat\n  requested path: {}",
+                shown(candidate)
+            ));
+        }
         Err(format!(
             "Path escapes the allowed workspace.\n  workspace root: {}\n  requested path: {}",
-            root.display(),
-            candidate.display()
+            shown(root),
+            shown(candidate)
         ))
     }
 }
@@ -414,7 +434,7 @@ fn may_be_a_picked_root(norm: &Path) -> Result<(), String> {
         Err(format!(
             "Not an allowed workspace folder ({}): {}",
             why,
-            norm.display()
+            shown(norm)
         ))
     };
     // `/` and `C:\` have no named component at all.
@@ -496,7 +516,7 @@ fn check_workspace_root(root: &Path) -> Result<(), String> {
         return Err(format!(
             "Not an allowed workspace folder (only a folder you chose in LU's folder picker \
              can be a workspace, pick it again to allow it): {}",
-            root.display()
+            shown(root)
         ));
     }
     Ok(())
@@ -620,7 +640,7 @@ fn whole_computer_closed() -> Vec<PathBuf> {
         crate::os_paths::app_config_dir(),
     ]);
     // The same folders when they were moved to a folder of the user's choice
-    // (Settings, Model Storage): the voice engine, LU's own Python and the
+    // (Settings, Storage): the voice engine, LU's own Python and the
     // read-aloud voices.
     out.extend(crate::runtime_root::owned_outside_defaults());
     out
@@ -635,7 +655,7 @@ fn whole_computer_path(candidate: &Path) -> Result<PathBuf, String> {
         if is_within(&bad, &norm) || is_within(&resolve_existing_prefix(&bad), &real) {
             return Err(format!(
                 "Not available, even with the whole computer allowed (system or credential directory): {}",
-                candidate.display()
+                shown(candidate)
             ));
         }
     }
@@ -692,7 +712,7 @@ fn refuse_start_file_write(root: &Path, target: &Path) -> Result<(), String> {
     if hit {
         return Err(format!(
             "Not available for writing, even with the whole computer allowed (a file the system runs by itself when a terminal or a session starts): {}",
-            target.display()
+            shown(target)
         ));
     }
     Ok(())
@@ -700,6 +720,8 @@ fn refuse_start_file_write(root: &Path, target: &Path) -> Result<(), String> {
 
 /// Ask the user, in a window of the system, whether a voice session may work
 /// with files anywhere on this computer. Asked once per start of the app.
+/// Desktop only: a phone has no voice session with files and no rfd.
+#[cfg(desktop)]
 async fn ask_whole_computer_consent() -> bool {
     if WHOLE_COMPUTER_CONSENT.load(std::sync::atomic::Ordering::SeqCst) {
         return true;
@@ -726,6 +748,7 @@ async fn ask_whole_computer_consent() -> bool {
 /// Switch "Whole computer" on or off for one run. On asks the user first when
 /// this start of the app has not asked yet. Returns whether the run is out of
 /// the workspace jail now.
+#[cfg(desktop)]
 #[tauri::command]
 #[allow(non_snake_case)]
 pub async fn fs_whole_computer(chatId: String, on: bool) -> Result<bool, String> {
@@ -825,7 +848,7 @@ pub(crate) fn reject_root_as_write_target(root: &Path, target: &Path) -> Result<
     if is_within(&nroot, &ntarget) && is_within(&ntarget, &nroot) {
         return Err(format!(
             "Not a file: {} is the workspace root itself — a write needs a file INSIDE the workspace",
-            ntarget.display()
+            shown(&ntarget)
         ));
     }
     Ok(())
@@ -875,7 +898,7 @@ pub async fn fs_read(
 pub(crate) fn fs_read_sync(path: String, chatId: Option<String>, workingDirectory: Option<String>) -> Result<serde_json::Value, String> {
     let full = resolve_path(&path, chatId.as_deref(), workingDirectory.as_deref())?;
     if !full.exists() {
-        return Err(format!("File not found: {}", full.display()));
+        return Err(format!("File not found: {}", shown(&full)));
     }
 
     // Text, or a binary MARKER — never the binary payload.
@@ -922,7 +945,7 @@ pub fn fs_read_bytes(
 ) -> Result<serde_json::Value, String> {
     let full = resolve_path(&path, chatId.as_deref(), workingDirectory.as_deref())?;
     if !full.is_file() {
-        return Err(format!("File not found: {}", full.display()));
+        return Err(format!("File not found: {}", shown(&full)));
     }
     let cap = maxBytes.unwrap_or(READ_BYTES_CAP).min(READ_BYTES_CAP);
     let size = fs::metadata(&full).map(|m| m.len()).unwrap_or(0);
@@ -937,6 +960,45 @@ pub fn fs_read_bytes(
         "base64": base64::engine::general_purpose::STANDARD.encode(&bytes),
         "bytes": bytes.len(),
     }))
+}
+
+/// Remove ONE regular file of the agent workspace of a chat.
+///
+/// This exists for the file viewer of the phone ("Delete" on a file the agent
+/// wrote). It is the narrowest door of this file on purpose:
+///
+/// * The caller must name the workspace: a chat or a picked folder. Without
+///   either, `workspace_root` would fall back to the shared `default` folder,
+///   and a delete must never mean "somewhere in the default place".
+/// * Same jail as every other fs command (`resolve_path` -> `contain_within`:
+///   lexically normalized, then every existing component resolved, so neither
+///   `..` nor a symlink planted inside the workspace leads out).
+/// * The workspace root itself is refused, like a write to it.
+/// * Only a regular file. A directory is refused (no recursive delete through
+///   this door), and so is a symlink: the entry is judged without following
+///   it, so a link is never taken for the file it points at.
+///
+/// The model has no tool that reaches this command. It is called by the
+/// viewer after the user confirmed.
+#[tauri::command]
+#[allow(non_snake_case)]
+pub fn fs_delete(path: String, chatId: Option<String>, workingDirectory: Option<String>) -> Result<serde_json::Value, String> {
+    let named = |v: &Option<String>| v.as_deref().map(str::trim).is_some_and(|s| !s.is_empty());
+    if !named(&chatId) && !named(&workingDirectory) {
+        return Err("Missing workspace: a delete needs the chat or the folder it belongs to".to_string());
+    }
+    if path.trim().is_empty() {
+        return Err("Missing path".to_string());
+    }
+    let full = resolve_path(&path, chatId.as_deref(), workingDirectory.as_deref())?;
+    let root = workspace_root(chatId.as_deref(), workingDirectory.as_deref());
+    reject_root_as_write_target(&root, &full)?;
+    let meta = fs::symlink_metadata(&full).map_err(|_| format!("File not found: {}", shown(&full)))?;
+    if !meta.file_type().is_file() {
+        return Err(format!("Not a file: {}", shown(&full)));
+    }
+    fs::remove_file(&full).map_err(|e| format!("Delete error: {}", os_error::english(&e)))?;
+    Ok(serde_json::json!({ "deleted": true }))
 }
 
 /// Match new content to the EXISTING file's line-ending + BOM convention so an
@@ -1093,7 +1155,7 @@ pub(crate) fn fs_write_bytes_sync(
     reject_root_as_write_target(&root, &full)?;
     refuse_start_file_write(&root, &full)?;
     if full.exists() {
-        return Err(format!("File already exists: {}", full.display()));
+        return Err(format!("File already exists: {}", shown(&full)));
     }
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(base64.as_bytes())
@@ -1198,7 +1260,7 @@ pub fn fs_list(
         if resolves_to_workspace_root(&dir, chatId.as_deref(), workingDirectory.as_deref()) {
             return Ok(serde_json::json!({ "entries": [], "count": 0 }));
         }
-        return Err(format!("Not a directory: {}", dir.display()));
+        return Err(format!("Not a directory: {}", shown(&dir)));
     }
 
     let mut entries: Vec<serde_json::Value> = Vec::new();
@@ -1280,7 +1342,7 @@ pub fn fs_search(
         if resolves_to_workspace_root(&dir, chatId.as_deref(), workingDirectory.as_deref()) {
             return Ok(serde_json::json!({ "results": [], "count": 0 }));
         }
-        return Err(format!("Not a directory: {}", dir.display()));
+        return Err(format!("Not a directory: {}", shown(&dir)));
     }
 
     // Bound the compiled regex so a pathological pattern can't blow up memory.
@@ -1341,7 +1403,7 @@ pub fn fs_search(
 pub fn fs_info(path: String, chatId: Option<String>, workingDirectory: Option<String>) -> Result<serde_json::Value, String> {
     let full = resolve_path(&path, chatId.as_deref(), workingDirectory.as_deref())?;
     if !full.exists() {
-        return Err(format!("Path not found: {}", full.display()));
+        return Err(format!("Path not found: {}", shown(&full)));
     }
     let meta = fs::metadata(&full).map_err(|e| format!("Metadata error: {}", os_error::english(&e)))?;
     let modified = meta
@@ -1371,6 +1433,7 @@ pub fn fs_info(path: String, chatId: Option<String>, workingDirectory: Option<St
 /// Show a native "Save As…" dialog and write the given text content to the
 /// chosen path. Used by Export Chat (markdown / JSON). Returns the chosen
 /// path, or null when the user cancelled.
+#[cfg(desktop)]
 #[tauri::command]
 #[allow(non_snake_case)]
 pub async fn save_text_file_dialog(
@@ -1401,6 +1464,37 @@ pub async fn save_text_file_dialog(
     }
 }
 
+/// What the dialog commands that have no counterpart yet answer on a phone:
+/// picking a file to open and picking a folder. An error and not `Ok(None)`:
+/// `None` means "the user cancelled", and the old Android branch showed
+/// "Saved" for exports that went nowhere (findings A13, A15, A17, A42).
+/// Saving is not among them any more, see `save_text_file_dialog` below.
+#[cfg(mobile)]
+pub(crate) const NO_FILE_DIALOG: &str = "This device has no file dialog for that. Picking a file or a folder is not available in this build yet.";
+
+/// "Save As" on a phone: the text goes into a temp file of the app and the
+/// system's own picker saves it (the document picker on Android, the Files
+/// sheet on iOS). Returns where it went, or null when the user closed the
+/// picker, like the desktop dialog.
+#[cfg(mobile)]
+#[tauri::command]
+#[allow(non_snake_case)]
+pub async fn save_text_file_dialog(
+    app: tauri::AppHandle,
+    content: String,
+    defaultName: Option<String>,
+    extension: Option<String>,
+    ext_label: Option<String>,
+) -> Result<Option<String>, String> {
+    let _ = ext_label;
+    let name = crate::commands::mobile_native::file_name_for(defaultName, extension.as_deref(), "export.txt");
+    let saved = crate::commands::mobile_native::save_with_picker(&app, &name, None, move |file| {
+        std::fs::write(file, content).map_err(|e| format!("Write failed: {}", os_error::english(&e)))
+    })
+    .await?;
+    Ok(saved.map(|(place, ())| place))
+}
+
 /// Binary counterpart to `save_text_file_dialog`. Used by the Download
 /// buttons in the Create view's Gallery / OutputDisplay / MediaViewer.
 ///
@@ -1413,6 +1507,7 @@ pub async fn save_text_file_dialog(
 /// `bytes` is expected as a raw number[] over the Tauri IPC (the JS
 /// side passes `Array.from(new Uint8Array(blob))`). Returns the chosen
 /// path, or null when the user cancelled.
+#[cfg(desktop)]
 #[tauri::command]
 #[allow(non_snake_case)]
 pub async fn save_binary_file_dialog(
@@ -1442,6 +1537,31 @@ pub async fn save_binary_file_dialog(
         }
         None => Ok(None),
     }
+}
+
+/// The phone version, through the same picker as `save_text_file_dialog`.
+///
+/// The bytes still arrive as a number array, which is fine for an image and
+/// wrong for a video: a large file goes through `writeTempFile` or
+/// `downloadToTemp` and `saveToFiles` of src/lib/lu-native.ts instead, which
+/// never puts the content into one message.
+#[cfg(mobile)]
+#[tauri::command]
+#[allow(non_snake_case)]
+pub async fn save_binary_file_dialog(
+    app: tauri::AppHandle,
+    bytes: Vec<u8>,
+    defaultName: Option<String>,
+    extension: Option<String>,
+    ext_label: Option<String>,
+) -> Result<Option<String>, String> {
+    let _ = ext_label;
+    let name = crate::commands::mobile_native::file_name_for(defaultName, extension.as_deref(), "download.bin");
+    let saved = crate::commands::mobile_native::save_with_picker(&app, &name, None, move |file| {
+        std::fs::write(file, &bytes).map_err(|e| format!("Write failed: {}", os_error::english(&e)))
+    })
+    .await?;
+    Ok(saved.map(|(place, ())| place))
 }
 
 #[cfg(test)]
@@ -2325,6 +2445,118 @@ mod binary_read_tests {
         // 08.10.2026, a full run that took 27 s instead of 8).
         let answer = v.to_string();
         assert!(answer.len() < 200, "the answer grew with the file: {} bytes", answer.len());
+    }
+}
+
+/// `fs_delete` is the one command of this file that destroys something. It
+/// stays inside the workspace of the chat and takes regular files only.
+#[cfg(test)]
+mod delete_tests {
+    use super::*;
+    use std::fs;
+
+    fn ws(tag: &str) -> crate::os_paths::TestDir {
+        let d = crate::os_paths::test_dir(&format!("fsdelete-{tag}"));
+        allow_root_for_test(&d);
+        d
+    }
+
+    fn wd(p: &Path) -> Option<String> {
+        Some(p.to_string_lossy().to_string())
+    }
+
+    #[test]
+    fn a_file_of_the_workspace_is_removed() {
+        let dir = ws("inside");
+        fs::create_dir_all(dir.join("notes")).unwrap();
+        fs::write(dir.join("notes/a.md"), b"hello").unwrap();
+        fs::write(dir.join("keep.md"), b"stay").unwrap();
+        let v = fs_delete("notes/a.md".into(), None, wd(&dir)).expect("delete");
+        assert_eq!(v["deleted"], true);
+        assert!(!dir.join("notes/a.md").exists());
+        assert!(dir.join("keep.md").exists(), "nothing else is touched");
+        assert!(dir.join("notes").is_dir(), "the folder stays");
+    }
+
+    #[test]
+    fn a_climb_and_an_outside_absolute_path_are_refused() {
+        let dir = ws("outside");
+        let secret = dir.join("secret.txt");
+        fs::write(&secret, b"private").unwrap();
+        let root = dir.join("repo");
+        fs::create_dir_all(root.join("sub")).unwrap();
+
+        for attempt in ["../secret.txt", "sub/../../secret.txt", "./sub/../../secret.txt"] {
+            let err = fs_delete(attempt.into(), None, wd(&root)).expect_err(attempt);
+            assert!(err.contains("escapes"), "{attempt}: {err}");
+        }
+        let err = fs_delete(secret.to_string_lossy().to_string(), None, wd(&root)).expect_err("absolute");
+        assert!(err.contains("escapes"), "{err}");
+        assert_eq!(fs::read(&secret).unwrap(), b"private");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_inside_the_workspace_never_deletes_what_it_points_at() {
+        let dir = ws("link");
+        let secret = dir.join("secret.txt");
+        fs::write(&secret, b"private").unwrap();
+        let outside = dir.join("elsewhere");
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("deep.txt"), b"deep").unwrap();
+        let root = dir.join("repo");
+        fs::create_dir_all(&root).unwrap();
+        std::os::unix::fs::symlink(&secret, root.join("link.txt")).unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("dirlink")).unwrap();
+
+        // A link to a file outside: refused, target untouched.
+        assert!(fs_delete("link.txt".into(), None, wd(&root)).is_err());
+        // Through a linked folder: the resolved path lies outside.
+        assert!(fs_delete("dirlink/deep.txt".into(), None, wd(&root)).is_err());
+        assert_eq!(fs::read(&secret).unwrap(), b"private");
+        assert_eq!(fs::read(outside.join("deep.txt")).unwrap(), b"deep");
+    }
+
+    #[test]
+    fn a_folder_the_root_and_a_missing_file_are_refused() {
+        let dir = ws("kinds");
+        fs::create_dir_all(dir.join("sub")).unwrap();
+        fs::write(dir.join("sub/a.txt"), b"a").unwrap();
+
+        let folder = fs_delete("sub".into(), None, wd(&dir)).expect_err("folder");
+        assert!(folder.starts_with("Not a file"), "{folder}");
+        assert!(dir.join("sub/a.txt").exists(), "no recursive delete");
+
+        for root in [".", "./", "sub/.."] {
+            let err = fs_delete(root.into(), None, wd(&dir)).expect_err(root);
+            assert!(err.starts_with("Not a file"), "{root}: {err}");
+        }
+        assert!(dir.is_dir());
+
+        let missing = fs_delete("nope.txt".into(), None, wd(&dir)).expect_err("missing");
+        assert!(missing.starts_with("File not found"), "{missing}");
+    }
+
+    #[test]
+    fn a_call_that_names_no_workspace_or_no_path_deletes_nothing() {
+        let dir = ws("unnamed");
+        fs::write(dir.join("a.txt"), b"a").unwrap();
+        for (chat, folder) in [(None, None), (Some(String::new()), Some("  ".to_string()))] {
+            let err = fs_delete("a.txt".into(), chat, folder).expect_err("no workspace");
+            assert!(err.starts_with("Missing workspace"), "{err}");
+        }
+        let err = fs_delete("  ".into(), None, wd(&dir)).expect_err("no path");
+        assert_eq!(err, "Missing path");
+        assert!(dir.join("a.txt").exists());
+    }
+
+    #[test]
+    fn a_folder_nobody_picked_is_no_workspace_for_a_delete() {
+        // Not allowed as a root: the same refusal every other fs command gives.
+        let dir = crate::os_paths::test_dir("fsdelete-unpicked");
+        fs::write(dir.join("a.txt"), b"a").unwrap();
+        assert!(fs_delete("a.txt".into(), None, wd(&dir)).is_err());
+        assert!(dir.join("a.txt").exists());
     }
 }
 

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Die zwei Grundfarben der Handy-Shell: m-canvas aus
+         src/mobile/styles/tokens.css, hell und dunkel. Startbild, Fenster und
+         WebView nehmen genau diese Werte, damit vom Antippen des Symbols bis
+         zur fertigen Oberflaeche keine andere Farbe zu sehen ist. Der Waechter
+         src/mobile/platform/__tests__/start-colours.test.ts haelt sie gleich. -->
+    <color name="lu_canvas_light">#F3F4F6</color>
+    <color name="lu_canvas_dark">#141414</color>
+    <!-- Hintergrund des Startbilds und des Fensters. Folgt dem System: hier
+         hell, in values-night dunkel. Eine feste Wahl des Nutzers in der App
+         setzt MainActivity vor dem ersten eigenen Bild darueber. -->
+    <color name="lu_splash_background">@color/lu_canvas_light</color>
+    <!-- Dunkle Symbole in Status- und Navigationsleiste auf hellem Grund. -->
+    <bool name="lu_light_bars">true</bool>
+    <!-- Akzent des Desktops (index.css, color-lu-accent) -->
+    <color name="lu_accent">#A094F8</color>
+</resources>

@@ -71,6 +71,9 @@ export async function loadImageRef(file: File): Promise<ImageRef> {
     canvas.height = height
     canvas.getContext('2d')!.drawImage(img, 0, 0)
     url = canvas.toDataURL('image/png')
+    // Decoded, not fetched: connect-src of the app's CSP has no data: entry, so the
+    // fetch threw "Load failed" for every HEIC, AVIF and GIF, which is what a
+    // phone camera roll is made of.
     const blob = dataUrlToBlob(url)
     upload = new File([blob], file.name.replace(/\.[^.]+$/, '') + '.png', { type: 'image/png' })
   }
@@ -83,6 +86,7 @@ export async function loadImageRef(file: File): Promise<ImageRef> {
  *  (filename '') so switching cloud → local keeps edit/animate working. */
 export async function ensureLocalFilename(ref: ImageRef, name: string): Promise<ImageRef> {
   if (ref.filename) return ref
+  // Same CSP reason as above: blobFromUrl decodes a data: URL and never fetches it.
   const blob = await blobFromUrl(ref.url)
   const filename = await stageLocally(new File([blob], name, { type: blob.type || 'image/png' }))
   return { ...ref, filename }

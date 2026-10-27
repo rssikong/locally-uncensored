@@ -7,6 +7,7 @@
 
 import { PROVIDER_PRESETS } from '../api/providers/types'
 import { localFetch, isTauri } from '../api/backend'
+import { hasForeignBackends } from './capabilities'
 
 export interface DetectedBackend {
   id: string        // preset id: 'ollama', 'lmstudio', 'vllm', etc.
@@ -120,6 +121,9 @@ export const PROBE_TARGETS = PROVIDER_PRESETS.filter(p => p.isLocal && p.baseUrl
  * All probes run in parallel for speed.
  */
 export async function detectLocalBackends(): Promise<DetectedBackend[]> {
+  // A phone has none of them. Fifteen probes on loopback ports would find
+  // nothing, or worse, find the app's own engine and rewrite the provider slot.
+  if (!hasForeignBackends()) return []
   const results = await Promise.allSettled(
     PROBE_TARGETS.map(async (preset) => {
       const isOllama = preset.providerId === 'ollama'

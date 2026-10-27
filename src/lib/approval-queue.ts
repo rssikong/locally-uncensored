@@ -46,7 +46,52 @@ export function headApproval(convId: string | null | undefined): AgentToolCall |
   return queues.get(convId)?.[0]?.toolCall ?? null
 }
 
+/** Who answered an approval: a click at the desktop or the paired phone
+ *  (shared chats, lib/remote-chats-bridge). */
+export type ApprovalAnswerer = 'desktop' | 'phone'
+type AnswerListener = (convId: string, toolCallId: string, approved: boolean, by: ApprovalAnswerer) => void
+const answerListeners = new Set<AnswerListener>()
+let answering: ApprovalAnswerer = 'desktop'
+
+/** Hear every answer, whoever gave it; returns the unsubscribe function. */
+export function subscribeApprovalAnswers(fn: AnswerListener): () => void {
+  answerListeners.add(fn)
+  return () => { answerListeners.delete(fn) }
+}
+
+/** The approvals a conversation waits on, oldest first. */
+export function listApprovals(convId: string | null | undefined): AgentToolCall[] {
+  if (!convId) return []
+  return (queues.get(convId) ?? []).map((e) => e.toolCall)
+}
+
+/** The phone answers one approval by its tool call id, wherever it is in the
+ *  queue. False when it is no longer waiting (the desktop was first). */
+export function answerApproval(convId: string, toolCallId: string, approved: boolean, by: ApprovalAnswerer = 'phone'): boolean {
+  const q = queues.get(convId)
+  const entry = q?.find((e) => e.toolCall.id === toolCallId)
+  if (!q || !entry) return false
+  q.splice(q.indexOf(entry), 1)
+  if (!q.length) queues.delete(convId)
+  notify()
+  const before = answering
+  answering = by
+  try { entry.resolve(approved) } finally { answering = before }
+  return true
+}
+
 export function enqueueApproval(convId: string, entry: ApprovalEntry): void {
+  // Every answer is heard once, a click or the phone's.
+  const original = entry.resolve
+  let answered = false
+  entry.resolve = (approved: boolean) => {
+    if (answered) return
+    answered = true
+    original(approved)
+    for (const fn of answerListeners) {
+      try { fn(convId, entry.toolCall.id, approved, answering) } catch { /* a listener never stops the run */ }
+    }
+  }
   const q = queues.get(convId)
   if (q) q.push(entry)
   else queues.set(convId, [entry])
@@ -103,4 +148,5 @@ export function drainApprovals(convId: string | null | undefined, owner?: AbortS
 export function resetApprovals(): void {
   queues.clear()
   listeners.clear()
+  answerListeners.clear()
 }

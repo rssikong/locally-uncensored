@@ -192,7 +192,7 @@ export function CloudTeaserModal() {
 
             <div className="p-4 space-y-3">
               <div className="flex items-center gap-2">
-                <Cloud size={14} className="text-violet-300" />
+                <Cloud size={14} className="text-violet-600 dark:text-violet-300" />
                 <h3 className="text-[0.85rem] font-semibold text-white">{copy.title}</h3>
                 <span className="ml-auto text-[0.55rem] font-medium uppercase tracking-widest text-violet-300/80">
                   LU Cloud

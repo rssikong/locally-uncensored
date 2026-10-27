@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- A normal permission without a prompt. With it the app can tell "no
+         network" from a slow one instead of running into a timeout. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Cloud dictation (STT): getUserMedia in the WebView needs the app-level
+         mic permission; it is requested at point of use, never at startup.
+         MODIFY_AUDIO_SETTINGS has to be here too, even though nothing in our
+         code asks for it: wry's RustWebChromeClient answers an AUDIO_CAPTURE
+         request by launching BOTH permissions and ANDing the results, and a
+         permission the manifest does not declare comes back denied with no
+         dialog shown. Without this line request.deny() runs every time, on
+         every device, however often the user grants the microphone. It is a
+         normal permission, so it adds no prompt of its own. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <!-- No CAMERA permission on purpose: a photo attachment goes through the
+         system camera by intent, which needs none. Declaring CAMERA would make
+         Android demand it for that intent too. The feature line only keeps
+         Play from hiding the app on devices without a camera. -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
+    <!-- What LU may see of other apps (Android 11 and later): a browser for
+         sign-in, plans and outside links, and the system camera for a photo
+         attachment. The share sheet, Custom Tabs, the lu:// deep link and the
+         download service with its four permissions arrive with the native
+         plugin that uses them. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE" />
+        </intent>
+    </queries>
+
+    <!-- No Android TV. The project template declared the leanback feature
+         and a LEANBACK_LAUNCHER category; both are gone on purpose. LU is
+         made for a touch screen, has no TV banner and no remote control
+         navigation, and Play would otherwise list it for TVs.
+         Guard: android-manifest-security.test.ts -->
+
+    <!-- allowBackup off, fullBackupContent off, dataExtractionRules: nothing
+         of this app is copied off the device by the system. Chats, settings
+         and the app's own backup file live in the app folder, and Auto Backup
+         would carry them to the cloud account of the phone. The secrets
+         (sign-in, Remote token, provider keys) are encrypted with a key in
+         the Android Keystore (plugins/lu-native, Secrets.kt) and could not be
+         read on another device anyway.
+         allowBackup="false" alone does not stop the copy from device to
+         device on Android 12 and newer; res/xml/data_extraction_rules.xml
+         excludes every domain for both the cloud backup and that copy.
+         fullBackupContent is the same switch for Android 11 and older.
+
+         networkSecurityConfig: cleartext is forbidden everywhere except to
+         the device's own loopback, where the in-process engine listens
+         (127.0.0.1:8127 and 8128). From Android 7 on it outranks
+         usesCleartextTraffic. A debug build carries its own, open file
+         (src/debug/res/xml) for the dev server. -->
+    <application
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:label="@string/app_name"
+        android:theme="@style/Theme.locally_uncensored"
+        android:usesCleartextTraffic="${usesCleartextTraffic}">
+        <!-- fontScale, density and layoutDirection are handled here, not by
+             being restarted. Measured on the emulator: changing the system
+             font size while LU is open destroyed and recreated the activity,
+             and the teardown crashed inside the driver
+             (libEGL_emulation.so, "FORTIFY: pthread_mutex_lock called on a
+             destroyed mutex") with the system's crash dialog on top. The user
+             had done nothing but make the text bigger. Whose bug the driver
+             one is does not matter: an app that is never torn down cannot be
+             torn down badly. The WebView reads the scale at launch, so a size
+             changed while LU runs applies on the next start instead of at
+             once, which is the small half of that trade.
+
+             Measured the same way afterwards, one at a time: with fontScale
+             and density declared the process id was unchanged across both,
+             and turning on the accessibility "Bold text" setting
+             (font_weight_adjustment) still killed it, with the identical
+             abort. So that one is declared too. mcc and mnc ride along for
+             the same reason: they change when a phone changes network or SIM,
+             and nothing in LU cares which network it is on.
+
+             assetsPaths (2026-10-08) is the resource-overlay change. The
+             system applies overlays right after the first boot of a device
+             and whenever a theme, font or navigation-mode overlay is switched,
+             and no other flag covers it: the activity was recreated inside
+             the running process, tao started the Rust side a second time and
+             the app died with the abort above, or with a wry "Timeout" panic.
+             Reproduced with
+               adb shell cmd overlay enable com.android.internal.systemui.navbar.threebutton
+             touchscreen, navigation, colorMode and grammaticalGender complete
+             the list of everything a manifest can claim: LU is one WebView
+             and reloads no resource for any of them. What is still not
+             covered is caught in MainActivity.onDestroy. -->
+        <activity
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|density|fontScale|layoutDirection|fontWeightAdjustment|mcc|mnc|assetsPaths|touchscreen|navigation|colorMode|grammaticalGender"
+            android:windowSoftInputMode="adjustResize"
+            android:launchMode="singleTask"
+            android:label="@string/main_activity_title"
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- lu://oauth and lu://remote: the return path of the OAuth
+                 sign-in and of remote pairing. The two filters below are
+                 written by tauri-plugin-deep-link from the entry
+                 plugins.deep-link.mobile in tauri.android.conf.json on every
+                 CLI build. Change the hosts there, not here. The plugin
+                 lu-native hands the links to the web layer.
+                 Guard: android-manifest-security.test.ts -->
+            <!-- DEEP LINK PLUGIN. AUTO-GENERATED. DO NOT REMOVE. -->
+            <intent-filter >
+                <action android:name="android.intent.action.VIEW" />
+                <!-- ChromeOS ARC++ uses a different action for deep links -->
+                <action android:name="org.chromium.arc.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="lu" />
+                <data android:host="oauth" />
+                
+                
+                
+                
+            </intent-filter>
+            <intent-filter >
+                <action android:name="android.intent.action.VIEW" />
+                <!-- ChromeOS ARC++ uses a different action for deep links -->
+                <action android:name="org.chromium.arc.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="lu" />
+                <data android:host="remote" />
+                
+                
+                
+                
+            </intent-filter>
+            <!-- DEEP LINK PLUGIN. AUTO-GENERATED. DO NOT REMOVE. -->
+        </activity>
+
+        <provider
+          android:name="androidx.core.content.FileProvider"
+          android:authorities="${applicationId}.fileprovider"
+          android:exported="false"
+          android:grantUriPermissions="true">
+          <meta-data
+            android:name="android.support.FILE_PROVIDER_PATHS"
+            android:resource="@xml/file_paths" />
+        </provider>
+    </application>
+</manifest>

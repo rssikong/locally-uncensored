@@ -1,0 +1,8 @@
+node_modules/
+src-tauri/target/
+src-tauri/gen/
+src-tauri/icons/
+plugin/target/
+plugin/.tauri/
+plugin/ios/.build/
+plugin/Cargo.lock

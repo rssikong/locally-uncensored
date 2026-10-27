@@ -9,7 +9,7 @@ import { useGenerationStore } from '../../stores/generationStore'
 import { HINWEIS_TEXT, PUNKT_FARBE } from '../../lib/hinweis'
 import {
   CODEX_MODES, CODEX_MODE_LABELS, CODEX_MODE_SHORT, CODEX_MODE_DESCRIPTIONS,
-  resolveCodexMode, type CodexMode,
+  type CodexMode,
 } from '../../lib/codex-mode'
 
 /**
@@ -18,8 +18,10 @@ import {
  * Lives in the CODE composer only, hooked in through ChatInput's
  * `composerActions` so ChatInput itself stays surface-neutral and the Chat tab
  * inherits nothing. The mode is remembered per conversation; a new one is
- * created in the last Ask/Bypass picked here (codexStore.startConversationMode),
- * otherwise settings.codexDefaultMode applies. Picking one here NEVER writes the global settings,
+ * created in the mode picked on the start screen, else the last Ask/Bypass
+ * picked here (codexStore.startConversationMode), otherwise
+ * settings.codexDefaultMode applies. The trigger shows codexStore.nextSendMode,
+ * the same answer the send reads. Picking one here NEVER writes the global settings,
  * so a running conversation and the Agent surface are untouched.
  *
  * A switch takes effect from the NEXT send. While a run is in flight the
@@ -62,16 +64,19 @@ export function CodexModeDropdown({ openUpward = false }: { openUpward?: boolean
   const menu = usePopoverPlatz(menuRef, open, { bevorzugt: openUpward ? 'oben' : 'unten' })
   const activeConvId = useChatStore((s) => s.activeConversationId)
   const defaultMode = useSettingsStore((s) => s.settings.codexDefaultMode)
-  const modeByConversation = useCodexStore((s) => s.modeByConversation)
   const parkedByConversation = useCodexStore((s) => s.parkedModeByConversation)
   const chooseCodexMode = useCodexStore((s) => s.chooseCodexMode)
+  const chooseDraftMode = useCodexStore((s) => s.chooseDraftMode)
   const generating = useGenerationStore((s) => s.generating)
 
   const runActive = !!activeConvId && generating[activeConvId] === true
-  const current = resolveCodexMode(
-    activeConvId ? modeByConversation[activeConvId] : undefined,
-    defaultMode,
-  )
+  // What the trigger shows is what the next send runs under (A37). While a run
+  // is in flight that is the running turn's mode with the park beside it;
+  // otherwise one store function answers for display and send alike, the
+  // start screen without a conversation included.
+  const current = useCodexStore((s) => runActive
+    ? s.codexModeFor(activeConvId, defaultMode)
+    : s.nextSendMode(activeConvId, defaultMode))
   const parked = activeConvId ? parkedByConversation[activeConvId] : undefined
   // Only worth showing while a run holds the change back. Once it is applied,
   // parked and current are the same value.
@@ -80,8 +85,10 @@ export function CodexModeDropdown({ openUpward = false }: { openUpward?: boolean
   const CurrentIcon = MODE_ICON[current]
 
   const pick = (mode: CodexMode) => {
-    if (!activeConvId) return
-    chooseCodexMode(activeConvId, mode, runActive)
+    // On the start screen the pick waits for the conversation the send
+    // creates. It used to be dropped, and the send then ran the last pick.
+    if (!activeConvId) chooseDraftMode(mode)
+    else chooseCodexMode(activeConvId, mode, runActive)
     setOpen(false)
   }
 
@@ -128,55 +135,47 @@ export function CodexModeDropdown({ openUpward = false }: { openUpward?: boolean
               cut off the first letters ("ypass permissions", Gegenprobe
               01.10.2026). The room is to the right. */}
           <div ref={menuRef} style={menu.style} className={`absolute left-0 z-50 w-60 rounded-lg lu-elevated py-1.5 overflow-y-auto scrollbar-thin ${menu.nachOben ? 'bottom-full mb-1' : 'top-full mt-1'}`}>
-            {!activeConvId ? (
-              <p className="px-3 py-1.5 text-[0.5rem] text-gray-400">
-                Open a coding chat first, the mode lives on the conversation.
+            {runActive && (
+              // Auskunft, kein Alarm: die Wahl geht nicht verloren, sie
+              // wirkt nur spaeter. Ruhiger Ton aus `lib/hinweis.ts`.
+              <p className={`px-3 pb-1 text-[0.5rem] leading-snug ${HINWEIS_TEXT.ruhig}`}>
+                A run is in flight. Your pick applies from the next message.
               </p>
-            ) : (
-              <>
-                {runActive && (
-                  // Auskunft, kein Alarm: die Wahl geht nicht verloren, sie
-                  // wirkt nur spaeter. Ruhiger Ton aus `lib/hinweis.ts`.
-                  <p className={`px-3 pb-1 text-[0.5rem] leading-snug ${HINWEIS_TEXT.ruhig}`}>
-                    A run is in flight. Your pick applies from the next message.
-                  </p>
-                )}
-                <div className="px-1.5 space-y-0.5">
-                  {CODEX_MODES.map((mode) => {
-                    const Icon = MODE_ICON[mode]
-                    const isActive = mode === current
-                    const isPending = mode === pending
-                    return (
-                      <button
-                        key={mode}
-                        onClick={() => pick(mode)}
-                        className={`w-full flex items-start gap-1.5 px-2 py-1 rounded text-left transition-colors ${
-                          isActive
-                            ? MODE_ACTIVE_ROW[mode]
-                            : 'text-gray-500 hover:bg-gray-50 dark:hover:bg-white/[0.04] hover:text-gray-700 dark:hover:text-gray-300'
-                        }`}
-                      >
-                        <Icon size={10} className={`mt-px shrink-0 ${isActive ? '' : 'text-gray-400'}`} />
-                        <span className="min-w-0">
-                          <span className="flex items-center gap-1">
-                            <span className="text-[0.55rem] font-medium">{CODEX_MODE_LABELS[mode]}</span>
-                            {isActive && <span className="text-[0.45rem] text-gray-400">active</span>}
-                            {isPending && (
-                              // Wie am Ausloeser: in der Farbe des Modus, um
-                              // den es geht, nicht in einer Warnfarbe.
-                              <span className={`text-[0.45rem] ${MODE_ACCENT[mode]}`}>next</span>
-                            )}
-                          </span>
-                          <span className="block text-[0.5rem] leading-snug text-gray-400">
-                            {CODEX_MODE_DESCRIPTIONS[mode]}
-                          </span>
-                        </span>
-                      </button>
-                    )
-                  })}
-                </div>
-              </>
             )}
+            <div className="px-1.5 space-y-0.5">
+              {CODEX_MODES.map((mode) => {
+                const Icon = MODE_ICON[mode]
+                const isActive = mode === current
+                const isPending = mode === pending
+                return (
+                  <button
+                    key={mode}
+                    onClick={() => pick(mode)}
+                    className={`w-full flex items-start gap-1.5 px-2 py-1 rounded text-left transition-colors ${
+                      isActive
+                        ? MODE_ACTIVE_ROW[mode]
+                        : 'text-gray-500 hover:bg-gray-50 dark:hover:bg-white/[0.04] hover:text-gray-700 dark:hover:text-gray-300'
+                    }`}
+                  >
+                    <Icon size={10} className={`mt-px shrink-0 ${isActive ? '' : 'text-gray-400'}`} />
+                    <span className="min-w-0">
+                      <span className="flex items-center gap-1">
+                        <span className="text-[0.55rem] font-medium">{CODEX_MODE_LABELS[mode]}</span>
+                        {isActive && <span className="text-[0.45rem] text-gray-400">active</span>}
+                        {isPending && (
+                          // Wie am Ausloeser: in der Farbe des Modus, um
+                          // den es geht, nicht in einer Warnfarbe.
+                          <span className={`text-[0.45rem] ${MODE_ACCENT[mode]}`}>next</span>
+                        )}
+                      </span>
+                      <span className="block text-[0.5rem] leading-snug text-gray-400">
+                        {CODEX_MODE_DESCRIPTIONS[mode]}
+                      </span>
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
           </div>
         </>
       )}

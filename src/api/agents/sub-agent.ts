@@ -50,6 +50,7 @@ import { istNurAnkuendigung, ANKUENDIGUNG_STEER } from './ankuendigung'
 import { MAX_EXPLICIT_FANOUT } from '../../lib/agent-fanout'
 import { resolveApprovalLevel } from '../../lib/agent-approval-policy'
 import { allowedInReadOnlyTurn } from '../../lib/mutating-tools'
+import { isSettingsToolName } from '../../lib/settings-tool-names'
 
 // NOTE: the toolRegistry import is done LAZILY inside defaultSubAgentRunner
 // to avoid a circular dependency with src/api/mcp/builtin-tools.ts, which
@@ -363,6 +364,7 @@ export async function buildSubAgentGates(run?: AgentRunContext): Promise<SubAgen
       codexMode: run?.mode ?? null,
       execConfirm: run?.execApproval?.confirmExec === true,
       readOnlyRun: run?.readOnlyShellTurn === true,
+      external: toolRegistry.getAll().some((t) => t.name === req.toolName && t.source === 'external'),
     })
     if (level === 'blocked') {
       // Ein lesend gestellter Lauf sagt, WARUM er ablehnt. "not permitted in
@@ -469,7 +471,9 @@ export async function defaultSubAgentRunner(
 ): Promise<string> {
   const { useModelStore } = await import('../../stores/modelStore')
   const { getProviderForModel } = await import('../providers')
-  const { resolveRequestedModel } = await import('../../lib/agent-fanout')
+  const { getProviderIdFromModel } = await import('../providers/model-name')
+  const { chooseSubAgentModel } = await import('../../lib/delegate-model')
+  const { singleModelSlot } = await import('../../lib/capabilities')
   const store = useModelStore.getState()
   const activeModel = store.activeModel
 
@@ -484,22 +488,28 @@ export async function defaultSubAgentRunner(
   // und nichts zu sagen ist die schlimmste der drei moeglichen Antworten: es
   // sieht aus wie Erfolg, kostet volle Rechenzeit und liefert etwas anderes,
   // als der Nutzer angeordnet hat.
-  let laufmodell = activeModel
-  if (options.model) {
-    const treffer = resolveRequestedModel(options.model, store.models)
-    if (!treffer) {
-      const da = store.models.slice(0, 6).map((m) => m.name).join(', ')
-      return `Error: the model "${options.model}" is not installed here, so this sub-agent did not run.`
-        + (da ? ` Installed: ${da}.` : '')
-    }
-    laufmodell = treffer.name
+  //
+  // Two exceptions, both in lib/delegate-model.ts: a filler word in the
+  // argument ("OMIT", "user") is no wish at all, and a phone holds one local
+  // model, so there a wish it cannot meet runs on the model of the chat
+  // (acceptance on Android with 8 GB, B6: no sub-agent ever ran).
+  const wahl = chooseSubAgentModel(options.model, activeModel, store.models, {
+    singleSlot: singleModelSlot(),
+    isCloud: (name) => getProviderIdFromModel(name) === 'lu-cloud',
+  })
+  if (wahl.missing) {
+    const da = store.models.slice(0, 6).map((m) => m.name).join(', ')
+    return `Error: the model "${wahl.missing}" is not installed here, so this sub-agent did not run.`
+      + (da ? ` Installed: ${da}.` : '')
   }
+  const laufmodell = wahl.model
   if (!laufmodell) return 'Error: No active model configured.'
   const { provider, modelId } = getProviderForModel(laufmodell)
 
   const tools: MCPToolDefinition[] = toolRegistry
     .getAll()
-    .filter((t) => t.name !== DELEGATE_TASK_TOOL_DEF.name)
+    // A sub-agent runs without the user watching: no settings changes (A11).
+    .filter((t) => t.name !== DELEGATE_TASK_TOOL_DEF.name && !isSettingsToolName(t.name))
 
   const llmTools = tools.map((t) => ({
     type: 'function' as const,
@@ -626,7 +636,9 @@ export async function defaultSubAgentRunner(
       {
         getTool: (name) => registry.resolveExecutable(name),
         execute: (name: string, args: ToolArgs, callRun?: AgentRunContext) =>
-          registry.execute(name, args, 1, callRun),
+          isSettingsToolName(name)
+            ? Promise.resolve('Error: a sub-agent cannot read or change the app settings. Nothing changed.')
+            : registry.execute(name, args, 1, callRun),
         explainError: (toolName, err) => explainToolError(toolName, err),
         // The three gates the nested loop used to run without.
         awaitApproval: gates.awaitApproval,
@@ -680,13 +692,17 @@ export async function defaultSubAgentRunner(
  */
 async function resolveSubAgentLane(model: string | undefined): Promise<RunLane> {
   const { useModelStore } = await import('../../stores/modelStore')
-  const { resolveRequestedModel } = await import('../../lib/agent-fanout')
+  const { chooseSubAgentModel } = await import('../../lib/delegate-model')
+  const { singleModelSlot } = await import('../../lib/capabilities')
+  const { getProviderIdFromModel } = await import('../providers/model-name')
   const modelStoreState = useModelStore.getState()
-  let subAgentModel = modelStoreState.activeModel
-  if (model) {
-    const treffer = resolveRequestedModel(model, modelStoreState.models)
-    if (treffer) subAgentModel = treffer.name
-  }
+  // The same choice the runner makes (lib/delegate-model.ts). A wish that
+  // cannot be met books the lane of the chat model, as before: the runner
+  // then reports it without sending anything.
+  const subAgentModel = chooseSubAgentModel(model, modelStoreState.activeModel, modelStoreState.models, {
+    singleSlot: singleModelSlot(),
+    isCloud: (name) => getProviderIdFromModel(name) === 'lu-cloud',
+  }).model ?? modelStoreState.activeModel
   return subAgentModel ? laneOf(subAgentModel, currentLaneFacts()) : 'cloud'
 }
 

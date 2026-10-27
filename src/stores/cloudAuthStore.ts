@@ -42,15 +42,27 @@ interface CloudAuthState extends CloudAccount {
   /** 'probing' until the keychain session restore + first /api/me resolve. */
   status: 'probing' | 'signed-out' | 'signed-in'
   user: CloudUser | null
+  /**
+   * Phone only: the first probe after start could not reach the server, and a
+   * session is saved on this device. The account is neither confirmed nor
+   * gone. `status` is 'signed-in' with the user from the saved session, the
+   * licence and quota fields are unknown (false, null), and the app mode is
+   * left as the user set it. Cleared by the next probe that gets an answer.
+   * Always false on a desktop.
+   */
+  offline: boolean
 
   setSignedOut: () => void
   setSignedIn: (user: CloudUser, account: CloudAccount) => void
+  /** Phone only: "offline, session kept". See `offline`. */
+  setOfflineSessionKept: (user: CloudUser) => void
   setQuota: (quota: CloudQuota | null) => void
 }
 
 export const useCloudAuthStore = create<CloudAuthState>()((set) => ({
   status: 'probing',
   user: null,
+  offline: false,
   licenseActive: false,
   tier: null,
   access: true,
@@ -61,16 +73,17 @@ export const useCloudAuthStore = create<CloudAuthState>()((set) => ({
 
   setSignedOut: () =>
     set({
-      status: 'signed-out', user: null, licenseActive: false, tier: null, access: true,
+      status: 'signed-out', user: null, offline: false, licenseActive: false, tier: null, access: true,
       paidPlan: null, pastDue: false, pastDueTier: null, quota: null,
     }),
   setSignedIn: (user, account) =>
     set({
-      status: 'signed-in', user, ...account,
+      status: 'signed-in', user, offline: false, ...account,
       paidPlan: account.paidPlan ?? null,
       pastDue: account.pastDue === true,
       pastDueTier: account.pastDue === true ? (account.pastDueTier ?? null) : null,
     }),
+  setOfflineSessionKept: (user) => set({ status: 'signed-in', user, offline: true }),
   setQuota: (quota) => set({ quota }),
 }))
 

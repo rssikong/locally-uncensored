@@ -2,8 +2,9 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { safeJSONStorage } from '../lib/storage-quota'
 import type { PermissionMap, PermissionLevel, ToolCategory } from '../api/mcp/types'
-import { DEFAULT_PERMISSIONS } from '../api/mcp/types'
+import { defaultPermissionsForDevice } from '../api/mcp/types'
 import { isRecord, prop, asString } from '../types/json-guards'
+import { turnCaps } from '../lib/remote-turn-caps'
 
 /** Per-tool override: takes precedence over the tool's category default. */
 export type ToolOverrides = Record<string, PermissionLevel>
@@ -54,7 +55,7 @@ interface PermissionState {
 export const usePermissionStore = create<PermissionState>()(
   persist(
     (set, get) => ({
-      globalPermissions: { ...DEFAULT_PERMISSIONS },
+      globalPermissions: defaultPermissionsForDevice(),
       conversationOverrides: {},
       perToolOverrides: {},
       modeScope: 'agent',
@@ -63,11 +64,15 @@ export const usePermissionStore = create<PermissionState>()(
         const global = get().globalPermissions
         if (!conversationId) return global
         const overrides = get().conversationOverrides[conversationId]
-        if (!overrides) return global
-        return { ...global, ...overrides }
+        // A turn from the paired phone: what its rights leave out is off,
+        // whatever else is set (lib/remote-turn-caps).
+        const capped = turnCaps(conversationId)
+        if (!overrides && !capped) return global
+        return { ...global, ...overrides, ...capped }
       },
 
       getEffectivePermissionForTool: (toolName, toolCategory, conversationId?) => {
+        if (turnCaps(conversationId)?.[toolCategory] === 'blocked') return 'blocked'
         const perTool = get().perToolOverrides[toolName]
         if (perTool) return perTool
         const categoryMap = get().getEffectivePermissions(conversationId)
@@ -111,7 +116,7 @@ export const usePermissionStore = create<PermissionState>()(
 
       resetToDefaults: () =>
         set({
-          globalPermissions: { ...DEFAULT_PERMISSIONS },
+          globalPermissions: defaultPermissionsForDevice(),
           conversationOverrides: {},
           perToolOverrides: {},
           modeScope: 'agent',
@@ -137,7 +142,7 @@ export function migratePermissionState(persisted: unknown, version: number): Per
   // write persists the empty default over the blob.
   const globals = prop(persisted, 'globalPermissions')
   if (version < 2 && isRecord(globals) && globals.video === 'blocked') {
-    globals.video = DEFAULT_PERMISSIONS.video
+    globals.video = defaultPermissionsForDevice().video
   }
   // v3 (2.6.6 tool merge): the typed shell wrappers are gone, their calls run
   // through shell_execute now. A per-tool override on a retired name would be

@@ -79,7 +79,7 @@ test('picks whose files are gone leave the stack, the count matches what is tick
   const strength = page.getByRole('textbox', { name: 'Strength of film_grain_xl' })
   await expect(strength).toHaveValue('0.80')
   // Discord 2026-10-02: the number can be typed, negative
-  // and beyond the slider's 0 to 2, and more than 10 stops at 10.
+  // and beyond the slider's 0 to 2, and more than 20 stops at 20.
   await strength.fill('-4')
   await strength.blur()
   await expect(strength).toHaveValue('-4.00')
@@ -89,8 +89,8 @@ test('picks whose files are gone leave the stack, the count matches what is tick
   await expect(strength).toHaveValue('-4.00')
   await strength.fill('25')
   await strength.blur()
-  await expect(strength).toHaveValue('10.00')
-  await expect.poll(() => saved(page)).toEqual([{ name: STYLE, strength: 10 }])
+  await expect(strength).toHaveValue('20.00')
+  await expect.poll(() => saved(page)).toEqual([{ name: STYLE, strength: 20 }])
   await page.evaluate(() => { (window as unknown as { __LORAS__: string[] }).__LORAS__ = [] })
   await page.getByRole('button', { name: /Rescan/ }).click()
   await expect(page.getByText(/active/)).toHaveCount(0)

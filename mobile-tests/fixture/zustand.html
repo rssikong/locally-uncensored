@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>LU Harness Fixture: state</title>
+<!--
+  Zweite Testseite, nur fuer die Rahmenprobe ohne Geraet (trocken/rahmen.mjs). Sie spielt die drei Lagen
+  nach, an denen der Rahmen in der Nachpruefung Android 8 GB gescheitert ist:
+    H1  ein Zaehler (Minus, Feld, Plus) und ein Regler: Der Sweep muss den Wert zurueckstellen.
+    H1  ein Schalter in einem Blatt: Der Sweep muss ihn zurueckkippen, bevor er das Blatt schliesst.
+    H6  eine Liste, die ihr Ende festhaelt: Der erste Treffer liegt oberhalb des Bildes und laesst sich
+        nicht hereinrollen. Getippt wird der Treffer, der zu sehen ist, nie der Bildrand.
+  Die Klassen (.m-num, .m-slider) und Kennungen (m-sheet-*, m-sheet-close) sind die der App.
+  index.html bleibt unberuehrt: Ihre Zahlen sind die bekannte Wahrheit des Selbsttests am Geraet.
+-->
+<style>
+  body { font: 16px/1.4 sans-serif; margin: 0; padding: 0 12px 12px; background: #fff; color: #111; }
+  button, input { min-height: 48px; min-width: 48px; font-size: 1rem; }
+  .m-num, .m-slider-row { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
+  .m-num input { width: 80px; }
+  #fest { position: relative; height: 220px; overflow: hidden; border: 0; margin: 0 0 12px; }
+  #fest .inhalt { position: absolute; left: 0; right: 0; bottom: 0; }
+  #fest button { display: block; width: 100%; margin: 4px 0; }
+  [role="dialog"] { position: fixed; left: 0; right: 0; bottom: 0; background: #dde; padding: 12px; border-top: 2px solid #446; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div data-testid="m-zustand-screen">
+  <!-- Die Liste haelt ihr Ende fest: Der Inhalt ist hoeher als der Kasten und klebt unten. Der Kasten steht am
+       oberen Bildrand, die ersten Eintraege liegen also oberhalb des Bildes und lassen sich nicht hereinrollen. -->
+  <div id="fest">
+    <div class="inhalt">
+      <button data-testid="m-zustand-more" data-nr="1">More 1</button>
+      <button data-testid="m-zustand-more" data-nr="2">More 2</button>
+      <button data-testid="m-zustand-more" data-nr="3">More 3</button>
+      <button data-testid="m-zustand-more" data-nr="4">More 4</button>
+      <button data-testid="m-zustand-more" data-nr="5">More 5</button>
+      <button data-testid="m-zustand-more" data-nr="6">More 6</button>
+    </div>
+  </div>
+  <h1>State fixture</h1>
+  <p id="ausgabe" role="status"></p>
+
+  <div class="m-num">
+    <button id="minus" aria-label="Decrease Threads">-</button>
+    <input id="threads" data-testid="m-zustand-threads" type="number" min="1" max="8" value="4" aria-label="Threads">
+    <button id="plus" aria-label="Increase Threads">+</button>
+  </div>
+
+  <div class="m-slider">
+    <label for="temp">Temperature</label>
+    <div class="m-slider-row">
+      <button id="tminus" aria-label="Decrease Temperature">-</button>
+      <input id="temp" data-testid="m-zustand-temp" type="range" min="0" max="20" value="7" style="width:160px">
+      <button id="tplus" aria-label="Increase Temperature">+</button>
+    </div>
+  </div>
+
+  <button data-testid="m-zustand-gone" style="position:absolute;top:-400px;left:0">Above the screen</button>
+</div>
+
+<!-- Das Blatt steht nur im Dokument, solange es offen ist, wie in der App. Sein Schalter merkt sich den Stand ausserhalb. -->
+<template id="blatt">
+<div role="dialog" data-testid="m-sheet-zustand" aria-label="Options">
+  <div id="web" role="switch" aria-label="Web search" tabindex="0" data-testid="m-zustand-web" style="display:inline-block;min-width:120px;min-height:48px;background:#ccc"></div>
+  <button data-testid="m-sheet-close" id="zu">Close</button>
+</div>
+</template>
+
+<script>
+  window.__getippt = []
+  const $ = (id) => document.getElementById(id)
+  const schritt = (feld, um) => () => {
+    const f = $(feld)
+    f.value = String(Math.min(Number(f.max), Math.max(Number(f.min), Number(f.value) + um)))
+    $('ausgabe').textContent = feld + ' ' + f.value
+  }
+  $('minus').addEventListener('click', schritt('threads', -1))
+  $('plus').addEventListener('click', schritt('threads', 1))
+  $('tminus').addEventListener('click', schritt('temp', -1))
+  $('tplus').addEventListener('click', schritt('temp', 1))
+  for (const f of ['threads', 'temp']) $(f).addEventListener('input', () => { $('ausgabe').textContent = f + ' ' + $(f).value })
+  for (const b of document.querySelectorAll('[data-testid="m-zustand-more"]')) b.addEventListener('click', () => { window.__getippt.push(Number(b.dataset.nr)); $('ausgabe').textContent = 'more ' + b.dataset.nr })
+  let web = true
+  const zeigeWeb = () => { const w = $('web'); if (w) { w.setAttribute('aria-checked', String(web)); w.textContent = web ? 'Web search on' : 'Web search off' } }
+  const blattZu = () => { const b = document.querySelector('[role=dialog]'); if (b) b.remove() }
+  const blattAuf = () => {
+    if (document.querySelector('[role=dialog]')) return
+    document.body.appendChild($('blatt').content.cloneNode(true))
+    zeigeWeb()
+    $('web').addEventListener('click', () => { web = !web; zeigeWeb() })
+    $('zu').addEventListener('click', () => { blattZu(); history.replaceState(null, '', location.pathname) })
+  }
+  // #blatt in der Adresse oeffnet das Blatt (so stellt die Rahmenprobe die Route "Blatt" her).
+  const lage = () => (location.hash === '#blatt' ? blattAuf() : blattZu())
+  addEventListener('hashchange', lage); lage()
+  window.__blattAuf = () => { history.replaceState(null, '', '#blatt'); blattAuf(); return true }
+  window.__stand = () => ({ threads: $('threads').value, temp: $('temp').value, web: String(web), blatt: !!document.querySelector('[role=dialog]'), getippt: window.__getippt.slice() })
+</script>
+</body>
+</html>

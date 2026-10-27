@@ -63,7 +63,7 @@ const AGENT_LOOP_TOOLS = new Set(['delegate_task', 'run_workflow'])
  * default a question nobody answered within a minute failed the call, and
  * the abort that followed was shown as "The user stopped computer control".
  */
-const HUMAN_PACED_TOOLS = new Set(['computer_use', 'computer_task'])
+const HUMAN_PACED_TOOLS = new Set(['computer_use', 'computer_task', 'set_setting'])
 
 export interface ToolTimeoutSettings {
   imageGenTimeoutMinutes?: number
@@ -90,18 +90,27 @@ export function renderStallMessage(limitMs: number): string {
   return `Generation stalled: no progress from ComfyUI for ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}.`
 }
 
+/**
+ * What one media call spends outside its render budget, at most (A13). The
+ * render's own clock grants the first load of a checkpoint up to 10 minutes
+ * and a render seconds from done one more minute (lib/render-budget); before
+ * it come a ComfyUI cold start of up to 90 s (twice: before and after the
+ * VRAM hand-off), the model picker's 90 s, and freeing the chat model. The
+ * cap used to be the budget plus two minutes, so it fired in the middle of a
+ * render the inner clock still allowed and told the model "timed out" for a
+ * render that went on. The cap now sits behind all of that and only catches
+ * a call that hangs; the render ends by its own budget, with its own words.
+ */
+export const MEDIA_CALL_OVERHEAD_MS = 18 * 60_000
+
 /** The JS race ceiling for one tool call, in ms. */
 export function toolCallCapMs(
   name: string,
   args: Record<string, unknown> | undefined,
   settings: ToolTimeoutSettings,
 ): number {
-  if (name === 'image_generate') {
-    return Math.max(1, Number(settings.imageGenTimeoutMinutes) || 20) * 60_000 + 120_000
-  }
-  if (name === 'video_generate') {
-    return Math.max(1, Number(settings.videoGenTimeoutMinutes) || 60) * 60_000 + 120_000
-  }
+  if (name === 'image_generate') return renderStallLimitMs('image', settings) + MEDIA_CALL_OVERHEAD_MS
+  if (name === 'video_generate') return renderStallLimitMs('video', settings) + MEDIA_CALL_OVERHEAD_MS
   if (AGENT_LOOP_TOOLS.has(name) && args?.background !== true) {
     return NO_PRACTICAL_CAP_MS
   }

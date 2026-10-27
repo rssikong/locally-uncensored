@@ -92,6 +92,38 @@ pub(crate) const GARBLED_ON_CPU_NOTE: &str = "The engine produced unreadable out
 /// attention rung the processor was not even the destination.
 pub(crate) const RESTART_DID_NOT_COME_BACK_NOTE: &str = "The engine could not be restarted with different settings, so the first engine is running again. Please send the log file from Settings > Troubleshoot.";
 
+/// llama-server's own sentence when no GPU backend came up with a device
+/// (common/arg.cpp at the pinned 049326a, printed for `-ngl` with a number,
+/// `auto` or `all` alike). It is the only line that says "no card at all":
+/// `ggml_vulkan: No devices found.` alone is not, because a build with a
+/// second backend can serve on that one.
+const NO_USABLE_GPU_LINE: &str = "no usable GPU found, --gpu-layers option will be ignored";
+
+/// What a Linux user is told when the engine started without any card.
+///
+/// fanezeu (Linux server, RX 7900 XTX, 23.10.2026). The Linux LU Engine is the
+/// Vulkan build, and the loader alone (libvulkan1, which the deb pulls in) is
+/// not a driver: a server or minimal install often has no Vulkan driver for
+/// the card, so the engine comes up, serves on the processor and says it in
+/// one line of its log that nobody reads. The package names are the ones that
+/// carry RADV and ANV on each family; NVIDIA brings its own with the driver.
+pub(crate) const NO_GPU_DEVICE_LINUX_NOTE: &str = "Running on the CPU: the LU Engine found no graphics card it can use. On Linux it runs on Vulkan, so install the Vulkan driver for your card (AMD and Intel: mesa-vulkan-drivers on Debian, Ubuntu and Fedora, vulkan-radeon or vulkan-intel on Arch; NVIDIA: the proprietary driver), check that your user is in the render and video groups, then restart LU.";
+
+/// The same fact on Windows, where the driver is the one thing to update.
+pub(crate) const NO_GPU_DEVICE_NOTE: &str = "Running on the CPU: the LU Engine found no graphics card it can use. Update your graphics driver, then restart LU.";
+
+/// The note for an engine that asked for the card and found none, or `None`.
+///
+/// `layers` is the `-ngl` the process carries: a typed 0 asked for the
+/// processor, and then the same warning is no news. The Mac runs Metal and is
+/// not asked.
+pub(crate) fn no_gpu_device_note(startup: &str, layers: Option<u32>, os: &str) -> Option<&'static str> {
+    if os == "macos" || layers == Some(0) || !startup.contains(NO_USABLE_GPU_LINE) {
+        return None;
+    }
+    Some(if os == "linux" { NO_GPU_DEVICE_LINUX_NOTE } else { NO_GPU_DEVICE_NOTE })
+}
+
 // ── The classifier ──────────────────────────────────────────────────────────
 //
 // Every threshold below is set so that it cannot fire on healthy output, and
@@ -566,13 +598,15 @@ pub(crate) fn probe_engine(port: u16, timeout: Duration) -> Option<ProbeOutcome>
         "max_tokens": PROBE_TOKENS,
         "stream": false,
     });
-    let response = reqwest::blocking::Client::builder()
-        .timeout(timeout)
-        .build()
-        .ok()?
-        .post(probe_url(port))
-        // The probe asks an engine this app just started (engine_key.rs).
-        .header(reqwest::header::AUTHORIZATION, super::engine_key::bearer())
+    let client = reqwest::blocking::Client::builder().timeout(timeout).build().ok()?;
+    // The probe asks an engine this app just started: on the desktop with the
+    // engine's key (engine_key.rs), on a phone with the token of its
+    // in-process engine (engine_token.rs).
+    #[cfg(desktop)]
+    let request = client.post(probe_url(port)).header(reqwest::header::AUTHORIZATION, super::engine_key::bearer());
+    #[cfg(mobile)]
+    let request = super::engine_token::attach_blocking(client.post(probe_url(port)), port);
+    let response = request
         .json(&body)
         .send()
         .ok()
@@ -628,6 +662,35 @@ pub(crate) fn verdict_label(verdict: Sanity, still_thinking: bool) -> &'static s
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── An engine without any card (fanezeu, 23.10.2026) ───────────────────
+
+    /// The three lines common/arg.cpp prints at the pinned commit, as they
+    /// stand in the engine's stderr.
+    const NO_GPU_STDERR: &str = "load_backend: loaded CPU backend from /usr/lib/lu/libggml-cpu-haswell.so\nload_backend: loaded Vulkan backend from /usr/lib/lu/libggml-vulkan.so\nggml_vulkan: No devices found.\nwarning: no usable GPU found, --gpu-layers option will be ignored\nwarning: one possible reason is that llama.cpp was compiled without GPU support\nwarning: consult docs/build.md for compilation instructions\n";
+
+    #[test]
+    fn an_engine_that_found_no_card_says_which_driver_is_missing() {
+        let linux = no_gpu_device_note(NO_GPU_STDERR, Some(998), "linux").expect("note on linux");
+        assert!(linux.contains("mesa-vulkan-drivers"), "{linux}");
+        assert!(linux.contains("render and video groups"), "{linux}");
+        assert_eq!(no_gpu_device_note(NO_GPU_STDERR, None, "windows"), Some(NO_GPU_DEVICE_NOTE));
+        assert!(!NO_GPU_DEVICE_NOTE.contains("mesa"), "no Linux package names on Windows");
+    }
+
+    #[test]
+    fn a_card_that_came_up_or_a_typed_zero_gets_no_note() {
+        // A healthy Vulkan start on the reported card: no warning, no note.
+        let healthy = "ggml_vulkan: Found 1 Vulkan devices:\nggml_vulkan: 0 = AMD Radeon RX 7900 XTX (RADV NAVI31) (radv) | uma: 0 | fp16: 1\nload_tensors: offloaded 49/49 layers to GPU\n";
+        assert_eq!(no_gpu_device_note(healthy, Some(998), "linux"), None);
+        // Vulkan without devices next to a backend that has one is not "no card".
+        let cuda_too = "ggml_vulkan: No devices found.\nggml_cuda_init: found 1 CUDA devices:\n";
+        assert_eq!(no_gpu_device_note(cuda_too, Some(999), "windows"), None);
+        // GPU Layers 0 asked for the processor, so the warning is no news.
+        assert_eq!(no_gpu_device_note(NO_GPU_STDERR, Some(0), "linux"), None);
+        // The Mac runs Metal.
+        assert_eq!(no_gpu_device_note(NO_GPU_STDERR, Some(999), "macos"), None);
+    }
 
     // ── The reporters' samples ──────────────────────────────────────────────
 

@@ -24,6 +24,7 @@ import { isRecord, prop } from '../types/json-guards'
 import { repairJson } from './tool-call-repair'
 import { parseHermesToolCalls } from '../api/hermes-tool-calling'
 import { RETIRED_TOOL_NAMES } from './retired-tools'
+import { retiredToolRunsOnThisDevice } from './mobile-tools'
 
 /**
  * A9. The sixteen names the 2.6.6 merge retired are not in any `known` list
@@ -38,7 +39,9 @@ import { RETIRED_TOOL_NAMES } from './retired-tools'
  * A registered tool always wins; this list is only consulted after `known`
  * has had its full ladder, so nothing can be rerouted away from a live tool.
  */
-const RETIRED_NAMES: string[] = [...RETIRED_TOOL_NAMES]
+// On a phone only the names that still run there are recognised, so prose
+// that mentions `git_status` is not turned into a call that cannot run.
+const RETIRED_NAMES: string[] = [...RETIRED_TOOL_NAMES].filter(retiredToolRunsOnThisDevice)
 
 export interface LooseToolCall {
   name: string

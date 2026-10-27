@@ -58,12 +58,10 @@ describe('the agent prompt renders the platform sentence', () => {
     expect(built).not.toContain('Date and time at the start of this run')
   })
 
-  it('the loop that appends it is still there, and still appends it last', () => {
+  it('the loop still sends it, in the turn note behind the newest message (A7)', () => {
     const agent = read('hooks', 'useAgentChat.ts')
-    const clockAt = agent.indexOf('agentSystemPrompt += `\\n\\n${hostClockLine()}`')
-    const ragAt = agent.indexOf('agentSystemPrompt += ragSuffix')
-    expect(clockAt).toBeGreaterThan(-1)
-    expect(clockAt).toBeGreaterThan(ragAt)
+    expect(agent).toMatch(/clock: hostClockLine\(\)/)
+    expect(agent).not.toContain('agentSystemPrompt += `\\n\\n${hostClockLine()}`')
   })
 })
 

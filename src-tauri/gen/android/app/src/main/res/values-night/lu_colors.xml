@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Dunkelmodus des Geraets. Nur was sich gegen values/lu_colors.xml aendert. -->
+<resources>
+    <color name="lu_splash_background">@color/lu_canvas_dark</color>
+    <bool name="lu_light_bars">false</bool>
+</resources>

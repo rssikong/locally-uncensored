@@ -2023,7 +2023,8 @@ export function tauriMockInit(opts: TauriMockOptions) {
           cmd, path: m?.path, offset: m?.offset, last: m?.last,
           base64Length: String(m?.base64 ?? '').length,
         })
-        return Promise.resolve({ ok: true, path: m?.path })
+        // Rust answers the last chunk with the full path it saved the file to.
+        return Promise.resolve({ ok: true, status: m?.last ? 'saved' : 'partial', path: m?.last ? `/Users/e2e/agent-workspace/${m?.chatId ?? 'chat'}/${m?.path}` : undefined })
       case 'fs_list':
         record('__E2E_TOOL_CALLS__', { cmd, path: m?.path })
         return afterToolDelay({ entries: [] })

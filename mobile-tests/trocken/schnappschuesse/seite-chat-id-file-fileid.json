@@ -1,0 +1,88 @@
+{
+ "name": "/chat/:id/file/:fileId",
+ "art": "seite",
+ "quelle": "integ-306",
+ "route": "/chat/:id/file/:fileId",
+ "strang": "chat",
+ "code": "C14",
+ "lage": {
+  "route": "/chat/:id/file/:fileId",
+  "screen": "m-chat-file-screen",
+  "blaetter": [],
+  "dialog": [],
+  "reiter": null,
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back-under",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-chat-file-screen",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "gone",
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-viewer-close",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Close",
+   "el": "C14.1",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-chat-file-info",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    788
+   ]
+  }
+ ]
+}

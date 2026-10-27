@@ -211,7 +211,7 @@ describe('NEGATIVE CONTROL: nobody else loses their model over this', () => {
   })
 
   it('round 7 keeps its own wiring on the window X', () => {
-    const main = read('src-tauri/src/main.rs')
+    const main = read('src-tauri/src/lib.rs')
     expect(main).toMatch(/offload_local_models_blocking\(&state, Some\(true\)\)/)
     expect(main).toMatch(/should_offload_after_hide/)
   })

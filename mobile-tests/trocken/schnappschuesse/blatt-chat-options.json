@@ -1,0 +1,364 @@
+{
+ "name": "chat-options",
+ "art": "blatt",
+ "quelle": "integ-306",
+ "blatt": "chat-options",
+ "strang": "agent",
+ "code": "C5",
+ "lage": {
+  "route": "/dev/routes",
+  "screen": "m-dev-routes-screen",
+  "blaetter": [
+   "chat-options"
+  ],
+  "dialog": [],
+  "reiter": null,
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back-under",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-page-back",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-overlays",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-options",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-sheet-scrim",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "",
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-sheet-chat-options",
+   "tag": "div",
+   "rolle": "dialog",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    743
+   ]
+  },
+  {
+   "id": "m-sheet-close",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Close",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-options-group-now",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    231
+   ]
+  },
+  {
+   "id": "m-options-agent",
+   "tag": "button",
+   "rolle": "switch",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Agent mode Choose a model, then Agent mode can use it.",
+   "el": "C5.1",
+   "deaktiviert": true,
+   "box": [
+    356,
+    76
+   ]
+  },
+  {
+   "id": "m-options-web",
+   "tag": "button",
+   "rolle": "switch",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Web search Search and read pages when needed",
+   "el": "C5.4",
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-options-files",
+   "tag": "button",
+   "rolle": "switch",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Write files Let the model save files into this chat",
+   "el": "C5.5",
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-options-group-all",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    134
+   ]
+  },
+  {
+   "id": "m-options-small",
+   "tag": "button",
+   "rolle": "switch",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Small model mode A lean set of tools and shorter prompts for small models on thi",
+   "el": "C5.6",
+   "box": [
+    356,
+    94
+   ]
+  },
+  {
+   "id": "m-options-group-more",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    335
+   ]
+  },
+  {
+   "id": "m-options-persona",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Persona Off",
+   "el": "C5.7",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-options-group",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Group chat Send a first message in this chat, then this works.",
+   "el": "C5.8",
+   "deaktiviert": true,
+   "box": [
+    356,
+    76
+   ]
+  },
+  {
+   "id": "m-options-caveman-row",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Caveman mode Off",
+   "el": "C5.9",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-options-memory",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Memory What LU remembers about you",
+   "el": "C5.10",
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-options-workflows-row",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Workflows Run a saved chain of steps in this chat",
+   "el": "C5.11",
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-options-group-fine",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    316
+   ]
+  },
+  {
+   "id": "m-options-sampling",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Sampling App defaults",
+   "el": "C5.12",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-options-context",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Context window One size for all chats",
+   "el": "C5.13",
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-options-permissions-row",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Permissions for this chat App defaults",
+   "el": "C5.14",
+   "box": [
+    356,
+    62
+   ]
+  },
+  {
+   "id": "m-options-goal",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Set a goal",
+   "el": "C5.15",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-options-loop",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Repeat a task",
+   "el": "C5.16",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-options-done",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Done",
+   "el": "C5.17",
+   "box": [
+    358,
+    48
+   ]
+  }
+ ]
+}

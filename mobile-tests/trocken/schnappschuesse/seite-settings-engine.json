@@ -1,0 +1,274 @@
+{
+ "name": "/settings/engine",
+ "art": "seite",
+ "quelle": "integ-306",
+ "route": "/settings/engine",
+ "strang": "models",
+ "code": "E13",
+ "lage": {
+  "route": "/settings/engine",
+  "screen": "m-settings-engine-screen",
+  "blaetter": [],
+  "dialog": [],
+  "reiter": null,
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back-under",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-engine-screen",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-engine-status",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "none",
+   "el": "E13.1",
+   "box": [
+    390,
+    180
+   ]
+  },
+  {
+   "id": "m-settings-engine-models",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Open Models",
+   "box": [
+    324,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-engine-unload",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Unload model No model loaded",
+   "el": "E13.2",
+   "deaktiviert": true,
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-settings-engine-restart",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Restart engine No model loaded",
+   "deaktiviert": true,
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-settings-engine-selftest",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Run self test",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-engine-context",
+   "tag": "div",
+   "rolle": "radiogroup",
+   "sichtbar": true,
+   "bedienbar": false,
+   "el": "E13.3",
+   "box": [
+    358,
+    54
+   ]
+  },
+  {
+   "id": "m-settings-engine-context-auto",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Auto",
+   "box": [
+    98,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-engine-context-1024",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "1K",
+   "box": [
+    81,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-engine-context-2048",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "2K",
+   "box": [
+    84,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-engine-context-4096",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "4K",
+   "box": [
+    84,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-engine-context-hint",
+   "tag": "p",
+   "rolle": "p",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    36
+   ]
+  },
+  {
+   "id": "m-settings-engine-background",
+   "tag": "button",
+   "rolle": "switch",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Unload when LU is in the background Frees memory for other apps. The model loads",
+   "el": "E13.7",
+   "box": [
+    356,
+    117
+   ]
+  },
+  {
+   "id": "m-settings-engine-no-graphics",
+   "tag": "p",
+   "rolle": "p",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    36
+   ]
+  },
+  {
+   "id": "m-settings-engine-threads",
+   "tag": "input",
+   "rolle": "textbox",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Threads",
+   "el": "E13.5",
+   "box": [
+    72,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-engine-advanced",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Advanced Flash attention, cache types",
+   "el": "E13.8",
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-settings-engine-reset",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Reset engine settings",
+   "risiko": "destructive",
+   "el": "E13.9",
+   "box": [
+    356,
+    52
+   ]
+  }
+ ]
+}

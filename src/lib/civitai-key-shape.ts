@@ -1,7 +1,7 @@
 /**
  * Telling a CivitAI API key apart from a folder path.
  *
- * A14 review 8, from the Windows follow-up: the Model Storage folder field and
+ * A14 review 8, from the Windows follow-up: the Storage folder field and
  * the CivitAI key field sat directly under each other, two bare text boxes in
  * a row, and a tester saved a filesystem path as his API key. Nothing said no.
  * The key then went into the OS credential store, every CivitAI download kept
@@ -19,7 +19,7 @@ export const CIVITAI_KEY_PLACEHOLDER = '3f9a1c7d5e2b48f06a1d9c3e7b52f8a4'
 
 /** Said under the field when what is in it is plainly not a key. */
 export const CIVITAI_KEY_LOOKS_WRONG =
-  'That looks like a folder, not a key. The model folder is set further up, under Model Storage. A CivitAI key is a single line of letters and digits from your CivitAI account page.'
+  'That looks like a folder, not a key. The model folder is set further up, under Storage. A CivitAI key is a single line of letters and digits from your CivitAI account page.'
 
 /**
  * Is this a filesystem path rather than a key.

@@ -478,6 +478,25 @@ describe.each(QWEN21_WEIGHTS)('buildDynamicWorkflow, Qwen-Image 2.1 edit with fu
     expect(nodesOf(wf, 'LoadImage')).toHaveLength(3)
   })
 
+  // Discord help-18, 23.10.2026 ("IMAGE 2 or IMAGE 2.?"): the encoder labels
+  // the images <image1>, <image2> (comfy/text_encoders/qwen_image21.py), so
+  // every spelling of an image that is there reaches it in that form.
+  it('names the images in the prompt as the encoder labels them, <image2>', async () => {
+    const wf = await buildDynamicWorkflow({
+      ...baseParams, inputImage: 'scene.png', denoise: 0.7, referenceImages: ['person.png', 'outfit.png'],
+      prompt: 'the person in IMAGE 1. takes the pose of Image2, wearing the shirt from img #3, not image 4',
+      negativePrompt: 'a copy of picture 2',
+    } as never)
+    const enc = nodeOf(wf, 'TextEncodeQwenImage21')![1]
+    expect(enc.inputs.prompt).toBe('the person in <image1>. takes the pose of <image2>, wearing the shirt from <image3>, not image 4')
+    expect(enc.inputs.negative_prompt).toBe('a copy of <image2>')
+  })
+
+  it('a generate run keeps the prompt as typed', async () => {
+    const wf = await buildDynamicWorkflow({ ...baseParams, prompt: 'image 2 of a fox' } as never)
+    expect(nodeOf(wf, 'TextEncodeQwenImage21')![1].inputs.prompt).toBe('image 2 of a fox')
+  })
+
   // Discord D7 / G26: up to ten images in all. The node has slots image_1 to
   // image_16, the model reads ten (lib/edit-references).
   it('takes nine references besides the source, in order, and drops a tenth', async () => {

@@ -6,8 +6,10 @@
  * The wire-level companion (api/__tests__/rag-context-reaches-the-cloud.test.ts)
  * builds the suffix by hand and proves the transport carries it. Review S2 asked
  * for the step in between, and it is the step that actually breaks: useChat and
- * useAgentChat have to CALL the builder and append the result to the system
- * prompt. A refactor that drops one of those two lines leaves every pure test
+ * useAgentChat have to CALL the builder and put the result into the request.
+ * Since A7 (3.0.8) that is the turn note behind the newest user message, not
+ * the system prompt: retrieval changes with every message, and in the system
+ * prompt it cost the prefix cache the whole chat (lib/turn-context.ts). A refactor that drops one of those two lines leaves every pure test
  * green and ships a Docs button that silently does nothing.
  *
  * So this file mounts useChat for real, puts documents in the RAG store, stubs
@@ -115,6 +117,14 @@ async function sendAsAgent(text = 'What is the target for Bergheim?') {
 type Wire = { role: string; content: string }
 const systemOf = (body: { messages: Wire[] } | null) =>
   body?.messages.find((m) => m.role === 'system')?.content ?? ''
+/** Everything the request carries behind the user's question: where the turn note rides (A7). */
+const behindQuestion = (body: { messages: Wire[] } | null, question = 'What is the target for Bergheim?') => {
+  const msgs = body?.messages ?? []
+  const at = msgs.findLastIndex((m) => m.role === 'user' && m.content.includes(question))
+  if (at < 0) return ''
+  const own = msgs[at].content
+  return [own.slice(own.indexOf(question) + question.length), ...msgs.slice(at + 1).map((m) => m.content)].join('\n')
+}
 
 beforeEach(() => {
   retrieveContext.mockReset()
@@ -133,7 +143,7 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks())
 
 describe('useChat puts the retrieved passages into the cloud request', () => {
-  it('the matching passage arrives in the system message', async () => {
+  it('the matching passage arrives behind the question, the system message stays clean', async () => {
     seed([chunk(0, HIT)])
     retrieveContext.mockResolvedValue({
       context: { chunks: [{ content: HIT }], query: 'q', documentIds: ['doc-1'] },
@@ -142,9 +152,10 @@ describe('useChat puts the retrieved passages into the cloud request', () => {
 
     const { sent, body } = await send()
     expect(sent).toBe(true)
-    const system = systemOf(body)
-    expect(system).toContain(HIT)
-    expect(system).toContain('[Source 1]')
+    const tail = behindQuestion(body)
+    expect(tail).toContain(HIT)
+    expect(tail).toContain('[Source 1]')
+    expect(systemOf(body)).not.toContain(HIT)
   })
 
   it('with RAG switched off the same send carries nothing of the kind', async () => {
@@ -247,7 +258,7 @@ describe('a retrieval that fails is said out loud, not swallowed (S4)', () => {
 })
 
 describe('Agent mode carries the documents too, from the same builder', () => {
-  it('the matching passage arrives in the agent run system prompt', async () => {
+  it('the matching passage arrives behind the question in the agent run too', async () => {
     seed([chunk(0, HIT)])
     retrieveContext.mockResolvedValue({
       context: { chunks: [{ content: HIT }], query: 'q', documentIds: ['doc-1'] },
@@ -256,9 +267,10 @@ describe('Agent mode carries the documents too, from the same builder', () => {
 
     const { sent, body } = await sendAsAgent()
     expect(sent).toBe(true)
-    const system = systemOf(body)
-    expect(system).toContain(HIT)
-    expect(system).toContain('[Source 1]')
+    const tail = behindQuestion(body)
+    expect(tail).toContain(HIT)
+    expect(tail).toContain('[Source 1]')
+    expect(systemOf(body)).not.toContain(HIT)
   })
 
   it('with RAG off the agent run carries none of it', async () => {

@@ -28,6 +28,18 @@ pub struct DownloadProgress {
     pub dest: String,
 }
 
+/// What a `BundledEngine` holds on to.
+///
+/// On a desktop that is the `llama-server` process. A phone cannot start a
+/// process, there the engine runs inside the app (`commands/engine_inproc.rs`)
+/// and its handle answers the same three calls: `try_wait`, `kill`, `wait`.
+/// That is why the status commands, the dead-engine watch and the shutdown
+/// below are one piece of code for both.
+#[cfg(desktop)]
+pub type EngineChild = Child;
+#[cfg(mobile)]
+pub type EngineChild = crate::commands::engine_inproc::InProcChild;
+
 /// Handle to a running bundled `llama-server`. One model per process, so
 /// `model_path` identifies what's loaded and `port` is the loopback port the
 /// OpenAI-compatible API is served on. Killed in `shutdown_subprocesses` like
@@ -37,7 +49,7 @@ pub struct DownloadProgress {
 /// `--embeddings` server (`bundled_embed`): same lifecycle shape, different
 /// port + model + serve mode. Keeping one struct avoids duplicating the handle.
 pub struct BundledEngine {
-    pub child: Child,
+    pub child: EngineChild,
     pub model_path: String,
     pub port: u16,
     /// Context size the CHAT engine was started with (`None` for the embed
@@ -269,7 +281,8 @@ pub struct AppState {
     /// (`commands::voice_loop`). Cloneable handles, like `whisper`.
     pub voice_loop: crate::commands::voice_loop::VoiceLoopHandle,
     /// Astra computer use: the engine that guards every action and the
-    /// state of its stop shortcut (`commands::computer`).
+    /// state of its stop shortcut (`commands::computer`). Desktop only.
+    #[cfg(desktop)]
     pub computer: crate::commands::computer::ComputerHandle,
     pub downloads: Arc<Mutex<HashMap<String, DownloadProgress>>>,
     pub download_tokens: Arc<Mutex<HashMap<String, CancellationToken>>>,
@@ -359,6 +372,9 @@ pub struct AppState {
     /// Default "auto" + empty indices = no env-var, runtime picks default
     /// (pre-v2.5.0 behaviour).
     pub gpu_selection: Mutex<GpuSelection>,
+    /// Which card each service runs on (3.0.8, A2, commands/gpu_roles.rs).
+    /// Empty = the pick above applies to every service, as before.
+    pub gpu_roles: Mutex<crate::commands::gpu_roles::GpuRoles>,
     /// flash-attn probe results, keyed by python path (2026-06-11:
     /// measured 4-5x faster WAN video sampling vs pytorch SDPA on a 3060).
     /// The probe imports torch (~5-10 s), so only the first ComfyUI start /
@@ -369,7 +385,7 @@ pub struct AppState {
     /// ROCm AND ZLUDA builds — the exact condition under which ComfyUI's main.py
     /// won't crash on `torch.cuda.current_device()`. Lets an AMD/ROCm ComfyUI run
     /// on the GPU instead of being force-dropped to `--cpu`.
-    pub comfy_gpu_cache: Mutex<HashMap<String, bool>>,
+    pub comfy_gpu_cache: Mutex<HashMap<String, Option<&'static str>>>,
     /// Frontend-owned override for the ComfyUI CPU/GPU decision
     /// (settings.comfyGpuMode): "auto" (probe), "cpu" (force --cpu), "gpu"
     /// (never --cpu). Pushed via set_comfy_gpu_mode on boot + change.
@@ -458,6 +474,7 @@ impl AppState {
             openai_hosts: Mutex::new(HashSet::new()),
             whisper: Arc::new(Mutex::new(WhisperServer::new())),
             voice_loop: crate::commands::voice_loop::VoiceLoopHandle::default(),
+            #[cfg(desktop)]
             computer: crate::commands::computer::ComputerHandle::default(),
             downloads: Arc::new(Mutex::new(HashMap::new())),
             download_tokens: Arc::new(Mutex::new(HashMap::new())),
@@ -488,6 +505,7 @@ impl AppState {
             // Bug BB v2.5.0 — start in "auto" mode so existing installs are
             // unchanged until the user explicitly picks a GPU in Settings.
             gpu_selection: Mutex::new(GpuSelection::default()),
+            gpu_roles: Mutex::new(crate::commands::gpu_roles::GpuRoles::default()),
             flash_attn_cache: Mutex::new(HashMap::new()),
             comfy_gpu_cache: Mutex::new(HashMap::new()),
             comfy_gpu_mode: Mutex::new("auto".to_string()),
@@ -755,6 +773,7 @@ impl AppState {
         self.voice_loop.shutdown();
 
         // A computer use action that is still running stops with the app.
+        #[cfg(desktop)]
         self.computer.shutdown();
     }
 }
@@ -764,7 +783,7 @@ impl Drop for AppState {
         // Belt-and-suspenders. Tauri v2 doesn't reliably drop the managed
         // state on `app.exit(0)` on Windows, so every quit path explicitly
         // calls `shutdown_subprocesses` itself (see `commands::system::exit_app`
-        // and the tray "quit" handler in `main.rs`). This Drop covers the
+        // and the tray "quit" handler in `lib.rs`). This Drop covers the
         // remaining "Tauri-managed shutdown DID happen to run our Drop" case
         // — and every branch now take()s its slot, so a second pass has
         // nothing left to kill. It used to leave the pids in place and call

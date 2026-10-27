@@ -23,6 +23,10 @@ export interface CloudCatalog {
   media_live: boolean
   tier: string
   monthly_credits: number
+  /** Largest file /api/jobs/upload takes, in bytes per kind. Optional: a
+   *  server that does not send it leaves the client's own limits in place
+   *  (lib/upload-limits.ts). */
+  upload_limits?: { image?: number; audio?: number; video?: number }
 }
 
 /** A catalog entry as the server sends it. `native_label` is the app's own

@@ -37,6 +37,8 @@ pub(crate) fn platform_label(os: &str) -> &'static str {
         "windows" => "windows",
         "linux" => "linux",
         "macos" => "macos",
+        "android" => "android",
+        "ios" => "ios",
         _ => "unknown",
     }
 }
@@ -61,7 +63,7 @@ pub async fn funnel_ping(event: String) -> Result<(), String> {
     let payload = funnel_payload(&event, platform_label(std::env::consts::OS), &version);
     tauri::async_runtime::spawn(async move {
         let client = match reqwest::Client::builder()
-            .user_agent(format!("LocallyUncensored/{version}"))
+            .user_agent(crate::app_identity::outgoing_agent_for(&version))
             .timeout(std::time::Duration::from_secs(5))
             .build()
         {
@@ -102,10 +104,14 @@ mod tests {
     }
 
     #[test]
-    fn the_platform_is_one_of_four_words() {
+    fn the_platform_is_one_of_six_words() {
         assert_eq!(platform_label("windows"), "windows");
         assert_eq!(platform_label("linux"), "linux");
         assert_eq!(platform_label("macos"), "macos");
+        // The phones count under their own name, not under "unknown" and
+        // not under "linux" (Android's kernel) or "macos" (iOS's family).
+        assert_eq!(platform_label("android"), "android");
+        assert_eq!(platform_label("ios"), "ios");
         assert_eq!(platform_label("freebsd"), "unknown");
         assert_eq!(platform_label(""), "unknown");
     }

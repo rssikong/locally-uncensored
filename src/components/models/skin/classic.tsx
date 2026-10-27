@@ -317,6 +317,10 @@ function ClassicFilterBar({ catalogue, sizes, hardware, switchBar, legend }: Fil
   )
 }
 
+/** The grey word beside a model's name: "stopped", and the mark of a copy
+ *  without refusals (A14), which is not set in capitals. */
+const QUIET_BADGE = 'shrink-0 text-[0.5rem] text-gray-500 dark:text-gray-400 font-medium'
+
 export const classicSkin: ModelSkin = {
   name: 'classic',
   ManagerFrame: ClassicManagerFrame,
@@ -334,8 +338,9 @@ export const classicSkin: ModelSkin = {
     typeIcon: (_type, isActive) => `shrink-0 ${isActive ? 'text-lu-accent-ink dark:text-lu-accent' : 'text-gray-400 dark:text-gray-500'}`,
     typeIconSize: 13,
     name: 'flex-1 min-w-0 flex text-[0.7rem] text-gray-900 dark:text-gray-100 font-medium',
-    stopped: 'shrink-0 text-[0.5rem] text-gray-500 dark:text-gray-400 font-medium uppercase',
+    stopped: `${QUIET_BADGE} uppercase`,
     active: 'shrink-0 text-[0.5rem] text-lu-accent-ink dark:text-lu-accent font-medium uppercase',
+    mark: QUIET_BADGE,
     meta: 'hidden md:flex items-center gap-1.5 shrink-0 t-micro text-gray-500 dark:text-gray-400 lu-hud-num',
     // The colours of `.lu-tonal` on the small measure of this row. The recipe
     // itself is 26 px high and would make every row taller.

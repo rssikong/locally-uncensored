@@ -149,7 +149,7 @@ describe('the old engine name is gone from everything a user can read', () => {
 
   it('and none in the Rust messages and log lines either', () => {
     // Where the counter-check's remaining leftovers actually lived. Rust
-    // writes the folder errors the Model Storage panel shows and the engine
+    // writes the folder errors the Storage panel shows and the engine
     // log lines a support answer is read out of, and none of that was swept.
     const left: string[] = []
     for (const file of sourceFiles(RUST_SRC, /\.rs$/)) {

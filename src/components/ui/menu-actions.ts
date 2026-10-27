@@ -81,6 +81,8 @@ export interface ModelMenuHandlers {
   readonly select: () => void
   readonly info: () => void
   readonly remove: () => void
+  /** A14: only on LU Engine rows whose original weights are known. */
+  readonly removeRefusals?: () => void
 }
 
 export interface ModelMenuState {
@@ -94,6 +96,7 @@ export function buildModelCardMenu(h: ModelMenuHandlers, s: ModelMenuState): Men
   // nichts tut — die Karte zeigt an derselben Stelle ihr ACTIVE-Etikett.
   if (!s.isActive) out.push({ id: 'select', label: 'Use this model', run: h.select })
   out.push({ id: 'info', label: 'Details', run: h.info })
+  if (h.removeRefusals) out.push({ id: 'remove-refusals', label: 'Remove refusals…', run: h.removeRefusals })
   if (s.canDelete) out.push({ id: 'delete', label: 'Delete model', run: h.remove, destructive: true })
   return out
 }

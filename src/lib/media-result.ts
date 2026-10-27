@@ -17,11 +17,12 @@
 // out and not send an image, and it change the entire context for the chat …
 // after image make an 400 or 500 error code".
 //
-// Deliberately conservative: this returns true only for failure shapes we
-// actually emit. Anything unrecognised counts as success, so a media backend
-// that returns some other success format is never misread as broken. The
-// alternative (require a ComfyUI /view URL as proof) is stricter but would break
-// any non-ComfyUI lane the moment one is added.
+// A delivered result has to say where the media is: a ComfyUI /view URL, a
+// file:// path (the Mac engines) or inline bytes. Every lane LU has returns one
+// of those, so this is strict without breaking any of them; a new lane has to
+// return one too. Failure shapes we emit are refused even when a URL rides along.
+
+import { isStartedResult } from './background-tools'
 
 /** Failure strings produced by the media path. Verified against vram-handoff.ts
  *  (`Cannot generate:`, `… generation failed:`, `… completed but no output
@@ -29,10 +30,27 @@
 const MEDIA_FAILURE_RE =
   /^\s*(Error:|Cannot generate:)|generation failed:|generation timed out|completed but no output produced/i
 
-/** True when a media tool result is a failure disguised as a completed call. */
+/** Where a delivered picture or clip is: a ComfyUI /view address, a file the
+ *  app wrote (file://), or the bytes themselves (data:, and blob: in chats
+ *  recorded before 2.6.3). */
+const MEDIA_URL_RE = /(?:https?:\/\/[^\s)\]]+|\/comfyui)?\/view\?[^\s)\]]*filename=|file:\/\/\S|blob:\S|data:(?:image|video|audio)\//i
+
+/**
+ * True when a media tool result is a failure disguised as a completed call.
+ *
+ * A12/A13 (21.10.2026): the list of failure shapes alone let every other
+ * way a render ends without media through as delivered: "hit the 5 minute
+ * budget", "stopped early", "generation cancelled.", "was not started". Each
+ * of them got the check mark, used up the media cap and told the model the
+ * picture was on screen. A delivered result carries where the media is, so
+ * that is now required as well.
+ */
 export function isMediaFailureResult(result: string | null | undefined): boolean {
   if (!result) return true // no result at all is not a delivered image either
-  return MEDIA_FAILURE_RE.test(result)
+  // A render that went on in the background (A2) has no address yet and has
+  // not failed: its picture lands on the block later (lib/background-tools).
+  if (isStartedResult(result)) return false
+  return MEDIA_FAILURE_RE.test(result) || !MEDIA_URL_RE.test(result)
 }
 
 /** True when this tool name is one whose result carries generated media. */

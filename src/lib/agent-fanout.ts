@@ -27,6 +27,9 @@
  * prüfbar ist.
  */
 
+import { isMobile } from './device-kind'
+import { subAgentsOffered } from './phone-sub-agents'
+
 /**
  * Die Obergrenze für eine ausdrücklich angeforderte Fächerung.
  *
@@ -81,6 +84,9 @@ const AGENT_WORT = '(?:sub-?)?agent(?:en|s|:innen)?'
  */
 export function parseFanoutRequest(text: string): FanoutRequest | null {
   if (typeof text !== 'string' || !text.trim()) return null
+  // A phone whose chat model runs on the phone has no sub agents to fan out
+  // to (lib/phone-sub-agents.ts): no wish, so no directive names the tool.
+  if (!subAgentsOffered()) return null
 
   // Zahl, dann höchstens ein paar Wörter Modellname, dann das Wort Agent.
   // Der Modellteil ist bewusst genügsam (`+?`) und darf keine Satzzeichen
@@ -203,6 +209,15 @@ export function fanoutDirective(
  * Modell sieht aus wie Erfolg.
  */
 export function unresolvedModelNote(phrase: string, installedIds: readonly string[]): string {
+  // A phone holds one local model, and a sub-agent there runs on the model of
+  // the chat whatever is named (lib/delegate-model.ts). So the note does not
+  // stop the run, and it lists no identifiers: they are the app's own names
+  // ("openai::...") and a small model repeats them to the user word for word
+  // (acceptance on Android with 8 GB, B6).
+  if (isMobile()) {
+    return `The model "${phrase}" is not on this device. Start the agents without a model argument, they run on the model of this chat,`
+      + ` and say in your answer that "${phrase}" is not installed.`
+  }
   const beispiele = installedIds.slice(0, 6).join(', ')
   return `The model "${phrase}" is not installed here, so do NOT start the agents yet.`
     + ` Tell the user it is missing and name what is installed instead${beispiele ? ` (${beispiele})` : ''},`

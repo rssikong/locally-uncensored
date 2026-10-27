@@ -29,6 +29,12 @@ export function clearFlashNotices(): void {
   useFlashBillingStore.setState({ entries: {} })
 }
 
+/** How LU Cloud billed one response, from its own header, or nothing. */
+export function chatBilling(response: Response): 'flash' | 'credits' | undefined {
+  const billing = response.headers.get('x-lu-chat-billing')
+  return billing === 'flash' || billing === 'credits' ? billing : undefined
+}
+
 export function recordFlashResponse(billingKey: string, response: Response, generation = billingGeneration): void {
   if (generation !== billingGeneration) return
   const billing = response.headers.get('x-lu-chat-billing')

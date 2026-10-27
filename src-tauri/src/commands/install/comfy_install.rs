@@ -596,6 +596,18 @@ pub fn install_comfyui(
         match pip_install_streaming_with_retry_cancellable(&torch_arg_refs, &effective_python, 3, &install_status, Some(&cancel_flag)) {
             Ok(()) => {
                 update("installing", "PyTorch installed successfully.");
+                // 3.0.8: a GPU build that cannot see the card says so here,
+                // with the fix, instead of surfacing later as a slow render.
+                if torch_index.is_some() {
+                    let sees = crate::commands::process::probe_comfy_gpu(&effective_python);
+                    if let Some(line) = crate::commands::torch_wheels::post_install_gpu_line(
+                        torch_index.as_deref(),
+                        sees,
+                        std::env::consts::OS,
+                    ) {
+                        update("installing", &line);
+                    }
+                }
             }
             Err(diagnosis) if diagnosis == "cancelled" => {
                 update("cancelled", "Install cancelled during PyTorch download.");

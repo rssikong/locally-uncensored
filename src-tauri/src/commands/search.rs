@@ -1,56 +1,15 @@
-use crate::os_error;
 use std::sync::atomic::Ordering;
 use tauri::State;
 
+use crate::commands::search_tiers;
 use crate::state::AppState;
 
-#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
 pub struct SearchResult {
     pub title: String,
     pub url: String,
     pub snippet: String,
 }
-
-async fn try_searxng(query: &str, count: usize) -> Result<Vec<SearchResult>, String> {
-    let url = format!(
-        "http://localhost:8888/search?q={}&format=json&engines=google,duckduckgo,brave&categories=general",
-        urlencoding::encode(query)
-    );
-
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    let resp = client.get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("SearXNG: {}", os_error::english(&e)))?;
-
-    let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-
-    let results = json.get("results")
-        .and_then(|r| r.as_array())
-        .map(|arr| {
-            arr.iter()
-                .take(count)
-                .filter_map(|r| {
-                    Some(SearchResult {
-                        title: r.get("title")?.as_str()?.to_string(),
-                        url: r.get("url")?.as_str()?.to_string(),
-                        snippet: r.get("content").and_then(|c| c.as_str()).unwrap_or("").to_string(),
-                    })
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-
-    Ok(results)
-}
-
-/// The User-Agent the DuckDuckGo tier sends when the user set none.
-const DDG_USER_AGENT: &str =
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
 /// The longest User-Agent taken from Settings. A real one is a few hundred
 /// characters at most; anything longer is pasted by mistake.
@@ -75,70 +34,9 @@ pub(crate) fn custom_user_agent(raw: Option<&str>) -> Option<String> {
     Some(text.to_string())
 }
 
-async fn try_ddg(query: &str, count: usize, user_agent: Option<&str>) -> Result<Vec<SearchResult>, String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .user_agent(user_agent.unwrap_or(DDG_USER_AGENT))
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    let resp = client.post("https://html.duckduckgo.com/html/")
-        .form(&[("q", query)])
-        .send()
-        .await
-        .map_err(|e| format!("DDG: {}", os_error::english(&e)))?;
-
-    let html = resp.text().await.map_err(|e| e.to_string())?;
-
-    // Parse results — capture full inner HTML then strip tags
-    let title_re = regex::Regex::new(r#"class="result__a"[^>]*>(.*?)</a>"#).unwrap();
-    let url_re = regex::Regex::new(r#"class="result__url"[^>]*?href="([^"]*)"#).unwrap();
-    let snippet_re = regex::Regex::new(r#"class="result__snippet"[^>]*>([\s\S]*?)</(?:td|div|a\s)"#).unwrap();
-
-    let titles: Vec<String> = title_re.captures_iter(&html)
-        .map(|c| html_decode(&strip_html(&c[1])))
-        .collect();
-    let urls: Vec<String> = url_re.captures_iter(&html)
-        .map(|c| {
-            let raw = &c[1];
-            // DDG wraps URLs — extract actual URL from redirect
-            if let Some(pos) = raw.find("uddg=") {
-                let after = &raw[pos + 5..];
-                urlencoding::decode(after.split('&').next().unwrap_or(after))
-                    .unwrap_or_else(|_| after.into())
-                    .to_string()
-            } else {
-                raw.to_string()
-            }
-        })
-        .collect();
-    let snippets: Vec<String> = snippet_re.captures_iter(&html)
-        .map(|c| html_decode(&strip_html(&c[1])).trim().to_string())
-        .collect();
-
-    let mut results = Vec::new();
-    for (i, title) in titles.iter().take(count).enumerate() {
-        let url = urls.get(i).cloned().unwrap_or_default();
-        let snippet = snippets.get(i).cloned().unwrap_or_default();
-        if !url.is_empty() {
-            results.push(SearchResult {
-                title: title.clone(),
-                url,
-                snippet,
-            });
-        }
-    }
-
-    if results.is_empty() {
-        Err("No DDG results".to_string())
-    } else {
-        Ok(results)
-    }
-}
-
 /// Parse a Brave Search API response body into results. Split out of
-/// `try_brave` so the shape mapping is unit-testable without network.
-fn parse_brave_results(json: &serde_json::Value, count: usize) -> Vec<SearchResult> {
+/// the Brave tier (`search_tiers.rs`) so the shape mapping is testable without network.
+pub(crate) fn parse_brave_results(json: &serde_json::Value, count: usize) -> Vec<SearchResult> {
     json.pointer("/web/results")
         .and_then(|r| r.as_array())
         .map(|arr| {
@@ -160,42 +58,8 @@ fn parse_brave_results(json: &serde_json::Value, count: usize) -> Vec<SearchResu
         .unwrap_or_default()
 }
 
-/// Brave Search API (paid/free-tier key from Settings → Agent → Search
-/// Provider). The settings fields existed since v2.4 but were never wired
-/// into this command — the key was silently ignored (same bug class as
-/// GitHub #59's silent reset button). Now: explicit provider support.
-async fn try_brave(query: &str, count: usize, api_key: &str) -> Result<Vec<SearchResult>, String> {
-    let url = format!(
-        "https://api.search.brave.com/res/v1/web/search?q={}&count={}",
-        urlencoding::encode(query),
-        count.min(20)
-    );
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .map_err(|e| e.to_string())?;
-    let resp = client
-        .get(&url)
-        .header("Accept", "application/json")
-        .header("X-Subscription-Token", api_key)
-        .send()
-        .await
-        .map_err(|e| format!("Brave: {}", os_error::english(&e)))?;
-    let status = resp.status();
-    if !status.is_success() {
-        return Err(format!("Brave: HTTP {} (check the API key)", status.as_u16()));
-    }
-    let json: serde_json::Value = resp.json().await.map_err(|e| format!("Brave: {}", e))?;
-    let results = parse_brave_results(&json, count);
-    if results.is_empty() {
-        Err("Brave: no results".to_string())
-    } else {
-        Ok(results)
-    }
-}
-
 /// Parse a Tavily API response body into results (unit-testable, no network).
-fn parse_tavily_results(json: &serde_json::Value, count: usize) -> Vec<SearchResult> {
+pub(crate) fn parse_tavily_results(json: &serde_json::Value, count: usize) -> Vec<SearchResult> {
     json.get("results")
         .and_then(|r| r.as_array())
         .map(|arr| {
@@ -215,37 +79,6 @@ fn parse_tavily_results(json: &serde_json::Value, count: usize) -> Vec<SearchRes
                 .collect()
         })
         .unwrap_or_default()
-}
-
-/// Tavily search API. Key in the JSON body (legacy) AND as Bearer header
-/// (current docs) — both are accepted by Tavily, covering old + new plans.
-async fn try_tavily(query: &str, count: usize, api_key: &str) -> Result<Vec<SearchResult>, String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .map_err(|e| e.to_string())?;
-    let resp = client
-        .post("https://api.tavily.com/search")
-        .header("Authorization", format!("Bearer {}", api_key))
-        .json(&serde_json::json!({
-            "api_key": api_key,
-            "query": query,
-            "max_results": count.min(20),
-        }))
-        .send()
-        .await
-        .map_err(|e| format!("Tavily: {}", os_error::english(&e)))?;
-    let status = resp.status();
-    if !status.is_success() {
-        return Err(format!("Tavily: HTTP {} (check the API key)", status.as_u16()));
-    }
-    let json: serde_json::Value = resp.json().await.map_err(|e| format!("Tavily: {}", e))?;
-    let results = parse_tavily_results(&json, count);
-    if results.is_empty() {
-        Err("Tavily: no results".to_string())
-    } else {
-        Ok(results)
-    }
 }
 
 /// Traegt der Text deutsche Signale? Umlaute und ss zaehlen sofort, danach
@@ -317,71 +150,7 @@ pub fn wiki_versuche(query: &str, max_versuche: usize) -> Vec<(&'static str, Str
     out
 }
 
-async fn try_wikipedia(query: &str, count: usize, user_agent: Option<&str>) -> Result<Vec<SearchResult>, String> {
-    let mut letzter = "No Wikipedia results".to_string();
-    for (sprache, anfrage) in wiki_versuche(query, 4) {
-        match try_wikipedia_einmal(sprache, &anfrage, count, user_agent).await {
-            Ok(r) => return Ok(r),
-            Err(e) => letzter = e,
-        }
-    }
-    Err(letzter)
-}
-
-async fn try_wikipedia_einmal(
-    sprache: &str,
-    query: &str,
-    count: usize,
-    user_agent: Option<&str>,
-) -> Result<Vec<SearchResult>, String> {
-    let url = format!(
-        "https://{}.wikipedia.org/w/api.php?action=query&list=search&srsearch={}&format=json&srlimit={}",
-        sprache, urlencoding::encode(query), count
-    );
-
-    // Without a setting no User-Agent goes out here, as before.
-    let mut builder = reqwest::Client::builder().timeout(std::time::Duration::from_secs(10));
-    if let Some(agent) = user_agent {
-        builder = builder.user_agent(agent);
-    }
-    let client = builder.build().map_err(|e| e.to_string())?;
-    let resp = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("Wikipedia: {}", os_error::english(&e)))?;
-
-    let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-
-    let results: Vec<SearchResult> = json.pointer("/query/search")
-        .and_then(|s| s.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|r| {
-                    let title = r.get("title")?.as_str()?;
-                    Some(SearchResult {
-                        title: title.to_string(),
-                        // Die Adresse MUSS die gefragte Sprachwiki tragen: ein
-                        // Treffer aus de.wikipedia unter einer en-Adresse ist ein
-                        // 404, das wie ein Beleg aussieht (nachgemessen).
-                        url: format!("https://{}.wikipedia.org/wiki/{}", sprache, urlencoding::encode(title)),
-                        snippet: r.get("snippet").and_then(|s| s.as_str())
-                            .map(|s| html_decode(&strip_html(s)))
-                            .unwrap_or_default(),
-                    })
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-
-    if results.is_empty() {
-        Err("No Wikipedia results".to_string())
-    } else {
-        Ok(results)
-    }
-}
-
-fn html_decode(s: &str) -> String {
+pub(crate) fn html_decode(s: &str) -> String {
     s.replace("&amp;", "&")
      .replace("&lt;", "<")
      .replace("&gt;", ">")
@@ -392,12 +161,21 @@ fn html_decode(s: &str) -> String {
      .replace("&nbsp;", " ")
 }
 
-fn strip_html(s: &str) -> String {
+pub(crate) fn strip_html(s: &str) -> String {
     let re = regex::Regex::new(r"<[^>]+>").unwrap();
     re.replace_all(s, "").to_string()
 }
 
+/// `web_search` of the agent and the chat tools. The tiers and their order
+/// live in `search_tiers.rs`; this command only gathers what Settings sent.
+///
+/// `provider` is `auto` or one tier (`exa`, `you`, `searxng`, `duckduckgo`,
+/// `wikipedia`, `brave`, `tavily`). A chosen tier is asked first and the rest
+/// of Auto follows, with `providerError` saying why the chosen one did not
+/// answer. The keys come from the user's own Settings and stay on this
+/// computer; empty means that service is asked without one or not at all.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn web_search(
     query: String,
     count: Option<usize>,
@@ -405,102 +183,27 @@ pub async fn web_search(
     brave_api_key: Option<String>,
     tavily_api_key: Option<String>,
     user_agent: Option<String>,
+    exa_api_key: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
-    let count = count.unwrap_or(5);
-    // D16: the free tiers that read a public page as a browser would
-    // (DuckDuckGo, Wikipedia) send the user's own User-Agent when one is set.
-    // The keyed APIs and the local SearXNG are not asked as a browser.
+    // D16: the tiers that read a public page as a browser would (DuckDuckGo,
+    // Wikipedia) send the user's own User-Agent when one is set. The APIs
+    // (Exa, You.com, Brave, Tavily) and the local SearXNG get the app's name.
     let user_agent = custom_user_agent(user_agent.as_deref());
     let provider = provider.unwrap_or_else(|| "auto".to_string());
-    let brave_key = brave_api_key.unwrap_or_default();
-    let tavily_key = tavily_api_key.unwrap_or_default();
-
-    // The frontend has offered Brave / Tavily in Settings → Agent → Search
-    // Provider since v2.4, but this command silently dropped the choice and
-    // always ran the free tiers. Honor it now:
-    //   - explicit 'brave' / 'tavily' → use that provider; on failure fall
-    //     back to the free tiers but surface why in `providerError`.
-    //   - 'auto' → paid provider first when a key is configured, then the
-    //     free tiers (SearXNG → DuckDuckGo → Wikipedia).
-    let mut provider_error: Option<String> = None;
-
-    match provider.as_str() {
-        "brave" => {
-            if brave_key.is_empty() {
-                provider_error = Some(
-                    "Brave Search is selected but no API key is configured (Settings → Agent → Search Provider).".to_string(),
-                );
-            } else {
-                match try_brave(&query, count, &brave_key).await {
-                    Ok(results) => return Ok(serde_json::json!({"results": results, "provider": "brave"})),
-                    Err(e) => provider_error = Some(e),
-                }
-            }
-        }
-        "tavily" => {
-            if tavily_key.is_empty() {
-                provider_error = Some(
-                    "Tavily is selected but no API key is configured (Settings → Agent → Search Provider).".to_string(),
-                );
-            } else {
-                match try_tavily(&query, count, &tavily_key).await {
-                    Ok(results) => return Ok(serde_json::json!({"results": results, "provider": "tavily"})),
-                    Err(e) => provider_error = Some(e),
-                }
-            }
-        }
-        _ => {
-            // auto: a configured key signals intent — prefer that provider.
-            if !brave_key.is_empty() {
-                if let Ok(results) = try_brave(&query, count, &brave_key).await {
-                    return Ok(serde_json::json!({"results": results, "provider": "brave"}));
-                }
-            }
-            if !tavily_key.is_empty() {
-                if let Ok(results) = try_tavily(&query, count, &tavily_key).await {
-                    return Ok(serde_json::json!({"results": results, "provider": "tavily"}));
-                }
-            }
-        }
-    }
-
-    // Free tiers. Reached directly in 'auto' or as fallback after a paid
-    // provider failed (provider_error carries the reason to the model).
-    let attach = |mut v: serde_json::Value| {
-        if let Some(err) = &provider_error {
-            v["providerError"] = serde_json::json!(err);
-        }
-        v
+    let request = search_tiers::Request {
+        query: query.trim(),
+        count: count.unwrap_or(5),
+        provider: provider.trim(),
+        keys: search_tiers::Keys {
+            brave: brave_api_key.unwrap_or_default(),
+            tavily: tavily_api_key.unwrap_or_default(),
+            exa: exa_api_key.unwrap_or_default(),
+        },
+        user_agent: user_agent.as_deref(),
+        searxng_running: state.searxng_available.load(Ordering::Relaxed),
     };
-
-    // Try SearXNG first
-    if state.searxng_available.load(Ordering::Relaxed) {
-        if let Ok(results) = try_searxng(&query, count).await {
-            return Ok(attach(serde_json::json!({"results": results, "provider": "searxng"})));
-        }
-    }
-
-    // Fallback to DuckDuckGo
-    if let Ok(results) = try_ddg(&query, count, user_agent.as_deref()).await {
-        return Ok(attach(serde_json::json!({"results": results, "provider": "duckduckgo"})));
-    }
-
-    // Fallback to Wikipedia
-    if let Ok(results) = try_wikipedia(&query, count, user_agent.as_deref()).await {
-        return Ok(attach(serde_json::json!({"results": results, "provider": "wikipedia"})));
-    }
-
-    // Was hier steht, muss dem Nutzer sagen, was er tun kann. Eine Persona las
-    // am 03.09.2026 nur „All search tiers failed" und konnte daraus nicht
-    // schliessen, dass ein API-Schluessel die Kette wieder ganz macht — das
-    // Modell konnte es auch nicht und erfand stattdessen eine Tabelle.
-    let hinweis = if brave_key.is_empty() && tavily_key.is_empty() {
-        "All search tiers failed. The free tiers are unreliable (DuckDuckGo answers automated requests with a bot check). Configure Brave or Tavily under Settings → Agent → Search Provider for dependable search."
-    } else {
-        "All search tiers failed"
-    };
-    Ok(attach(serde_json::json!({"results": [], "error": hinweis})))
+    Ok(search_tiers::run(&request, &search_tiers::Endpoints::default(), &search_tiers::Timing::default()).await)
 }
 
 #[tauri::command]
@@ -548,7 +251,7 @@ pub fn install_searxng(state: State<'_, AppState>) -> Result<serde_json::Value, 
                 run_cmd.args([
                     "run", "-d", "--name", "searxng",
                     "-p", "8888:8080",
-                    "-e", "INSTANCE_NAME=locally-uncensored",
+                    "-e", crate::app_identity::SEARXNG_INSTANCE_ENV,
                     "searxng/searxng",
                 ]);
                 crate::process_util::suppress_window(&mut run_cmd);
@@ -573,35 +276,133 @@ pub fn searxng_status(state: State<'_, AppState>) -> Result<serde_json::Value, S
     }))
 }
 
-/// Fetch a URL and return plain readable text. The agent loop calls this
-/// AFTER `web_search` to actually read a page — without it, the model
-/// only ever sees titles + snippets which is useless for anything
-/// research-heavy. Strips HTML aggressively:
-///   - Drops <script>, <style>, <nav>, <header>, <footer>, <aside>, <noscript>
-///   - Replaces block-level tags with newlines
-///   - Removes remaining tags
-///   - Collapses whitespace
-///   - Caps at ~24 000 chars so we don't blow the context window
-///   - Undoes the packing a server put on the body, and never hands bytes that
-///     are no text to the model (`page_json`)
+/// Fetch a URL and return its readable text. The agent calls this after
+/// `web_search` to read a page; snippets alone answer nothing.
+///
+/// First locally, on this computer: `web_reach` checks every address (no
+/// localhost, no private range, no cloud metadata), pins the connection to
+/// that answer, follows redirects by hand and stops reading at 8 MB. The body
+/// is unpacked, decoded and read with Readability (`readable_text`), cut at
+/// 40 000 characters.
+///
+/// When that read is refused (403, 429, a bot check) or finds no text (a page
+/// built by JavaScript), the same public address goes to Exa's reader, and
+/// the answer says so in `via`. An address the local check refuses never
+/// leaves this computer.
 #[tauri::command]
 pub async fn web_fetch(url: String, user_agent: Option<String>) -> Result<serde_json::Value, String> {
-    // URL hardening: http(s) only and the host must not be localhost, a
-    // private/reserved range, or a cloud-metadata endpoint. The agent should
-    // fetch public pages, not poke internal services (Ollama, ComfyUI, LAN
-    // boxes, 169.254.169.254). Reuse the shared SSRF validator — the old
-    // substring blocklist missed 172.16/12, IPv6, and decimal/hex/octal IP
-    // encodings, and didn't re-check redirects.
-    let trimmed = url.trim();
-    // `web_reach` holds the rest: the stricter address list for an address a
-    // model supplied, one lookup per hop with the connection pinned to its
-    // answer (DNS rebinding), redirects followed by hand, and a body that is
-    // read piece by piece up to a hard limit.
-    // D16: the User-Agent the user set, or the agent's own.
     let agent = custom_user_agent(user_agent.as_deref());
-    let page = crate::commands::web_reach::fetch_page(trimmed, agent.as_deref()).await?;
+    web_fetch_with(
+        url.trim(),
+        agent.as_deref(),
+        std::sync::Arc::new(crate::commands::web_reach::model_url_addrs),
+        &search_tiers::Endpoints::default().exa_mcp,
+        std::time::Duration::from_secs(20),
+    )
+    .await
+}
 
-    Ok(page_json(&page.final_url, page.status, &page.content_type, &page.content_encoding, &page.body).await)
+/// Why a local read is worth a second try through Exa, or `None` when what it
+/// got is the answer (the page itself, a 404, a file that is no text).
+pub(crate) fn reader_fallback_reason(status: u16, title: &str, text: &str, not_text: bool) -> Option<String> {
+    if not_text {
+        return None;
+    }
+    if matches!(status, 404 | 410) {
+        return None;
+    }
+    if !(200..300).contains(&status) || status == 202 {
+        return Some(format!("the site answered HTTP {status}"));
+    }
+    let lower = format!("{} {}", title, text.chars().take(2_000).collect::<String>()).to_lowercase();
+    const WALLS: &[&str] = &[
+        "just a moment",
+        "attention required",
+        "verify you are human",
+        "are you a robot",
+        "captcha",
+        "enable javascript",
+        "javascript is disabled",
+        "please turn javascript on",
+        "access denied",
+    ];
+    let short = text.trim().chars().count() < 400;
+    if short && WALLS.iter().any(|w| lower.contains(w)) {
+        return Some("the site showed a bot check or needs JavaScript".to_string());
+    }
+    if text.trim().chars().count() < 80 {
+        return Some("the page had no readable text".to_string());
+    }
+    None
+}
+
+pub(crate) async fn web_fetch_with(
+    url: &str,
+    user_agent: Option<&str>,
+    gate: crate::commands::web_reach::Gate,
+    exa_endpoint: &str,
+    exa_timeout: std::time::Duration,
+) -> Result<serde_json::Value, String> {
+    use crate::commands::web_reach;
+    let local = web_reach::fetch_page_with(
+        url,
+        gate.clone(),
+        web_reach::MAX_BODY,
+        web_reach::DEADLINE,
+        user_agent.unwrap_or(web_reach::USER_AGENT),
+    )
+    .await;
+
+    let (local_json, why) = match local {
+        Ok(page) => {
+            let v = page_json(&page.final_url, page.status, &page.content_type, &page.content_encoding, &page.body).await;
+            let why = reader_fallback_reason(
+                page.status,
+                v["title"].as_str().unwrap_or(""),
+                v["text"].as_str().unwrap_or(""),
+                v.get("notText").is_some(),
+            );
+            (Ok(v), why)
+        }
+        Err(e) => {
+            // A refused address stays refused: it is not handed to anyone.
+            if e.starts_with("Blocked") || e.starts_with("Invalid URL") || e.contains("larger than") {
+                return Err(e);
+            }
+            let why = format!("the local read failed ({e})");
+            (Err(e), Some(why))
+        }
+    };
+    let Some(why) = why else {
+        return local_json;
+    };
+    // The address check again before the address leaves this computer: a
+    // redirect may have ended somewhere the first hop did not show.
+    let target = url.to_string();
+    let check = gate.clone();
+    let public = tokio::task::spawn_blocking(move || check(&target)).await.map(|r| r.is_ok()).unwrap_or(false);
+    if !public {
+        return local_json;
+    }
+    match search_tiers::exa_fetch(url, exa_endpoint, exa_timeout).await {
+        Ok((title, final_url, text, truncated)) => Ok(serde_json::json!({
+            "url": final_url,
+            "status": 200,
+            "contentType": "text/plain",
+            "title": title,
+            "text": text,
+            "truncated": truncated,
+            "via": "exa",
+            "localProblem": why,
+        })),
+        Err(exa_err) => match local_json {
+            Ok(mut v) => {
+                v["readerError"] = serde_json::json!(exa_err);
+                Ok(v)
+            }
+            Err(e) => Err(format!("{e} (Exa could not read it either: {exa_err})")),
+        },
+    }
 }
 
 /// What `web_fetch` answers for one response: the readable text of the page,
@@ -639,8 +440,11 @@ async fn page_json(
         return refused(web_body::not_text_sentence(&kind));
     }
     let decoded = decode_charset(body, content_type).await;
-    let (title, text) = extract_readable_text(&decoded, content_type);
-    let capped: String = text.chars().take(24_000).collect();
+    let (ct, url) = (content_type.to_string(), final_url.to_string());
+    let (title, text) = tokio::task::spawn_blocking(move || readable_text(&decoded, &ct, &url))
+        .await
+        .unwrap_or_default();
+    let (capped, truncated) = search_tiers::bound_text(&text);
 
     serde_json::json!({
         "url": final_url,
@@ -648,8 +452,49 @@ async fn page_json(
         "contentType": content_type,
         "title": title,
         "text": capped,
-        "truncated": text.chars().count() > 24_000,
+        "truncated": truncated,
     })
+}
+
+/// The most elements Readability scores. A page past it is read by the plain
+/// extractor below, which is linear; scoring a huge DOM is not.
+const READABILITY_MAX_ELEMENTS: usize = 100_000;
+
+fn looks_like_html(body: &str, content_type: &str) -> bool {
+    content_type.contains("html")
+        || body.trim_start().get(..9).is_some_and(|h| h.eq_ignore_ascii_case("<!doctype"))
+        || body.contains("<html")
+}
+
+/// The text of a page as Firefox Reader View would show it (dom_smoothie, a
+/// port of Mozilla Readability), or the plain extractor's text when
+/// Readability finds no article: a list, a search page, a page too small to
+/// score. Readability is only taken when it kept a real share of the page;
+/// one paragraph out of a long listing is worse than the listing.
+fn readable_text(body: &str, content_type: &str, url: &str) -> (String, String) {
+    let (title, plain) = extract_readable_text(body, content_type);
+    if !looks_like_html(body, content_type) {
+        return (title, plain);
+    }
+    let cfg = dom_smoothie::Config {
+        text_mode: dom_smoothie::TextMode::Formatted,
+        max_elements_to_parse: READABILITY_MAX_ELEMENTS,
+        ..Default::default()
+    };
+    let doc_url = url::Url::parse(url)
+        .ok()
+        .filter(|u| matches!(u.scheme(), "http" | "https"))
+        .map(|_| url);
+    let article = dom_smoothie::Readability::new(body, doc_url, Some(cfg)).and_then(|mut r| r.parse());
+    if let Ok(article) = article {
+        let text = collapse_whitespace(&article.text_content);
+        let kept = text.chars().count();
+        if kept >= 250 && kept * 10 >= plain.chars().count() {
+            let title = if title.is_empty() { article.title.trim().to_string() } else { title };
+            return (title, text);
+        }
+    }
+    (title, plain)
 }
 
 /// Bytes to text by the charset the `Content-Type` names, UTF-8 without one.
@@ -821,16 +666,18 @@ mod tests {
     #[test]
     fn d16_the_user_agent_reaches_every_free_tier_and_web_fetch() {
         // Quelltextwaechter: die Einstellung wird in beiden Befehlen geprueft
-        // und bis zu den Anfragen durchgereicht.
+        // und bis zu den Anfragen durchgereicht. Dass sie dort auch ankommt,
+        // pruefen die Stub-Tests in `search_tier_tests`.
         let src = include_str!("search.rs");
         let search = &src[src.find("pub async fn web_search(").unwrap()..src.find("pub async fn search_status(").unwrap()];
         assert!(search.contains("custom_user_agent(user_agent.as_deref())"));
-        assert!(search.contains("try_ddg(&query, count, user_agent.as_deref())"));
-        assert!(search.contains("try_wikipedia(&query, count, user_agent.as_deref())"));
-        let fetch = &src[src.find("pub async fn web_fetch(").unwrap()..src.find("async fn page_json(").unwrap()];
-        assert!(fetch.contains("fetch_page(trimmed, agent.as_deref())"));
-        let ddg = &src[src.find("async fn try_ddg(").unwrap()..src.find("fn parse_brave_results(").unwrap()];
-        assert!(ddg.contains(".user_agent(user_agent.unwrap_or(DDG_USER_AGENT))"));
+        assert!(search.contains("user_agent: user_agent.as_deref(),"));
+        let fetch = &src[src.find("pub async fn web_fetch(").unwrap()..src.find("pub(crate) fn reader_fallback_reason(").unwrap()];
+        assert!(fetch.contains("custom_user_agent(user_agent.as_deref())"));
+        assert!(fetch.contains("agent.as_deref(),"));
+        let tiers = include_str!("search_tiers.rs");
+        assert!(tiers.contains("req.user_agent.unwrap_or(DDG_USER_AGENT)"));
+        assert!(tiers.contains("req.user_agent.unwrap_or(APP_USER_AGENT.as_str())"));
     }
 
     #[test]

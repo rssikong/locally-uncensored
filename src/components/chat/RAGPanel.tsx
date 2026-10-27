@@ -217,7 +217,7 @@ function RAGPanelInner({ conversationId, onClose }: { conversationId: string; on
 
   const typeIcon = (type: string) => {
     if (type === 'txt') return <FileText size={14} className="text-blue-400" />
-    return <File size={14} className="text-orange-400" />
+    return <File size={14} className="text-orange-600 dark:text-orange-400" />
   }
 
   const getDocName = (documentId: string): string => {
@@ -565,8 +565,9 @@ function RAGPanelInner({ conversationId, onClose }: { conversationId: string; on
               </div>
               <button
                 onClick={() => removeDocument(doc.id)}
-                className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-red-100 dark:hover:bg-red-500/15 text-gray-400 hover:text-red-500 transition"
-                aria-label="Remove document"
+                className="p-0.5 rounded hover:bg-red-100 dark:hover:bg-red-500/15 text-gray-400 hover:text-red-500 transition"
+                aria-label={`Remove ${doc.name}`}
+                title="Remove this document from the chat context"
               >
                 <Trash2 size={12} />
               </button>

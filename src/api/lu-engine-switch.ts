@@ -17,6 +17,7 @@
  */
 
 import { useLuEngineSwitchStore } from '../stores/luEngineSwitchStore'
+import { platformText } from '../lib/platform-text'
 import { luEngineSwapInFlight } from './lu-engine-swap-lock'
 import { useProviderStore } from '../stores/providerStore'
 import { useModelStore } from '../stores/modelStore'
@@ -96,8 +97,7 @@ export function announceLmStudioLoadBusy(): void {
  * that list once, and only then gives up, so a false here means the file the
  * row stands for is not in the folder any more.
  */
-export const LU_ENGINE_FILE_GONE =
-  'the file behind that row is not in the LU Engine folder any more. Check Settings, AI Backends, Model Storage.'
+export const LU_ENGINE_FILE_GONE = platformText('engineFileGone')
 
 /**
  * The one sentence a failed engine start gets, wherever it was triggered.

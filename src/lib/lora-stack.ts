@@ -127,3 +127,24 @@ export function skippedLorasLine(missing: string[], otherModel: string[]): strin
   }
   return parts.length ? `Skipping LoRA ${parts.join('; ')}` : null
 }
+
+/**
+ * The rows a search in the stack leaves (Discord 2026-10-23: with many LoRAs
+ * the list had to be scrolled through to find one). Case does not count.
+ * Every word of the search has to be found, in the name the row reads or in
+ * the name ComfyUI lists (folder included). An empty search leaves all rows.
+ */
+export function filterLoraRows(rows: LoraRow[], query: string): LoraRow[] {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean)
+  if (words.length === 0) return rows
+  return rows.filter((r) => {
+    const hay = `${r.label}\n${r.name}`.toLowerCase()
+    return words.every((w) => hay.includes(w))
+  })
+}
+
+/** What the copy button of a row puts on the clipboard: the file name without
+ *  folder and ending, which is where people keep a LoRA's trigger words. */
+export function loraCopyText(name: string): string {
+  return stemOf(name)
+}

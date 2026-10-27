@@ -136,6 +136,8 @@ export interface CpuRenderFacts {
   mode: ComfyGpuModeName
   hasAmd: boolean
   isWindows: boolean
+  /** LU installs a ROCm PyTorch for this AMD card here (3.0.8). */
+  amdRocmServed?: boolean
 }
 
 /**
@@ -163,6 +165,9 @@ export function cpuCauseSuffix(facts: CpuRenderFacts | null | undefined): string
     return ` Image generation is running on the CPU because ${FORCE_CPU_REASON}, so it is many times slower than it would be on a card. ${FORCE_CPU_WAY_BACK}`
   }
   const head = 'Image generation is running on the CPU because no supported GPU path is active, so it is many times slower than it would be on a card.'
+  if (facts.hasAmd && facts.isWindows && facts.amdRocmServed) {
+    return ` ${head} Your card is AMD and LU installs a ROCm PyTorch for it on Windows, but this ComfyUI environment does not have it yet. Rebuild it from Settings, ComfyUI, Repair environment.`
+  }
   if (facts.hasAmd && facts.isWindows) {
     return ` ${head} Your card is AMD and LU could not install a PyTorch that drives it on Windows.`
   }

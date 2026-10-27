@@ -18,6 +18,7 @@
  * Fenster still weniger gekonnt als im Hauptfenster.
  */
 import { useSettingsStore } from '../stores/settingsStore'
+import { normalizeGpuRoles } from './gpu-roles'
 
 export async function pushPersistedChoicesToRust(): Promise<void> {
   const [{ invoke }, { applyHfToken, HF_TOKEN_ACCOUNT }] = await Promise.all([
@@ -34,6 +35,10 @@ export async function pushPersistedChoicesToRust(): Promise<void> {
     indices: s.gpuIndices || [],
   }
   invoke('set_gpu_selection', { selection }).catch(() => {})
+  // 3.0.8 (A2): the card per service, same reason. Without it the first
+  // ComfyUI start after a restart would use the global pick, until Settings
+  // was opened.
+  invoke('set_gpu_roles', { roles: normalizeGpuRoles(s.gpuRoles) }).catch(() => {})
 
   // The keychain is the store of record for the HuggingFace token; Rust
   // holds it in memory only, so every boot pushes it down again. Without

@@ -336,6 +336,7 @@ export const macSkin: ModelSkin = {
     name: 'flex-1 min-w-0 flex text-xs text-gray-900 dark:text-gray-100 font-medium',
     stopped: 'shrink-0 t-label text-gray-500 dark:text-gray-400',
     active: 'shrink-0 t-label text-lu-accent-ink dark:text-lu-accent',
+    mark: 'shrink-0 t-label text-gray-500 dark:text-gray-400',
     meta: 'hidden md:flex items-center gap-1.5 shrink-0 t-micro text-gray-500 dark:text-gray-400 lu-hud-num',
     // Use is the action of this row, so it takes the tint the tiles give
     // their Get (index.css, `.lu-tonal`).

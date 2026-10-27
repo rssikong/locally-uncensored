@@ -1,0 +1,1915 @@
+{
+ "name": "/models",
+ "art": "seite",
+ "quelle": "integ-306",
+ "route": "/models",
+ "strang": "models",
+ "code": "M1",
+ "lage": {
+  "route": "/models",
+  "screen": "m-models-screen",
+  "blaetter": [],
+  "dialog": [],
+  "reiter": "models",
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    791
+   ]
+  },
+  {
+   "id": "m-models-screen",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    791
+   ]
+  },
+  {
+   "id": "m-models-downloads",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Downloads",
+   "el": "M1.1",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-models-segment",
+   "tag": "div",
+   "rolle": "radiogroup",
+   "sichtbar": true,
+   "bedienbar": false,
+   "el": "M1.2",
+   "box": [
+    358,
+    54
+   ]
+  },
+  {
+   "id": "m-models-segment-new",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Get new",
+   "box": [
+    174,
+    48
+   ]
+  },
+  {
+   "id": "m-models-segment-installed",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Installed",
+   "box": [
+    176,
+    48
+   ]
+  },
+  {
+   "id": "m-models-search",
+   "tag": "input",
+   "rolle": "textbox",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Search Hugging Face",
+   "el": "M1.3",
+   "box": [
+    298,
+    48
+   ]
+  },
+  {
+   "id": "m-models-filters",
+   "tag": "div",
+   "rolle": "group",
+   "sichtbar": true,
+   "bedienbar": false,
+   "el": "M1.4",
+   "box": [
+    390,
+    48
+   ]
+  },
+  {
+   "id": "m-models-filter-fits",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Fits this phone",
+   "box": [
+    131,
+    48
+   ]
+  },
+  {
+   "id": "m-models-filter-mainstream",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Mainstream",
+   "box": [
+    111,
+    48
+   ]
+  },
+  {
+   "id": "m-models-filter-unfiltered",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Unfiltered",
+   "box": [
+    97,
+    48
+   ]
+  },
+  {
+   "id": "m-models-device",
+   "tag": "p",
+   "rolle": "p",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    36
+   ]
+  },
+  {
+   "id": "m-models-small-note",
+   "tag": "p",
+   "rolle": "p",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    36
+   ]
+  },
+  {
+   "id": "m-models-catalog",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    5755
+   ]
+  },
+  {
+   "id": "m-models-item",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "available",
+   "mId": "qwen3-0.6b",
+   "box": [
+    358,
+    189
+   ]
+  },
+  {
+   "id": "m-models-item-open",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Open Qwen3 0.6B",
+   "el": "M1.5",
+   "box": [
+    324,
+    95
+   ]
+  },
+  {
+   "id": "m-models-item-thinking",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": false,
+   "bedienbar": false
+  },
+  {
+   "id": "m-models-item-fit",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    298,
+    18
+   ]
+  },
+  {
+   "id": "m-models-download",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Download Qwen3 0.6B, 378.3 MB",
+   "el": "M1.6",
+   "box": [
+    324,
+    48
+   ]
+  },
+  {
+   "id": "m-models-item",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "available",
+   "mId": "qwen3.5-0.8b",
+   "box": [
+    358,
+    189
+   ]
+  },
+  {
+   "id": "m-models-item-open",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Open Qwen 3.5 0.8B",
+   "el": "M1.5",
+   "box": [
+    324,
+    95
+   ]
+  },
+  {
+   "id": "m-models-item-thinking",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": false,
+   "bedienbar": false
+  },
+  {
+   "id": "m-models-item-fit",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    298,
+    18
+   ]
+  },
+  {
+   "id": "m-models-download",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Download Qwen 3.5 0.8B, 507.8 MB",
+   "el": "M1.6",
+   "box": [
+    324,
+    48
+   ]
+  },
+  {
+   "id": "m-models-item",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "available",
+   "mId": "gemma-3-1b",
+   "box": [
+    358,
+    163
+   ]
+  },
+  {
+   "id": "m-models-item-open",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Open Gemma 3 1B",
+   "el": "M1.5",
+   "box": [
+    324,
+    69
+   ]
+  },
+  {
+   "id": "m-models-item-fit",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    298,
+    18
+   ]
+  },
+  {
+   "id": "m-models-download",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Download Gemma 3 1B, 768.7 MB",
+   "el": "M1.6",
+   "box": [
+    324,
+    48
+   ]
+  },
+  {
+   "id": "m-models-item",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "available",
+   "mId": "llama-3.2-1b",
+   "box": [
+    358,
+    163
+   ]
+  },
+  {
+   "id": "m-models-item-open",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Open Llama 3.2 1B",
+   "el": "M1.5",
+   "box": [
+    324,
+    69
+   ]
+  },
+  {
+   "id": "m-models-item-fit",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    298,
+    18
+   ]
+  },
+  {
+   "id": "m-models-download",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Download Llama 3.2 1B, 770.3 MB",
+   "el": "M1.6",
+   "box": [
+    324,
+    48
+   ]
+  },
+  {
+   "id": "m-models-item",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "available",
+   "mId": "qwen2.5-1.5b",
+   "box": [
+    358,
+    163
+   ]
+  },
+  {
+   "id": "m-models-item-open",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Open Qwen 2.5 1.5B",
+   "el": "M1.5",
+   "box": [
+    324,
+    69
+   ]
+  },
+  {
+   "id": "m-models-item-fit",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    298,
+    18
+   ]
+  },
+  {
+   "id": "m-models-download",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Download Qwen 2.5 1.5B, 1.0 GB",
+   "el": "M1.6",
+   "box": [
+    324,
+    48
+   ]
+  },
+  {
+   "id": "m-models-item",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "available",
+   "mId": "qwen3-1.7b",
+   "box": [
+    358,
+    189
+   ]
+  },
+  {
+   "id": "m-models-item-open",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Open Qwen3 1.7B",
+   "el": "M1.5",
+   "box": [
+    324,
+    95
+   ]
+  },
+  {
+   "id": "m-models-item-thinking",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": false,
+   "bedienbar": false
+  },
+  {
+   "id": "m-models-item-tools",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": false,
+   "bedienbar": false
+  },
+  {
+   "id": "m-models-item-fit",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    298,
+    18
+   ]
+  },
+  {
+   "id": "m-models-download",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Download Qwen3 1.7B, 1.0 GB",
+   "el": "M1.6",
+   "box": [
+    324,
+    48
+   ]
+  },
+  {
+   "id": "m-models-item",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "available",
+   "mId": "qwen3.5-2b",
+   "box": [
+    358,
+    189
+   ]
+  },
+  {
+   "id": "m-models-item-open",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Open Qwen 3.5 2B",
+   "el": "M1.5",
+   "box": [
+    324,
+    95
+   ]
+  },
+  {
+   "id": "m-models-item-thinking",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": false,
+   "bedienbar": false
+  },
+  {
+   "id": "m-models-item-tools",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": false,
+   "bedienbar": false
+  },
+  {
+   "id": "m-models-item-fit",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    298,
+    18
+   ]
+  },
+  {
+   "id": "m-models-download",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Download Qwen 3.5 2B, 1.2 GB",
+   "el": "M1.6",
+   "box": [
+    324,
+    48
+   ]
+  },
+  {
+   "id": "m-models-item",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "available",
+   "mId": "smollm3-3b",
+   "box": [
+    358,
+    189
+   ]
+  },
+  {
+   "id": "m-models-item-open",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Open SmolLM3 3B",
+   "el": "M1.5",
+   "box": [
+    324,
+    95
+   ]
+  },
+  {
+   "id": "m-models-item-thinking",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": false,
+   "bedienbar": false
+  },
+  {
+   "id": "m-models-item-tools",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": false,
+   "bedienbar": false
+  },
+  {
+   "id": "m-models-item-fit",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    298,
+    18
+   ]
+  },
+  {
+   "id": "m-models-download",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Download SmolLM3 3B, 1.8 GB",
+   "el": "M1.6",
+   "box": [
+    324,
+    48
+   ]
+  },
+  {
+   "id": "m-models-item",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "available",
+   "mId": "llama-3.2-3b",
+   "box": [
+    358,
+    189
+   ]
+  },
+  {
+   "id": "m-models-item-open",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Open Llama 3.2 3B",
+   "el": "M1.5",
+   "box": [
+    324,
+    95
+   ]
+  },
+  {
+   "id": "m-models-item-tools",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": false,
+   "bedienbar": false
+  },
+  {
+   "id": "m-models-item-fit",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    298,
+    18
+   ]
+  },
+  {
+   "id": "m-models-download",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Download Llama 3.2 3B, 1.9 GB",
+   "el": "M1.6",
+   "box": [
+    324,
+    48
+   ]
+  },
+  {
+   "id": "m-models-item",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "available",
+   "mId": "gemma-3-4b",
+   "box": [
+    358,
+    163
+   ]
+  },
+  {
+   "id": "m-models-item-open",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Open Gemma 3 4B",
+   "el": "M1.5",
+   "box": [
+    324,
+    69
+   ]
+  },
+  {
+   "id": "m-models-item-fit",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    298,
+    18
+   ]
+  },
+  {
+   "id": "m-models-download",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Download Gemma 3 4B, 2.3 GB",
+   "el": "M1.6",
+   "box": [
+    324,
+    48
+   ]
+  },
+  {
+   "id": "m-models-item",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "available",
+   "mId": "phi-4-mini",
+   "box": [
+    358,
+    189
+   ]
+  },
+  {
+   "id": "m-models-item-open",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Open Phi 4 Mini",
+   "el": "M1.5",
+   "box": [
+    324,
+    95
+   ]
+  },
+  {
+   "id": "m-models-item-tools",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": false,
+   "bedienbar": false
+  },
+  {
+   "id": "m-models-item-fit",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    298,
+    18
+   ]
+  },
+  {
+   "id": "m-models-download",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Download Phi 4 Mini, 2.3 GB",
+   "el": "M1.6",
+   "box": [
+    324,
+    48
+   ]
+  },
+  {
+   "id": "m-models-item",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "available",
+   "mId": "qwen3-4b-2507",
+   "box": [
+    358,
+    189
+   ]
+  },
+  {
+   "id": "m-models-item-open",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Open Qwen3 4B Instruct",
+   "el": "M1.5",
+   "box": [
+    324,
+    95
+   ]
+  },
+  {
+   "id": "m-models-item-tools",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": false,
+   "bedienbar": false
+  },
+  {
+   "id": "m-models-item-fit",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    298,
+    18
+   ]
+  },
+  {
+   "id": "m-models-download",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Download Qwen3 4B Instruct, 2.3 GB",
+   "el": "M1.6",
+   "box": [
+    324,
+    48
+   ]
+  },
+  {
+   "id": "m-models-item",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "available",
+   "mId": "qwen3.5-4b",
+   "box": [
+    358,
+    189
+   ]
+  },
+  {
+   "id": "m-models-item-open",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Open Qwen 3.5 4B",
+   "el": "M1.5",
+   "box": [
+    324,
+    95
+   ]
+  },
+  {
+   "id": "m-models-item-thinking",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": false,
+   "bedienbar": false
+  },
+  {
+   "id": "m-models-item-tools",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": false,
+   "bedienbar": false
+  },
+  {
+   "id": "m-models-item-fit",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    298,
+    18
+   ]
+  },
+  {
+   "id": "m-models-download",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Download Qwen 3.5 4B, 2.6 GB",
+   "el": "M1.6",
+   "box": [
+    324,
+    48
+   ]
+  },
+  {
+   "id": "m-models-item",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "available",
+   "mId": "gemma-4-e2b",
+   "box": [
+    358,
+    189
+   ]
+  },
+  {
+   "id": "m-models-item-open",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Open Gemma 4 E2B",
+   "el": "M1.5",
+   "box": [
+    324,
+    95
+   ]
+  },
+  {
+   "id": "m-models-item-tools",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": false,
+   "bedienbar": false
+  },
+  {
+   "id": "m-models-item-fit",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    298,
+    18
+   ]
+  },
+  {
+   "id": "m-models-download",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Download Gemma 4 E2B, 2.9 GB",
+   "el": "M1.6",
+   "box": [
+    324,
+    48
+   ]
+  },
+  {
+   "id": "m-models-item",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "available",
+   "mId": "qwen2.5-0.5b-abliterated",
+   "box": [
+    358,
+    189
+   ]
+  },
+  {
+   "id": "m-models-item-open",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Open Qwen 2.5 0.5B Abliterated",
+   "el": "M1.5",
+   "box": [
+    324,
+    95
+   ]
+  },
+  {
+   "id": "m-models-item-fit",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    298,
+    18
+   ]
+  },
+  {
+   "id": "m-models-download",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Download Qwen 2.5 0.5B Abliterated, 379.4 MB",
+   "el": "M1.6",
+   "box": [
+    324,
+    48
+   ]
+  },
+  {
+   "id": "m-models-item",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "available",
+   "mId": "qwen3.5-0.8b-abliterated",
+   "box": [
+    358,
+    189
+   ]
+  },
+  {
+   "id": "m-models-item-open",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Open Qwen 3.5 0.8B Abliterated",
+   "el": "M1.5",
+   "box": [
+    324,
+    95
+   ]
+  },
+  {
+   "id": "m-models-item-thinking",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": false,
+   "bedienbar": false
+  },
+  {
+   "id": "m-models-item-fit",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    298,
+    18
+   ]
+  },
+  {
+   "id": "m-models-download",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Download Qwen 3.5 0.8B Abliterated, 503.1 MB",
+   "el": "M1.6",
+   "box": [
+    324,
+    48
+   ]
+  },
+  {
+   "id": "m-models-item",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "available",
+   "mId": "dolphin3-llama3.2-1b",
+   "box": [
+    358,
+    189
+   ]
+  },
+  {
+   "id": "m-models-item-open",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Open Dolphin 3.0 Llama 3.2 1B",
+   "el": "M1.5",
+   "box": [
+    324,
+    95
+   ]
+  },
+  {
+   "id": "m-models-item-fit",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    298,
+    18
+   ]
+  },
+  {
+   "id": "m-models-download",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Download Dolphin 3.0 Llama 3.2 1B, 770.3 MB",
+   "el": "M1.6",
+   "box": [
+    324,
+    48
+   ]
+  },
+  {
+   "id": "m-models-item",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "available",
+   "mId": "dolphin3-qwen2.5-1.5b",
+   "box": [
+    358,
+    189
+   ]
+  },
+  {
+   "id": "m-models-item-open",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Open Dolphin 3.0 Qwen 2.5 1.5B",
+   "el": "M1.5",
+   "box": [
+    324,
+    95
+   ]
+  },
+  {
+   "id": "m-models-item-fit",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    298,
+    18
+   ]
+  },
+  {
+   "id": "m-models-download",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Download Dolphin 3.0 Qwen 2.5 1.5B, 940.4 MB",
+   "el": "M1.6",
+   "box": [
+    324,
+    48
+   ]
+  },
+  {
+   "id": "m-models-item",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "available",
+   "mId": "qwen3-1.7b-abliterated",
+   "box": [
+    358,
+    189
+   ]
+  },
+  {
+   "id": "m-models-item-open",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Open Qwen3 1.7B Abliterated",
+   "el": "M1.5",
+   "box": [
+    324,
+    95
+   ]
+  },
+  {
+   "id": "m-models-item-thinking",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": false,
+   "bedienbar": false
+  },
+  {
+   "id": "m-models-item-tools",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": false,
+   "bedienbar": false
+  },
+  {
+   "id": "m-models-item-fit",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    298,
+    18
+   ]
+  },
+  {
+   "id": "m-models-download",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Download Qwen3 1.7B Abliterated, 1.0 GB",
+   "el": "M1.6",
+   "box": [
+    324,
+    48
+   ]
+  },
+  {
+   "id": "m-models-item",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "available",
+   "mId": "qwen3.5-2b-abliterated",
+   "box": [
+    358,
+    189
+   ]
+  },
+  {
+   "id": "m-models-item-open",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Open Qwen 3.5 2B Abliterated",
+   "el": "M1.5",
+   "box": [
+    324,
+    95
+   ]
+  },
+  {
+   "id": "m-models-item-thinking",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": false,
+   "bedienbar": false
+  },
+  {
+   "id": "m-models-item-tools",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": false,
+   "bedienbar": false
+  },
+  {
+   "id": "m-models-item-fit",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    298,
+    18
+   ]
+  },
+  {
+   "id": "m-models-download",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Download Qwen 3.5 2B Abliterated, 1.2 GB",
+   "el": "M1.6",
+   "box": [
+    324,
+    48
+   ]
+  },
+  {
+   "id": "m-models-item",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "available",
+   "mId": "dolphin3-llama3.2-3b",
+   "box": [
+    358,
+    189
+   ]
+  },
+  {
+   "id": "m-models-item-open",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Open Dolphin 3.0 Llama 3.2 3B",
+   "el": "M1.5",
+   "box": [
+    324,
+    95
+   ]
+  },
+  {
+   "id": "m-models-item-tools",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": false,
+   "bedienbar": false
+  },
+  {
+   "id": "m-models-item-fit",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    298,
+    18
+   ]
+  },
+  {
+   "id": "m-models-download",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Download Dolphin 3.0 Llama 3.2 3B, 1.9 GB",
+   "el": "M1.6",
+   "box": [
+    324,
+    48
+   ]
+  },
+  {
+   "id": "m-models-item",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "available",
+   "mId": "hermes-3-llama3.2-3b",
+   "box": [
+    358,
+    189
+   ]
+  },
+  {
+   "id": "m-models-item-open",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Open Hermes 3 Llama 3.2 3B",
+   "el": "M1.5",
+   "box": [
+    324,
+    95
+   ]
+  },
+  {
+   "id": "m-models-item-tools",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": false,
+   "bedienbar": false
+  },
+  {
+   "id": "m-models-item-fit",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    298,
+    18
+   ]
+  },
+  {
+   "id": "m-models-download",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Download Hermes 3 Llama 3.2 3B, 1.9 GB",
+   "el": "M1.6",
+   "box": [
+    324,
+    48
+   ]
+  },
+  {
+   "id": "m-models-item",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "available",
+   "mId": "llama-3.2-3b-abliterated",
+   "box": [
+    358,
+    189
+   ]
+  },
+  {
+   "id": "m-models-item-open",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Open Llama 3.2 3B Abliterated",
+   "el": "M1.5",
+   "box": [
+    324,
+    95
+   ]
+  },
+  {
+   "id": "m-models-item-tools",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": false,
+   "bedienbar": false
+  },
+  {
+   "id": "m-models-item-fit",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    298,
+    18
+   ]
+  },
+  {
+   "id": "m-models-download",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Download Llama 3.2 3B Abliterated, 2.1 GB",
+   "el": "M1.6",
+   "box": [
+    324,
+    48
+   ]
+  },
+  {
+   "id": "m-models-item",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "available",
+   "mId": "gemma-3-4b-abliterated",
+   "box": [
+    358,
+    189
+   ]
+  },
+  {
+   "id": "m-models-item-open",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Open Gemma 3 4B Abliterated",
+   "el": "M1.5",
+   "box": [
+    324,
+    95
+   ]
+  },
+  {
+   "id": "m-models-item-fit",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    298,
+    18
+   ]
+  },
+  {
+   "id": "m-models-download",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Download Gemma 3 4B Abliterated, 2.3 GB",
+   "el": "M1.6",
+   "box": [
+    324,
+    48
+   ]
+  },
+  {
+   "id": "m-models-item",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "available",
+   "mId": "qwen3-4b-2507-abliterated",
+   "box": [
+    358,
+    189
+   ]
+  },
+  {
+   "id": "m-models-item-open",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Open Qwen3 4B Instruct Abliterated",
+   "el": "M1.5",
+   "box": [
+    324,
+    95
+   ]
+  },
+  {
+   "id": "m-models-item-tools",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": false,
+   "bedienbar": false
+  },
+  {
+   "id": "m-models-item-fit",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    298,
+    18
+   ]
+  },
+  {
+   "id": "m-models-download",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Download Qwen3 4B Instruct Abliterated, 2.3 GB",
+   "el": "M1.6",
+   "box": [
+    324,
+    48
+   ]
+  },
+  {
+   "id": "m-models-item",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "available",
+   "mId": "qwen3.5-4b-abliterated",
+   "box": [
+    358,
+    189
+   ]
+  },
+  {
+   "id": "m-models-item-open",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Open Qwen 3.5 4B Abliterated",
+   "el": "M1.5",
+   "box": [
+    324,
+    95
+   ]
+  },
+  {
+   "id": "m-models-item-thinking",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": false,
+   "bedienbar": false
+  },
+  {
+   "id": "m-models-item-tools",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": false,
+   "bedienbar": false
+  },
+  {
+   "id": "m-models-item-fit",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    298,
+    18
+   ]
+  },
+  {
+   "id": "m-models-download",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Download Qwen 3.5 4B Abliterated, 2.5 GB",
+   "el": "M1.6",
+   "box": [
+    324,
+    48
+   ]
+  },
+  {
+   "id": "m-models-item",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "available",
+   "mId": "smollm2-360m",
+   "box": [
+    358,
+    187
+   ]
+  },
+  {
+   "id": "m-models-item-open",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Open SmolLM2 360M",
+   "el": "M1.5",
+   "box": [
+    324,
+    93
+   ]
+  },
+  {
+   "id": "m-models-item-weak",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    298,
+    18
+   ]
+  },
+  {
+   "id": "m-models-item-fit",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    298,
+    18
+   ]
+  },
+  {
+   "id": "m-models-download",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Download SmolLM2 360M, 258.1 MB",
+   "el": "M1.6",
+   "box": [
+    324,
+    48
+   ]
+  },
+  {
+   "id": "m-models-item",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "available",
+   "mId": "gemma-3-1b-abliterated",
+   "box": [
+    358,
+    213
+   ]
+  },
+  {
+   "id": "m-models-item-open",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Open Gemma 3 1B Abliterated",
+   "el": "M1.5",
+   "box": [
+    324,
+    119
+   ]
+  },
+  {
+   "id": "m-models-item-weak",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    298,
+    18
+   ]
+  },
+  {
+   "id": "m-models-item-fit",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    298,
+    18
+   ]
+  },
+  {
+   "id": "m-models-download",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Download Gemma 3 1B Abliterated, 768.7 MB",
+   "el": "M1.6",
+   "box": [
+    324,
+    48
+   ]
+  },
+  {
+   "id": "m-models-item",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "available",
+   "mId": "qwen2.5-1.5b-abliterated",
+   "box": [
+    358,
+    213
+   ]
+  },
+  {
+   "id": "m-models-item-open",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Open Qwen 2.5 1.5B Abliterated",
+   "el": "M1.5",
+   "box": [
+    324,
+    119
+   ]
+  },
+  {
+   "id": "m-models-item-weak",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    298,
+    18
+   ]
+  },
+  {
+   "id": "m-models-item-fit",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    298,
+    18
+   ]
+  },
+  {
+   "id": "m-models-download",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Download Qwen 2.5 1.5B Abliterated, 940.4 MB",
+   "el": "M1.6",
+   "box": [
+    324,
+    48
+   ]
+  },
+  {
+   "id": "m-nav",
+   "tag": "nav",
+   "rolle": "tablist",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    53
+   ]
+  },
+  {
+   "id": "m-nav-chat",
+   "tag": "button",
+   "rolle": "tab",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Chat",
+   "el": "G1.1",
+   "box": [
+    98,
+    52
+   ]
+  },
+  {
+   "id": "m-nav-create",
+   "tag": "button",
+   "rolle": "tab",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Create",
+   "el": "G1.2",
+   "box": [
+    98,
+    52
+   ]
+  },
+  {
+   "id": "m-nav-models",
+   "tag": "button",
+   "rolle": "tab",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Models",
+   "el": "G1.3",
+   "box": [
+    98,
+    52
+   ]
+  },
+  {
+   "id": "m-nav-settings",
+   "tag": "button",
+   "rolle": "tab",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Settings",
+   "el": "G1.4",
+   "box": [
+    98,
+    52
+   ]
+  }
+ ]
+}

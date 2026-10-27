@@ -22,11 +22,22 @@ const SERVER_ONLY: Record<string, Record<string, string>> = {
   'api/cloud/memory-sync.ts': { '`${CLOUD_BASE}${path}${suffix}`': 'the cloud API' },
   'api/comfyui.ts': { "comfyuiUrl('/upload/image')": 'the local image engine' },
   'api/discover.ts': { url: 'model catalogue pages' },
-  'api/vram-handoff.ts': { url: 'an http(s) address or a /view address of the local image engine' },
+  'api/vram-handoff.ts': {
+    url: 'an http(s) address or a /view address of the local image engine',
+    "getImageUrl(name, '', 'input')": 'a /view address of the local image engine, its input folder',
+  },
   'lib/backend-detector.ts': { url: 'probes of local server ports' },
   'hooks/useCloudCreate.ts': { 'vj.result_url': 'signed result URL of a cloud job', 'src.result_url': 'signed result URL of a cloud job' },
   'components/create/experimental/PresetWorkshop.tsx': { 'fresh.result_url': 'signed result URL of a cloud job' },
   'components/chat/create/save-media.ts': { url: 'result URL of an order card, always a server file' },
+  // The phone. None of the seven reads media; each sends a request to a server address the app builds.
+  'lib/lu-native.ts': { 'request.url': 'the browser stand-in of the native request to a paired desktop: method, headers and body to its http(s) address' },
+  'mobile/remote/remoteClient.ts': { url: 'API routes of a paired desktop, built from its http(s) base address' },
+  'mobile/remote/remoteClientStore.ts': { url: 'the plain way to a paired desktop, behind guardPlainFetch: API routes built from its http(s) base address' },
+  'mobile/screens/remote/parts/session.ts': { url: 'the address lookup (remote/addressLookup.ts): ADDRESS_LOOKUP_ORIGIN, an https address, plus the desktop id' },
+  'mobile/screens/settings/parts/ComputerSignIn.tsx': { url: 'the sign-in redeem route (remote/computerSignin.ts): SIGNIN_REDEEM_URL, an https address' },
+  'mobile/policy/report.ts': { url: 'the report service: reportEndpoint() answers an https address or nothing' },
+  'mobile/screens/models/parts/adapters/hf.ts': { url: 'the file tree of a Hugging Face repository, an https address written in that file' },
 }
 
 function sourceFiles(dir: string, out: string[] = []): string[] {

@@ -65,6 +65,11 @@ const CORE_NODES = new Set([
   // SamplerCustomAdvanced: comfy_extras/nodes_custom_sampler.py; the two
   // MiniMax H3 encode nodes: comfy_extras/nodes_minimax_h3.py, listed in
   // nodes.py's extras. Both read in ComfyUI master on 2026-10-01.
+  // KSamplerAdvanced: core, nodes.py of ComfyUI 0.38.0 on the test box
+  // (class at line 1634, "KSamplerAdvanced": KSamplerAdvanced in
+  // NODE_CLASS_MAPPINGS at 2109, read 26.10.2026). The Wan 2.2 A14B pair runs
+  // two of them, high noise then low noise (GH #193).
+  'KSamplerAdvanced',
   'KSampler', 'BasicGuider', 'BasicScheduler', 'KSamplerSelect', 'RandomNoise', 'SamplerCustomAdvanced',
   'MiniMaxH3ImageToVideo', 'MiniMaxH3ReferenceToVideo',
   // Read in Comfy-Org/ComfyUI at tag v0.38.0 on 2026-10-02 (schema node_id of

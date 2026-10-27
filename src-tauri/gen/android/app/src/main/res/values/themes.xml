@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 7 bis 11: es gibt kein Systemstartbild, nur den Fensterhintergrund.
+     Farbe und Leistensymbole folgen dem System ueber values/ und
+     values-night/lu_colors.xml. Eine Nachtvariante dieser Datei braucht es
+     deshalb nicht. -->
+<resources>
+    <style name="Theme.locally_uncensored" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="android:windowBackground">@color/lu_splash_background</item>
+        <item name="android:windowLightStatusBar">@bool/lu_light_bars</item>
+    </style>
+</resources>

@@ -23,6 +23,9 @@
  * Rust at all, so it must work on its own.
  */
 
+import { isMobile } from '../lib/device-kind'
+import { wasSuspendedSince } from '../lib/app-lifecycle'
+
 /** No chunk for this long, once the stream has started → treat it as dead. */
 export const STREAM_IDLE_TIMEOUT_MS = 60_000
 
@@ -36,6 +39,27 @@ export const STREAM_IDLE_TIMEOUT_MS = 60_000
  * survives and still far short of the endless hang.
  */
 export const STREAM_FIRST_CHUNK_TIMEOUT_MS = 300_000
+
+/**
+ * How far past its deadline a timer may fire before the gap itself counts as
+ * proof that the process stood still. A busy main thread delays a timer by
+ * milliseconds, a frozen WebView by the whole time it was away.
+ */
+export const FROZEN_TIMER_SLACK_MS = 5_000
+
+/**
+ * Did this deadline run out while the app could not listen?
+ *
+ * Always false on a desktop, so the watchdog there is exactly what it was. On
+ * a phone it is true when the app is in the background right now, when it
+ * came back after the timer was armed, or when the timer fired so late that
+ * the WebView must have been frozen (the system does not always announce it).
+ */
+export function deadlineWasFrozen(armedAt: number, budget: number, now: number = Date.now()): boolean {
+  if (!isMobile()) return false
+  if (wasSuspendedSince(armedAt)) return true
+  return now - armedAt > budget + FROZEN_TIMER_SLACK_MS
+}
 
 /** Thrown by the parsers when the watchdog fires. Providers catch it and end
  *  the turn with a terminal 'disconnect' chunk rather than letting it bubble
@@ -99,13 +123,21 @@ export async function* readChunks(
       if (idleMs > 0 && budget > 0) {
         let timer: ReturnType<typeof setTimeout> | undefined
         const silent = new Promise<never>((_, reject) => {
-          timer = setTimeout(() => {
-            timedOut = true
-            // Abort BEFORE rejecting: the reject only unblocks this loop, the
-            // caller's abort is what tears the request down.
-            try { opts?.onIdle?.() } catch { /* best effort, never mask the timeout */ }
-            reject(new StreamIdleTimeoutError(budget, first ? 'first chunk' : 'stream'))
-          }, budget)
+          const arm = () => {
+            const armedAt = Date.now()
+            timer = setTimeout(() => {
+              // Phone only: silence while the app was frozen in the background
+              // is not silence on the wire. Give the stream a fresh budget
+              // instead of ending it the instant the app is shown again.
+              if (deadlineWasFrozen(armedAt, budget)) { arm(); return }
+              timedOut = true
+              // Abort BEFORE rejecting: the reject only unblocks this loop, the
+              // caller's abort is what tears the request down.
+              try { opts?.onIdle?.() } catch { /* best effort, never mask the timeout */ }
+              reject(new StreamIdleTimeoutError(budget, first ? 'first chunk' : 'stream'))
+            }, budget)
+          }
+          arm()
         })
         try {
           // Promise.race leaves a reaction on the pending read, so the abort's

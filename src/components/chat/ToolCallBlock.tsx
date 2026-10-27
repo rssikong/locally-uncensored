@@ -2,8 +2,9 @@ import { useState, useEffect, memo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Search, Globe, FileText, FileEdit, Terminal, Image, Film, Loader2, Check, X, Clock, AlertCircle, FolderOpen, Monitor, GitBranch, GitCommitHorizontal, GitPullRequest, FlaskConical, History, Users, Database, Download, Square } from 'lucide-react'
 import type { AgentToolCall } from '../../types/agent-mode'
+import { getBlockToolCalls } from '../../api/agents/block-helpers'
 import { getComfyHost, getComfyPort, downloadComfyFile } from '../../api/backend'
-import { useComfyViewRescue } from './comfyViewRescue'
+import { useComfyViewRescueState, isInlineVideoUrl } from './comfyViewRescue'
 import { useModelPickStore } from '../../stores/modelPickStore'
 import { useGenerationStore } from '../../stores/generationStore'
 import { ModelPickerCard, ChangeModelInline, pickKindForToolCall } from './ModelPickerCard'
@@ -12,9 +13,13 @@ import { DiffView } from './DiffView'
 import { ScreenTaskSteps } from './ScreenTaskSteps'
 import { ScreenShotStrip } from '../computer/ScreenShotStrip'
 import { ComputerChatPermission, useComputerChatAsk } from '../computer/ComputerChatPermission'
+import { SettingChangeAsk, SettingChangeDone } from './SettingChangeCard'
+import { useSettingsConfirmStore, pendingForCall } from '../../stores/settingsConfirmStore'
+import { parseSettingChange } from '../../api/mcp/settings-tools'
 import { useChatStore } from '../../stores/chatStore'
 import { commandIcon } from '../../lib/shell-command-classify'
 import { requestGenerationCancel } from '../../api/vram-handoff'
+import { cancelBackgroundJob } from '../../lib/background-cancels'
 import { fileUrlToPath, readLocalFileAsBlobUrl, displayableMedia, type MediaRead } from '../../lib/local-media-url'
 import { hiddenFromTranscript } from '../../lib/transcript-visibility'
 import { MOTION_S } from '../ui/motion'
@@ -34,9 +39,17 @@ import { HINWEIS_TEXT } from '../../lib/hinweis'
 // proxy path, a loopback host, or the user-configured comfy host — and carries
 // a filename. A third-party URL in a tool result is never auto-loaded (CSP +
 // privacy). Exported for unit testing (see __tests__/ToolCallBlock-image.test.ts).
+/** Where a result line keeps its address: the last line of a multi-line
+ *  result (A13). The prompt is quoted on the first one, and an address in the
+ *  prompt was shown instead of the picture. One-line results stay whole. */
+function mediaLine(result: string): string {
+  const at = result.lastIndexOf('\n')
+  return at < 0 ? result : result.slice(at + 1)
+}
+
 export function comfyViewUrlFromResult(result: string | null | undefined): string | null {
   if (!result) return null
-  const m = result.match(/(https?:\/\/[^\s)\]]+\/view\?[^\s)\]]+|\/comfyui\/view\?[^\s)\]]+|\/view\?[^\s)\]]+)/i)
+  const m = mediaLine(result).match(/(https?:\/\/[^\s)\]]+\/view\?[^\s)\]]+|\/comfyui\/view\?[^\s)\]]+|\/view\?[^\s)\]]+)/i)
   if (!m) return null
   const url = m[1]
   if (!/[?&]filename=/i.test(url)) return null               // must be a real ComfyUI output view
@@ -49,21 +62,9 @@ export function comfyViewUrlFromResult(result: string | null | undefined): strin
   return null
 }
 
-// Feature EE (v2.5.0): video_generate can produce .mp4 (VHS_VideoCombine) or
-// .webm outputs. We render those in a <video> element instead of an <img>.
-// Animated .webp (SaveAnimatedWEBP) animates fine inside <img>, so it stays on
-// the image path. The output filename rides in the `filename=` query param of
-// the /view URL, so we inspect THAT, not the URL tail (which ends in `&t=…`).
-// Exported for unit testing.
-export function isInlineVideoUrl(url: string): boolean {
-  try {
-    const m = /[?&]filename=([^&]+)/i.exec(url)
-    const name = m ? decodeURIComponent(m[1]) : url
-    return /\.(mp4|webm)$/i.test(name)
-  } catch {
-    return /\.(mp4|webm)(?=[?&]|$)/i.test(url)
-  }
-}
+// Feature EE (v2.5.0): .mp4/.webm outputs render in a <video>, see
+// isInlineVideoUrl in comfyViewRescue.ts (shared with the reply's Markdown).
+export { isInlineVideoUrl }
 
 // 2026-06-12 ("alle tools in chat, mit download"): pull the ComfyUI
 // filename/subfolder/type back out of a /view URL so the inline image/video
@@ -96,7 +97,7 @@ export function localMediaUrlFromResult(result: string | null | undefined): stri
   // app already wrote, so it still resolves after a restart. `blob:` only
   // appears in conversations recorded BEFORE that change, where it is already
   // dead; it stays matched so those messages can say so plainly.
-  const m = result.match(/(file:\/\/[^\s)\]]+|blob:[^\s)\]]+|data:[a-z0-9.+-]+\/[a-z0-9.+-]+;base64,[^\s)\]]+)/i)
+  const m = mediaLine(result).match(/(file:\/\/[^\s)\]]+|blob:[^\s)\]]+|data:[a-z0-9.+-]+\/[a-z0-9.+-]+;base64,[^\s)\]]+)/i)
   return m ? m[1] : null
 }
 
@@ -228,6 +229,19 @@ const STATUS_ICONS = {
 // surface already owns must not mount the block at all, and an early return
 // inside ToolCallBlockImpl would have to come after its hooks. See
 // lib/transcript-visibility.ts for which calls those are and why.
+/** The conversation whose agent turn holds this tool call, or null. */
+export function conversationOfToolCall(callId: string): string | null {
+  const { conversations, activeConversationId } = useChatStore.getState()
+  for (const conv of conversations) {
+    for (const m of conv.messages) {
+      for (const block of m.agentBlocks ?? []) {
+        if (getBlockToolCalls(block).some((c) => c.id === callId)) return conv.id
+      }
+    }
+  }
+  return activeConversationId
+}
+
 export const ToolCallBlock = memo(function ToolCallBlockGate(props: Props) {
   if (hiddenFromTranscript(props.toolCall)) return null
   return <ToolCallBlockImpl {...props} />
@@ -252,10 +266,17 @@ function ToolCallBlockImpl({ toolCall, onApprove, onReject }: Props) {
   const isFailed = toolCall.status === 'failed' || toolCall.status === 'rejected'
   // The first use of computer control in a chat waits here for the user's yes.
   const chatAsk = useComputerChatAsk(toolCall.toolName, isRunning, useChatStore((s) => s.activeConversationId))
+  // A11: a settings change waits here for Accept, and stays with Undo.
+  const isSetSetting = toolCall.toolName === 'set_setting'
+  const settingAsk = useSettingsConfirmStore((s) => (isSetSetting && isRunning ? pendingForCall(s.queue, toolCall.id) : null))
+  const settingChange = isSetSetting && toolCall.status === 'completed' ? parseSettingChange(toolCall.result) : null
   // Real cancel (2026-06-16): only image/video generation supports a true
   // abort (ComfyUI /interrupt + loop abort). Local "cancelling" state flips the
   // mini button to a "stopping…" indicator the moment it's clicked.
   const isGenTool = toolCall.toolName === 'image_generate' || toolCall.toolName === 'video_generate'
+  // 3.0.8 (A2): went on in the background, the turn is over. Its Stop ends
+  // this one job, never the chat's other generations or a running turn.
+  const inBackground = isRunning && toolCall.background?.state === 'running'
   const [cancelling, setCancelling] = useState(false)
   const genPrompt = isGenTool && typeof toolCall.args?.prompt === 'string' ? toolCall.args.prompt.trim() : ''
 
@@ -293,7 +314,7 @@ function ToolCallBlockImpl({ toolCall, onApprove, onReject }: Props) {
   const [imgFailed, setImgFailed] = useState(false)
   // Desktop: a blocked direct load of an absolute /view URL is fetched through
   // the app's localhost proxy instead (comfyViewRescue.ts, Discord 15.10.2026).
-  const rescuedUrl = useComfyViewRescue(comfyPreviewUrl, imgFailed)
+  const { url: rescuedUrl, waiting: rescueWaiting } = useComfyViewRescueState(comfyPreviewUrl, imgFailed)
   const effectivePreviewUrl = (() => {
     if (!previewUrl) return null
     if (rescuedUrl) return rescuedUrl
@@ -310,10 +331,13 @@ function ToolCallBlockImpl({ toolCall, onApprove, onReject }: Props) {
   // executor never produces an image result and vice versa.
   // Keyed off the RAW result line, not the resolved one: a file:// URL takes a
   // moment to read off disk, and the kind of element to render must not depend
-  // on whether that read has landed yet.
+  // on whether that read has landed yet. The same goes for a ComfyUI /view
+  // URL: once the desktop rescue swaps in a blob: URL, that URL has no
+  // filename left to read, and keying off it turned every rescued clip into a
+  // broken <img> "Generated image" (3.0.8 A1, minimax-h3 on Windows, .molot).
   const isVideoResult = rawLocalUrl
     ? toolCall.toolName === 'video_generate'
-    : !!effectivePreviewUrl && isInlineVideoUrl(effectivePreviewUrl)
+    : !!comfyPreviewUrl && isInlineVideoUrl(comfyPreviewUrl)
 
   return (
     <div className="mb-0.5" data-tool={toolCall.toolName} data-status={toolCall.status}>
@@ -367,9 +391,23 @@ function ToolCallBlockImpl({ toolCall, onApprove, onReject }: Props) {
               onClick={(e) => {
                 e.stopPropagation()
                 setCancelling(true)
-                requestGenerationCancel()
-                const { generating, aborters } = useGenerationStore.getState()
-                Object.keys(generating).forEach((cid) => aborters[cid]?.())
+                if (inBackground && toolCall.background) {
+                  // Nothing to stop here any more (the app restarted): the
+                  // block is left as it is and says so after a reload.
+                  if (!cancelBackgroundJob(toolCall.background.jobId)) setCancelling(false)
+                  return
+                }
+                // A13: this block's own conversation only. The old app-wide
+                // Stop also ended the replies and renders of every other chat.
+                const cid = conversationOfToolCall(toolCall.id)
+                if (cid) {
+                  requestGenerationCancel(cid)
+                  useGenerationStore.getState().aborters[cid]?.()
+                } else {
+                  requestGenerationCancel()
+                  const { generating, aborters } = useGenerationStore.getState()
+                  Object.keys(generating).forEach((id) => aborters[id]?.())
+                }
               }}
               title="Stop generation"
               className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[0.55rem] font-medium text-red-700 dark:text-red-300 bg-red-500/10 hover:bg-red-500/15 border border-red-500/20 dark:border-red-500/25 transition-colors shrink-0"
@@ -380,7 +418,21 @@ function ToolCallBlockImpl({ toolCall, onApprove, onReject }: Props) {
         )}
       </div>
 
+      {inBackground && (
+        <div className="pl-5 pt-0.5" data-testid="tool-background-note">
+          <span className="t-micro text-gray-500 dark:text-gray-400">
+            Rendering in the background. You can keep chatting, the {toolCall.toolName === 'video_generate' ? 'video' : 'picture'} appears here when it is done.
+          </span>
+        </div>
+      )}
+      {toolCall.background?.state === 'interrupted' && (
+        <div className="pl-5 pt-0.5">
+          <span className="t-micro text-gray-500 dark:text-gray-400">{toolCall.error}</span>
+        </div>
+      )}
       {chatAsk && <div className="ml-3.5 pl-2"><ComputerChatPermission ask={chatAsk} /></div>}
+      {settingAsk && <div className="ml-3.5 pl-2"><SettingChangeAsk req={settingAsk} /></div>}
+      {settingChange && <div className="ml-3.5 pl-2"><SettingChangeDone change={settingChange} /></div>}
       {isRunning && toolCall.toolName === 'computer_task' && <ScreenTaskSteps />}
       {(toolCall.toolName === 'computer_task' || toolCall.toolName === 'computer_use') && (
         <ScreenShotStrip callId={toolCall.id} className="ml-3.5 mb-1 pl-2" />
@@ -411,11 +463,24 @@ A user 2026-06-07 fix this lived inside the collapsed details, so a
       )}
       {previewUrl && effectivePreviewUrl && (
         <div className="pl-5 pt-0.5 space-y-1">
-          {isVideoResult ? (
+          {/* The direct load failed and ComfyUI is not answering yet, as right
+              after the app starts or while ComfyUI restarts. The rescue keeps
+              asking (comfyViewRescue.ts); a calm line instead of a broken frame
+              until the bytes arrive. */}
+          {rescueWaiting ? (
+            <div className="flex items-center gap-1.5 t-micro text-gray-500 dark:text-gray-500" data-testid="tool-media-waiting">
+              <Loader2 size={10} className="animate-spin" />
+              {isVideoResult ? 'Loading the video' : 'Loading the picture'}, waiting for ComfyUI…
+            </div>
+          ) : isVideoResult ? (
             <video
               src={effectivePreviewUrl}
               controls
               loop
+              playsInline
+              preload="metadata"
+              aria-label="Generated video"
+              data-testid="tool-media-video"
               onError={() => { if (!imgFailed) setImgFailed(true) }}
               className="block max-w-full max-h-[320px] rounded border border-gray-200 dark:border-white/[0.06]"
             />

@@ -173,12 +173,12 @@ describe('the stack in the store against the Mac\'s folder', () => {
     expect(s().selectedLoras.map((l) => l.name)).toEqual(['slider.safetensors', 'qwen/detail.safetensors'])
     s().setLoraStrengthFor('slider.safetensors', -4)
     s().setLoraStrengthFor('qwen/detail.safetensors', 25)
-    expect(s().selectedLoras).toEqual([{ name: 'slider.safetensors', strength: -4 }, { name: 'qwen/detail.safetensors', strength: 10 }])
+    expect(s().selectedLoras).toEqual([{ name: 'slider.safetensors', strength: -4 }, { name: 'qwen/detail.safetensors', strength: 20 }])
     s().toggleLora('slider.safetensors')
-    expect(s().selectedLoras).toEqual([{ name: 'qwen/detail.safetensors', strength: 10 }])
+    expect(s().selectedLoras).toEqual([{ name: 'qwen/detail.safetensors', strength: 20 }])
     // Turned on again it comes back at the end, with the strength it had.
     s().toggleLora('slider.safetensors')
-    expect(s().selectedLoras).toEqual([{ name: 'qwen/detail.safetensors', strength: 10 }, { name: 'slider.safetensors', strength: -4 }])
+    expect(s().selectedLoras).toEqual([{ name: 'qwen/detail.safetensors', strength: 20 }, { name: 'slider.safetensors', strength: -4 }])
   })
 
   it('a file taken out of the folder leaves the stack and is named under the result', () => {

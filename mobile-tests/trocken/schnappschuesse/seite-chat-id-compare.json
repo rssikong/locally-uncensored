@@ -1,0 +1,137 @@
+{
+ "name": "/chat/:id/compare",
+ "art": "seite",
+ "quelle": "integ-306",
+ "route": "/chat/:id/compare",
+ "strang": "agent",
+ "code": "C9",
+ "lage": {
+  "route": "/chat/:id/compare",
+  "screen": "m-chat-compare-screen",
+  "blaetter": [],
+  "dialog": [],
+  "reiter": null,
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back-under",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-chat-compare-screen",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-compare-model-a",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Choose a model",
+   "el": "C9.1",
+   "box": [
+    278,
+    48
+   ]
+  },
+  {
+   "id": "m-compare-model-b",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Choose a model",
+   "el": "C9.2",
+   "box": [
+    278,
+    48
+   ]
+  },
+  {
+   "id": "m-compare-empty",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    196
+   ]
+  },
+  {
+   "id": "m-compare-input",
+   "tag": "textarea",
+   "rolle": "textbox",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Message to both models",
+   "box": [
+    364,
+    48
+   ]
+  },
+  {
+   "id": "m-compare-send",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Send, Choose two models first.",
+   "deaktiviert": true,
+   "box": [
+    48,
+    48
+   ]
+  }
+ ]
+}

@@ -115,6 +115,19 @@ export function kannStarten(token: string, port: number): PortUrteil {
 }
 
 /**
+ * Soll die API beim Start von LU von selbst hochkommen?
+ *
+ * fanezeu (23.10.2026) betreibt LU auf einem Linux-Server ohne Bildschirm
+ * davor. Dort startet LU mit der Sitzung, und eine API, die erst nach einem
+ * Klick in den Einstellungen laeuft, ist nach jedem Neustart weg. Gestartet
+ * wird nur, was der Nutzer selbst eingeschaltet hat und was auch der Knopf
+ * starten wuerde: ohne Token oder mit unbrauchbarem Port bleibt sie aus.
+ */
+export function sollBeimStartStarten(s: { mitLuStarten: boolean; token: string; port: number; laeuft: boolean }): boolean {
+  return s.mitLuStarten && !s.laeuft && kannStarten(s.token, s.port).ok
+}
+
+/**
  * Die CORS-Erlaubnisliste aus dem, was der Nutzer ins Feld tippt.
  *
  * Warum das hier steht und nicht in der Komponente: es ist eine

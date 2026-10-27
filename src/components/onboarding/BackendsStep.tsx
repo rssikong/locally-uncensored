@@ -117,7 +117,7 @@ export function BackendsStep({ skin, scan, fleet, setStep, nextStepAfterBackends
               <p className="text-[0.72rem] font-medium">LU Engine</p>
               <p className={`text-[0.55rem] ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>Runs on your machine · nothing to install</p>
             </div>
-            {selectedBackend === BUILTIN_BACKEND_ID && <Check size={14} className="text-green-400 shrink-0" />}
+            {selectedBackend === BUILTIN_BACKEND_ID && <Check size={14} className="text-green-600 dark:text-green-400 shrink-0" />}
           </button>
 
           <div className="flex items-center justify-center gap-2 pt-1">
@@ -218,7 +218,7 @@ export function BackendsStep({ skin, scan, fleet, setStep, nextStepAfterBackends
           {isReady(ollama) && (
             <div className={`p-3 rounded-lg border ${isDark ? 'bg-green-500/10 border-green-500/20' : 'bg-green-50 border-green-200'}`}>
               <div className="flex items-center gap-2 justify-center">
-                <Check size={14} className="text-green-400" />
+                <Check size={14} className="text-green-600 dark:text-green-400" />
                 <span className="text-[0.7rem] font-medium">Ollama is ready!</span>
               </div>
             </div>
@@ -318,7 +318,7 @@ export function BackendsStep({ skin, scan, fleet, setStep, nextStepAfterBackends
           {isReady(lmstudio) && (
             <div className={`p-3 rounded-lg border ${isDark ? 'bg-green-500/10 border-green-500/20' : 'bg-green-50 border-green-200'}`}>
               <div className="flex items-center gap-2 justify-center">
-                <Check size={14} className="text-green-400" />
+                <Check size={14} className="text-green-600 dark:text-green-400" />
                 <span className="text-[0.7rem] font-medium">LM Studio is ready (server on :1234)</span>
               </div>
             </div>

@@ -18,6 +18,8 @@
  * the part that gets unit tests.
  */
 
+import { platformText } from './platform-text'
+
 export type TextDownloadTarget =
   /** `ollama pull` into Ollama's own blob store. */
   | 'ollama'
@@ -96,5 +98,5 @@ export function resolveTextDownloadTarget(input: TextDownloadTargetInput): TextD
 export function ollamaOnlyDownloadBlock(modelName: string, ollamaEnabled: boolean): string | null {
   return ollamaEnabled
     ? null
-    : `${modelName} only runs on Ollama. Enable the Ollama provider (Settings → Providers) before downloading.`
+    : platformText('ollamaOnlyModel', { model: modelName })
 }

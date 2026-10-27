@@ -86,7 +86,8 @@ describe('wiring', () => {
     const chatSrc = src('hooks', 'useChat.ts')
     const probe = chatSrc.indexOf('const trimImminent = sendBudgetWouldTrim(')
     const compact = chatSrc.indexOf('await maybeAutoCompact({', probe)
-    const budget = chatSrc.indexOf('const messages = applyChatSendBudget(', compact)
+    // Since the phone line the budget is skipped where the phone's own rule cuts (phoneOwnsFit).
+    const budget = chatSrc.indexOf('const budgetedBySendWindow = phoneOwnsFit ? candidate : applyChatSendBudget(', compact)
     expect(probe).toBeGreaterThan(0)
     expect(compact).toBeGreaterThan(probe)
     expect(budget).toBeGreaterThan(compact)

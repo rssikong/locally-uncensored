@@ -101,11 +101,12 @@ describe('ownership marker and wiring', () => {
 
   it('every agent-path submission carries the id, so its jobs are sweepable later', () => {
     const handoff = read('../vram-handoff.ts')
-    // Since audit M1 the four call sites (image + three video lanes) go through
+    // Since audit M1 the call sites (image, three video lanes and, since 3.0.8,
+    // the graph lanes of Create over the desktop) go through
     // ONE helper, which is also where the Stop-before/after-submit checks live.
     // The ownership marker therefore has a single place to be forgotten in, and
     // this asserts it is not: no raw submit anywhere, and the helper carries it.
-    expect(handoff.match(/await submitCancellable\(workflow, seq\)/g)?.length).toBe(4)
+    expect(handoff.match(/await submitCancellable\(workflow, seq\)/g)?.length).toBe(5)
     expect(handoff.match(/await submitWorkflow\(workflow, CLIENT_ID\)/g)?.length).toBe(1)
     expect(handoff).not.toContain('await submitWorkflow(workflow)')
   })

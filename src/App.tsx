@@ -41,9 +41,25 @@ function App() {
       // launch (lib/download-limit.ts).
       void import('./lib/download-limit').then(({ startDownloadLimitSync }) => startDownloadLimitSync())
 
+      // So does the idle unload of the LU Engine (lib/engine-idle-unload.ts).
+      void import('./lib/engine-idle-unload').then(({ startEngineIdleUnloadSync }) => startEngineIdleUnloadSync())
+
       // The phone's tab name (GitHub #19) sits in Rust the same way
       // (lib/remote-page-title.ts).
       void import('./lib/remote-page-title').then(({ startRemotePageTitleSync }) => startRemotePageTitleSync())
+
+      // The Local API comes up with LU when the user switched that on, so a
+      // server that starts LU with its session keeps the API after a reboot.
+      void import('./stores/localApiStore').then(({ startLocalApiAtLaunch }) => startLocalApiAtLaunch()).catch(() => {})
+      // Create over the desktop: a paired phone's jobs arrive as an event and
+      // run in this window (lib/remote-create-runner.ts).
+      void import('./lib/remote-create-runner').then(({ startRemoteCreateRunner }) => startRemoteCreateRunner()).catch(() => {})
+      // Shared chats: the phone's actions arrive as an event and run in this
+      // window (lib/remote-chats-bridge.ts).
+      void import('./lib/remote-chats-start').then(({ startRemoteChatsBridge }) => startRemoteChatsBridge()).catch(() => {})
+      // Device tests only: a build with the Cargo feature `e2e-remote` and
+      // its environment says so; every other build answers no.
+      void import('./lib/remote-e2e').then(({ startRemoteForDeviceTests }) => startRemoteForDeviceTests()).catch(() => {})
     }
 
     // Probe local Whisper (STT) once at boot and push the result into the voice

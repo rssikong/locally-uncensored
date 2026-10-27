@@ -1,0 +1,100 @@
+{
+ "name": "/create/item/:id",
+ "art": "seite",
+ "quelle": "integ-306",
+ "route": "/create/item/:id",
+ "strang": "create",
+ "code": "K7",
+ "lage": {
+  "route": "/create/item/:id",
+  "screen": "m-create-item-screen",
+  "blaetter": [],
+  "dialog": [],
+  "reiter": null,
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back-under",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-create-item-screen",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "missing",
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-create-item-close",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Close",
+   "el": "K7.1",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-create-item-missing",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    369,
+    123
+   ]
+  },
+  {
+   "id": "m-create-item-to-gallery",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Back to gallery",
+   "box": [
+    140,
+    48
+   ]
+  }
+ ]
+}

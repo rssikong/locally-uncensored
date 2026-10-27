@@ -1,6 +1,6 @@
 import { usePermissionStore } from '../../stores/permissionStore'
 import { useChatStore } from '../../stores/chatStore'
-import type { ToolCategory } from '../../api/mcp/types'
+import type { PermissionLevel, ToolCategory } from '../../api/mcp/types'
 import { useToolSupport } from '../../hooks/useToolSupport'
 import { FolderOpen, Terminal, Monitor, Globe, Cpu, Image, Film, GitBranch, Lock } from 'lucide-react'
 import { HINWEIS_TEXT } from '../../lib/hinweis'
@@ -21,9 +21,20 @@ const CATEGORIES: { key: ToolCategory; icon: typeof Globe; label: string }[] = [
   { key: 'workflow', icon: GitBranch, label: 'Workflows' },
 ]
 
+/**
+ * The level a category gets back when it is switched on again in one chat
+ * (A37, 26.10.2026). The row only says on or off, and on used to mean 'auto':
+ * off and on again quietly turned Shell from "asks first" into "runs
+ * unattended" while the row looked exactly as before. On now means what the
+ * Settings say for that category, and where Settings block it, ask first.
+ */
+export function levelWhenSwitchedOn(globalLevel: PermissionLevel | undefined): PermissionLevel {
+  return !globalLevel || globalLevel === 'blocked' ? 'confirm' : globalLevel
+}
+
 export function PermissionOverrideBar() {
   const activeConversationId = useChatStore((s) => s.activeConversationId)
-  const { getEffectivePermissions, setConversationOverride } = usePermissionStore()
+  const { getEffectivePermissions, setConversationOverride, globalPermissions } = usePermissionStore()
   // 2.5.9: a model that cannot call tools makes every row here a lie — flipping
   // one on changed nothing except how long the failure took to arrive.
   const { canUseTools, reason } = useToolSupport()
@@ -35,7 +46,7 @@ export function PermissionOverrideBar() {
   const toggleTool = (cat: ToolCategory) => {
     if (LOCKED.has(cat) || !canUseTools) return
     const current = permissions[cat]
-    setConversationOverride(activeConversationId, cat, current === 'blocked' ? 'auto' : 'blocked')
+    setConversationOverride(activeConversationId, cat, current === 'blocked' ? levelWhenSwitchedOn(globalPermissions[cat]) : 'blocked')
   }
 
   return (

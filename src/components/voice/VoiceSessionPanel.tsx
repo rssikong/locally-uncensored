@@ -30,7 +30,7 @@ import { useComputerStore } from '../../stores/computerStore'
 import type { VoiceError } from '../../lib/voice/session-state'
 
 const focusCls = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 dark:focus-visible:ring-white/40'
-const startCls = `inline-flex items-center justify-center gap-2 h-[var(--control-h-lg)] px-6 rounded-full t-control transition-colors ${focusCls} bg-gray-900 text-white hover:bg-gray-700 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200`
+const startCls = `inline-flex items-center justify-center gap-2 h-[var(--control-h-lg)] px-6 rounded-full t-control transition-colors ${focusCls} bg-gray-900 !text-white hover:bg-gray-700 dark:bg-white dark:!text-gray-900 dark:hover:bg-gray-200`
 const sideCls = `shrink-0 flex items-center justify-center w-10 h-10 rounded-full transition-colors ${focusCls} border border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/[0.06]`
 
 /** What the user can do about an error, when there is something to do. */

@@ -121,11 +121,24 @@ function facts(v: unknown, depth: number): unknown {
 export const REA_RESULT_MAX = 40000
 
 /**
+ * How to go on from a cut list, per tool. These lists take no page and no
+ * filter, and their record cannot be read back in parts either, so the
+ * general advice below sent the model in circles (A37, xxcoder 26.10.2026:
+ * list_procedures of a Windows program, cut at 40,000 of about 400,000
+ * characters, main never reached). The search tools are complete.
+ */
+const CUT_LIST_ADVICE: Record<string, string> = {
+  list_procedures: 'This list cannot be paged. Find a function with search_procedures (a name such as main, WinMain or entry; regex allowed) or procedure_address, then decompile it with procedure_pseudo_code.',
+  list_names: 'This list cannot be paged. Find a symbol with search_procedures or address_name, or search text with search_strings.',
+}
+
+/**
  * A REA result as LU hands it to the model: the facts of an Evidence record
  * without its provenance. Anything that is not JSON (an error text, a short
- * answer) passes unchanged up to the same limit.
+ * answer) passes unchanged up to the same limit. `tool` names the REA tool
+ * that answered, for advice that fits it when the result is cut.
  */
-export function reaResultForModel(text: string): string {
+export function reaResultForModel(text: string, tool?: string): string {
   let out = text
   try {
     const parsed: unknown = JSON.parse(text)
@@ -135,6 +148,11 @@ export function reaResultForModel(text: string): string {
   }
   if (out.length <= REA_RESULT_MAX) return out
   const id = /"evidence_id":"(ev_[a-f0-9]{64})"/.exec(text)?.[1]
+  const advice = tool ? CUT_LIST_ADVICE[tool] : undefined
+  if (advice) {
+    return out.slice(0, REA_RESULT_MAX)
+      + `\n\n[LU cut this result at ${REA_RESULT_MAX} of ${out.length} characters. ${advice}]`
+  }
   return out.slice(0, REA_RESULT_MAX)
     + `\n\n[LU cut this result at ${REA_RESULT_MAX} of ${out.length} characters.`
     + (id ? ` REA keeps the whole record as ${id}: pass {"kind":"retained-evidence","evidence_id":"${id}"} to a tool that takes it.` : '')

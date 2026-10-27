@@ -507,7 +507,7 @@ export function ModelsStep({ skin, scan, fleet, step, setStep, pulledModels, set
                 >
                   <span className="t-mono truncate">{name}</span>
                   {gewaehlt ? (
-                    <Check size={14} className="text-green-400 shrink-0" />
+                    <Check size={14} className="text-green-600 dark:text-green-400 shrink-0" />
                   ) : (
                     <div className={`w-4 h-4 rounded-full border shrink-0 ${isDark ? 'border-white/20' : 'border-gray-300'}`} />
                   )}
@@ -625,10 +625,10 @@ export function ModelsStep({ skin, scan, fleet, step, setStep, pulledModels, set
                   </p>
                 </div>
                 {pulled ? (
-                  <Check size={14} className="text-green-400 shrink-0 mt-0.5" />
+                  <Check size={14} className="text-green-600 dark:text-green-400 shrink-0 mt-0.5" />
                 ) : selected ? (
                   <div className={`w-4 h-4 rounded flex items-center justify-center shrink-0 mt-0.5 ${isDark ? 'bg-white' : 'bg-gray-900'}`}>
-                    <Check size={10} className={isDark ? 'text-black' : 'text-white'} />
+                    <Check size={10} className={isDark ? 'text-black' : '!text-white'} />
                   </div>
                 ) : (
                   <div className={`w-4 h-4 rounded border shrink-0 mt-0.5 ${isDark ? 'border-white/20' : 'border-gray-300'}`} />

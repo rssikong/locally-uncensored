@@ -115,7 +115,7 @@ describe('Fenster schliessen / Abmelden / App beenden setzt den Sendeknopf wirkl
     expect(__activeChatRunConvIdsForTests()).toEqual([convId])
     expect(useGenerationStore.getState().generating[convId]).toBe(true)
 
-    // Fenster schliessen: derselbe Weg wie main.rs' `app:hidden` nach der
+    // Fenster schliessen: derselbe Weg wie lib.rs' `app:hidden` nach der
     // Karenzzeit, lib/background-shutdown.ts.
     await act(async () => {
       stopAllBackgroundWork()

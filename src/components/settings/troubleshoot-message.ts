@@ -6,7 +6,7 @@
 //     system_health failed: Unknown backend command: system_health
 //
 // Sie schloss daraus, die App sei kaputt. Beides war falsch: der Befehl ist in
-// `main.rs` registriert und laeuft in der Desktop-App; sie sass in der reinen
+// `lib.rs` registriert und laeuft in der Desktop-App; sie sass in der reinen
 // Browser-Oberflaeche des Dev-Servers, die keinen Rust-Prozess hinter sich hat.
 // Der Text hat ihr einen internen Befehlsnamen gezeigt statt einer Auskunft —
 // ausgerechnet auf der Seite, deren einzige Aufgabe Auskunft ist.

@@ -1,0 +1,125 @@
+{
+ "name": "/settings/workflows",
+ "art": "seite",
+ "quelle": "integ-306",
+ "route": "/settings/workflows",
+ "strang": "agent",
+ "code": "E10",
+ "lage": {
+  "route": "/settings/workflows",
+  "screen": "m-settings-workflows-screen",
+  "blaetter": [],
+  "dialog": [],
+  "reiter": null,
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back-under",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-workflows-screen",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-workflows-list",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    153
+   ]
+  },
+  {
+   "id": "m-workflows-row-builtin-research-topic",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Workflow Research Topic",
+   "el": "E10.1",
+   "box": [
+    356,
+    76
+   ]
+  },
+  {
+   "id": "m-workflows-row-builtin-summarize-url",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Workflow Summarize URL",
+   "el": "E10.1",
+   "box": [
+    356,
+    76
+   ]
+  },
+  {
+   "id": "m-workflows-add",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "New workflow",
+   "el": "E10.2",
+   "box": [
+    358,
+    48
+   ]
+  }
+ ]
+}

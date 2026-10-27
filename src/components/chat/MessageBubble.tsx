@@ -35,6 +35,7 @@ import { AVATAR_SLOT, MODEL_MARK, MODEL_MARK_SLOT } from './avatar-slot'
 import { MOTION_S } from '../ui/motion'
 import { Hinweis } from '../ui/Hinweis'
 import { RefusalNotice } from './RefusalNotice'
+import { RequestUsageLine } from './RequestUsageLine'
 import { fitTextarea } from '../../lib/fit-textarea'
 import { editableText } from '../../lib/message-edit'
 import { ForkSwitcher } from './ForkSwitcher'
@@ -699,6 +700,7 @@ function MessageBubbleImpl({ message, onRegenerate, onEdit, pendingApprovalId, o
             <button onClick={actions.remove} className={'p-1 rounded-md transition-colors hover:bg-gray-100 dark:hover:bg-white/10 ' + (confirmDelete ? 'text-red-500' : 'text-gray-400 dark:text-gray-500 hover:text-red-500')} aria-label="Delete message" title={confirmDelete ? 'Click again to delete' : 'Delete message'}>
               <Trash2 size={12} />
             </button>
+            {!isUser && <RequestUsageLine usage={message.requestUsage} className="pl-1.5" />}
           </div>
         )}
 

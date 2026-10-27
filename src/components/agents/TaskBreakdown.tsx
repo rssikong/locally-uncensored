@@ -12,7 +12,7 @@ function StatusIcon({ status }: { status: TaskStatus }) {
     case 'running':
       return <Loader2 size={16} className="text-blue-400 animate-spin flex-shrink-0" />
     case 'completed':
-      return <CheckCircle2 size={16} className="text-green-400 flex-shrink-0" />
+      return <CheckCircle2 size={16} className="text-green-600 dark:text-green-400 flex-shrink-0" />
     case 'failed':
       return <XCircle size={16} className="text-red-400 flex-shrink-0" />
     case 'skipped':

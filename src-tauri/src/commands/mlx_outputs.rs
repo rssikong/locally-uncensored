@@ -97,23 +97,7 @@ fn trash_in(roots: &[PathBuf], path: &str, bin: impl FnOnce(&Path) -> Result<(),
     }
 }
 
-/// The system's Trash. On macOS through NSFileManager and not through
-/// Finder: asking Finder shows the user a permission prompt for a click on
-/// Delete, and fails where the prompt is declined. The LoRA folder takes a
-/// file out the same way (`mlx_loras.rs`).
-pub(crate) fn system_trash(file: &Path) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    {
-        use trash::macos::{DeleteMethod, TrashContextExtMacos};
-        let mut ctx = trash::TrashContext::default();
-        ctx.set_delete_method(DeleteMethod::NsFileManager);
-        ctx.delete(file).map_err(|e| e.to_string())
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        trash::delete(file).map_err(|e| e.to_string())
-    }
-}
+pub(crate) use crate::commands::os_trash::system_trash;
 
 /// `mlx_output_trash`: move one render of the Mac's engines to the Trash.
 /// `args.path` is the path the engine answered a run with.
@@ -275,7 +259,14 @@ mod tests {
         for hard in ["remove_file", "remove_dir", "fs::rename"] {
             assert!(!production.contains(hard), "{hard} is not the Trash");
         }
-        assert!(production.contains("DeleteMethod::NsFileManager"), "asking Finder shows a permission prompt");
+        // The Trash itself lives in os_trash.rs since 3.0.8, shared with the
+        // download, the model check and the runtime folder.
+        assert!(production.contains("pub(crate) use crate::commands::os_trash::system_trash;"));
+        let trash = include_str!("os_trash.rs");
+        assert!(trash.contains("DeleteMethod::NsFileManager"), "asking Finder shows a permission prompt");
+        for hard in ["remove_file", "remove_dir", "fs::rename"] {
+            assert!(!trash.contains(hard), "{hard} is not the Trash");
+        }
     }
 
     #[test]

@@ -79,7 +79,7 @@ describe('constants-validation', () => {
     })
 
     it('has searchProvider as a valid value', () => {
-      expect(['auto', 'brave', 'tavily']).toContain(DEFAULT_SETTINGS.searchProvider)
+      expect(['auto', 'duckduckgo', 'brave', 'tavily']).toContain(DEFAULT_SETTINGS.searchProvider)
     })
 
     it('has braveApiKey as string', () => {

@@ -37,7 +37,7 @@ vi.mock('../../../api/backend', () => ({
   secretDelete: vi.fn(),
 }))
 
-const { engineOffloadLine, announceEngineCpuFallback, engineStandingNote, ENGINE_CPU_ONLY_NOTE, __resetEngineCpuFallbackNote } =
+const { engineOffloadLine, announceEngineCpuFallback, engineStandingNote, engineCpuFallbackKey, ENGINE_CPU_ONLY_NOTE, __resetEngineCpuFallbackNote } =
   await import('../../../lib/engine-offload')
 const { bundledEngineStatus } = await import('../../../api/engine')
 const { useLuEngineSwitchStore } = await import('../../../stores/luEngineSwitchStore')
@@ -249,5 +249,25 @@ describe('a model that came up without its image part', () => {
     } finally {
       window.removeEventListener('lu-models-refresh', refreshed)
     }
+  })
+})
+
+// Discord (21.10.2026): a 31B model took the whole RAM of a 32 GB PC and
+// nothing had said it would. Rust weighs the model against the RAM at the
+// start (engine.rs memory_fit_note) and the line carries the sentence.
+describe('a model that leaves the computer little RAM', () => {
+  const TIGHT = 'Tight fit: about 12.7 GB of this model stay in RAM because the graphics card holds only about 7.5 GB of it, and this PC has 16 GB of RAM, so other programs get little room while it is loaded. A smaller version of the model, or a shorter context, leaves more.'
+
+  it('says so in the standing line, on a card that otherwise runs as usual', () => {
+    announceEngineCpuFallback({ ...AUF_DER_KARTE, memoryNote: TIGHT })
+    expect(useLuEngineSwitchStore.getState().note).toBe(TIGHT)
+  })
+
+  it('comes last, after where the engine computes and what the model sees', () => {
+    expect(engineStandingNote({ ...AUF_DEM_PROZESSOR, imageNote: 'No eyes.', memoryNote: TIGHT })).toBe(`${ENGINE_CPU_ONLY_NOTE} No eyes. ${TIGHT}`)
+  })
+
+  it('says nothing for a model that leaves room', () => {
+    expect(engineCpuFallbackKey({ ...AUF_DER_KARTE, memoryNote: null })).toBeNull()
   })
 })

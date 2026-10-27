@@ -3,7 +3,9 @@
 // fetch plus an <a download> blob, which WebView2 does not save, so it did
 // nothing on Windows (Discord 2026-10-01).
 import { useCreateStore, type GalleryItem } from '../../../stores/createStore'
-import { backendCall, downloadComfyFile, isTauri } from '../../../api/backend'
+import { backendCall, downloadComfyFile } from '../../../api/backend'
+import { isMobile } from '../../../lib/device-kind'
+import { mobileShareAcceptsUrl, saveOrShare } from '../../../lib/save-or-share'
 import { isMlxImageHost } from '../../../api/mlx-image'
 import { refreshResultUrl } from '../../../api/cloud/jobs'
 import { blobFromUrl } from '../../../lib/render/data-url'
@@ -29,25 +31,25 @@ export function extFor(contentType: string, kind: 'image' | 'video' | 'audio'): 
 /** Hand bytes to the user. Tauri gets the native Save-As dialog (WebView2
  *  blob-anchors are unreliable); the browser build gets an anchor click. */
 export async function saveBytes(bytes: Uint8Array, name: string, ext: string): Promise<void> {
-  if (!isTauri()) {
-    const blobUrl = URL.createObjectURL(new Blob([bytes as BlobPart]))
-    const a = document.createElement('a')
-    a.href = blobUrl
-    a.download = name
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(blobUrl)
-    return
-  }
-  const { invoke } = await import('@tauri-apps/api/core')
-  // Returns the chosen path, or null if the user cancelled — nothing to do then.
-  await invoke('save_binary_file_dialog', {
-    bytes: Array.from(bytes),
-    defaultName: name,
-    extension: ext,
-    extLabel: ext.toUpperCase(),
-  })
+  // One door for every platform (lib/save-or-share.ts): the native Save-As in
+  // the packaged desktop app, an anchor click in the browser build, the share
+  // sheet on a phone. A cancelled dialog is not an error — nothing to do then.
+  const outcome = await saveOrShare(
+    { bytes, filename: name, mime: MIME_BY_EXT[ext] ?? 'application/octet-stream' },
+    { extension: ext, extLabel: ext.toUpperCase() },
+  )
+  if (outcome.status === 'error') throw new Error(outcome.error)
+}
+
+const MIME_BY_EXT: Record<string, string> = {
+  png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp',
+  mp4: 'video/mp4', webm: 'video/webm',
+  mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg',
+}
+
+/** The extension a phone asks for before it has seen the bytes. */
+function extByKind(kind: 'image' | 'video' | 'audio'): string {
+  return kind === 'video' ? 'mp4' : kind === 'audio' ? 'mp3' : 'png'
 }
 
 export async function downloadGalleryItem(item: GalleryItem): Promise<void> {
@@ -94,6 +96,15 @@ export async function downloadGalleryItem(item: GalleryItem): Promise<void> {
       url = (await refreshResultUrl(item.jobId)) ?? url
     }
     if (!url) throw new Error('no source available for this item')
+    // A phone whose native share sheet can fetch an address itself gets the
+    // address: a video does not have to pass through the WebView and IPC as
+    // bytes. Without such a handler the bytes are fetched here and shared.
+    if (isMobile() && mobileShareAcceptsUrl() && !item.dataUrl) {
+      const ext = extByKind(item.type)
+      const outcome = await saveOrShare({ url, filename: `lu-${item.id}.${ext}`, mime: MIME_BY_EXT[ext] })
+      if (outcome.status === 'error') throw new Error(outcome.error)
+      return
+    }
     const blob = await blobFromUrl(url)
     const ext = extFor(blob.type, item.type)
     const bytes = new Uint8Array(await blob.arrayBuffer())

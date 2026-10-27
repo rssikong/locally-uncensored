@@ -601,8 +601,16 @@ mod tests {
         wanted.dedup();
         assert!(wanted.len() > layout::SIDECAR_FILES.len(), "the sidecar package has more modules than its entry point");
         for (name, rules) in &all {
+            // A phone build has no voice loop: no private Python, no sidecar
+            // process (lib.rs registers the commands for the desktop only).
+            // Its resource list is its own and carries none of the sidecar.
+            let phone = name == "tauri.android.conf.json" || name == "tauri.ios.conf.json";
             for file in &wanted {
                 let source = format!("{}/{file}", layout::SIDECAR_RESOURCE_PATH);
+                if phone {
+                    assert_eq!(bundled_as(rules, &source), None, "{name} would ship {source} to a phone");
+                    continue;
+                }
                 assert_eq!(
                     bundled_as(rules, &source).as_deref(),
                     Some(source.as_str()),
@@ -644,7 +652,8 @@ mod tests {
 
     #[test]
     fn every_voice_loop_command_is_registered() {
-        let main_rs = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/main.rs")).unwrap();
+        // The handler list lives in lib.rs since the app became a library.
+        let main_rs = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/lib.rs")).unwrap();
         let this = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/commands/voice_loop.rs")).unwrap();
         let mut commands = Vec::new();
         let mut lines = this.lines();

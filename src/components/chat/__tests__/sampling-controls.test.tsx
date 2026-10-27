@@ -78,8 +78,8 @@ describe('SamplingControls', () => {
   it('leaves the OTHER chat exactly as it was', () => {
     render(<SamplingControls />)
     open()
-    fireEvent.change(screen.getByLabelText('Temperature'), { target: { value: '1.8' } })
-    expect(chat('c1')?.sampling).toEqual({ temperature: 1.8 })
+    fireEvent.change(screen.getByLabelText('Temperature'), { target: { value: '1.15' } })
+    expect(chat('c1')?.sampling).toEqual({ temperature: 1.15 })
     expect(chat('c2')?.sampling).toBeUndefined()
   })
 
@@ -167,7 +167,7 @@ describe('SamplingControls', () => {
   })
 
   it('marks a changed chat, and deletes ALL of its own values on Reset', () => {
-    useChatStore.getState().setConversationSampling('c1', { temperature: 1.9, topP: 0.3, maxTokens: 512 })
+    useChatStore.getState().setConversationSampling('c1', { temperature: 1.1, topP: 0.3, maxTokens: 512 })
     render(<SamplingControls />)
     expect(screen.getByTitle(/Changed from the defaults/)).toBeTruthy()
     open()
@@ -181,7 +181,7 @@ describe('SamplingControls', () => {
   })
 
   it('NEGATIVKONTROLLE: after Reset the chat follows LATER Settings page changes, unlike a chat pinned to the old defaults', () => {
-    useChatStore.getState().setConversationSampling('c1', { temperature: 1.9 })
+    useChatStore.getState().setConversationSampling('c1', { temperature: 1.1 })
     render(<SamplingControls />)
     open()
     fireEvent.click(screen.getByRole('button', { name: 'Reset' }))
@@ -196,7 +196,7 @@ describe('SamplingControls', () => {
   })
 
   it('R5-13: Reset stays inside this popup and leaves Top K alone', () => {
-    useChatStore.getState().setConversationSampling('c1', { temperature: 1.9 })
+    useChatStore.getState().setConversationSampling('c1', { temperature: 1.1 })
     useSettingsStore.getState().updateSettings({ topK: 55 })
     render(<SamplingControls />)
     open()
@@ -217,7 +217,7 @@ describe('SamplingControls', () => {
     // it read `changed` (something is on the wire, from EITHER source) and
     // showed itself as clickable here, and clicking it deleted a field
     // (`sampling`) that never existed: no error, but no effect either.
-    useSettingsStore.getState().updateSettings({ temperature: 1.9 })
+    useSettingsStore.getState().updateSettings({ temperature: 1.1 })
     render(<SamplingControls />)
     open()
     const reset = screen.getByRole('button', { name: 'Reset' }) as HTMLButtonElement
@@ -226,7 +226,7 @@ describe('SamplingControls', () => {
   })
 
   it('F1: Reset becomes enabled the moment this chat gets its own value, even while the Settings page also differs', () => {
-    useSettingsStore.getState().updateSettings({ temperature: 1.9 })
+    useSettingsStore.getState().updateSettings({ temperature: 1.1 })
     useChatStore.getState().setConversationSampling('c1', { temperature: 1.2 })
     render(<SamplingControls />)
     open()

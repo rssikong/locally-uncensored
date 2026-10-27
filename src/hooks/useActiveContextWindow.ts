@@ -17,7 +17,8 @@ import type { ContextSource } from '../lib/context-source'
 import type { ProviderClient } from '../api/providers/types'
 import { resolveActiveWindow } from '../lib/context-source'
 import { lmStudioLoadContext, savedLmStudioContext } from '../lib/lmstudio-context-pick'
-import { isLanOpenAiBackend, sendsToALanBackend, openaiConfigOfModel } from '../lib/lan-openai-slot'
+import { sendsToALanBackend, openaiConfigOfModel } from '../lib/lan-openai-slot'
+import { hasForeignBackends } from '../lib/capabilities'
 
 /** `custom` ist jeder andere OpenAI-kompatible Server auf diesem Rechner oder
  *  im LAN: llama.cpp, vLLM, KoboldCpp, text-generation-webui (GH #129). */
@@ -271,7 +272,11 @@ export async function resolveModelContext(model: string, use: WindowUse, k: Cont
   // Studio must not lend it its window (GitHub #173).
   if (providerId === 'openai' && (isOpenAISlotModel(model) || isThisMachinesLmStudio(model))) {
     const modelId = displayModelName(model)
-    const info = await getLmStudioModelContext(modelId)
+    // Not on a phone: there is no LM Studio to ask, and the command behind
+    // the probe does not exist there.
+    const info = hasForeignBackends()
+      ? await getLmStudioModelContext(modelId)
+      : { loaded: null, max: null, state: null }
     if (info.loaded || info.max) {
       const loaded = info.loaded ?? 0
       const max = info.max ?? loaded
@@ -307,7 +312,8 @@ export async function resolveModelContext(model: string, use: WindowUse, k: Cont
    * das aus einer geratenen 8192 die Anzeige "6.4K" (8192 mal 0,8, geteilt
    * durch 1024) neben einem Modell mit 262144.
    */
-  if (providerId === 'openai' && isLanOpenAiBackend(openaiEntryOfModel(model))) {
+  // A phone's extra OpenAI-compatible slot counts the same (sendsToALanBackend).
+  if (sendsToALanBackend(providerId, model)) {
     const { provider, modelId } = safeProviderFor(model)
     const resolved = provider?.getContextWindow
       ? await provider.getContextWindow(modelId).catch(() => null)

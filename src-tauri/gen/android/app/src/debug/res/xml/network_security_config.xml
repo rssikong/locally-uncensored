@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Nur Debug (app/src/debug/res/xml/). Der Tauri-Dev-Server laeuft per http auf der
+     WLAN-Adresse des Rechners, deshalb ist Klartext hier erlaubt. Nie in den Release legen. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

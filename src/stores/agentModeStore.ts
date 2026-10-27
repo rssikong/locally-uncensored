@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware'
 import { safeJSONStorage } from '../lib/storage-quota'
 import type { SandboxLevel } from '../types/agent-mode'
 import type { AgentWorkspace } from '../types/agent-workspace'
+import { isMobile } from '../lib/device-kind'
 
 interface AgentModeState {
   // Per-conversation agent mode toggle
@@ -75,8 +76,10 @@ export const useAgentModeStore = create<AgentModeState>()(
           },
         })),
 
+      // A phone has no folder to pick, so a folder workspace is never stored
+      // there (and `lastFolder` with it). The sandbox is the only ground.
       setWorkspace: (conversationId, workspace) =>
-        set((state) => ({
+        set((state) => isMobile() && workspace.kind === 'folder' ? state : ({
           workspaces: {
             ...state.workspaces,
             [conversationId]: workspace,

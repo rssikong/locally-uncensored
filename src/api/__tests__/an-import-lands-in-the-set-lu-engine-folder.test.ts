@@ -1,6 +1,6 @@
 /**
  * 3.0.7: an import across drives failed with "Move the models folder
- * (Settings, Model Storage) to that drive", and moving it did not help: the
+ * (Settings, Storage) to that drive", and moving it did not help: the
  * import always linked into LU's own folder, whatever the LU Engine folder
  * said. The import now links into the LU Engine folder when one is set, so
  * setting that folder on the drive of the file is a way out that works.
@@ -26,7 +26,7 @@ const setFolder = (dir: string) => useSettingsStore.getState().updateSettings({ 
 beforeEach(() => { backendCall.mockClear() })
 
 describe('importing a model from another tool', () => {
-  it('links into the LU Engine folder set under Model Storage', async () => {
+  it('links into the LU Engine folder set under Storage', async () => {
     setFolder('  D:\\models  ')
     await importLocalModel('D:\\ollama\\blob', 'qwen:7b')
     expect(backendCall).toHaveBeenCalledWith('import_local_model', { path: 'D:\\ollama\\blob', name: 'qwen:7b', destDir: 'D:\\models' })

@@ -6,7 +6,7 @@
 //! launched from Finder. Any bug that could not be reproduced on a developer
 //! machine was therefore unreachable: the user had nothing to send.
 //!
-//! main.rs now owns the Rust half (a rolling file writer next to the crash
+//! lib.rs now owns the Rust half (a rolling file writer next to the crash
 //! log). This module is the part the WebView can reach:
 //!
 //! * `log_write` — the frontend mirrors its own warn/error lines into the
@@ -29,7 +29,7 @@ use serde::Serialize;
 const MAX_MESSAGE_CHARS: usize = 4000;
 
 /// Filename parts of the rolling appender. Kept next to the command that
-/// reports the path so the two cannot drift apart; main.rs builds the
+/// reports the path so the two cannot drift apart; lib.rs builds the
 /// appender from the same constants.
 pub const LOG_FILE_PREFIX: &str = "lu";
 pub const LOG_FILE_SUFFIX: &str = "log";
@@ -191,9 +191,319 @@ pub fn log_reveal() -> Result<(), String> {
         .map_err(|e| format!("cannot open the log folder: {}", crate::os_error::english(&e)))
 }
 
+// ── The log file of a phone ──────────────────────────────────────────────
+//
+// The desktop opens its rolling log before Tauri exists, from a path the
+// `dirs` crate answers. A phone learns its data folder only inside `setup`
+// (`os_paths::set_mobile_dirs`), and the tracing layers have to be in place
+// before that. So the phone's file layer writes into `LateFile`: it keeps
+// the first lines in memory, and from the moment `open_late_log` names the
+// folder it writes to the same daily files the desktop has (same names, so
+// `log_file_path` and `read_log_tail` find them).
+
+/// What is kept in memory before the folder is known. The start of an app
+/// is a few dozen lines; a start that logs more than this loses the rest of
+/// its early lines, never the app.
+#[cfg_attr(not(mobile), allow(dead_code))]
+const LATE_BUFFER_MAX: usize = 64 * 1024;
+
+#[cfg_attr(not(mobile), allow(dead_code))]
+pub(crate) enum LateState<W> {
+    Waiting(Vec<u8>),
+    Open(W),
+    /// The folder could not be opened. Lines are dropped, the app runs.
+    Off,
+}
+
+#[cfg_attr(not(mobile), allow(dead_code))]
+pub(crate) fn late_write<W: std::io::Write>(state: &mut LateState<W>, bytes: &[u8]) {
+    match state {
+        LateState::Waiting(kept) => {
+            let room = LATE_BUFFER_MAX.saturating_sub(kept.len());
+            // Whole lines only: half a line at the cap would glue onto the next one.
+            if bytes.len() <= room {
+                kept.extend_from_slice(bytes);
+            }
+        }
+        LateState::Open(writer) => {
+            let _ = writer.write_all(bytes);
+        }
+        LateState::Off => {}
+    }
+}
+
+/// Hand over the writer (or the news that there is none) and flush what was kept.
+#[cfg_attr(not(mobile), allow(dead_code))]
+pub(crate) fn late_open<W: std::io::Write>(state: &mut LateState<W>, writer: Option<W>) {
+    let kept = match std::mem::replace(state, LateState::Off) {
+        LateState::Waiting(kept) => kept,
+        // Opened twice: the first one stays.
+        other => {
+            *state = other;
+            return;
+        }
+    };
+    if let Some(mut writer) = writer {
+        let _ = writer.write_all(&kept);
+        *state = LateState::Open(writer);
+    }
+}
+
+#[cfg_attr(not(mobile), allow(dead_code))]
+static LATE_LOG: std::sync::Mutex<LateState<tracing_appender::rolling::RollingFileAppender>> =
+    std::sync::Mutex::new(LateState::Waiting(Vec::new()));
+
+/// The writer the phone's file layer is built with.
+#[cfg_attr(not(mobile), allow(dead_code))]
+pub struct LateFile;
+
+impl std::io::Write for LateFile {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        late_write(&mut LATE_LOG.lock().unwrap_or_else(|p| p.into_inner()), bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        if let LateState::Open(writer) = &mut *LATE_LOG.lock().unwrap_or_else(|p| p.into_inner()) {
+            let _ = writer.flush();
+        }
+        Ok(())
+    }
+}
+
+/// Called once from `setup`, after the data folder is known.
+#[cfg_attr(not(mobile), allow(dead_code))]
+pub fn open_late_log(dir: &std::path::Path, files_kept: usize) {
+    let appender = std::fs::create_dir_all(dir).ok().and_then(|_| {
+        tracing_appender::rolling::Builder::new()
+            .rotation(tracing_appender::rolling::Rotation::DAILY)
+            .filename_prefix(LOG_FILE_PREFIX)
+            .filename_suffix(LOG_FILE_SUFFIX)
+            .max_log_files(files_kept)
+            .build(dir)
+            .ok()
+    });
+    late_open(&mut LATE_LOG.lock().unwrap_or_else(|p| p.into_inner()), appender);
+}
+
+// ── "Share log" on a phone ───────────────────────────────────────────────
+//
+// A phone has no file manager to reveal a folder in, so `log_reveal` is
+// refused there (commands/mobile_guard.rs). What a support request needs
+// travels as text instead: the end of the newest log file and the last
+// record of an unexpected death. The frontend hands that to the share sheet.
+
+/// How much of a log file is read at most, from its end.
+#[cfg_attr(not(mobile), allow(dead_code))]
+const TAIL_MAX_BYTES: u64 = 256 * 1024;
+#[cfg_attr(not(mobile), allow(dead_code))]
+const TAIL_DEFAULT_LINES: usize = 400;
+#[cfg_attr(not(mobile), allow(dead_code))]
+const TAIL_MAX_LINES: usize = 2000;
+
+#[cfg_attr(not(mobile), allow(dead_code))]
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LogTail {
+    /// Name of the file the lines come from, empty when there is no log yet.
+    pub file: String,
+    /// The last lines, oldest first, joined with line feeds.
+    pub text: String,
+    pub line_count: usize,
+    /// True when the file holds more than what is in `text`.
+    pub truncated: bool,
+    /// The newest line of crash.log, when the app ever died unexpectedly.
+    pub last_crash: Option<String>,
+}
+
+/// The last `max_lines` lines of `text`. A cut through the middle of the
+/// first line (the file was read from an offset) drops that line.
+#[cfg_attr(not(mobile), allow(dead_code))]
+pub(crate) fn tail_lines(text: &str, max_lines: usize, starts_mid_line: bool) -> (String, usize, bool) {
+    let mut lines: Vec<&str> = text.lines().collect();
+    let mut truncated = false;
+    if starts_mid_line && !lines.is_empty() {
+        lines.remove(0);
+        truncated = true;
+    }
+    if lines.len() > max_lines {
+        lines.drain(..lines.len() - max_lines);
+        truncated = true;
+    }
+    (lines.join("\n"), lines.len(), truncated)
+}
+
+/// The end of a file as text, at most `max_bytes`. The flag says whether the
+/// read began behind the start of the file. Bytes that are not UTF-8 (a cut
+/// through a character) are replaced, never an error.
+#[cfg_attr(not(mobile), allow(dead_code))]
+pub(crate) fn read_end(path: &std::path::Path, max_bytes: u64) -> Option<(String, bool)> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = std::fs::File::open(path).ok()?;
+    let len = file.metadata().ok()?.len();
+    let from = len.saturating_sub(max_bytes);
+    file.seek(SeekFrom::Start(from)).ok()?;
+    let mut bytes = Vec::with_capacity((len - from) as usize);
+    file.take(max_bytes).read_to_end(&mut bytes).ok()?;
+    Some((String::from_utf8_lossy(&bytes).into_owned(), from > 0))
+}
+
+/// The newest rotated log file in `dir`. The date is part of the name, so
+/// the newest is the last by name.
+#[cfg_attr(not(mobile), allow(dead_code))]
+pub(crate) fn newest_log_file(dir: &std::path::Path) -> Option<std::path::PathBuf> {
+    let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(dir)
+        .ok()?
+        .filter_map(|entry| entry.ok().map(|e| e.path()))
+        .filter(|path| {
+            path.file_name().and_then(|n| n.to_str()).is_some_and(|name| {
+                name.starts_with(&format!("{LOG_FILE_PREFIX}.")) && name.ends_with(&format!(".{LOG_FILE_SUFFIX}"))
+            })
+        })
+        .collect();
+    files.sort();
+    files.pop()
+}
+
+#[cfg_attr(not(mobile), allow(dead_code))]
+pub(crate) fn log_tail_from(dir: &std::path::Path, crash_log: &std::path::Path, max_lines: Option<usize>) -> LogTail {
+    let max_lines = max_lines.unwrap_or(TAIL_DEFAULT_LINES).clamp(1, TAIL_MAX_LINES);
+    let last_crash = read_end(crash_log, 16 * 1024)
+        .and_then(|(text, _)| text.lines().rev().find(|line| !line.trim().is_empty()).map(str::to_string));
+    let Some(file) = newest_log_file(dir) else {
+        return LogTail { file: String::new(), text: String::new(), line_count: 0, truncated: false, last_crash };
+    };
+    let (raw, mid) = read_end(&file, TAIL_MAX_BYTES).unwrap_or_default();
+    let (text, line_count, truncated) = tail_lines(&raw, max_lines, mid);
+    LogTail {
+        file: file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+        text,
+        line_count,
+        truncated,
+        last_crash,
+    }
+}
+
+/// The end of the app log and the last crash record, as text to share.
+/// `maxLines` defaults to 400 and is capped at 2000.
+///
+/// A command of the phone builds only. The desktop has "Open log folder" for
+/// this and does not register it (lib.rs), as in v3.0.5.
+#[cfg(mobile)]
+#[tauri::command]
+#[allow(non_snake_case)]
+pub async fn read_log_tail(maxLines: Option<usize>) -> Result<LogTail, String> {
+    tokio::task::spawn_blocking(move || {
+        log_tail_from(&crate::os_paths::log_dir(), &crate::crash_report::crash_log_path(), maxLines)
+    })
+    .await
+    .map_err(|_| "The log could not be read.".to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn early_lines_wait_and_arrive_in_order_once_the_file_is_known() {
+        let mut state: LateState<Vec<u8>> = LateState::Waiting(Vec::new());
+        late_write(&mut state, b"first\n");
+        late_write(&mut state, b"second\n");
+        late_open(&mut state, Some(Vec::new()));
+        late_write(&mut state, b"third\n");
+        match &state {
+            LateState::Open(file) => assert_eq!(file.as_slice(), b"first\nsecond\nthird\n"),
+            _ => panic!("the log should be open"),
+        }
+        // A second opening changes nothing.
+        late_open(&mut state, Some(b"other".to_vec()));
+        match &state {
+            LateState::Open(file) => assert_eq!(file.as_slice(), b"first\nsecond\nthird\n"),
+            _ => panic!("the log should still be the first one"),
+        }
+    }
+
+    #[test]
+    fn the_early_buffer_is_bounded_and_never_cuts_a_line() {
+        let mut state: LateState<Vec<u8>> = LateState::Waiting(Vec::new());
+        let line = [b'x'; 1000];
+        for _ in 0..200 {
+            late_write(&mut state, &line);
+        }
+        match &state {
+            LateState::Waiting(kept) => {
+                assert!(kept.len() <= LATE_BUFFER_MAX);
+                assert_eq!(kept.len() % 1000, 0, "only whole lines are kept");
+            }
+            _ => panic!("still waiting"),
+        }
+    }
+
+    #[test]
+    fn a_folder_that_cannot_be_opened_drops_lines_and_nothing_else() {
+        let mut state: LateState<Vec<u8>> = LateState::Waiting(b"early\n".to_vec());
+        late_open(&mut state, None);
+        late_write(&mut state, b"later\n");
+        assert!(matches!(state, LateState::Off));
+    }
+
+    #[test]
+    fn the_tail_is_the_newest_lines_in_order() {
+        let (text, count, truncated) = tail_lines("a\nb\nc\nd\n", 2, false);
+        assert_eq!((text.as_str(), count, truncated), ("c\nd", 2, true));
+        let (text, count, truncated) = tail_lines("a\nb", 10, false);
+        assert_eq!((text.as_str(), count, truncated), ("a\nb", 2, false));
+        // Read from the middle of the file: the first piece is half a line.
+        let (text, count, truncated) = tail_lines("lf of a line\nb\nc", 10, true);
+        assert_eq!((text.as_str(), count, truncated), ("b\nc", 2, true));
+        assert_eq!(tail_lines("", 10, false), (String::new(), 0, false));
+    }
+
+    #[test]
+    fn the_log_tail_reads_the_newest_file_and_the_last_death() {
+        let dir = tempfile::tempdir().unwrap();
+        let old = dir.path().join(log_file_name("2026-10-06"));
+        let new = dir.path().join(log_file_name("2026-10-07"));
+        std::fs::write(&old, "old line\n").unwrap();
+        std::fs::write(&new, (1..=50).map(|n| format!("line {n}\n")).collect::<String>()).unwrap();
+        std::fs::write(dir.path().join("notes.txt"), "not a log\n").unwrap();
+        let crash = dir.path().join("crash.log");
+        std::fs::write(&crash, "first death\nsecond death\n\n").unwrap();
+
+        let tail = log_tail_from(dir.path(), &crash, Some(3));
+        assert_eq!(tail.file, log_file_name("2026-10-07"));
+        assert_eq!(tail.text, "line 48\nline 49\nline 50");
+        assert_eq!(tail.line_count, 3);
+        assert!(tail.truncated);
+        assert_eq!(tail.last_crash.as_deref(), Some("second death"));
+
+        let all = log_tail_from(dir.path(), &dir.path().join("no-crash.log"), None);
+        assert_eq!(all.line_count, 50);
+        assert!(!all.truncated);
+        assert_eq!(all.last_crash, None);
+    }
+
+    #[test]
+    fn no_log_yet_is_an_empty_answer_not_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let tail = log_tail_from(dir.path(), &dir.path().join("crash.log"), None);
+        assert_eq!(tail, LogTail { file: String::new(), text: String::new(), line_count: 0, truncated: false, last_crash: None });
+        let missing = log_tail_from(&dir.path().join("gone"), &dir.path().join("crash.log"), None);
+        assert_eq!(missing.line_count, 0);
+    }
+
+    #[test]
+    fn a_huge_log_is_read_from_its_end_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join(log_file_name("2026-10-08"));
+        let line = "x".repeat(99);
+        std::fs::write(&file, (0..6000).map(|n| format!("{line}{n:05}\n")).collect::<String>()).unwrap();
+        let tail = log_tail_from(dir.path(), &dir.path().join("crash.log"), Some(5000));
+        assert!(tail.truncated);
+        assert_eq!(tail.line_count, 2000, "the cap on lines holds");
+        assert!(tail.text.ends_with("05999"));
+        assert!(tail.text.len() as u64 <= TAIL_MAX_BYTES);
+    }
 
     #[test]
     fn parses_every_level_case_insensitively() {
@@ -263,7 +573,7 @@ mod tests {
 
     #[test]
     fn the_reported_file_name_matches_the_appender_convention() {
-        // tracing-appender builds `<prefix>.<date>.<suffix>`; if main.rs and
+        // tracing-appender builds `<prefix>.<date>.<suffix>`; if lib.rs and
         // this command disagree, Settings shows a path that does not exist.
         assert_eq!(log_file_name("2026-08-31"), "lu.2026-08-31.log");
     }
@@ -271,9 +581,9 @@ mod tests {
     #[test]
     fn main_builds_the_appender_from_these_same_constants() {
         // The name is only right because both sides use the constants above.
-        // A refactor that inlines "lu" in main.rs would break the Settings
+        // A refactor that inlines "lu" in lib.rs would break the Settings
         // path silently, so pin the wiring here.
-        let src = include_str!("../main.rs");
+        let src = include_str!("../lib.rs");
         assert!(
             src.contains("commands::logging::LOG_FILE_PREFIX")
                 && src.contains("commands::logging::LOG_FILE_SUFFIX"),

@@ -1,18 +1,23 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { v4 as uuid } from 'uuid'
-import type { Conversation, Message, ChatArtifact, CompactionRecord } from '../types/chat'
+import type { Conversation, Message, MessageError, ChatArtifact, CompactionRecord, RequestUsage } from '../types/chat'
 import type { AgentBlock } from '../types/agent-mode'
-import { clampSampling, type SamplingOverrides } from '../lib/sampling'
+import { clampSampling, storedTemperature, type SamplingOverrides } from '../lib/sampling'
 import { idbStorage } from '../lib/idbStorage'
 import { externalizeConversations, hasInlineImages } from '../lib/chat-attachments'
 import { FILE_ONLY_TEXT } from '../lib/chat-files'
 import { holdBackup, releaseBackup } from '../lib/backup-hold'
 import { coalescedJSONStorage } from '../lib/coalescedStorage'
+import { isMobile } from '../lib/device-kind'
+import { plainChatTitle } from '../lib/chat-title'
 import { migrateBlockInPlace } from '../api/agents/block-helpers'
 import { markStaleWorkflowProgressStoppedOnBlock, extractWorkflowNameFromProgressMessage } from '../lib/workflow-progress-view'
+import { markStaleBackgroundCallOnBlock } from '../lib/background-tools'
+import { cancelBackgroundJobsOf } from '../lib/background-cancels'
 import { useGenerationStore } from './generationStore'
 import { useRemoteStore } from './remoteStore'
+import { useSettingsStore } from './settingsStore'
 import { useRAGStore } from './ragStore'
 import { useTodoStore } from './todoStore'
 import { usePermissionStore } from './permissionStore'
@@ -55,6 +60,13 @@ export function migratePersistedChat(state: unknown): unknown {
   const conversations = prop(state, 'conversations')
   if (!Array.isArray(conversations)) return state
   for (const conv of conversations) {
+    // A33 (3.0.8): a chat whose own temperature sits above TEMPERATURE_MAX
+    // (the popup slider ran to 2.0 until 3.0.7) loses that one value and
+    // follows the Settings page again; its other sampling values stay.
+    const sampling = prop(conv, 'sampling')
+    if (isRecord(sampling) && 'temperature' in sampling && storedTemperature(sampling.temperature) === undefined) {
+      delete sampling.temperature
+    }
     const messages = prop(conv, 'messages')
     if (!Array.isArray(messages)) continue
     for (const msg of messages) {
@@ -82,6 +94,9 @@ export function migratePersistedChat(state: unknown): unknown {
         // are separate objects and the chat surface (`groupAgentBlocks`,
         // tool-call-groups.ts) renders only the legacy singular field.
         markStaleWorkflowProgressStoppedOnBlock(typedBlock, workflowName)
+        // 3.0.8 (A2): same reason for a generation that went on in the
+        // background: its job lived in the window that closed.
+        markStaleBackgroundCallOnBlock(typedBlock)
       }
     }
   }
@@ -128,6 +143,10 @@ export function dropConversationSideState(id: string): void {
     ['permissions', () => usePermissionStore.getState().clearConversationOverrides(id)],
     ['staged-changes', () => useStagedChangesStore.getState().clear(id)],
     ['codex', () => useCodexStore.getState().dropConversation(id)],
+    // 3.0.8 (A2): a picture or video still rendering in the background for
+    // this chat has nowhere to land any more, so it stops instead of burning
+    // the card for nothing.
+    ['background-jobs', () => { cancelBackgroundJobsOf(id) }],
     // 2.6.8: Hintergrundagenten. Diese Zeile fehlte, und sie ist die einzige
     // in der Liste, die etwas ABBRICHT statt nur zu vergessen — ein
     // delegierter Agent laeuft in einem eigenen Versprechen weiter, auch wenn
@@ -207,6 +226,10 @@ interface ChatState {
   selectGreeting: (conversationId: string, messageId: string, index: number) => void
   deleteConversation: (id: string) => void
   renameConversation: (id: string, title: string) => void
+  /** "Continue on phone" on or off for one chat (CHATS-V1.md). */
+  setRemoteShared: (id: string, shared: boolean) => void
+  /** Mark a message as written on the phone. */
+  markFromPhone: (conversationId: string, messageId: string) => void
   setActiveConversation: (id: string | null) => void
   setConversationMemoryScope: (id: string, scope?: string) => void
   /** Toggle the active persona on/off for a specific chat — mirrors the
@@ -254,7 +277,15 @@ interface ChatState {
   updateMessageContent: (conversationId: string, messageId: string, content: string) => void
   updateMessageThinking: (conversationId: string, messageId: string, thinking: string) => void
   updateMessageUsage: (conversationId: string, messageId: string, usage: { promptTokens: number; completionTokens: number; totalTokens: number; estimated?: boolean }) => void
+  /** The summed counts of one request (lib/request-usage.ts), replaced whole. */
+  updateMessageRequestUsage: (conversationId: string, messageId: string, requestUsage: RequestUsage) => void
   updateMessageFinishReason: (conversationId: string, messageId: string, finishReason: string) => void
+  /** The kind of error a run ended with, or null to take it away again. */
+  updateMessageError: (conversationId: string, messageId: string, error: MessageError | null) => void
+  /** How long the model thought before it answered, in milliseconds. */
+  updateMessageThinkingMs: (conversationId: string, messageId: string, thinkingMs: number) => void
+  /** The document passages this answer was given (Document Chat). */
+  updateMessageSources: (conversationId: string, messageId: string, sources: NonNullable<Message['sources']>) => void
   /** Z36 finding 3: links in the agent answer no tool returned. */
   updateMessageUnbackedLinks: (conversationId: string, messageId: string, unbackedLinks: string[]) => void
   updateMessageAgentBlocks: (conversationId: string, messageId: string, blocks: AgentBlock[]) => void
@@ -343,6 +374,58 @@ export function flushChatPersist(): Promise<void> {
   return chatStorage.flush()
 }
 
+/**
+ * A phone writes the chat the moment the user's message is in it.
+ *
+ * Finding N2 (iPhone review): a new chat, the app killed 2 to 2.4 s after the
+ * first send, and the whole chat was gone without a word. The answer was
+ * streaming, so the store changed every frame and the coalescing window only
+ * wrote at its 2 s cap; a kill before that write had landed took the chat and
+ * the question with it. The sweep of interrupted runs can put a half answer
+ * back (lib/partial-answer-checkpoint.ts), but only into a chat that exists.
+ *
+ * So the write is started in the same tick as the message, before any hook
+ * goes on to wait for a model slot or to send the request. It is one write per
+ * question, not one per token. The desktop keeps its window: its process ends
+ * through pagehide, where the store is flushed.
+ */
+function flushQuestionOnPhone(): void {
+  if (!isMobile()) return
+  const write = chatStorage.flush().catch(() => {})
+  questionWrite = write
+  void write.then(() => { if (questionWrite === write) questionWrite = null })
+}
+
+/** The write the last question started, while it has not landed (phone only). */
+let questionWrite: Promise<void> | null = null
+
+/** The longest a send waits for the write of its question. */
+export const QUESTION_WRITE_MAX_MS = 300
+
+/**
+ * Resolves when the write of the last question has landed, or after
+ * `maxMs`, whichever comes first.
+ *
+ * The rest of finding N2: the write was started in the tick of the message,
+ * but nothing waited for it, and a kill in the milliseconds until it landed
+ * still took the question along. The sending hooks of the phone wait here
+ * before they ask a model. The cap is what keeps a storage that hangs from
+ * ever holding a send back: after it the request goes out and the write
+ * lands when it lands. Never rejects. Resolves at once when no such write is
+ * on its way, which is always the case on a desktop.
+ */
+export function questionOnDisk(maxMs: number = QUESTION_WRITE_MAX_MS): Promise<void> {
+  const write = questionWrite
+  if (!write) return Promise.resolve()
+  return new Promise<void>((resolve) => {
+    const cap = setTimeout(resolve, maxMs)
+    void write.then(() => {
+      clearTimeout(cap)
+      resolve()
+    })
+  })
+}
+
 /** Verify the explicit project save instead of trusting a best-effort flush. */
 export async function persistConversationMemoryScope(id: string, scope?: string): Promise<boolean> {
   try {
@@ -407,9 +490,11 @@ const CODEX_DEFAULT_TITLE = 'Coding Agent'
  * from the name of the first file, never from a hex dump.
  */
 function titleFromMessage(message: Message): string {
-  if (!message.files?.length) return message.content.slice(0, 50)
+  // The phone shows the title in a list line, where Markdown marks read as noise (F1 of short check 7); the desktop keeps the raw start.
+  const cut = (text: string) => (isMobile() ? plainChatTitle(text, 50) : text.slice(0, 50))
+  if (!message.files?.length) return cut(message.content)
   const typed = (message.displayContent ?? '').trim()
-  return (typed && typed !== FILE_ONLY_TEXT ? typed : message.files[0].name).slice(0, 50)
+  return typed && typed !== FILE_ONLY_TEXT ? cut(typed) : message.files[0].name.slice(0, 50)
 }
 
 function isStillDefaultTitle(title: string): boolean {
@@ -470,6 +555,8 @@ export const useChatStore = create<ChatState>()(
           // GH #170: the chat remembers WHICH persona it started with, so a
           // later pick in the Plugins menu of this chat can replace it.
           ...(opts?.persona ? { personaId: opts.persona.id } : {}),
+          // "Share new chats with paired phones" (CHATS-V1.md).
+          ...(useSettingsStore.getState().settings.shareNewChatsWithPhone ? { remoteShared: true } : {}),
         }
         set((state) => ({
           conversations: [conversation, ...state.conversations],
@@ -509,6 +596,23 @@ export const useChatStore = create<ChatState>()(
           conversations: state.conversations.map((c) =>
             c.id === id ? { ...c, title, updatedAt: Date.now() } : c
           ),
+        })),
+
+      setRemoteShared: (id, shared) =>
+        set((state) => ({
+          conversations: state.conversations.map((c) => {
+            if (c.id !== id) return c
+            const { remoteShared: _, ...rest } = c
+            return shared ? { ...rest, remoteShared: true } : rest
+          }),
+        })),
+
+      markFromPhone: (conversationId, messageId) =>
+        set((state) => ({
+          conversations: state.conversations.map((c) => c.id !== conversationId ? c : {
+            ...c,
+            messages: c.messages.map((m) => (m.id === messageId ? { ...m, fromPhone: true as const } : m)),
+          }),
         })),
 
       setActiveConversation: (id) => set({ activeConversationId: id }),
@@ -639,7 +743,7 @@ export const useChatStore = create<ChatState>()(
           ),
         })),
 
-      addMessage: (conversationId, message) =>
+      addMessage: (conversationId, message) => {
         set((state) => ({
           conversations: state.conversations.map((c) =>
             c.id === conversationId
@@ -654,7 +758,11 @@ export const useChatStore = create<ChatState>()(
               }
               : c
           ),
-        })),
+        }))
+        // A question is on its way to the disk before anything asks a model
+        // (phone only, see flushQuestionOnPhone).
+        if (message.role === 'user') flushQuestionOnPhone()
+      },
 
       insertMessageBefore: (conversationId, beforeId, message) =>
         set((state) => ({
@@ -724,6 +832,32 @@ export const useChatStore = create<ChatState>()(
           ),
         })),
 
+      updateMessageRequestUsage: (conversationId, messageId, requestUsage) =>
+        set((state) => ({
+          conversations: state.conversations.map((c) =>
+            c.id === conversationId
+              ? {
+                ...c,
+                messages: c.messages.map((m) => (m.id === messageId ? { ...m, requestUsage } : m)),
+                updatedAt: Date.now(),
+              }
+              : c
+          ),
+        })),
+
+      updateMessageSources: (conversationId, messageId, sources) =>
+        set((state) => ({
+          conversations: state.conversations.map((c) =>
+            c.id === conversationId
+              ? {
+                ...c,
+                messages: c.messages.map((m) => (m.id === messageId ? { ...m, sources } : m)),
+                updatedAt: Date.now(),
+              }
+              : c
+          ),
+        })),
+
       updateMessageFinishReason: (conversationId, messageId, finishReason) =>
         set((state) => ({
           conversations: state.conversations.map((c) =>
@@ -732,6 +866,37 @@ export const useChatStore = create<ChatState>()(
                 ...c,
                 messages: c.messages.map((m) => (m.id === messageId ? { ...m, finishReason } : m)),
                 updatedAt: Date.now(),
+              }
+              : c
+          ),
+        })),
+
+      updateMessageError: (conversationId, messageId, error) =>
+        set((state) => ({
+          conversations: state.conversations.map((c) =>
+            c.id === conversationId
+              ? {
+                ...c,
+                messages: c.messages.map((m) => {
+                  if (m.id !== messageId) return m
+                  if (error) return { ...m, error }
+                  const { error: _gone, ...rest } = m
+                  void _gone
+                  return rest
+                }),
+                updatedAt: Date.now(),
+              }
+              : c
+          ),
+        })),
+
+      updateMessageThinkingMs: (conversationId, messageId, thinkingMs) =>
+        set((state) => ({
+          conversations: state.conversations.map((c) =>
+            c.id === conversationId
+              ? {
+                ...c,
+                messages: c.messages.map((m) => (m.id === messageId ? { ...m, thinkingMs } : m)),
               }
               : c
           ),

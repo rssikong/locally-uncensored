@@ -1,0 +1,244 @@
+{
+ "name": "report",
+ "art": "blatt",
+ "quelle": "integ-306",
+ "blatt": "report",
+ "strang": "shell",
+ "code": "P1",
+ "lage": {
+  "route": "/dev/routes",
+  "screen": "m-dev-routes-screen",
+  "blaetter": [
+   "report"
+  ],
+  "dialog": [],
+  "reiter": null,
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back-under",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-page-back",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-overlays",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-sheet-scrim",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "",
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-sheet-report",
+   "tag": "div",
+   "rolle": "dialog",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    743
+   ]
+  },
+  {
+   "id": "m-sheet-close",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Close",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-report-intro",
+   "tag": "p",
+   "rolle": "p",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    90
+   ]
+  },
+  {
+   "id": "m-report-reasons",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    404
+   ]
+  },
+  {
+   "id": "m-report-reason-sexual",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Sexual content",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-report-reason-minors",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Involves a minor",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-report-reason-violence",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Violence or gore",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-report-reason-hate",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Hate or harassment",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-report-reason-self-harm",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Self harm",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-report-reason-illegal",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Illegal activity",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-report-reason-other",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Something else",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-report-note",
+   "tag": "textarea",
+   "rolle": "textbox",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Anything to add (optional)",
+   "box": [
+    332,
+    93
+   ]
+  },
+  {
+   "id": "m-report-send",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Save report Pick what is wrong first",
+   "risiko": "destructive",
+   "deaktiviert": true,
+   "box": [
+    358,
+    52
+   ]
+  }
+ ]
+}

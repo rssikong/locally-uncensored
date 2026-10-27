@@ -6,7 +6,7 @@ import { seedOnboardingDone } from './support/cloud-mock'
 /**
  * Two wishes from the 3.0.4 bug hunt, on the real Settings page:
  *  - Discord 2026-09-23: limit the download speed. The number
- *    typed under Model Storage reaches `set_download_limit`.
+ *    typed under Storage reaches `set_download_limit`.
  *  - GitHub Discussion 4 2026-09-22: statistics for the Local API.
  *    A running API shows what went through it.
  * Screenshots land in test-results/304-wishes for the owner's design check.
@@ -47,7 +47,7 @@ async function boot(page: Page) {
 test('the download speed limit reaches the downloader', async ({ page }) => {
   await boot(page)
   await page.getByRole('button', { name: 'AI Backends', exact: true }).first().click()
-  const storage = page.getByRole('button', { name: /Model Storage/ }).first()
+  const storage = page.getByRole('button', { name: /Storage/ }).first()
   if ((await storage.getAttribute('aria-expanded')) === 'false') await storage.click()
   const box = page.getByLabel('Download speed limit in MB/s')
   await expect(box).toBeVisible()

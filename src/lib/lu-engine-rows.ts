@@ -2,7 +2,7 @@
  * The GGUFs in the LU Engine folder as rows in the model list.
  *
  * A14 (2.6.8), the owner, seen on a Mac with Ollama as the chat backend and
- * ~/lu-e2e-models holding Qwen2.5-0.5B-Instruct-Q8_0.gguf: Model Storage
+ * ~/lu-e2e-models holding Qwen2.5-0.5B-Instruct-Q8_0.gguf: Storage
  * promises "LU downloads GGUFs here and reads every .gguf in it", and the file
  * never appeared anywhere. `useModels` asked `list_bundled_models` only while
  * the LU Engine was the active provider, so on that machine the promise was

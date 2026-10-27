@@ -2,9 +2,11 @@ import { create } from 'zustand'
 import { backendCall, isTauri } from '../api/backend'
 import { useMemoryStore } from './memoryStore'
 import { useProviderStore } from './providerStore'
+import { isCompatProviderId } from '../api/providers/compat-id'
 import type { ProviderId } from '../api/providers/types'
 import { openaiEntryOfModel, displayModelName } from '../api/providers/model-name'
 import type { MemoryFile } from '../types/agent-mode'
+import { requestDeviceSigninCode } from '../api/cloud/device-signin'
 
 export const REMOTE_MEMORY_CHANGED = 'Remote memory changed. Restart Remote Access and reconnect before continuing. Previously delivered data cannot be recalled.'
 const REMOTE_MEMORY_UNCONFIRMED = 'Remote memory changed, but blocking Remote Access could not be confirmed. Disconnect remote devices and stop Remote Access before continuing.'
@@ -19,6 +21,7 @@ function trackStartup(): () => void {
   return () => { pendingStartup = null; finish() }
 }
 let revocationPending: Promise<void> = Promise.resolve()
+let appQrAsk = 0
 
 async function waitForMemoryRevocation(ignoreFailure = false): Promise<void> {
   let pending: Promise<void>
@@ -41,6 +44,26 @@ export function remoteMemoryChanged(before: MemoryFile[], after: MemoryFile[]): 
     JSON.stringify(entry) !== JSON.stringify(current.get(entry.id)))
 }
 
+function memoryHydrated(): boolean {
+  const p = (useMemoryStore as { persist?: { hasHydrated?: () => boolean } }).persist
+  return p?.hasHydrated ? p.hasHydrated() : true
+}
+
+/** Resolves once the persisted memory is loaded (at most `maxMs`, then it goes on). */
+export function waitForMemoryHydration(maxMs = 5000): Promise<void> {
+  if (memoryHydrated()) return Promise.resolve()
+  const p = (useMemoryStore as { persist?: { onFinishHydration?: (fn: () => void) => () => void } }).persist
+  return new Promise((resolve) => {
+    const timer = setTimeout(done, maxMs)
+    const off = p?.onFinishHydration?.(done)
+    function done() {
+      clearTimeout(timer)
+      off?.()
+      resolve()
+    }
+  })
+}
+
 function revokeRemoteMemory(): Promise<void> {
   const pendingNotice = 'Blocking Remote Access because memory changed...'
   useRemoteStore.setState({ error: pendingNotice, memoryNotice: pendingNotice, qrVisible: false })
@@ -54,7 +77,7 @@ function revokeRemoteMemory(): Promise<void> {
       try {
         await backendCall('stop_remote_server')
         useRemoteStore.setState({
-          enabled: false, passcode: '', qrPngBase64: '', connectedDevices: [],
+          enabled: false, passcode: '', qrPngBase64: '', appQrPngBase64: '', connectedDevices: [],
           tunnelActive: false, tunnelUrl: '', awaitingTunnel: false, qrVisible: false,
           error: REMOTE_MEMORY_CHANGED, memoryNotice: REMOTE_MEMORY_CHANGED,
         })
@@ -109,9 +132,11 @@ export function remoteBackendArgs(
       backendKey: e?.apiKey || undefined,
     }
   }
-  if (providerId === 'openai') {
-    const base = providers['openai']?.baseUrl || ''
-    const key = getKey('openai') || ''
+  // The shared slot and every extra OpenAI-compatible slot (`openai-<slug>`,
+  // a phone's) go out as kind `openai`, each with its own address and key.
+  if (providerId === 'openai' || isCompatProviderId(providerId)) {
+    const base = providers[providerId]?.baseUrl || ''
+    const key = getKey(providerId) || ''
     return {
       model: bare,
       backendKind: 'openai',
@@ -181,6 +206,10 @@ export interface RemotePermissions {
    *  (RCE-class; kept separate from filesystem). Older state without it reads
    *  as false. */
   shell?: boolean
+  /** Create over the desktop: a paired phone makes images and videos with
+   *  this computer's engines. Optional + default off like `shell`; older state
+   *  without it reads as false. */
+  create?: boolean
 }
 
 /**
@@ -214,6 +243,167 @@ export function normalizeRemotePermissions(raw: unknown): RemotePermissions | nu
     downloads: r.downloads === true,
     process_control: r.process_control === true,
     shell: r.shell === true,
+    create: r.create === true,
+  }
+}
+
+/** Rights of one paired device of the sealed channel (REMOTE-PROTOKOLL v2,
+ *  section 12). The global permissions above stay the upper bound. */
+export interface DeviceRights {
+  chat: boolean
+  agent: boolean
+  files: boolean
+  terminal: boolean
+  create: boolean
+}
+
+/** A phone paired over the sealed channel, as the desktop stores it: public
+ *  parts only (commands/remote_sealed.rs, `PairedDevice`). */
+export interface PairedDevice {
+  device_id: string
+  name: string
+  platform: string
+  app_version: string
+  rights: DeviceRights
+  paired_at: number
+  last_seen: number
+  /** The short id the phone shows as well ("3F2A 9C01"). */
+  fingerprint: string
+}
+
+/** "Allow '<name>' to use LU on this computer?", waiting for an answer. */
+export interface PairRequest {
+  requestId: string
+  name: string
+  platform: string
+  /** The six digits the phone must show too (QR and typed code path). */
+  comparisonCode: string | null
+  /** First bytes of the phone's device id ("3F2A 9C01"), empty if unknown. */
+  fingerprint?: string
+}
+
+export interface SealedInfo {
+  available: boolean
+  /** Where the desktop key lives: 'keychain' or 'file'. */
+  storage: string
+  /** "Reach this computer from anywhere". */
+  anywhere: boolean
+}
+
+/** The browser page and the plain code login for older phones. Once a phone
+ *  is paired or "anywhere" is on, they need a yes at the desktop, for a while
+ *  (commands/remote_sealed.rs, `remote_set_legacy_access`). */
+export interface LegacyAccess {
+  needsConsent: boolean
+  /** Unix seconds until the old way in stays open, null when closed. */
+  until: number | null
+}
+
+/** Pure + exported for tests. */
+export function normalizeLegacyAccess(raw: unknown): LegacyAccess {
+  const r = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {}
+  const until = typeof r.until === 'number' && Number.isFinite(r.until) && r.until > 0 ? r.until : null
+  return { needsConsent: r.needsConsent === true, until }
+}
+
+/** Whether the address directory knows where this computer is
+ *  (REMOTE-PROTOKOLL v2, section 14; commands/remote_sealed.rs). */
+export interface AnnounceInfo {
+  /** off: switch off. idle: no tunnel. announcing, ok, failed. */
+  state: 'off' | 'idle' | 'announcing' | 'ok' | 'failed'
+  /** Unix seconds of the last announcement the directory took. */
+  lastOkAt: number | null
+  error: string | null
+  /** Unix seconds of the next try after a failure. */
+  nextTryAt: number | null
+}
+
+/** "Sign this phone in to your LU account?", waiting for an answer. */
+export interface SigninRequest {
+  requestId: string
+  name: string
+  platform: string
+  /** The phone's Ed25519 key from the pairing; the code is bound to it. */
+  devicePub: string
+  /** First bytes of the phone's device id ("3F2A 9C01"), empty if unknown. */
+  fingerprint?: string
+}
+
+const ANNOUNCE_STATES: AnnounceInfo['state'][] = ['off', 'idle', 'announcing', 'ok', 'failed']
+
+/** Pure + exported for tests. */
+export function normalizeAnnounce(raw: unknown): AnnounceInfo {
+  const r = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {}
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null)
+  return {
+    state: ANNOUNCE_STATES.includes(r.state as AnnounceInfo['state']) ? r.state as AnnounceInfo['state'] : 'off',
+    lastOkAt: num(r.lastOkAt),
+    error: typeof r.error === 'string' && r.error ? r.error : null,
+    nextTryAt: num(r.nextTryAt),
+  }
+}
+
+/** One sign-in question as the desktop sends it. Pure + exported for tests. */
+export function normalizeSigninRequest(raw: unknown): SigninRequest | null {
+  const x = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {}
+  if (typeof x.requestId !== 'string' || !x.requestId) return null
+  if (typeof x.devicePub !== 'string' || !x.devicePub) return null
+  return {
+    requestId: x.requestId,
+    name: typeof x.name === 'string' ? x.name : '',
+    platform: typeof x.platform === 'string' ? x.platform : '',
+    devicePub: x.devicePub,
+    fingerprint: typeof x.fingerprint === 'string' ? x.fingerprint : '',
+  }
+}
+
+const RIGHT_KEYS: (keyof DeviceRights)[] = ['chat', 'agent', 'files', 'terminal', 'create']
+
+/** Anything not explicitly `true` reads as off. Pure + exported for tests. */
+export function normalizeDeviceRights(raw: unknown): DeviceRights {
+  const r = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {}
+  return Object.fromEntries(RIGHT_KEYS.map((k) => [k, r[k] === true])) as unknown as DeviceRights
+}
+
+/** What a newly paired phone may do unless the settings say otherwise:
+ *  chat and agent (DeviceRights::first_pairing in remote_sealed.rs). */
+export const FIRST_PAIRING_RIGHTS: DeviceRights = normalizeDeviceRights({ chat: true, agent: true })
+
+/** The rights for new phones from `remote_paired_devices`; missing means the
+ *  old default. Pure + exported for tests. */
+export function normalizeNewDeviceRights(raw: unknown): DeviceRights {
+  const r = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {}
+  return r.newDeviceRights && typeof r.newDeviceRights === 'object' ? normalizeDeviceRights(r.newDeviceRights) : { ...FIRST_PAIRING_RIGHTS }
+}
+
+/** The paired-device answer of `remote_paired_devices`, checked field by
+ *  field. Pure + exported for tests. */
+export function normalizePairedDevices(raw: unknown): { info: SealedInfo; devices: PairedDevice[]; announce: AnnounceInfo } {
+  const r = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {}
+  const list = Array.isArray(r.devices) ? r.devices : []
+  const devices: PairedDevice[] = list.flatMap((d) => {
+    if (!d || typeof d !== 'object') return []
+    const x = d as Record<string, unknown>
+    if (typeof x.device_id !== 'string' || !x.device_id) return []
+    return [{
+      device_id: x.device_id,
+      name: typeof x.name === 'string' ? x.name : '',
+      platform: typeof x.platform === 'string' ? x.platform : '',
+      app_version: typeof x.app_version === 'string' ? x.app_version : '',
+      rights: normalizeDeviceRights(x.rights),
+      paired_at: typeof x.paired_at === 'number' ? x.paired_at : 0,
+      last_seen: typeof x.last_seen === 'number' ? x.last_seen : 0,
+      fingerprint: typeof x.fingerprint === 'string' ? x.fingerprint : '',
+    }]
+  })
+  return {
+    info: {
+      available: r.available === true,
+      storage: typeof r.storage === 'string' ? r.storage : '',
+      anywhere: r.anywhere === true,
+    },
+    devices,
+    announce: normalizeAnnounce(r.announce),
   }
 }
 
@@ -245,6 +435,18 @@ interface RemoteState {
   // first mobile message. Sidebar icon reopens it on demand. A new
   // Dispatch / Restart resets this to `true` and refreshes the passcode.
   qrVisible: boolean
+  // Sealed channel (REMOTE-PROTOKOLL v2)
+  /** QR v2 for the LU app: desktop key plus a ticket for five minutes, once. */
+  appQrPngBase64: string
+  appQrExpiresAt: number
+  pairedDevices: PairedDevice[]
+  sealedInfo: SealedInfo
+  /** The rights a newly paired phone starts with (Remote settings). */
+  newDeviceRights: DeviceRights
+  pairRequests: PairRequest[]
+  announce: AnnounceInfo
+  signinRequests: SigninRequest[]
+  legacy: LegacyAccess
 
   startServer: (model?: string, systemPrompt?: string) => Promise<void>
   stopServer: () => Promise<boolean>
@@ -261,6 +463,27 @@ interface RemoteState {
   showQr: () => void
   hideQr: () => void
   clearError: () => void
+  fetchAppQr: () => Promise<void>
+  refreshPairedDevices: () => Promise<void>
+  forgetDevice: (deviceId: string) => Promise<void>
+  setDeviceRights: (deviceId: string, rights: DeviceRights) => Promise<void>
+  setNewDeviceRights: (rights: DeviceRights) => Promise<void>
+  setAnywhere: (on: boolean) => Promise<void>
+  loadPairRequests: () => Promise<void>
+  addPairRequest: (request: PairRequest) => void
+  removePairRequest: (requestId: string) => void
+  decidePairing: (requestId: string, allow: boolean) => Promise<void>
+  loadSigninRequests: () => Promise<void>
+  addSigninRequest: (request: SigninRequest) => void
+  removeSigninRequest: (requestId: string) => void
+  /** Allow fetches the code with this window's session (never handed on);
+   *  `signedOut` answers right away that this computer has no account. */
+  decideSignin: (requestId: string, allow: boolean, signedOut?: boolean) => Promise<void>
+  /** The QR or Dispatch panel opened or closed: a code exists only while it
+   *  is open. */
+  setPairingWindow: (open: boolean) => Promise<void>
+  /** Let the browser page and older phones in for a while, or end it. */
+  setLegacyAccess: (on: boolean) => Promise<void>
 }
 
 export const useRemoteStore = create<RemoteState>()((set, get) => ({
@@ -272,7 +495,7 @@ export const useRemoteStore = create<RemoteState>()((set, get) => ({
   mobileUrl: '',
   qrPngBase64: '',
   connectedDevices: [],
-  permissions: { filesystem: false, downloads: false, process_control: false, shell: false },
+  permissions: { filesystem: false, downloads: false, process_control: false, shell: false, create: false },
   tunnelActive: false,
   tunnelUrl: '',
   tunnelLoading: false,
@@ -282,6 +505,15 @@ export const useRemoteStore = create<RemoteState>()((set, get) => ({
   memoryNotice: null,
   dispatchedConversationId: null,
   qrVisible: false,
+  appQrPngBase64: '',
+  appQrExpiresAt: 0,
+  pairedDevices: [],
+  sealedInfo: { available: false, storage: '', anywhere: false },
+  newDeviceRights: { ...FIRST_PAIRING_RIGHTS },
+  pairRequests: [],
+  announce: { state: 'off', lastOkAt: null, error: null, nextTryAt: null },
+  signinRequests: [],
+  legacy: { needsConsent: false, until: null },
 
   startServer: async (model?: string, systemPrompt?: string) => {
     if (get().loading || pendingStartup || stopsInProgress > 0) throw new Error('Remote Access is already starting or stopping. Wait for it to finish.')
@@ -299,6 +531,8 @@ export const useRemoteStore = create<RemoteState>()((set, get) => ({
     let serverStarted = false
     try {
       await waitForMemoryRevocation()
+      // The prompt a phone gets carries the saved memory, so wait until it is loaded.
+      await waitForMemoryHydration()
       if (startupRevision !== lifecycleRevision) throw new Error(REMOTE_START_CANCELLED)
       const revision = memoryRevision
       const args: Record<string, unknown> = {}
@@ -393,7 +627,7 @@ export const useRemoteStore = create<RemoteState>()((set, get) => ({
         passcodeExpiresAt: 0,
         lanUrl: '',
         mobileUrl: '',
-        qrPngBase64: '',
+        qrPngBase64: '', appQrPngBase64: '',
         connectedDevices: [],
         tunnelActive: false,
         tunnelUrl: '',
@@ -433,7 +667,7 @@ export const useRemoteStore = create<RemoteState>()((set, get) => ({
       if (status.lifecycleBusy === true) {
         // No local startup is active, so this operation belongs to an older
         // frontend or another caller. Stop it before accepting its snapshot.
-        set({ enabled: true, qrVisible: false, passcode: '', qrPngBase64: '',
+        set({ enabled: true, qrVisible: false, passcode: '', qrPngBase64: '', appQrPngBase64: '',
           memoryNotice: 'Recovering an unfinished Remote operation. Stopping it before reconnecting...' })
         const stopped = await get().stopServer()
         const notice = stopped
@@ -493,9 +727,10 @@ export const useRemoteStore = create<RemoteState>()((set, get) => ({
       // Existing mobile clients keep their JWT; only new logins need the
       // fresh passcode. Leave connectedDevices alone — refetch in the
       // background so any server-side drift syncs back to the UI.
+      // The server gives a new code fifteen minutes (PASSCODE_TTL_SECS).
       set({
         passcode: newPasscode,
-        passcodeExpiresAt: Math.floor(Date.now() / 1000) + 300,
+        passcodeExpiresAt: Math.floor(Date.now() / 1000) + 900,
       })
       get().fetchQrCode()
       get().refreshDevices()
@@ -511,6 +746,186 @@ export const useRemoteStore = create<RemoteState>()((set, get) => ({
     } catch {
       // Non-critical
     }
+    // The app's QR rides along: a new passcode or a new tunnel address is a
+    // new link too.
+    await get().fetchAppQr()
+  },
+
+  fetchAppQr: async () => {
+    // Only the latest ask counts: a new QR ends the ticket of the one before.
+    const ask = ++appQrAsk
+    try {
+      const qr = await backendCall<{ qr_png_base64?: unknown; expiresAt?: unknown }>('remote_pairing_qr')
+      if (ask !== appQrAsk) return
+      set({
+        appQrPngBase64: typeof qr?.qr_png_base64 === 'string' ? qr.qr_png_base64 : '',
+        appQrExpiresAt: typeof qr?.expiresAt === 'number' ? qr.expiresAt : 0,
+      })
+    } catch {
+      // No sealed channel on this computer, or the QR panel is closed.
+      if (ask === appQrAsk) set({ appQrPngBase64: '', appQrExpiresAt: 0 })
+    }
+  },
+
+  refreshPairedDevices: async () => {
+    try {
+      const raw = await backendCall<unknown>('remote_paired_devices')
+      const { info, devices, announce } = normalizePairedDevices(raw)
+      const legacy = normalizeLegacyAccess(raw && typeof raw === 'object' ? (raw as Record<string, unknown>).legacy : null)
+      set({ sealedInfo: info, pairedDevices: devices, announce, legacy, newDeviceRights: normalizeNewDeviceRights(raw) })
+    } catch {
+      // Non-critical
+    }
+  },
+
+  forgetDevice: async (deviceId: string) => {
+    try {
+      await backendCall('remote_forget_device', { deviceId })
+    } catch (err) {
+      set({ error: String(err) })
+    }
+    await get().refreshPairedDevices()
+  },
+
+  setNewDeviceRights: async (rights: DeviceRights) => {
+    const payload = normalizeDeviceRights(rights)
+    try {
+      await backendCall('remote_set_new_device_rights', { rights: payload })
+      set({ newDeviceRights: payload })
+    } catch (err) {
+      set({ error: String(err) })
+    }
+  },
+
+  setDeviceRights: async (deviceId: string, rights: DeviceRights) => {
+    // Every right stated: what is sent is exactly what the panel shows.
+    const payload = normalizeDeviceRights(rights)
+    try {
+      await backendCall('remote_set_device_rights', { deviceId, rights: payload })
+      set({ pairedDevices: get().pairedDevices.map((d) => d.device_id === deviceId ? { ...d, rights: payload } : d) })
+    } catch (err) {
+      set({ error: String(err) })
+      await get().refreshPairedDevices()
+    }
+  },
+
+  setAnywhere: async (on: boolean) => {
+    try {
+      await backendCall('remote_set_anywhere', { on })
+      set({ sealedInfo: { ...get().sealedInfo, anywhere: on } })
+    } catch (err) {
+      set({ error: String(err) })
+    }
+  },
+
+  loadPairRequests: async () => {
+    try {
+      const list = await backendCall<unknown>('remote_pair_requests')
+      if (!Array.isArray(list)) return
+      const requests = list.flatMap((r) => {
+        const x = r && typeof r === 'object' ? r as Record<string, unknown> : {}
+        if (typeof x.requestId !== 'string') return []
+        return [{
+          requestId: x.requestId,
+          name: typeof x.name === 'string' ? x.name : '',
+          platform: typeof x.platform === 'string' ? x.platform : '',
+          comparisonCode: typeof x.comparisonCode === 'string' ? x.comparisonCode : null,
+          fingerprint: typeof x.fingerprint === 'string' ? x.fingerprint : '',
+        }]
+      })
+      set({ pairRequests: requests })
+    } catch {
+      // Non-critical
+    }
+  },
+
+  addPairRequest: (request: PairRequest) => {
+    const rest = get().pairRequests.filter((r) => r.requestId !== request.requestId)
+    set({ pairRequests: [...rest, request] })
+  },
+
+  removePairRequest: (requestId: string) => {
+    set({ pairRequests: get().pairRequests.filter((r) => r.requestId !== requestId) })
+  },
+
+  decidePairing: async (requestId: string, allow: boolean) => {
+    try {
+      await backendCall('remote_pair_decide', { requestId, allow })
+    } catch (err) {
+      set({ error: String(err) })
+    }
+    get().removePairRequest(requestId)
+    await get().refreshPairedDevices()
+    // A ticket is used up by its scan: show a fresh QR for the next phone.
+    if (get().enabled) await get().fetchAppQr()
+  },
+
+  loadSigninRequests: async () => {
+    try {
+      const list = await backendCall<unknown>('remote_signin_requests')
+      if (!Array.isArray(list)) return
+      set({ signinRequests: list.flatMap((r) => normalizeSigninRequest(r) ?? []) })
+    } catch {
+      // Non-critical
+    }
+  },
+
+  addSigninRequest: (request: SigninRequest) => {
+    const rest = get().signinRequests.filter((r) => r.requestId !== request.requestId)
+    set({ signinRequests: [...rest, request] })
+  },
+
+  removeSigninRequest: (requestId: string) => {
+    set({ signinRequests: get().signinRequests.filter((r) => r.requestId !== requestId) })
+  },
+
+  decideSignin: async (requestId: string, allow: boolean, signedOut = false) => {
+    const request = get().signinRequests.find((r) => r.requestId === requestId)
+    get().removeSigninRequest(requestId)
+    let answer: Record<string, unknown> = { requestId, outcome: 'deny' }
+    if (allow && request) {
+      if (signedOut) {
+        answer = { requestId, outcome: 'signed_out' }
+      } else {
+        const got = await requestDeviceSigninCode(request.devicePub)
+        answer = got.kind === 'code'
+          ? { requestId, outcome: 'allow', code: got.code, expires: got.expires }
+          : { requestId, outcome: got.kind === 'signed-out' ? 'signed_out' : 'unavailable' }
+      }
+    }
+    try {
+      await backendCall('remote_signin_decide', answer)
+    } catch (err) {
+      set({ error: String(err) })
+    }
+  },
+
+  setPairingWindow: async (open: boolean) => {
+    if (!isTauri()) return
+    try {
+      const r = await backendCall<{ passcode?: unknown; passcodeExpiresAt?: unknown }>('remote_pairing_window', { open })
+      const passcode = typeof r?.passcode === 'string' ? r.passcode : ''
+      const passcodeExpiresAt = typeof r?.passcodeExpiresAt === 'number' ? r.passcodeExpiresAt : 0
+      if (open) {
+        set({ passcode, passcodeExpiresAt })
+        await get().fetchQrCode()
+      } else {
+        // The app's QR holds a ticket: it goes with the panel.
+        appQrAsk += 1
+        set({ passcode: '', passcodeExpiresAt: 0, appQrPngBase64: '', appQrExpiresAt: 0 })
+      }
+    } catch {
+      // Remote not running: nothing to open or close.
+    }
+  },
+
+  setLegacyAccess: async (on: boolean) => {
+    try {
+      const until = await backendCall<unknown>('remote_set_legacy_access', { on })
+      set({ legacy: { ...get().legacy, until: typeof until === 'number' && until > 0 ? until : null } })
+    } catch (err) {
+      set({ error: String(err) })
+    }
   },
 
   setPermissions: async (perms: RemotePermissions) => {
@@ -525,6 +940,7 @@ export const useRemoteStore = create<RemoteState>()((set, get) => ({
       downloads: false,
       process_control: false,
       shell: false,
+      create: false,
     }
     try {
       await backendCall('set_remote_permissions', { permissions: payload })
@@ -615,6 +1031,8 @@ export const useRemoteStore = create<RemoteState>()((set, get) => ({
     let serverStarted = false
     try {
       await waitForMemoryRevocation()
+      // The prompt a phone gets carries the saved memory, so wait until it is loaded.
+      await waitForMemoryHydration()
       if (startupRevision !== lifecycleRevision) throw new Error(REMOTE_START_CANCELLED)
       const revision = memoryRevision
       const args: Record<string, unknown> = {}
@@ -690,6 +1108,10 @@ export const useRemoteStore = create<RemoteState>()((set, get) => ({
 }))
 
 const unsubscribeRemoteMemory = useMemoryStore.subscribe((state, previous) => {
+  // Loading the saved memory after launch is not an edit. Without this guard the
+  // first hydration revoked a Remote session that started at launch ("from
+  // anywhere", device tests), and every phone got "Memory was changed".
+  if (!memoryHydrated()) return
   if (!remoteMemoryChanged(previous.entries, state.entries) && state.settings === previous.settings) return
   memoryRevision += 1
   const remote = useRemoteStore.getState()

@@ -28,7 +28,7 @@ function Lightbox({ src, prompt, onClose }: { src: string; prompt?: string; onCl
       aria-modal="true"
       aria-label="Image preview"
       onClick={onClose}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
+      className="lu-on-dark fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
     >
       <img src={src} alt="" className="max-h-full max-w-full rounded-lg object-contain" />
       {prompt && (

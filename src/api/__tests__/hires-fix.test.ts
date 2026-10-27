@@ -73,13 +73,11 @@ describe('applyNativeHiresFix', () => {
     expect(result.width).toBe(1824)
     expect(result.height).toBe(1248)
     expect(result.workflow[result.upscaleNodeId]).toEqual(expect.objectContaining({
-      class_type: 'LatentUpscale',
+      class_type: 'LatentUpscaleBy',
       inputs: {
         samples: ['4', 0],
         upscale_method: 'bislerp',
-        width: 1824,
-        height: 1248,
-        crop: 'disabled',
+        scale_by: 1.5,
       },
     }))
     expect(result.workflow[result.samplerNodeId]).toEqual(expect.objectContaining({

@@ -9,10 +9,10 @@
  */
 
 import { log } from "../lib/logger";
-import { prop } from "../types/json-guards";
 import { shouldLogRepeat } from "../lib/probe-backoff";
 import { chatFirstReplyMs, FIRST_REPLY_TIMEOUT } from "../lib/chat-reply-timeout";
 import { useSettingsStore } from "../stores/settingsStore";
+import { isIOS, isAndroid, isMobile, isMacOS } from "../lib/device-kind";
 
 // Hosts whose proxy failure has already been logged, host -> timestamp. Keeps
 // a dead local backend from filling the console with the same line forever.
@@ -20,29 +20,20 @@ const proxyWarnSeen = new Map<string, number>();
 
 let _invoke: ((cmd: string, args?: Record<string, unknown>) => Promise<unknown>) | null = null;
 
-/** True when running inside a Tauri WebView (.exe), false in browser dev mode */
-export function isTauri(): boolean {
-  // Tauri v2 renamed the global from `__TAURI__` to `__TAURI_INTERNALS__`.
-  // Check both so the app keeps working across both versions (and also
-  // during the migration window when people might be on either).
-  if (typeof window === "undefined") return false;
-  // Neither global is in the DOM lib, so reading them off `window` needed an
-  // assertion. `prop` answers `undefined` for a missing key without claiming
-  // anything about the container — the same probe, checked.
-  const w: unknown = window;
-  return !!(prop(w, "__TAURI_INTERNALS__") || prop(w, "__TAURI__"));
-}
+// Lives in its own store-free module so `main.tsx` can reach it without
+// hydrating `settingsStore` before the onboarding handover (api/in-tauri.ts).
+import { isTauri } from "./in-tauri";
+export { isTauri };
 
-/** True when the host OS is macOS. The frontend `dist` is shared across the
- *  mac and Windows Tauri builds, so platform-specific behaviour must be a
- *  RUNTIME check. WKWebView reports "MacIntel" / "Mac OS X" (even on Apple
- *  Silicon); WebView2 reports "Win32" / "Windows NT". */
-export function isMacOS(): boolean {
-  if (typeof navigator === "undefined") return false;
-  const plat = navigator.platform || "";
-  const ua = navigator.userAgent || "";
-  return /Mac|iPhone|iPad|iPod/.test(plat) || /Mac OS X|Macintosh/.test(ua);
-}
+
+// isIOS, isAndroid and isMobile live in lib/device-kind.ts, a leaf without
+// imports. They are re-exported here because this is where callers look for
+// platform questions. The leaf exists so lib/capabilities.ts can ask "is this
+// a phone?" without going through this module, which half the test suite
+// replaces with a hand-written mock that knows nothing about phones.
+// isMacOS too, since 3.0.8: settingsStore asks it, and this module imports
+// settingsStore, so the store takes it from the leaf.
+export { isIOS, isAndroid, isMobile, isMacOS };
 
 /** True on Linux (WebKitGTK reports "Linux ..." / "X11; Linux"). Same
  *  runtime-check rule as isMacOS — one dist serves all three OS builds. */
@@ -543,6 +534,7 @@ export async function backendCall<T = unknown>(
     // the Local API usage counter and the download speed limit live in Rust.
     local_api_usage: { path: "/local-api/local-api-usage" },
     set_download_limit: { path: "/local-api/set-download-limit", method: "POST" },
+    set_engine_idle_unload: { path: "/local-api/set-engine-idle-unload", method: "POST" },
     mlx_status: { path: "/local-api/mlx-status" },
     mlx_start: { path: "/local-api/mlx-start", method: "POST" },
     mlx_unload: { path: "/local-api/mlx-unload", method: "POST" },
@@ -669,6 +661,18 @@ export async function backendCall<T = unknown>(
     // The GGUF file dialog of the Model Manager is native (D17); the dev
     // server answers 501 (dev-server/remote-stubs.ts).
     pick_gguf_file: { path: "/local-api/pick-gguf-file", method: "POST" },
+    // 3.0.8 (A2): the card per task lives in the Rust process (it forwards
+    // it to the spawns); the dev server answers 501 (dev-server/remote-stubs.ts).
+    set_gpu_roles: { path: "/local-api/set-gpu-roles", method: "POST" },
+    describe_gpu_roles: { path: "/local-api/describe-gpu-roles" },
+    // Remove refusals (A14): Python processes the Rust side starts and owns.
+    abliterate_plan: { path: "/local-api/abliterate-plan", method: "POST" },
+    abliterate_start: { path: "/local-api/abliterate-start", method: "POST" },
+    abliterate_status: { path: "/local-api/abliterate-status" },
+    abliterate_cancel: { path: "/local-api/abliterate-cancel", method: "POST" },
+    abliterate_dismiss: { path: "/local-api/abliterate-dismiss", method: "POST" },
+    abliterate_runs: { path: "/local-api/abliterate-runs" },
+    abliterate_trash_copy: { path: "/local-api/abliterate-trash-copy", method: "POST" },
     download_progress: { path: "/local-api/download-progress" },
     pause_download: { path: "/local-api/pause-download", method: "POST" },
     cancel_download: { path: "/local-api/cancel-download", method: "POST" },
@@ -692,6 +696,36 @@ export async function backendCall<T = unknown>(
     start_tunnel: { path: "/local-api/start-tunnel", method: "POST" },
     stop_tunnel: { path: "/local-api/stop-tunnel", method: "POST" },
     tunnel_status: { path: "/local-api/tunnel-status" },
+    // Sealed channel (REMOTE-PROTOKOLL v2): desktop only, 501 in the dev
+    // server (dev-server/remote-stubs.ts).
+    remote_pairing_qr: { path: "/local-api/remote-pairing-qr" },
+    remote_pairing_window: { path: "/local-api/remote-pairing-window", method: "POST" },
+    remote_paired_devices: { path: "/local-api/remote-paired-devices" },
+    remote_forget_device: { path: "/local-api/remote-forget-device", method: "POST" },
+    remote_set_device_rights: { path: "/local-api/remote-set-device-rights", method: "POST" },
+    remote_set_new_device_rights: { path: "/local-api/remote-set-new-device-rights", method: "POST" },
+    remote_firewall_status: { path: "/local-api/remote-firewall-status" },
+    remote_firewall_allow: { path: "/local-api/remote-firewall-allow", method: "POST" },
+    remote_pair_decide: { path: "/local-api/remote-pair-decide", method: "POST" },
+    remote_pair_requests: { path: "/local-api/remote-pair-requests" },
+    remote_set_anywhere: { path: "/local-api/remote-set-anywhere", method: "POST" },
+    remote_set_legacy_access: { path: "/local-api/remote-set-legacy-access", method: "POST" },
+    remote_signin_requests: { path: "/local-api/remote-signin-requests" },
+    remote_signin_decide: { path: "/local-api/remote-signin-decide", method: "POST" },
+    // Create over the desktop (lib/remote-create-runner.ts): desktop only,
+    // the dev server answers with the same Remote stub.
+    remote_create_progress: { path: "/local-api/remote-create-progress", method: "POST" },
+    remote_create_finish: { path: "/local-api/remote-create-finish", method: "POST" },
+    remote_create_capabilities_reply: { path: "/local-api/remote-create-capabilities-reply", method: "POST" },
+    remote_create_gallery_reply: { path: "/local-api/remote-create-gallery-reply", method: "POST" },
+    // Shared chats (lib/remote-chats-bridge.ts): desktop only.
+    remote_chats_sync: { path: "/local-api/remote-chats-sync", method: "POST" },
+    remote_chats_event: { path: "/local-api/remote-chats-event", method: "POST" },
+    remote_chats_reply: { path: "/local-api/remote-chats-reply", method: "POST" },
+    // Device tests only (Cargo feature e2e-remote); other builds have no such command.
+    remote_e2e_mode: { path: "/local-api/remote-e2e-mode" },
+    remote_create_cancel: { path: "/local-api/remote-create-cancel", method: "POST" },
+    remote_create_snapshot: { path: "/local-api/remote-create-snapshot" },
     // Agent tools (Phase 1 — new commands)
     shell_execute: { path: "/local-api/shell-execute", method: "POST" },
     fs_read: { path: "/local-api/fs-read", method: "POST" },
@@ -1041,6 +1075,14 @@ export function isSafeExternalUrl(url: string): boolean {
 export async function openExternal(url: string): Promise<void> {
   if (!isSafeExternalUrl(url)) {
     console.warn('[openExternal] blocked non-web URL:', url)
+    return
+  }
+  if (isMobile()) {
+    // A phone has no shell: `plugin:shell|open` starts a program, and an
+    // iPhone has none to start. The plugin lu-native asks the system itself
+    // (UIApplication.open, Intent ACTION_VIEW), the opener of the phone shell.
+    const native = await import('../lib/lu-native')
+    await native.openExternal(url)
     return
   }
   if (isTauri()) {

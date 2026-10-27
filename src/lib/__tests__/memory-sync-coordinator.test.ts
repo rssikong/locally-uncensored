@@ -166,6 +166,54 @@ it('keeps the reviewed local version with a revision-checked server mutation', a
   expect(remote[0]).toMatchObject({ revision: 3, payload: { content: 'Local revised' } })
   expect(useMemoryStore.getState().memorySyncPending.A).toEqual({})
 })
+it('"both": keeps the local version under the shared id and the account version as a record of its own, in one commit', async () => {
+  const token = await reviewConflict()
+  const written: Array<{ id: string; revision: number; payload: Record<string, unknown> | null }> = []
+  const normalWrite = fixture.write.getMockImplementation()!
+  fixture.write.mockImplementation(async (id: string, revision: number, payload: Record<string, unknown> | null) => {
+    // Before the first upload both versions are already on this device.
+    expect(useMemoryStore.getState().entries.map(entry => entry.content).sort()).toEqual(['Cloud revised', 'Local revised'])
+    written.push({ id, revision, payload })
+    return normalWrite(id, revision, payload)
+  })
+  const result = await synchronizeMemoryCollection('A', false, { ...token, choice: 'both', copySuffix: '(account)' })
+  expect(result.conflicts).toEqual([])
+  expect(result.uploaded).toBe(2)
+  const entries = useMemoryStore.getState().entries
+  expect(entries).toHaveLength(2)
+  const kept = entries.find(entry => entry.id === 'one')!
+  const copy = entries.find(entry => entry.id !== 'one')!
+  expect(kept.content).toBe('Local revised')
+  expect(copy).toMatchObject({ title: 'Fact (account)', content: 'Cloud revised', source: 'manual', type: 'user' })
+  expect(copy.supersededBy).toBeUndefined()
+  // The shared id is overwritten revision-checked, the copy is a first upload.
+  expect(written).toMatchObject([
+    { id: 'one', revision: 2, payload: { content: 'Local revised' } },
+    { id: copy.id, revision: 0, payload: { content: 'Cloud revised', title: 'Fact (account)' } },
+  ])
+  expect(useMemoryStore.getState().memorySyncPending.A).toEqual({})
+  expect(useMemoryStore.getState().memorySyncBaselines.A[copy.id].revision).toBe(1)
+})
+it('"both": a sensitive account version stays on this device until sensitive uploads are allowed', async () => {
+  useMemoryStore.setState({ entries: [memory] })
+  await synchronizeMemoryCollection('A')
+  useMemoryStore.getState().updateMemory('one', { content: 'Local revised' })
+  remote = [{ ...remote[0], revision: 2, payload: { ...memory, content: 'Cloud secret', sensitive: true, updatedAt: 2 } }]
+  const token = (await synchronizeMemoryCollection('A')).conflicts[0].review!.token
+  const result = await synchronizeMemoryCollection('A', false, { ...token, choice: 'both' })
+  expect(result.omittedSensitive).toBe(1)
+  expect(result.uploaded).toBe(1)
+  const copy = useMemoryStore.getState().entries.find(entry => entry.id !== 'one')!
+  expect(copy).toMatchObject({ content: 'Cloud secret', sensitive: true })
+  expect(Object.hasOwn(useMemoryStore.getState().memorySyncBaselines.A, copy.id)).toBe(false)
+})
+it('"both" is refused like the other choices once the conflict changed, and nothing is added', async () => {
+  const token = await reviewConflict()
+  remote = [{ ...remote[0], revision: 3, payload: { ...memory, content: 'New cloud edit' } }]
+  await expect(synchronizeMemoryCollection('A', false, { ...token, choice: 'both' })).rejects.toThrow('This conflict changed')
+  expect(useMemoryStore.getState().entries).toHaveLength(1)
+  await expect(synchronizeMemoryCollection('A', false, { ...token, choice: 'neither' as 'both' })).rejects.toThrow('This conflict changed')
+})
 it('refuses a reviewed choice after the remote or local version changed', async () => {
   const token = await reviewConflict()
   remote = [{ ...remote[0], revision: 3, payload: { ...memory, content: 'New cloud edit' } }]

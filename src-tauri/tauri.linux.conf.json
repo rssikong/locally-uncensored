@@ -23,7 +23,10 @@
       "resources/voice_loop/requirements.txt": "resources/voice_loop/requirements.txt",
       "resources/voice_loop/models.json": "resources/voice_loop/models.json",
       "resources/voice_loop/python.json": "resources/voice_loop/python.json",
-      "resources/llama/x86_64-unknown-linux-gnu/*": "llama/"
+      "resources/llama/x86_64-unknown-linux-gnu/*": "llama/",
+      "resources/abliterate/lu_abliterate.py": "resources/abliterate/lu_abliterate.py",
+      "resources/abliterate/requirements.txt": "resources/abliterate/requirements.txt",
+      "resources/abliterate/constraints.txt": "resources/abliterate/constraints.txt"
     }
   }
 }

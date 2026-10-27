@@ -527,10 +527,26 @@ fn set_status(state: &Arc<Mutex<crate::state::InstallState>>, status: &str, msg:
 ///
 /// GH #183: and the folders configured for ComfyUI itself, because the Model
 /// Manager downloads into those now.
-fn resolve_base_file(root: &Path, comfy_dir: Option<&Path>, names: &[&str], sub: &str) -> Option<PathBuf> {
-    let configured: Vec<PathBuf> = comfy_dir
+///
+/// Discord 25.10.2026 (Comfy Desktop, "charcter isnt working"): and every
+/// folder the running ComfyUI reports for `sub` (`engine`, its
+/// `/internal/folder_paths` answer). `download_model` writes there first and
+/// answers "exists" for a file it finds there, so the panel said all three
+/// base files were missing while the Z-Image model was already in the picker,
+/// and "Download base files" started nothing.
+fn resolve_base_file(
+    root: &Path,
+    comfy_dir: Option<&Path>,
+    engine: Option<&crate::commands::comfy_folders::ComfyFolders>,
+    names: &[&str],
+    sub: &str,
+) -> Option<PathBuf> {
+    let mut configured: Vec<PathBuf> = comfy_dir
         .map(|c| crate::commands::comfy_user_paths::UserComfyPaths::discover(c).dirs_for(sub))
         .unwrap_or_default();
+    if let Some(e) = engine {
+        configured.extend(e.dirs_for(sub));
+    }
     for n in names {
         let local = root.join("models").join(n);
         if local.exists() {
@@ -1520,7 +1536,7 @@ fn pip_with_retry(
 /// ends at a newline OR a carriage return. Progress bars (tqdm) redraw their
 /// line with \r and never send \n until the bar is done, so `BufRead::lines`
 /// delivers a whole epoch of updates as one line, long after they happened.
-fn for_each_progress_line<R: Read>(mut stream: R, mut on_line: impl FnMut(String)) {
+pub(crate) fn for_each_progress_line<R: Read>(mut stream: R, mut on_line: impl FnMut(String)) {
     let mut pending: Vec<u8> = Vec::new();
     let mut buf = [0u8; 4096];
     loop {
@@ -2100,7 +2116,7 @@ fn download_musubi_archive(
     let zip_path = root.join(format!("musubi-tuner-{MUSUBI_TAG}.zip"));
     let unpack_dir = root.join(".musubi-unpack");
     let client = reqwest::blocking::Client::builder()
-        .user_agent("LocallyUncensored/2.6")
+        .user_agent(crate::app_identity::outgoing_agent!("2.6"))
         .connect_timeout(std::time::Duration::from_secs(30))
         .timeout(std::time::Duration::from_secs(1800))
         .build()
@@ -2591,9 +2607,10 @@ pub fn character_trainer_status(
         && torch_installed(&root)
         && musubi_installed(&root)
         && !state.trainer_env_broken.load(Ordering::SeqCst);
-    let dit = resolve_base_file(&root, comfy.as_deref(), DIT_CANDIDATES, "diffusion_models");
-    let te = resolve_base_file(&root, comfy.as_deref(), TE_CANDIDATES, "text_encoders");
-    let vae = resolve_base_file(&root, comfy.as_deref(), VAE_CANDIDATES, "vae");
+    let engine = crate::commands::comfy_folders::cached();
+    let dit = resolve_base_file(&root, comfy.as_deref(), engine.as_ref(), DIT_CANDIDATES, "diffusion_models");
+    let te = resolve_base_file(&root, comfy.as_deref(), engine.as_ref(), TE_CANDIDATES, "text_encoders");
+    let vae = resolve_base_file(&root, comfy.as_deref(), engine.as_ref(), VAE_CANDIDATES, "vae");
     let install = state.trainer_install.lock().unwrap();
     // K5 point 3/5: `customized` lets the frontend say the truth about where
     // this install target actually is instead of assuming the default, and
@@ -2881,10 +2898,11 @@ pub fn start_character_training(
     // Held for the run's own repair path below: rebuilding the venv needs the
     // system python, not the venv one that may be the broken part.
     let python_bin = state.python_bin.lock().unwrap().clone();
+    let engine = crate::commands::comfy_folders::cached();
     let (Some(dit), Some(te), Some(vae)) = (
-        resolve_base_file(&root, comfy.as_deref(), DIT_CANDIDATES, "diffusion_models"),
-        resolve_base_file(&root, comfy.as_deref(), TE_CANDIDATES, "text_encoders"),
-        resolve_base_file(&root, comfy.as_deref(), VAE_CANDIDATES, "vae"),
+        resolve_base_file(&root, comfy.as_deref(), engine.as_ref(), DIT_CANDIDATES, "diffusion_models"),
+        resolve_base_file(&root, comfy.as_deref(), engine.as_ref(), TE_CANDIDATES, "text_encoders"),
+        resolve_base_file(&root, comfy.as_deref(), engine.as_ref(), VAE_CANDIDATES, "vae"),
     ) else {
         set_status(
             &state.trainer_run,
@@ -3306,8 +3324,37 @@ mod tests {
         assert_eq!(super::comfy_loras_dir(&comfy), shared.join("loras"));
         let trainer_root = root.join("trainer");
         assert_eq!(
-            super::resolve_base_file(&trainer_root, Some(&comfy), &["ae.safetensors"], "vae"),
+            super::resolve_base_file(&trainer_root, Some(&comfy), None, &["ae.safetensors"], "vae"),
             Some(shared.join("vae").join("ae.safetensors")),
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Discord 25.10.2026 (Comfy Desktop): the base files sat in a folder the
+    /// running ComfyUI scans and the downloader writes to, outside
+    /// `<ComfyUI>/models` and outside any config LU reads. The panel called all
+    /// three missing and the download answered "exists" for each.
+    #[test]
+    fn base_files_in_a_folder_the_running_comfyui_reports_are_found() {
+        let root = std::env::temp_dir().join(format!("lu-train-engine-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let comfy = root.join("ComfyUI-Installs").join("ComfyUI").join("ComfyUI");
+        let shared = root.join("shared-models");
+        std::fs::create_dir_all(comfy.join("models").join("text_encoders")).unwrap();
+        std::fs::create_dir_all(shared.join("text_encoders")).unwrap();
+        std::fs::write(shared.join("text_encoders").join("qwen_3_4b.safetensors"), b"x").unwrap();
+        let trainer_root = root.join("trainer");
+        // What LU knew before: nothing in the instance folder, no config.
+        assert_eq!(super::resolve_base_file(&trainer_root, Some(&comfy), None, super::TE_CANDIDATES, "text_encoders"), None);
+        let engine = crate::commands::comfy_folders::ComfyFolders::parse(&serde_json::json!({
+            "text_encoders": [
+                comfy.join("models").join("text_encoders").to_string_lossy(),
+                shared.join("text_encoders").to_string_lossy(),
+            ],
+        }));
+        assert_eq!(
+            super::resolve_base_file(&trainer_root, Some(&comfy), Some(&engine), super::TE_CANDIDATES, "text_encoders"),
+            Some(shared.join("text_encoders").join("qwen_3_4b.safetensors")),
         );
         let _ = std::fs::remove_dir_all(&root);
     }

@@ -26,11 +26,11 @@
 //!
 //! Der Re-Export steht bewusst als Glob. Ein `#[tauri::command]` erzeugt
 //! neben der Funktion ein gleichnamiges `__cmd__`-Makro, und `generate_handler!`
-//! in `main.rs` sucht beides unter DIESEM Pfad — ein Glob nimmt beide mit,
+//! in `lib.rs` sucht beides unter DIESEM Pfad — ein Glob nimmt beide mit,
 //! ohne dass jeder Befehl zweimal aufgezählt werden muss.
 //!
 //! Sie steht auf `pub(crate)` und nicht auf `pub`, weil genau das ihre Aufgabe
-//! ist: `main.rs`, `state.rs`, `tts.rs`, `whisper.rs` und `trainer.rs` sollen
+//! ist: `lib.rs`, `state.rs`, `tts.rs`, `whisper.rs` und `trainer.rs` sollen
 //! `crate::commands::install::…` weiter auflösen können. Nach außen war
 //! hier ohnehin nie etwas erreichbar — dies ist eine Binärkiste ohne
 //! lib-Ziel —, und ein `pub` hätte die gemessene öffentliche Fläche um eine

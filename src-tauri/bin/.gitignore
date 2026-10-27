@@ -4,6 +4,7 @@
 # The old unprefixed name stays listed so a checkout from before GitHub #120
 # does not suddenly offer a 3 GB binary for commit.
 lu-llama-server-*
+lu-llama-quantize-*
 llama-server-*
 *.dll
 !.gitignore

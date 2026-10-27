@@ -179,9 +179,12 @@ describe('COUNTER-CHECK: Windows and Linux show what they showed before', () => 
     useCreateStore.setState({ imageModelList: [Q21] } as never)
     useCreateStore.getState().setImageModel(Q21.name, Q21.type)
     render(<ParamGroups />)
-    for (const label of ['Sampler', 'Scheduler', 'Denoise (raw)', 'Mask edge feather', 'VAE', 'Skip CLIP layers']) {
+    for (const label of ['Sampler', 'Scheduler', 'Mask edge feather', 'VAE', 'Skip CLIP layers']) {
       expect(screen.getByText(label), label).toBeTruthy()
     }
+    // The Qwen-Image 2.1 edit samples at denoise 1.0, so the slider that set
+    // nothing is gone (Discord #general 23.10.2026).
+    expect(screen.queryByText('Denoise (raw)')).toBeNull()
     expect(screen.getByText(/Drop \.safetensors files into ComfyUI's models\/loras folder and hit Rescan/)).toBeTruthy()
     expect(screen.getByRole('button', { name: /Rescan/ }).getAttribute('title')).toBe("Re-scan ComfyUI's models/loras folder")
     expect(screen.queryByRole('button', { name: /Open folder/ })).toBeNull()

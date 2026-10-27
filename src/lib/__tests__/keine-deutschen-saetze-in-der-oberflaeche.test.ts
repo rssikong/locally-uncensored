@@ -17,8 +17,8 @@
  * Ein Ausdruck faellt ueber jede zweite Datei: ueber `'https://...'`, dessen
  * zwei Schraegstriche wie ein Kommentar aussehen, ueber ein `/[;&|`\n]/`, dessen
  * Backtick wie eine Schablone aussieht, und ueber jedes "don't" im JSX-Text.
- * Der Syntaxbaum kennt den Unterschied, und die fuenf Ausnahmen unten sind
- * dadurch wirklich die einzigen.
+ * Der Syntaxbaum kennt den Unterschied, und die sechs Ausnahmen unten sind
+ * dadurch wirklich die einzigen (seit der Handy-Suche sechs).
  *
  * Run: npx vitest run src/lib/__tests__/keine-deutschen-saetze-in-der-oberflaeche.test.ts
  */
@@ -50,8 +50,8 @@ const DEUTSCHE_WOERTER = [
 const DEUTSCH = new RegExp(`\\b(${DEUTSCHE_WOERTER.join('|')})\\b`)
 
 /**
- * Die fuenf Dateien, in denen Deutsch in einem Literal richtig ist, mit dem
- * Grund. Keine davon schreibt dem Kunden etwas hin: vier lesen, was er getippt
+ * Die sechs Dateien, in denen Deutsch in einem Literal richtig ist, mit dem
+ * Grund. Keine davon schreibt dem Kunden etwas hin: fuenf lesen, was er getippt
  * hat, und eine sagt denselben Satz zweimal.
  *
  * Jeder Eintrag wird unten dagegen gehalten, dass er ueberhaupt noch einen
@@ -65,6 +65,7 @@ const DEUTSCH_MIT_GRUND: Record<string, string> = {
   'lib/plan-gate.ts': 'Deutsche Planbitten, gegen die getippte Saetze gelesen werden.',
   'lib/create/media-wish.ts': 'Deutsche Medienwuensche, gegen die getippte Saetze gelesen werden (aus dem Web gespiegelt).',
   'lib/create/chat-control.ts': 'Muster, gegen die der Schlusstext eines Modells gelesen wird, auch der deutsche (aus dem Web gespiegelt). Nichts davon wird angezeigt.',
+  'lib/explicit-search.ts': 'Deutsche Suchauftraege, gegen die getippte Saetze gelesen werden.',
   // Fork: erzeugte Uebersetzungstabelle. Sie traegt den Originalsatz
   // "Fertig, dein Bild ist oben. / Done, your image is above." als Schluessel,
   // weil genau dieser Satz auf Chinesisch abgebildet wird; angezeigt wird die

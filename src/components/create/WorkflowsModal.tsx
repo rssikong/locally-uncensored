@@ -21,6 +21,7 @@ import { readWorkflowText } from '../../api/workflow-import'
 import type { ComfyApiGraph } from '../../types/comfy-graph'
 import { topLevelFiles } from './experimental/batchFiles'
 import { useModels } from '../../hooks/useModels'
+import { takesWorkflowTags } from '../../lib/workflow-tag-models'
 import {
   useWorkflowStore,
   workflowModelKey,
@@ -128,6 +129,7 @@ function WorkflowsModalInner() {
       .filter((model) => {
         if (model.type !== 'image' && model.type !== 'video') return false
         if (model.providerName !== 'ComfyUI') return false
+        if (!takesWorkflowTags(model)) return false
         if (modelFilter !== 'all' && model.type !== modelFilter) return false
         if (query && !model.name.toLowerCase().includes(query)) return false
         return true

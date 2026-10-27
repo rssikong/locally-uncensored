@@ -12,10 +12,13 @@
  */
 import { X } from 'lucide-react'
 import { useLuEngineSwitchStore } from '../../stores/luEngineSwitchStore'
+import { FitActionButtons } from '../ui/FitActionButtons'
 
 export function LuEngineSwitchBar() {
   const note = useLuEngineSwitchStore((s) => s.note)
   const tone = useLuEngineSwitchStore((s) => s.tone)
+  const actions = useLuEngineSwitchStore((s) => s.actions)
+  const actionModel = useLuEngineSwitchStore((s) => s.actionModel)
   // A failed start after the slot has already been handed over is the one
   // thing here the user has to act on, so it does not get the quiet grey the
   // switch itself gets.
@@ -49,7 +52,15 @@ export function LuEngineSwitchBar() {
           data-tone={tone}
           className={`lu-elevated mx-3 mb-1.5 flex items-start gap-2 px-2 py-1 rounded-md t-micro ${skin}`}
         >
-          <span className="flex-1 leading-snug">{note}</span>
+          <span className="flex-1 leading-snug">
+            {note}
+            <FitActionButtons
+              actions={actions}
+              modelPath={actionModel}
+              onApplied={() => useLuEngineSwitchStore.getState().dismiss()}
+              className="mt-1"
+            />
+          </span>
           <button
             onClick={() => useLuEngineSwitchStore.getState().dismiss()}
             className="shrink-0 text-gray-500 hover:text-gray-700 dark:hover:text-gray-200"

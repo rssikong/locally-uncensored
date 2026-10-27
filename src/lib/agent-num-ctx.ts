@@ -19,6 +19,7 @@
  */
 
 import { getModelContextCached } from '../api/ollama'
+import { isCompatProviderId } from '../api/providers/compat-id'
 import { getProviderForModel } from '../api/providers'
 import { ollamaWindowFor } from './context-window'
 import { getModelMaxTokens } from './context-compaction'
@@ -99,7 +100,7 @@ export async function resolveAgentNumCtxWithConfidence(
         // actually loaded, that number IS the budget — even below the 8192
         // floor, because the floor cannot grow an allocation we do not
         // control. Ollama is different: there num_ctx sets the allocation.
-        if (providerId === 'openai') {
+        if (providerId === 'openai' || isCompatProviderId(providerId)) {
           const { provider, modelId: rawId } = getProviderForModel(fullModelName ?? modelId)
           const loaded = await provider.loadedContextLength?.(rawId)
           if (typeof loaded === 'number' && loaded > 0 && loaded < ctx) {

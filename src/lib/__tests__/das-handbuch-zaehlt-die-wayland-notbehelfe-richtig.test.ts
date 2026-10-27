@@ -8,7 +8,7 @@
  * einzige Schalter, der alle drei abstellt.
  *
  * Der Waechter zaehlt die Wahrheit dort, wo sie steht: in
- * `src-tauri/src/main.rs`, Funktion `linux_webview_env`. Rust wird hier nur
+ * `src-tauri/src/lib.rs`, Funktion `linux_webview_env`. Rust wird hier nur
  * GELESEN. Steigt oder faellt die Zahl, faellt dieser Test auf und das
  * Handbuch muss mit.
  *
@@ -17,7 +17,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 
-const MAIN_RS = readFileSync('src-tauri/src/main.rs', 'utf8')
+const MAIN_RS = readFileSync('src-tauri/src/lib.rs', 'utf8')
 const INSTALL = readFileSync('docs/guide/install/index.html', 'utf8')
 const TROUBLE = readFileSync('docs/guide/settings-and-troubleshooting/index.html', 'utf8')
 

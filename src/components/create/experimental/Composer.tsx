@@ -7,6 +7,7 @@ import { MLX_VIDEO_MIN_FRAMES, mlxFramesOnGrid, mlxVideoLaneEntry, mlxVideoMaxFr
 import { useMacMemoryGb } from '../../../lib/mac-memory'
 import { useCreateStore, MODEL_TYPE_DEFAULTS, EDIT_MAX_DENOISE, imageQualityLadder, type ImageQuality } from '../../../stores/createStore'
 import { classifyModel, resolveLocalOpPick } from '../../../api/comfyui'
+import { editIgnoresStrength } from '../../../lib/edit-references'
 import { useCreateExp } from './CreateContext'
 import { intentToJob } from '../../../lib/render/cloud-jobs'
 import { meterState } from '../../../lib/render/credits-meter'
@@ -24,6 +25,7 @@ import { useWorkflowStore, shouldShowManagerNotice } from '../../../stores/workf
 import { isInputHint, missingSourceHint, noPromptHint, shouldShowLaneHint } from './laneHint'
 import { stageShowsSetupCard, laneModelCount } from './stageGate'
 import { localUpscaleReady, normalizeUpscaleFactor } from '../../../lib/local-upscale'
+import { frameRangeFor, framesOnRange } from '../../../lib/video-length'
 import { needsMaskFor } from './maskGate'
 import { ModelChip } from './ModelChip'
 import { MOTION_OWN_WORKFLOW_NOTE, useMotionOwnWorkflow } from './motionWorkflow'
@@ -684,6 +686,10 @@ function LaneControls() {
   const macMemoryGb = useMacMemoryGb(mlxLocal)
   const macLengthGb = intent === 'motion' ? null : macMemoryGb
   const ownSampling = mlxLocal && runsAtOwnSampling(imageModelList, laneImageModel(imageModelList, imageModel, intent))
+  // A Qwen edit through ComfyUI samples at denoise 1.0 like its template, so
+  // an Edit strength there would be a dead control (lib/edit-references).
+  const listedImageType = imageModelList.find((m) => m.name === imageModel)?.type
+  const strengthUnread = backend === 'local' && !mlxLocal && editIgnoresStrength(listedImageType ?? classifyModel(imageModel), imageModel)
   const videoModelList = useCreateStore((s) => s.videoModelList)
   // Motion Control on the Mac runs the model of its own list.
   const motionModelList = useCreateStore((s) => s.motionModelList)
@@ -795,7 +801,7 @@ function LaneControls() {
           )}
         </div>
 
-        {meta.id === 'edit' && !mlxLocal && (
+        {meta.id === 'edit' && !mlxLocal && !strengthUnread && (
           <div className="w-44">
             <Slider label="Edit strength" min={0.05} max={EDIT_MAX_DENOISE} step={0.05} value={Math.min(denoise, EDIT_MAX_DENOISE)} onChange={setDenoise} format={(v) => v.toFixed(2)} />
           </div>
@@ -891,6 +897,11 @@ function LaneControls() {
   }
   const stepMax = Math.max(40, Math.round((vdef.steps ?? 25) * 1.5))
   const showFrames = intent !== 'lipsync' // lipsync frames follow the voice length
+  // The family's own range, as in the advanced settings (lib/video-length.ts).
+  // This row had 9 to 121 for every model, so 362 frames of MiniMax H3 set in
+  // the advanced settings drew the bar three times the width of the slider
+  // (Discord, 20.10.).
+  const frameRange = frameRangeFor(laneType)
 
   return (
     <div className={cn(LANE_ROW, 'gap-4')}>
@@ -933,7 +944,7 @@ function LaneControls() {
         <span className="t-label text-gray-600">clip length is not available for this model yet</span>
       ) : showFrames ? (
         <div className="w-44">
-          <Slider label="Frames" min={9} max={121} step={4} value={frames} onChange={setFrames} format={(v) => `${v}f · ${(v / (fps || 16)).toFixed(1)}s`} />
+          <Slider label="Frames" min={frameRange.min} max={frameRange.max} step={frameRange.step} value={framesOnRange(frames, frameRange)} onChange={setFrames} format={(v) => `${v}f · ${(v / (fps || 16)).toFixed(1)}s`} />
         </div>
       ) : (
         <span className="t-label text-gray-600">clip length follows your voice</span>

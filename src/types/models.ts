@@ -34,6 +34,9 @@ export interface CloudModel {
    *  ohne Ablehnungsschicht herausgegeben, nur von einer festen Gegenstelle
    *  ausgeliefert. Traegt die zweite Marke der Zeile (lib/unfiltered-mark). */
   unrestricted?: boolean
+  /** The name the catalogue route itself gives the model, where the app shows
+   *  another one (ProviderModel.catalogName). Read by the phone's store build. */
+  catalogName?: string
 
   name: string
   model: string
@@ -57,6 +60,11 @@ export interface CloudModel {
    *  `supportsVision` false this is a model loaded without its part; absent
    *  or false with a known source, the part can be added (lib/image-part). */
   imagePartInstalled?: boolean
+  /** LU Engine rows only: LU's refusal-removal tool made this file. */
+  refusalsRemoved?: boolean
+  /** LU Engine rows only: the Hugging Face repo of the original weights,
+   *  when the file names one. The refusal-removal button needs it. */
+  sourceRepo?: string
   thinkMode?: 'toggle' | 'always' | 'never'
   /** The reasoning rungs this model accepts, ascending, and the rung it
    *  defaults to (LU Cloud /models). Absent = no effort control and the old

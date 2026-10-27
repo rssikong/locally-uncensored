@@ -13,6 +13,9 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { secretGet, secretSet, secretDelete, oauthStart, oauthWait, openExternal } from '../backend'
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config'
+import { isMobile } from '../../lib/device-kind'
+import { showPhoneOAuthPage, type PhoneOAuthPage } from '../../lib/phone-oauth-page'
+import { MOBILE_OAUTH_REDIRECT, parseOAuthCallbackUrl } from '../../lib/oauth-callback-url'
 
 const SESSION_ACCOUNT = 'lu-cloud-session'
 const LOCAL_KEY = 'lu-cloud-session'
@@ -212,6 +215,44 @@ export const keychainStorage = {
   },
 }
 
+/**
+ * Ask the OS secret store again.
+ *
+ * The adapter stops asking for the rest of the session once the store says it
+ * does not exist ("keychain unsupported"). That is right on Linux, where it
+ * never will. On a phone it is a question of which build is installed: the
+ * moment Rust ships a store behind `secret_*` (Android Keystore, iOS Keychain)
+ * the adapter uses it by itself at the next start, and this call lets the
+ * shell switch over without a restart. The next write then moves the session
+ * out of localStorage, because setItem removes the fallback copy.
+ */
+export function retryKeychainStorage(): void {
+  keychainBroken = false
+}
+
+/**
+ * Who the saved session belongs to, read from storage alone.
+ *
+ * `getSession()` cannot answer this without a network: an expired access
+ * token makes it try a refresh first, and that fails in a dead zone. This
+ * reads the stored blob directly, so "is there a session on this device" has
+ * an answer offline. Null when nothing is saved or it cannot be read.
+ */
+export async function savedSessionUser(): Promise<{ id: string; email?: string } | null> {
+  try {
+    const raw = await keychainStorage.getItem(LOCAL_KEY)
+    if (!raw) return null
+    const parsed: unknown = JSON.parse(raw)
+    const user = parsed && typeof parsed === 'object' ? (parsed as { user?: unknown }).user : null
+    if (!user || typeof user !== 'object') return null
+    const { id, email } = user as { id?: unknown; email?: unknown }
+    if (typeof id !== 'string' || !id) return null
+    return typeof email === 'string' && email ? { id, email } : { id }
+  } catch {
+    return null
+  }
+}
+
 let client: SupabaseClient | null = null
 
 export function supabaseCloud(): SupabaseClient {
@@ -291,7 +332,11 @@ function providerErrorText(params: URLSearchParams): string {
  *  immediately when `signal` aborts (Cancel while waiting for the browser) —
  *  the abandoned Rust wait cleans itself up, and any retry's oauth_start
  *  aborts the stale listener first, so cancelling never wedges the ladder. */
-export async function loginWithProvider(provider: OAuthProvider, signal?: AbortSignal): Promise<void> {
+export async function loginWithProvider(provider: OAuthProvider, signal?: AbortSignal, onBrowserOpen?: () => void): Promise<void> {
+  // A phone cannot listen on a loopback port while the browser is in front.
+  // It comes back through a link instead (see loginWithProviderMobile).
+  // `onBrowserOpen` is for the phone only: the desktop never calls it.
+  if (isMobile()) return loginWithProviderMobile(provider, signal, onBrowserOpen)
   const port = await oauthStart()
   const { data, error } = await supabaseCloud().auth.signInWithOAuth({
     provider,
@@ -321,4 +366,294 @@ export async function loginWithProvider(provider: OAuthProvider, signal?: AbortS
   }
   const { error: exchangeError } = await supabaseCloud().auth.exchangeCodeForSession(code)
   if (exchangeError) throw new Error(exchangeError.message)
+}
+
+// ── Sign-in on a phone: back through a link ─────────────────────────────
+
+/** The provider page did not open on this phone. A sentence for the logic layer; the screen has its own. */
+export const MOBILE_OAUTH_NOT_OPENED = 'The sign-in page could not be opened.'
+
+/** How long a sign-in waits for the link to come back, like the desktop wait. */
+export const MOBILE_OAUTH_WAIT_MS = 300_000
+
+export type OAuthCallbackResult =
+  /** Not the sign-in link. Nothing happened. */
+  | { handled: false }
+  | { handled: true; ok: true }
+  /** `error` is a sentence for the user. */
+  | { handled: true; ok: false; error: string }
+
+interface PendingLogin {
+  resolve: () => void
+  reject: (err: Error) => void
+}
+
+let pendingLogin: PendingLogin | null = null
+
+// ── Only a link somebody asked for (review N2) ──────────────────────────
+//
+// Any app or web page on the phone can open `lu://oauth/callback?code=x`.
+// It cannot take over an account (PKCE: the verifier never leaves this
+// device), but the exchange it sets off ends a sign-in that is waiting, and
+// the auth client drops the verifier after a try, so the real link fails
+// afterwards. So a link is only taken while one is expected: a sign-in or a
+// password reset was started from this phone a short while ago. The mark is
+// on disk, because the app may be started cold by the very link it waits for.
+
+const OAUTH_EXPECTED_KEY = 'lu-oauth-expected-until'
+/** A sign-in in the browser: the wait is five minutes, a cold start may take longer. */
+export const OAUTH_SIGNIN_WINDOW_MS = 15 * 60_000
+/** A reset mail is read later than a browser tab: as long as the link in it is good. */
+export const OAUTH_RESET_WINDOW_MS = 60 * 60_000
+let expectedUntilMemory = 0
+
+function expectOAuthCallback(windowMs: number): void {
+  const until = Math.max(Date.now() + windowMs, readExpectedUntil())
+  expectedUntilMemory = until
+  try { localStorage.setItem(OAUTH_EXPECTED_KEY, String(until)) } catch { /* the memory copy holds for this run */ }
+}
+
+function readExpectedUntil(): number {
+  let stored = 0
+  try { stored = Number(localStorage.getItem(OAUTH_EXPECTED_KEY)) || 0 } catch { /* no storage */ }
+  return Math.max(stored, expectedUntilMemory)
+}
+
+/** Is a sign-in link expected right now? */
+export function oauthCallbackExpected(now: number = Date.now()): boolean {
+  const until = readExpectedUntil()
+  // A mark further ahead than the longest window is not one this code wrote.
+  return until > now && until - now <= OAUTH_RESET_WINDOW_MS
+}
+
+function forgetOAuthExpectation(): void {
+  expectedUntilMemory = 0
+  try { localStorage.removeItem(OAUTH_EXPECTED_KEY) } catch { /* nothing to remove */ }
+}
+
+/** What a link that nobody asked for is answered with. It is not shown: the link is dropped. */
+export const OAUTH_NOT_EXPECTED = 'This sign-in link was not asked for on this phone, or it is too old. Start the sign-in again.'
+
+let lastHandled: { code: string; result: Promise<OAuthCallbackResult> } | null = null
+/** When the last link that was asked for came in. 0: none in this run. */
+let lastCallbackAt = 0
+
+/**
+ * Did a link that was asked for come back since `since` (a Date.now() value)?
+ * The phone asks this when the user is back in the app after the browser: no
+ * link means the browser ended somewhere else, a web page for example.
+ */
+export function oauthCallbackSeenSince(since: number): boolean {
+  return lastCallbackAt > 0 && lastCallbackAt >= since
+}
+const signedInListeners = new Set<() => void>()
+
+/** Runs after a link signed somebody in. The account probe hangs here, so a
+ *  sign-in that completes on a cold start, with no login() call waiting for
+ *  it, still ends in a signed-in app. */
+export function onOAuthSignedIn(fn: () => void): () => void {
+  signedInListeners.add(fn)
+  return () => { signedInListeners.delete(fn) }
+}
+
+/**
+ * Take the sign-in link the system handed to the app and finish the sign-in.
+ *
+ * Works without a login() call waiting for it: after the system killed the
+ * app while the browser was in front, the app starts cold with this link, and
+ * the PKCE verifier for the code is still in the session store. The shell does
+ * not call this directly, it reports every link to reportIncomingUrl()
+ * (lib/incoming-url.ts), which hands the right ones here.
+ *
+ * The same link twice (the launch link and the event for it) is one sign-in:
+ * a code can be exchanged once, so the second call gets the first result.
+ */
+export async function handleOAuthCallbackUrl(url: string): Promise<OAuthCallbackResult> {
+  const parsed = parseOAuthCallbackUrl(url)
+  if (parsed.kind === 'not-oauth') return { handled: false }
+
+  // The second delivery of a link that was taken (launch link and its event).
+  if (parsed.kind === 'code' && lastHandled?.code === parsed.code) return lastHandled.result
+  // Nobody on this phone asked for a link: dropped, the waiting sign-in and
+  // the verifier are not touched.
+  if (!oauthCallbackExpected()) return { handled: true, ok: false, error: OAUTH_NOT_EXPECTED }
+  // The browser found its way back into the app, whatever the link says.
+  lastCallbackAt = Date.now()
+
+  if (parsed.kind === 'error') {
+    const error = providerErrorText(parsed.params)
+    pendingLogin?.reject(new Error(error))
+    pendingLogin = null
+    return { handled: true, ok: false, error }
+  }
+
+  if (lastHandled?.code === parsed.code) return lastHandled.result
+  const result = (async (): Promise<OAuthCallbackResult> => {
+    try {
+      const { data, error } = await supabaseCloud().auth.exchangeCodeForSession(parsed.code)
+      if (error) throw new Error(error.message)
+      // The code came from a reset mail, not from a sign-in: the session is
+      // there to choose a new password with (see onPasswordRecovery).
+      if ((data as { redirectType?: unknown } | null | undefined)?.redirectType === 'recovery') notePasswordRecovery()
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err)
+      pendingLogin?.reject(new Error(error))
+      pendingLogin = null
+      return { handled: true, ok: false, error }
+    }
+    pendingLogin?.resolve()
+    pendingLogin = null
+    // The link that was waited for came: the next one has to be asked for again.
+    forgetOAuthExpectation()
+    for (const fn of [...signedInListeners]) {
+      try { fn() } catch { /* a listener must not undo a sign-in */ }
+    }
+    return { handled: true, ok: true }
+  })()
+  lastHandled = { code: parsed.code, result }
+  return result
+}
+
+/**
+ * Google/GitHub sign-in on a phone. Same PKCE flow as the desktop, with the
+ * loopback listener replaced by "wait for the link": the provider page opens
+ * in the browser, Supabase redirects to MOBILE_OAUTH_REDIRECT, the system
+ * hands that link to the app and handleOAuthCallbackUrl exchanges the code.
+ *
+ * Rejects on cancel (`signal`), on a refusal from the provider and after
+ * MOBILE_OAUTH_WAIT_MS. If the system kills the app while the browser is in
+ * front, this promise is gone with it, and the cold start finishes the
+ * sign-in through the same handler.
+ */
+async function loginWithProviderMobile(provider: OAuthProvider, signal?: AbortSignal, onBrowserOpen?: () => void): Promise<void> {
+  const { data, error } = await supabaseCloud().auth.signInWithOAuth({
+    provider,
+    options: { redirectTo: MOBILE_OAUTH_REDIRECT, skipBrowserRedirect: true },
+  })
+  if (error) throw new Error(error.message)
+  if (!data?.url) throw new Error('OAuth start failed, no provider URL')
+
+  // From here on the link is expected, also by a cold start (review N2).
+  expectOAuthCallback(OAUTH_SIGNIN_WINDOW_MS)
+  // A second attempt replaces the first: only one link can come back.
+  pendingLogin?.reject(new Error('Sign-in cancelled.'))
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let onAbort: (() => void) | undefined
+  let drop = () => {}
+  const waiting = new Promise<void>((resolve, reject) => {
+    const mine: PendingLogin = { resolve, reject }
+    pendingLogin = mine
+    drop = () => { if (pendingLogin === mine) pendingLogin = null }
+    timer = setTimeout(() => {
+      drop()
+      reject(new Error('Sign-in timed out. Tap the sign-in button to try again.'))
+    }, MOBILE_OAUTH_WAIT_MS)
+    onAbort = () => { drop(); reject(new Error('Sign-in cancelled.')) }
+    if (signal?.aborted) onAbort()
+    else signal?.addEventListener('abort', onAbort, { once: true })
+  })
+  // Marked as handled: a refusal may arrive before the line below awaits it.
+  waiting.catch(() => {})
+  try {
+    // The one way out of the app on a phone (lib/phone-oauth-page.ts). Not
+    // openExternal of api/backend: `plugin:shell|open` starts a program,
+    // and an iPhone has none to start (check on the iPhone, round 22, N5).
+    let page: PhoneOAuthPage
+    try {
+      page = await showPhoneOAuthPage(data.url)
+    } catch {
+      // Nothing is open, so nothing can come back: never wait for it.
+      throw new Error(MOBILE_OAUTH_NOT_OPENED)
+    }
+    if (page.kind === 'cancelled') throw new Error('Sign-in cancelled.')
+    if (page.kind === 'returned') {
+      // The sheet of the system handed the link back itself, no deep link follows.
+      const taken = await handleOAuthCallbackUrl(page.url)
+      if (!taken.handled) throw new Error(MOBILE_OAUTH_NOT_OPENED)
+      if (!taken.ok) throw new Error(taken.error)
+    } else {
+      onBrowserOpen?.()
+    }
+    await waiting
+  } finally {
+    drop()
+    if (timer) clearTimeout(timer)
+    if (onAbort) signal?.removeEventListener('abort', onAbort)
+  }
+}
+
+/** Test-only. */
+export function __resetMobileOAuthForTests(): void {
+  pendingLogin = null
+  lastHandled = null
+  lastCallbackAt = 0
+  forgetOAuthExpectation()
+  signedInListeners.clear()
+  recoveryListeners.clear()
+  recoveryPending = false
+}
+
+// ── A forgotten password ────────────────────────────────────────────────
+
+/**
+ * Ask the auth server to send the reset mail for this address.
+ *
+ * The server answers the same for an address with an account and for one
+ * without (it must not tell a stranger which addresses exist), so resolving
+ * means "the request was taken", never "a mail was sent". The screen has to
+ * say exactly that. Rejects with the auth error when the request itself
+ * failed: no network, too many requests, an address the server refuses.
+ *
+ * On a phone the link in the mail leads back into the app, through the same
+ * `lu://oauth/callback` the sign-in with Google uses: this client speaks
+ * PKCE, so only the device that asked holds the verifier for the code in that
+ * link, and handleOAuthCallbackUrl exchanges it. The exchange signs the user
+ * in and says that the code came from a reset (see onPasswordRecovery), which
+ * is the moment to ask for the new password. The desktop has no screen for this yet;
+ * without a redirect the mail leads to the site address of the project.
+ */
+export async function requestPasswordReset(email: string): Promise<void> {
+  const { error } = await supabaseCloud().auth.resetPasswordForEmail(
+    email.trim(),
+    isMobile() ? { redirectTo: MOBILE_OAUTH_REDIRECT } : undefined,
+  )
+  if (error) throw error
+  // The link in the mail comes back through the same door (review N2).
+  if (isMobile()) expectOAuthCallback(OAUTH_RESET_WINDOW_MS)
+}
+
+const recoveryListeners = new Set<() => void>()
+let recoveryPending = false
+
+function tellRecoveryListeners(): void {
+  if (!recoveryPending || recoveryListeners.size === 0) return
+  recoveryPending = false
+  for (const listener of [...recoveryListeners]) {
+    try { listener() } catch { /* a listener must not undo the sign-in */ }
+  }
+}
+
+/** A reset link was exchanged. Kept until somebody listens: on a cold start the link is faster than the screens. */
+function notePasswordRecovery(): void {
+  recoveryPending = true
+  // Not inside the exchange: whoever listens may call the auth client, and that call must not wait on this one.
+  setTimeout(tellRecoveryListeners, 0)
+}
+
+/**
+ * Runs when a reset link was exchanged: the user is signed in for the one
+ * purpose of choosing a new password. A link that came in before anybody
+ * listened (the app was started by it) is delivered to the first listener.
+ * Returns the unsubscribe.
+ */
+export function onPasswordRecovery(fn: () => void): () => void {
+  recoveryListeners.add(fn)
+  if (recoveryPending) setTimeout(tellRecoveryListeners, 0)
+  return () => { recoveryListeners.delete(fn) }
+}
+
+/** Set the password of the signed-in account. Rejects with the auth error (too short, same as before, session gone). */
+export async function setNewPassword(password: string): Promise<void> {
+  const { error } = await supabaseCloud().auth.updateUser({ password })
+  if (error) throw error
 }

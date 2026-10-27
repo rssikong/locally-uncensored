@@ -28,6 +28,7 @@ import { useModelStore } from '../stores/modelStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useUIStore } from '../stores/uiStore'
 import { exportConversation } from '../lib/chat-export'
+import { usesCommandKey } from '../lib/capabilities'
 
 /** Die Teilmenge eines KeyboardEvent, die der Besitz-Entscheidung reicht. */
 export interface ShortcutKeyEvent {
@@ -77,7 +78,7 @@ export function shortcutOwner(e: ShortcutKeyEvent, inInput: boolean, isMac: bool
   return 'app'
 }
 
-const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/i.test(navigator.userAgent || '')
+const IS_MAC = usesCommandKey()
 
 /** Jede Aktion, die dieser App über eine Taste erreichbar ist. */
 export type ShortcutId =

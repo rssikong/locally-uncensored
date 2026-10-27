@@ -28,6 +28,7 @@ vi.mock('../../../api/backend', () => ({
   backendCall: vi.fn(async () => ({})),
   isTauri: () => true,
   isMacOS: () => false,
+  isWindows: () => false,
   openExternal: vi.fn(),
   secretGet: vi.fn().mockRejectedValue(new Error('no keychain here')),
   secretSet: vi.fn(),

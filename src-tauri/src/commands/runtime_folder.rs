@@ -1,4 +1,4 @@
-//! Settings, Model Storage, "Voice and Python folder": the commands behind
+//! Settings, Storage, "Voice and Python folder": the commands behind
 //! the row. The rules live in `crate::runtime_root`; this is the wiring to
 //! the app: its folders, its running processes and the system's trash.
 
@@ -40,7 +40,7 @@ pub struct RuntimeFolderStatus {
     pub moving: bool,
 }
 
-fn defaults(app: &AppHandle) -> Defaults {
+pub(crate) fn defaults(app: &AppHandle) -> Defaults {
     Defaults::here(app.path().app_data_dir().ok())
 }
 
@@ -102,7 +102,7 @@ pub async fn set_runtime_folder(app: AppHandle, path: String) -> Result<RuntimeF
 }
 
 /// What would stop a move right now, in a sentence.
-fn busy_reason(state: &AppState) -> Option<&'static str> {
+pub(crate) fn busy_reason(state: &AppState) -> Option<&'static str> {
     if state.voice_loop.job.is_running() {
         return Some("The voice setup is running. Let it finish or cancel it, then move.");
     }
@@ -196,7 +196,13 @@ fn prove(plan: &EntryMove) -> bool {
 /// copy, starts it once, then puts the old folder in the trash.
 #[tauri::command]
 pub async fn move_runtime_folder(app: AppHandle, state: State<'_, AppState>) -> Result<Vec<MoveOutcome>, String> {
-    if let Some(why) = busy_reason(&state) {
+    run_runtime_move(&app, &state).await
+}
+
+/// The move behind the row, also run by Settings → Storage (commands/storage.rs)
+/// after it chose the folder.
+pub(crate) async fn run_runtime_move(app: &AppHandle, state: &AppState) -> Result<Vec<MoveOutcome>, String> {
+    if let Some(why) = busy_reason(state) {
         return Err(why.to_string());
     }
     if MOVING.swap(true, Ordering::SeqCst) {
@@ -210,8 +216,8 @@ pub async fn move_runtime_folder(app: AppHandle, state: State<'_, AppState>) -> 
         }
     }
     let voice = state.voice_loop.clone();
-    let defaults = defaults(&app);
-    let venvs = engine_venvs(&app, &state);
+    let defaults = defaults(app);
+    let venvs = engine_venvs(app, state);
     let result = blocking(move || {
         voice.sidecar.stop(crate::commands::voice_loop::sidecar::STOP_GRACE);
         let Some(_downloads) = crate::private_python::hold_if_idle() else {
@@ -221,7 +227,7 @@ pub async fn move_runtime_folder(app: AppHandle, state: State<'_, AppState>) -> 
         let mut out = Vec::new();
         for plan in plans(&roots, &defaults, &venvs) {
             let free = plan.to.ancestors().find(|p| p.exists()).and_then(crate::commands::download::available_space_for);
-            out.push(runtime_root::move_entry(&plan, free, &prove, &crate::commands::mlx_outputs::system_trash));
+            out.push(runtime_root::move_entry(&plan, free, &prove, &crate::commands::os_trash::system_trash));
         }
         Ok(out)
     })

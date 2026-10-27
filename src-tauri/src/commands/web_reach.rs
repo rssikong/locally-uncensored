@@ -36,9 +36,9 @@ pub(crate) const MAX_BODY: usize = 8 * 1024 * 1024;
 const MAX_REDIRECTS: usize = 6;
 
 /// One deadline for the whole fetch, every hop and the body. As before.
-const DEADLINE: Duration = Duration::from_secs(20);
+pub(crate) const DEADLINE: Duration = Duration::from_secs(20);
 
-const USER_AGENT: &str = "Mozilla/5.0 (compatible; LocallyUncensored-Agent/1.0)";
+pub(crate) const USER_AGENT: &str = crate::app_identity::AGENT_FETCH_USER_AGENT;
 const ACCEPT: &str = "text/html,text/plain,application/xhtml+xml;q=0.9,*/*;q=0.5";
 const ACCEPT_LANGUAGE: &str = "en,de;q=0.8";
 
@@ -250,7 +250,14 @@ async fn fetch_hops(url: &str, gate: Gate, limit: usize, user_agent: &str) -> Re
     Err("Fetch failed: too many redirects".to_string())
 }
 
-async fn fetch_page_with(
+/// GET a page for a model with `gate` checking every hop (in the app
+/// `model_url_addrs`), the connection pinned to the addresses that check
+/// answered, the body capped at `limit`, the whole thing inside one deadline.
+///
+/// `user_agent` is the one the user set under Settings, Search Provider
+/// (D16), already checked by `search::custom_user_agent`, or `USER_AGENT`.
+/// `search::web_fetch_with` is the caller.
+pub(crate) async fn fetch_page_with(
     url: &str,
     gate: Gate,
     limit: usize,
@@ -261,17 +268,6 @@ async fn fetch_page_with(
         Ok(result) => result,
         Err(_) => Err("Fetch failed: timed out".to_string()),
     }
-}
-
-/// GET a page for a model: every hop checked by `model_url_addrs` and
-/// connected to the addresses that check answered, the body capped at
-/// `MAX_BODY`, the whole thing inside one deadline.
-///
-/// `user_agent` is the one the user set under Settings, Search Provider
-/// (D16), already checked by `search::custom_user_agent`; `None` sends the
-/// agent's own as always.
-pub(crate) async fn fetch_page(url: &str, user_agent: Option<&str>) -> Result<Page, String> {
-    fetch_page_with(url, Arc::new(model_url_addrs), MAX_BODY, DEADLINE, user_agent.unwrap_or(USER_AGENT)).await
 }
 
 #[cfg(test)]

@@ -65,3 +65,93 @@ export function mayReloadForIdbRestore(session: Pick<Storage, 'getItem' | 'setIt
     return false
   }
 }
+
+// ── Merging a backup into a store that is still there (gap L6) ───────────
+//
+// The phone's full restore runs when localStorage is gone. IndexedDB may still
+// hold every store then, and it is NEWER than the backup: the backup is a copy
+// of it, written up to about 1 s (chats) or 5 s (memories, Remote) later. So a
+// store that is present is never replaced. What the backup may add is a record
+// IndexedDB never got (a write refused at a full phone), by the same rule the
+// chat recovery uses (chat-backup-recovery.ts):
+//   - a record both sides have: the backup copy wins only when it is newer
+//   - a record only the backup has: added only when it is newer than every
+//     record the store has. There are no tombstones; a record deleted on
+//     purpose is older than what the store kept writing after it.
+// Nothing the store has is ever removed. A store without records to compare
+// (staged changes: an applied edit must not come back) keeps its live value.
+
+type StampedRecord = { id: string; updatedAt?: unknown; createdAt?: unknown }
+
+function stampOf(record: StampedRecord): number {
+  const at = typeof record.updatedAt === 'number' ? record.updatedAt : typeof record.createdAt === 'number' ? record.createdAt : 0
+  return Number.isFinite(at) ? at : 0
+}
+
+function isStamped(value: unknown): value is StampedRecord {
+  return !!value && typeof value === 'object' && typeof (value as { id?: unknown }).id === 'string'
+}
+
+/** Pure: live records plus what the backup has that is newer. Null when nothing changes. */
+export function mergeRecordLists(live: readonly unknown[], backup: readonly unknown[]): unknown[] | null {
+  const liveRecords = live.filter(isStamped)
+  const newestLive = liveRecords.reduce((max, r) => Math.max(max, stampOf(r)), 0)
+  const index = new Map<string, number>()
+  live.forEach((r, i) => {
+    if (isStamped(r) && !index.has(r.id)) index.set(r.id, i)
+  })
+  const out = [...live]
+  let changed = false
+  const seen = new Set<string>()
+  for (const candidate of backup) {
+    if (!isStamped(candidate) || seen.has(candidate.id)) continue
+    seen.add(candidate.id)
+    const at = index.get(candidate.id)
+    if (at !== undefined) {
+      if (stampOf(candidate) > stampOf(out[at] as StampedRecord)) {
+        out[at] = candidate
+        changed = true
+      }
+    } else if (stampOf(candidate) > newestLive) {
+      out.push(candidate)
+      changed = true
+    }
+  }
+  return changed ? out : null
+}
+
+/** Where each store keeps its records inside the persisted `state`. */
+const RECORD_LISTS: Record<string, string> = {
+  'chat-conversations': 'conversations',
+  'locally-uncensored-memory': 'entries',
+  'lu-mobile-remote': 'chats',
+}
+
+/**
+ * Pure: the value to keep for an IndexedDB store that is present, given the
+ * backup's value. Returns `live` itself (same string) when nothing is to be
+ * added, so the caller writes nothing.
+ */
+export function mergeIdbStoreValue(key: string, live: string, backup: string): string {
+  const field = RECORD_LISTS[key]
+  if (!field || live === backup) return live
+  let liveParsed: unknown
+  let backupParsed: unknown
+  try {
+    liveParsed = JSON.parse(live)
+    backupParsed = JSON.parse(backup)
+  } catch {
+    return live
+  }
+  const liveState = (liveParsed as { state?: unknown } | null)?.state
+  const backupState = (backupParsed as { state?: unknown } | null)?.state
+  if (!liveState || typeof liveState !== 'object' || !backupState || typeof backupState !== 'object') return live
+  const liveList = (liveState as Record<string, unknown>)[field]
+  const backupList = (backupState as Record<string, unknown>)[field]
+  if (!Array.isArray(liveList) || !Array.isArray(backupList)) return live
+  const merged = mergeRecordLists(liveList, backupList)
+  if (!merged) return live
+  // The chat store keeps its list newest first (importConversations); a chat that came back takes its place in it.
+  if (key === 'chat-conversations') merged.sort((a, b) => stampOf(b as StampedRecord) - stampOf(a as StampedRecord))
+  return JSON.stringify({ ...(liveParsed as Record<string, unknown>), state: { ...(liveState as Record<string, unknown>), [field]: merged } })
+}

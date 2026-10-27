@@ -23,6 +23,9 @@ interface CloudCatalogState {
   voice: { stt: number; tts_per_1k_chars: number } | null
   /** null = unknown (never fetched) — treat as live so we don't false-block. */
   mediaLive: boolean | null
+  /** Upload limits as the server sent them (bytes per kind), null when it
+   *  sent none. Read through lib/upload-limits.ts, which checks the numbers. */
+  uploadLimits: { image?: number; audio?: number; video?: number } | null
 
   setCatalog: (c: CloudCatalog) => void
 }
@@ -35,6 +38,7 @@ export const useCloudCatalogStore = create<CloudCatalogState>()(
       ops: null,
       voice: null,
       mediaLive: null,
+      uploadLimits: null,
 
       setCatalog: (c) =>
         set({
@@ -43,6 +47,7 @@ export const useCloudCatalogStore = create<CloudCatalogState>()(
           ops: c.ops,
           voice: c.voice,
           mediaLive: c.media_live,
+          uploadLimits: c.upload_limits ?? null,
         }),
     }),
     {

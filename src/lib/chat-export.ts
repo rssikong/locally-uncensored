@@ -10,6 +10,9 @@ import type { Conversation, Message } from '../types/chat'
 import { isTauri, backendCall } from '../api/backend'
 import { displayModelName } from '../api/providers/model-name'
 import { originalAttachment } from './chat-attachments'
+import { isMobile } from './device-kind'
+import { platformText } from './platform-text'
+import { saveOrShare, type SaveOutcome } from './save-or-share'
 import { conversationModelOf } from './conversation-model'
 import { groupSpeakers, groupTurnPersonaId, isGroupChat } from './group-chat'
 
@@ -50,7 +53,42 @@ function turnHeading(conversation: Conversation, msg: Message, personas: readonl
   return msg.role === 'assistant' ? 'Assistant' : msg.role
 }
 
-export function exportAsMarkdown(conversation: Conversation, personas: readonly ExportPersona[] = []): string {
+export interface MarkdownExportOptions {
+  /** The personas a group turn may have been written as (GH #171): with them
+   *  each model turn of a group is headed by its persona and its model. */
+  personas?: readonly ExportPersona[]
+  /**
+   * How the model is called in the header line. Without it the stored id is
+   * written as it is, as the desktop always did. The phone hands in the name
+   * its chat shows: its stored id carries the slot of the engine in front
+   * ("openai::Qwen3.5-0.8B-Q4_K_M"), and a reader of the file took that for a
+   * chat that ran over OpenAI (acceptance android-4gb, F10).
+   */
+  modelLabel?: (modelId: string) => string
+  /**
+   * The text of one message as the file shows it. Without it `content` is
+   * written as it is stored, as the desktop always did. The phone hands in
+   * the text a reader sees (lib/reader-text.ts): for a message with a file
+   * `content` is the frame the model gets, and that frame stood in the
+   * export (check 4 on Android, F12).
+   */
+  messageText?: (message: Conversation['messages'][number]) => string
+  /**
+   * The heading of one message, when it is not the one of its role. Without
+   * it, or when it answers undefined, the role decides, as the desktop always
+   * did. The phone hands in "Search result" for what a tool gave back: for a
+   * model that is driven by text that is stored as a message of the user, and
+   * stood under "### You" (check 4 on an iPhone, N9).
+   */
+  messageHeading?: (message: Conversation['messages'][number]) => string | undefined
+}
+
+/** The second line of the Markdown form: the model, when one is known, and the day the chat began. */
+function headerLine(model: string, created: string): string {
+  return model ? `_Model: ${model} | ${created}_` : `_${created}_`
+}
+
+export function exportAsMarkdown(conversation: Conversation, options: MarkdownExportOptions = {}): string {
   const lines: string[] = []
   lines.push(`# ${conversation.title}`)
   // The model of the last answer, not the conversation field. That field is
@@ -62,7 +100,7 @@ export function exportAsMarkdown(conversation: Conversation, personas: readonly 
   // is not an answer.
   const model = conversationModelOf(conversation)
   const created = new Date(conversation.createdAt).toLocaleString()
-  lines.push(model ? `_Model: ${model} | ${created}_` : `_${created}_`)
+  lines.push(headerLine(model && options.modelLabel ? options.modelLabel(model) || model : model, created))
   lines.push('')
 
   if (conversation.systemPrompt) {
@@ -75,7 +113,7 @@ export function exportAsMarkdown(conversation: Conversation, personas: readonly 
   lines.push('')
 
   for (const msg of conversation.messages) {
-    lines.push(`### ${turnHeading(conversation, msg, personas)}`)
+    lines.push(`### ${options.messageHeading?.(msg) ?? turnHeading(conversation, msg, options.personas ?? [])}`)
 
     if (msg.thinking) {
       lines.push('')
@@ -92,7 +130,7 @@ export function exportAsMarkdown(conversation: Conversation, personas: readonly 
     }
 
     lines.push('')
-    lines.push(msg.content)
+    lines.push(options.messageText ? options.messageText(msg) : msg.content)
     lines.push('')
 
     if (msg.sources && msg.sources.length > 0) {
@@ -162,33 +200,44 @@ export async function exportConversation(
   const mime = format === 'markdown' ? 'text/markdown' : 'application/json'
   const filename = `${safeTitle}.${ext}`
 
+  // A phone has no Save As and no native export dialog. The export goes to
+  // the share sheet (lib/save-or-share.ts), with the images folded back in
+  // here, the way the browser build does it.
+  if (isMobile()) {
+    // The phone exports through its own adapter (src/mobile/screens/chat/parts/adapters/handover.ts), which hands in
+    // the name of the catalogue. Should this way ever be taken on a phone, at least the slot in front is not written.
+    const content = format === 'markdown' ? exportAsMarkdown(conversation, { modelLabel: displayModelName }) : exportAsJSON(await portableConversation(conversation))
+    return exportOutcome(await saveOrShare({ filename, mime, text: content }))
+  }
+
   // Inside Tauri → native Save As dialog + real disk write. A JSON export
   // goes out with its image references, and the native side puts the image
   // bytes back while it streams to the file (export_chats_dialog), so the
   // WebView never holds the full export.
   if (isTauri()) {
     if (format === 'json') return saveNativeExport(exportAsJSON(conversation, personas), filename)
-    const content = exportAsMarkdown(conversation, personas)
-    try {
-      const chosenPath = await backendCall<string | null>('save_text_file_dialog', {
-        content,
-        defaultName: filename,
-        extension: ext,
-        extLabel,
-      })
-      if (!chosenPath) return { status: 'cancelled' }
-      return { status: 'saved', path: chosenPath }
-    } catch (e) {
-      // Fall through to blob download if the Tauri command fails for any reason
-      downloadFile(content, filename, mime)
-      return { status: 'downloaded', error: String(e) }
-    }
+    // The dialog, and a blob download if the Tauri command fails for any reason.
+    return exportOutcome(await saveOrShare(
+      { filename, mime, text: exportAsMarkdown(conversation, { personas }) },
+      { extension: ext, extLabel, anchorOnDialogFailure: true },
+    ))
   }
 
   // Plain browser fallback
-  const content = format === 'markdown' ? exportAsMarkdown(conversation, personas) : exportAsJSON(await portableConversation(conversation), personas)
-  downloadFile(content, filename, mime)
-  return { status: 'downloaded' }
+  const content = format === 'markdown' ? exportAsMarkdown(conversation, { personas }) : exportAsJSON(await portableConversation(conversation), personas)
+  return exportOutcome(await saveOrShare({ filename, mime, text: content }))
+}
+
+/** The export's own result shape from the shared one. A share on a phone is a
+ *  save without a path. */
+function exportOutcome(outcome: SaveOutcome): { status: 'saved' | 'cancelled' | 'downloaded' | 'error'; path?: string; error?: string } {
+  switch (outcome.status) {
+    case 'saved': return { status: 'saved', path: outcome.path }
+    case 'shared': return { status: 'saved' }
+    case 'downloaded': return outcome.error ? { status: 'downloaded', error: outcome.error } : { status: 'downloaded' }
+    case 'cancelled': return { status: 'cancelled' }
+    default: return { status: 'error', error: outcome.error }
+  }
 }
 
 async function saveNativeExport(content: string, defaultName: string): Promise<{ status: 'saved' | 'cancelled' | 'error'; path?: string; error?: string; missing?: number }> {
@@ -204,7 +253,7 @@ async function saveNativeExport(content: string, defaultName: string): Promise<{
 /** The line a UI shows after a saved export. */
 export function missingImagesNote(missing: number | undefined): string {
   if (!missing) return ''
-  return ` ${missing} image${missing === 1 ? ' was' : 's were'} no longer on this computer and could not be included.`
+  return ` ${missing} image${missing === 1 ? ' was' : 's were'} no longer on ${platformText('thisComputer')} and could not be included.`
 }
 
 // ── Bulk backup (a user 2026-06-28: the web build has no store_backup.json,
@@ -212,7 +261,8 @@ export function missingImagesNote(missing: number | undefined): string {
 // file the user can re-import into any LU (web or desktop). ─────────────────
 
 export interface ChatExportBundle {
-  app: 'locally-uncensored'
+  /** 'lu' is what a store build of the phone writes. No reader asks for the field (parseImportedChats). */
+  app: 'locally-uncensored' | 'lu'
   kind: 'chat-export'
   version: 1
   exportedAt: number
@@ -220,9 +270,9 @@ export interface ChatExportBundle {
   conversations: Conversation[]
 }
 
-export function serializeAllConversations(conversations: Conversation[]): string {
+export function serializeAllConversations(conversations: Conversation[], app: ChatExportBundle['app'] = 'locally-uncensored'): string {
   const bundle: ChatExportBundle = {
-    app: 'locally-uncensored',
+    app,
     kind: 'chat-export',
     version: 1,
     exportedAt: Date.now(),
@@ -242,12 +292,13 @@ export async function exportAllConversations(
   const count = conversations.length
   const filename = `locally-uncensored-chats-${count}.json`
 
-  if (isTauri()) return { ...(await saveNativeExport(serializeAllConversations(conversations), filename)), count }
+  if (isTauri() && !isMobile()) return { ...(await saveNativeExport(serializeAllConversations(conversations), filename)), count }
 
+  // Browser build, and a phone (share sheet instead of the native dialog).
   const portable: Conversation[] = []
   for (const conversation of conversations) portable.push(await portableConversation(conversation))
-  downloadFile(serializeAllConversations(portable), filename, 'application/json')
-  return { status: 'downloaded', count }
+  const outcome = await saveOrShare({ filename, mime: 'application/json', text: serializeAllConversations(portable) })
+  return { ...exportOutcome(outcome), count }
 }
 
 /**

@@ -122,7 +122,7 @@
 <tr><th>Section</th><th>What is in it</th></tr>
 <tr><td>Speech</td><td>"Voice runs 100% locally, no cloud". Speech to text: faster-whisper with "Download &amp; Install". Text to speech: "Enable read-aloud", "Auto-read new responses", Engine (Piper neural, about 63 MB, or an external HTTP server) and the voice list. Chapter 4.</td></tr>
 <tr><td>Remote Access</td><td>Lets a phone or another computer drive this app. Four permission switches: "Filesystem Access", "Downloads &amp; Installs", "Process Control", "Shell &amp; Code Execution", all off until you turn them on, and a "Connected Devices" list. Pairing happens in the sidebar's "Remote" tab by QR code and passcode, over your network or through a Cloudflare tunnel; the app listens on port 11435 for it.</td></tr>
-<tr><td>Local API</td><td>"One OpenAI-compatible address for every model on this machine", on port 8129 by default, for other programs on your computer. "Reachable on the network" opens it to the LAN; off, it answers this machine only. It needs a token ("The API will not start without a token. Generate one first.") and every request must carry it.</td></tr>
+<tr><td>Local API</td><td>"One OpenAI-compatible address for every model on this machine", on port 8129 by default, for other programs on your computer. "Reachable on the network" opens it to the LAN; off, it answers this machine only. It needs a token ("The API will not start without a token. Generate one first.") and every request must carry it. "Start with LU" starts it every time the app opens, with the same settings.</td></tr>
 </table>
 
 <h2 id="help">The log file, and what to send when you ask for help</h2>

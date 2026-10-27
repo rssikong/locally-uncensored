@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "Rechte des Testbetts",
+  "windows": ["main"],
+  "permissions": ["core:default", "deep-link:default", "luharness:default"]
+}

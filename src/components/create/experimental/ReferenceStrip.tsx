@@ -17,6 +17,7 @@ import { ImagePlus, Loader2, X } from 'lucide-react'
 import { useCreateStore } from '../../../stores/createStore'
 import { useMacEditReferenceRoom, useReferenceSlots } from './referenceSlots'
 import { MANY_REFERENCES, MANY_REFERENCES_LINE, referenceNames } from '../../../lib/edit-references'
+import { SOURCE_IS_IMAGE_1, imageRefWords, withImageRef } from '../../../lib/image-ref-names'
 import { laneImageModel } from '../../../lib/image-engines'
 import { macEditNoRoomLine, macEditOverRoomLine } from '../../../lib/mac-edit-memory'
 import { comfyEditFullImages, qwenEditPlusOverCard } from '../../../lib/comfy-edit-memory'
@@ -35,6 +36,7 @@ export function ReferenceStrip() {
   const addReference = useCreateStore((s) => s.addReference)
   const removeReference = useCreateStore((s) => s.removeReference)
   const setError = useCreateStore((s) => s.setError)
+  const setPrompt = useCreateStore((s) => s.setPrompt)
   const gallery = useCreateStore((s) => s.gallery)
   const backend = useCreateStore((s) => s.backend)
   const intent = useCreateStore((s) => s.intent())
@@ -126,15 +128,29 @@ export function ReferenceStrip() {
           <div key={`${ref.url.slice(-24)}-${i}`} className={cn(TILE, 'relative')} data-not-sent={i >= slots ? 'true' : undefined}>
             <img
               src={ref.url}
-              alt={`${cloud ? 'photo' : 'image'} ${i + 2}`}
+              alt={imageRefWords(i + 2)}
               className={cn(TILE, 'object-cover border border-white/[0.06]', i >= slots && 'opacity-40')}
             />
             {i >= slots
-              ? <span className="absolute bottom-1 left-1 t-micro text-gray-300 bg-black/70 px-1 rounded" title="This Mac's memory does not take this image at this size">not sent</span>
-              : <span className="absolute bottom-1 left-1 t-micro text-gray-200 bg-black/60 px-1 rounded">{i + 2}</span>}
+              ? <span className="lu-on-dark absolute bottom-1 left-1 t-micro text-gray-300 bg-black/70 px-1 rounded" title="This Mac's memory does not take this image at this size">not sent</span>
+              : (
+                // The name the prompt uses, on the tile itself (Discord help-18,
+                // 23.10.2026: "should i just put image 2, or IMAGE 2.?"). A click
+                // adds it to the prompt; any spelling reaches the model the
+                // way its encoder names the image (lib/image-ref-names).
+                <button
+                  type="button"
+                  onClick={() => setPrompt(withImageRef(useCreateStore.getState().prompt, i + 2))}
+                  className="lu-on-dark absolute bottom-1 left-1 t-micro text-gray-200 bg-black/60 hover:bg-black/80 hover:text-white px-1 rounded"
+                  title={`Refer to it as ${imageRefWords(i + 2)} in your prompt. Click to add it.`}
+                  aria-label={`Add ${imageRefWords(i + 2)} to the prompt`}
+                >
+                  Image {i + 2}
+                </button>
+              )}
             <button
               onClick={() => removeReference(i)}
-              className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center rounded-md bg-black/60 text-gray-300 hover:text-white"
+              className="lu-on-dark absolute top-1 right-1 w-5 h-5 flex items-center justify-center rounded-md bg-black/60 text-gray-300 hover:text-white"
               title={`Remove ${cloud ? 'photo' : 'image'} ${i + 2}`}
               aria-label={`Remove ${cloud ? 'photo' : 'image'} ${i + 2}`}
             >
@@ -154,14 +170,17 @@ export function ReferenceStrip() {
           </button>
         )}
       </div>
-      <p className="t-label text-gray-600 text-center max-w-md text-balance">
+      {/* Sentence case, not the uppercase of t-label: the line says how the
+          prompt names the images, and in capitals it read as "IMAGE 2"
+          (Discord help-18, 23.10.2026). */}
+      <p className="t-micro leading-snug text-gray-500 text-center max-w-md text-balance" data-testid="reference-strip-names">
         {cloud
-          ? `Add up to ${slots + 1} photos of your character.${intent === 'edit' && shown.length > 0 ? ` Name them in the prompt as ${referenceNames(shown.length)}.` : ''}`
+          ? `Add up to ${slots + 1} photos of your character.${intent === 'edit' && shown.length > 0 ? ` Name them in the prompt as ${referenceNames(shown.length)}. ${SOURCE_IS_IMAGE_1}` : ''}`
           : memoryLimited && slots === 0
             ? `${macEditNoRoomLine(memoryGb ?? 0)} The images here stay and are not sent.`
             : shown.length === 0
               ? `Add up to ${slots === 1 ? 'one more image' : `${slots} more images`}, for example a person or an outfit to bring into this one.${memoryLimited ? ' That is what the memory of this Mac takes at this size.' : ''}`
-              : `Name them in the prompt as ${referenceNames(Math.min(shown.length, slots))}.${Math.min(shown.length, slots) >= MANY_REFERENCES ? ` ${MANY_REFERENCES_LINE}` : ''}${shrinks ? ' With this many images the edit comes out smaller, so it fits in memory.' : ''}${overCard ? ` ${overCard}` : ''}${overRoom ? ` ${macEditOverRoomLine(slots, memoryGb ?? 0)}` : ''}`}
+              : `Name them in the prompt as ${referenceNames(Math.min(shown.length, slots))}. ${SOURCE_IS_IMAGE_1}${Math.min(shown.length, slots) >= MANY_REFERENCES ? ` ${MANY_REFERENCES_LINE}` : ''}${shrinks ? ' With this many images the edit comes out smaller, so it fits in memory.' : ''}${overCard ? ` ${overCard}` : ''}${overRoom ? ` ${macEditOverRoomLine(slots, memoryGb ?? 0)}` : ''}`}
       </p>
       {/* A character saved from a video (lib/saved-characters) loads its photos
           here with one click: they join the strip, and the first becomes the

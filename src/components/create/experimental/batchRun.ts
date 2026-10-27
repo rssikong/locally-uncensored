@@ -39,6 +39,16 @@ export function useBatchOffered(): boolean {
   return useCreateStore((s) => batchOfferedNow(s))
 }
 
+/** The image a list was made from, while it is not on the Stage and no list
+ *  is on: the way back to it after a batch. Null otherwise. */
+export function useBatchOriginalOffer(): ImageRef | null {
+  return useCreateStore((s) => {
+    const o = s.batchOriginal
+    if (!o || s.batchRun || s.batchSources.length > 1) return null
+    return s.source?.url === o.url ? null : o
+  })
+}
+
 /** True when Create starts a batch instead of one run. */
 export function batchReady(): boolean {
   const s = useCreateStore.getState()
@@ -102,10 +112,13 @@ export async function addBatchFiles(files: readonly File[]): Promise<void> {
     if (!st.batchSources.length) for (const r of next) URL.revokeObjectURL(r.url)
     return
   }
+  const fresh = !st.batchSources.length
   st.setBatchSources(next)
   // A mask belongs to one image, a list has none.
   st.setMask(null)
   if (!st.source) await showAsSource(next[0])
+  // A new list keeps the image it was made from, so the run cannot take it.
+  if (fresh) useCreateStore.getState().setBatchOriginal(useCreateStore.getState().source)
 }
 
 /** Takes one image out of the list. A list of one is the plain single source again. */
@@ -117,7 +130,10 @@ export async function removeBatchEntry(index: number): Promise<void> {
   st.setBatchSources(next.length < 2 ? [] : next)
   if (index !== 0 || !head) return
   try {
-    useCreateStore.getState().setSource(await loadImageRef(head))
+    const ref = await loadImageRef(head)
+    useCreateStore.getState().setSource(ref)
+    // The original left the list, the new first image takes its place.
+    useCreateStore.getState().setBatchOriginal(ref)
   } catch (err) {
     st.setError(`Could not load ${head.name}: ${err instanceof Error ? err.message : String(err)}`)
   }
@@ -153,6 +169,11 @@ export async function runBatchEdit(
   if (entries.length < 2) return
   const intent = start.intent()
   const backend = start.backend
+  // Every image of the list goes on the Stage in turn. The one the list was
+  // made from comes back after it (Discord, 23.10.2026: after 50 images only
+  // the last one was left to run again).
+  const original = start.batchOriginal ?? start.source
+  if (original && !start.batchOriginal) start.setBatchOriginal(original)
   stopRequested = false
   start.setMask(null)
   start.setError(null)
@@ -232,6 +253,10 @@ export async function runBatchEdit(
       if (last) {
         try { useCreateStore.getState().setSource(await loadImageRef(last)) }
         catch { useCreateStore.getState().setSource(null) }
+      } else if (original) {
+        // Not through setSource: that would date the source after the last
+        // result, and the Stage would hide the result behind it.
+        useCreateStore.setState({ source: original })
       }
     }
     const summary = report ? batchSummary(report) : null

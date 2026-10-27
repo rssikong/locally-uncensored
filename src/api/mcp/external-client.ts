@@ -9,7 +9,9 @@ import type { Child } from '@tauri-apps/plugin-shell'
 import type { MCPToolDefinition, MCPServerConfig, ToolArgs } from './types'
 import { log } from '../../lib/logger'
 import { APP_VERSION } from '../../lib/app-version'
-import { isTauri } from '../backend'
+// Store-free on purpose: main.tsx reaches this module before the onboarding
+// handover (api/in-tauri.ts).
+import { isTauri } from '../in-tauri'
 import { isRecord, prop, asString, asNumber, asRecordArray, errorText } from '../../types/json-guards'
 
 // ── JSON-RPC message types ──────────────────────────────────────

@@ -35,7 +35,9 @@ export interface ExtractionResult {
 export function buildExtractionPrompt(
   userMessage: string,
   assistantResponse: string,
-  existingMemoriesSummary: string
+  existingMemoriesSummary: string,
+  /** Further lines for the rules. The desktop passes none, its prompt is word for word what it was. */
+  extraRules: readonly string[] = [],
 ): Array<{ role: 'system' | 'user'; content: string }> {
   const systemPrompt = `You are a memory extraction system. Analyze the conversation exchange below and decide if anything should be remembered for future conversations.
 
@@ -53,7 +55,7 @@ export function buildExtractionPrompt(
 - Do NOT duplicate existing memories (listed below)
 - Keep titles under 60 characters, descriptions under 120 characters
 - Content should be concise but complete (1-3 sentences)
-
+${extraRules.map((rule) => `- ${rule}\n`).join('')}
 ## Existing Memories
 ${existingMemoriesSummary || 'None yet.'}
 
@@ -73,6 +75,120 @@ Analyze this exchange. What (if anything) should be remembered?`
     { role: 'system', content: systemPrompt },
     { role: 'user', content: userPrompt },
   ]
+}
+
+/**
+ * The rules a phone adds to the prompt (hooks/useMemory.ts, behind isMobile).
+ * Second check on Android, F12, and the small iPhone, K12: a question about a
+ * ship became the entry "User Inquiry about Ship Zephyr-15's Cargo Code"
+ * under "About you", and another entry came out of a PDF.
+ */
+export const PHONE_EXTRACTION_RULES: readonly string[] = [
+  'A question the user asked is NOT a fact about the user. Never save "the user asked about X" or "user inquiry about X"',
+  'Only save what the user states about themselves, their work or how they want answers. If the user states nothing like that, respond with {"shouldSave": false, "memories": []}',
+  'What a document, a file or a web page says is never a fact about the user',
+]
+
+const FIRST_PERSON = /(^|[^\p{L}])(i|i'm|i've|i'd|i'll|im|my|me|mine|myself|we|we're|our|ours|us|ich|mein|meine|meinen|meinem|meiner|meins|mir|mich|wir|unser|unsere|unseren|unserem|uns)(?=$|[^\p{L}])/iu
+const KEEP_REQUEST = /\b(remember|keep in mind|don't forget|do not forget|from now on|always|never|merk dir|merke dir|vergiss nicht|ab jetzt|immer|nie)\b/i
+
+/**
+ * Pure: does this message say anything about the user at all. False for a
+ * bare question or a bare order ("What is the cargo code of the ship
+ * Zephyr-12?"): no first person, no "remember", no "from now on". A phone does
+ * not ask the model for memories after such a message; nothing in it is about
+ * the user, and a small model answers the extraction anyway.
+ */
+export function saysSomethingAboutTheUser(userMessage: string): boolean {
+  const text = userMessage.trim()
+  if (!text) return false
+  return FIRST_PERSON.test(text) || KEEP_REQUEST.test(text)
+}
+
+const RETELLS_A_QUESTION = /\b(inquir(y|ies|ed|es)|enquir(y|ies|ed|es)|asked|asks|asking|question(s|ed)?|query|queried|request(s|ed)?|wants? to know|wanted to know|looking for|look(ed|s)? up|searched for)\b/i
+
+/**
+ * Pure: is this extracted memory only the retelling of what the user asked
+ * ("User Inquiry about ...", "The user asked for the cargo code"). Judged by
+ * the title, and by the content when it opens with "The user asked".
+ */
+export function retellsAQuestion(memory: Pick<ExtractedMemory, 'title' | 'content'>): boolean {
+  if (RETELLS_A_QUESTION.test(memory.title)) return true
+  return /^\s*(the\s+)?user\s+(has\s+|had\s+|is\s+|was\s+)?(asked|asks|asking|inquired|inquires|enquired|requested|requests|wanted to know|wants to know|is looking for|was looking for)\b/i.test(memory.content)
+}
+
+/**
+ * Pure: is this extracted memory only the retelling of what the ASSISTANT
+ * wrote ("Assistant's response content", "Assistant explained that ...").
+ * Check 4 on Android, finding F1: after "I am a nurse" a model of 0.8B kept
+ * exactly that under "How to answer", and nothing about the user.
+ */
+export function retellsTheAnswer(memory: Pick<ExtractedMemory, 'title' | 'content'>): boolean {
+  if (/\b(assistant|ai|model|chatbot)('s)?\s+(response|reply|answer|explanation|output|message)\b/i.test(memory.title)) return true
+  return /^\s*(the\s+)?(assistant|ai|model|chatbot)\s+(has\s+|had\s+)?(explained|said|says|replied|responded|answered|provided|described|gave|told|wrote|listed|suggested|recommended|outlined|mentioned|noted)\b/i.test(memory.content)
+}
+
+/**
+ * What a user says about themselves in plain words, in English and German:
+ * "I am a nurse", "I work as ...", "My name is ...", "I live in ...".
+ * Narrow on purpose: "I am a bit tired" and "I am not sure" are no facts.
+ */
+const SELF_STATEMENTS: readonly RegExp[] = [
+  /(?:^|[^\p{L}])(?:i am|i'm|i\u2019m|im) (?!a (?:bit|little|lot|tad)\b)(?:a|an|the) \p{L}[^.!?\n]{1,100}/iu,
+  /(?:^|[^\p{L}])i work (?:as|at|in|for) \p{L}[^.!?\n]{1,100}/iu,
+  /(?:^|[^\p{L}])my name is \p{L}[^.!?\n]{0,60}/iu,
+  /(?:^|[^\p{L}])i live in \p{L}[^.!?\n]{0,60}/iu,
+  /(?:^|[^\p{L}])ich bin (?!ein (?:bisschen|wenig)\b)(?:ein|eine|der|die) \p{L}[^.!?\n]{1,100}/iu,
+  /(?:^|[^\p{L}])ich arbeite (?:als|bei|in|f\u00fcr) \p{L}[^.!?\n]{1,100}/iu,
+  /(?:^|[^\p{L}])(?:ich hei(?:\u00df|ss)e|mein name ist) \p{L}[^.!?\n]{0,60}/iu,
+  /(?:^|[^\p{L}])ich wohne in \p{L}[^.!?\n]{0,60}/iu,
+]
+
+/**
+ * Pure: the plain statement about the user in this message, as a memory of
+ * the type "user", or null when there is none.
+ *
+ * The phone keeps it when the model did not (hooks/useMemory.ts, behind
+ * isMobile): a model small enough for a phone answers the extraction with
+ * the topic of the chat or with what the assistant said, and the one thing
+ * the switch promises, that LU learns who it talks to, did not happen
+ * (check 4 on Android, F1: three times "I am a nurse", no entry about the
+ * user). The words are the user's own, nothing is inferred.
+ */
+export function plainSelfStatement(userMessage: string): ExtractedMemory | null {
+  for (const pattern of SELF_STATEMENTS) {
+    const match = pattern.exec(userMessage)
+    if (!match) continue
+    // Up to the first comma that opens a new clause is too little ("a nurse, and I ..."): the sentence is kept whole.
+    const sentence = match[0].replace(/^[^\p{L}]+/u, '').replace(/\s+/g, ' ').trim().replace(/[,;:\s]+$/, '')
+    if (sentence.length < 8) continue
+    const said = sentence.charAt(0).toUpperCase() + sentence.slice(1)
+    return {
+      type: 'user',
+      title: said.length > 60 ? `${said.slice(0, 57).trimEnd()}...` : said,
+      description: 'Said by you in a chat.',
+      content: `The user said: "${said}."`,
+      tags: [],
+    }
+  }
+  return null
+}
+
+/**
+ * Pure: is this memory already kept. True for the same words (case and
+ * spaces aside), and true when an entry of the same type carries every
+ * longer word of it: "I am a nurse" next to "The user is a nurse and works
+ * night shifts" would be the same fact twice.
+ */
+export function alreadyKept(memory: Pick<ExtractedMemory, 'type' | 'content'>, existing: ReadonlyArray<{ type: string; content: string }>): boolean {
+  const norm = (text: string) => text.toLowerCase().replace(/\s+/g, ' ').trim()
+  const wanted = norm(memory.content)
+  const words = (wanted.match(/\p{L}{4,}/gu) ?? []).filter((word) => word !== 'user' && word !== 'said')
+  return existing.some((e) => {
+    if (e.type !== memory.type) return false
+    const have = norm(e.content)
+    return have === wanted || (words.length > 0 && words.every((word) => have.includes(word)))
+  })
 }
 
 /** The four categories the prompt offers; anything else is not a category. */

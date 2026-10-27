@@ -19,7 +19,7 @@ import { create } from 'zustand'
  *  `'hidden-stopped'` the window was closed (to the tray) and, after the
  *               grace period a reopen would have cancelled, background
  *               agent work was actually stopped, the same trade the local
- *               model offload in main.rs already makes for the same click.
+ *               model offload in lib.rs already makes for the same click.
  *               This one does NOT self-clear: the user has to see it once,
  *               because credits stopped accruing and a new message is what
  *               starts the next one.

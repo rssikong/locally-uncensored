@@ -109,12 +109,12 @@ describe('ob ein Update je ankommt', () => {
     expect(signiert && !zielt, 'Artefakte an, aber kein Ziel').toBe(false)
   })
 
-  it('der oeffentliche Schluessel steht da, solange main.rs das Plugin registriert', () => {
+  it('der oeffentliche Schluessel steht da, solange lib.rs das Plugin registriert', () => {
     // Ueberreinigen bricht die App beim START, nicht beim Kompilieren:
     // `tauri-plugin-updater` deklariert `pubkey` ohne serde-Default, ein
-    // Deserialisierungsfehler wird ein hartes Err, und main.rs beendet den
+    // Deserialisierungsfehler wird ein hartes Err, und lib.rs beendet den
     // Aufbau mit expect(). Ohne pubkey startet die App also gar nicht mehr.
-    const mainRs = readFileSync(resolve(TAURI, 'src/main.rs'), 'utf8')
+    const mainRs = readFileSync(resolve(TAURI, 'src/lib.rs'), 'utf8')
     if (mainRs.includes('tauri_plugin_updater::Builder::new().build()')) {
       expect(typeof basis.plugins?.updater?.pubkey).toBe('string')
       expect(basis.plugins.updater.pubkey.length).toBeGreaterThan(40)

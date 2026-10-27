@@ -183,7 +183,27 @@ pub fn comfy_venv_state(comfyui_dir: &Path) -> ComfyVenv {
             broken = Some(ComfyVenv::Broken { venv_dir, interpreter });
         }
     }
+    // Comfy Desktop (Discord 25.10.2026) keeps each install as
+    // `ComfyUI-Installs\<name>\ComfyUI`, and its environment presumably one
+    // level up, beside that folder. Without a venv of its own LU started such
+    // an install on the system Python. Only inside `ComfyUI-Installs`: an
+    // ordinary `~/ComfyUI` must never pick up an unrelated `~/.venv`.
+    if broken.is_none() && in_comfy_desktop_installs(comfyui_dir) {
+        if let Some(parent) = comfyui_dir.parent() {
+            for venv_name in [".venv", "venv"] {
+                let interpreter = venv_python_path_named(parent, venv_name);
+                if interpreter.exists() {
+                    return ComfyVenv::Usable(interpreter.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
     broken.unwrap_or(ComfyVenv::Absent)
+}
+
+/// Below a `ComfyUI-Installs` folder, the layout of Comfy Desktop.
+fn in_comfy_desktop_installs(dir: &Path) -> bool {
+    dir.to_string_lossy().split(['\\', '/']).any(|seg| seg.eq_ignore_ascii_case("ComfyUI-Installs"))
 }
 
 /// The venv Python for `comfyui_dir` iff it is usable, as a String (matching
@@ -627,8 +647,10 @@ pub fn python_interpreters() -> Vec<String> {
     // Explicit names beyond what `unix_python_candidates` orders for the
     // default picker (that list stops at 3.11/3.12/3.13 by design, oldest
     // first is never its job): 3.10 through 3.13 is the range the torch
-    // preflight message actually needs to reason about.
-    for minor in 10..=13 {
+    // preflight message actually needs to reason about, and 3.14 is the
+    // newest the Mac engines' pins have wheels for (GH #188), so a 3.14 next
+    // to a `python3` that is already 3.15 is found.
+    for minor in 10..=14 {
         if let Ok(path) = which::which(format!("python3.{minor}")) {
             push(path);
         }
@@ -652,7 +674,7 @@ pub fn python_interpreters() -> Vec<String> {
     // prefix (`/opt/<name>/bin`), and the common source-build prefix
     // (`/usr/local/bin`), none of which every shell's PATH carries by default.
     for base in [home.join(".local/bin"), PathBuf::from("/usr/local/bin")] {
-        for minor in 10..=13 {
+        for minor in 10..=14 {
             push(base.join(format!("python3.{minor}")));
         }
     }
@@ -861,6 +883,34 @@ mod tests {
     }
 
     // ── venv_python_path layout (Bug E — Arch PEP 668 venv) ─────────────────
+
+    #[test]
+    fn a_comfy_desktop_install_starts_from_the_venv_beside_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let install = tmp.path().join("Comfy-Desktop").join("ComfyUI-Installs").join("ComfyUI");
+        let comfy = install.join("ComfyUI");
+        std::fs::create_dir_all(&comfy).unwrap();
+        let py = venv_python_path_named(&install, ".venv");
+        std::fs::create_dir_all(py.parent().unwrap()).unwrap();
+        std::fs::write(&py, b"").unwrap();
+        assert_eq!(comfy_venv_state(&comfy), ComfyVenv::Usable(py.to_string_lossy().to_string()));
+        // A venv of its own still wins.
+        let own = venv_python_path_named(&comfy, "venv");
+        std::fs::create_dir_all(own.parent().unwrap()).unwrap();
+        std::fs::write(&own, b"").unwrap();
+        assert_eq!(comfy_venv_state(&comfy), ComfyVenv::Usable(own.to_string_lossy().to_string()));
+    }
+
+    #[test]
+    fn an_ordinary_comfyui_never_takes_the_venv_of_its_parent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let comfy = tmp.path().join("ComfyUI");
+        std::fs::create_dir_all(&comfy).unwrap();
+        let py = venv_python_path_named(tmp.path(), ".venv");
+        std::fs::create_dir_all(py.parent().unwrap()).unwrap();
+        std::fs::write(&py, b"").unwrap();
+        assert_eq!(comfy_venv_state(&comfy), ComfyVenv::Absent);
+    }
 
     #[test]
     fn venv_python_path_matches_platform_layout() {

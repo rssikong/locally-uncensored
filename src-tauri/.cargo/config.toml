@@ -1,0 +1,18 @@
+# Bau-Umgebung fuer alle cargo-Aufrufe in src-tauri, auch die der Tauri-CLI.
+#
+# IPHONEOS_DEPLOYMENT_TARGET: Ohne diese Variable baut CMake den C++-Teil von
+# llama.cpp fuer die SDK-Version (26.5), waehrend rustc das Geraeteziel gegen
+# eine viel aeltere Version linkt. Ergebnis ist ein Linkfehler
+# ("___chkstk_darwin", "was built for newer iOS version") oder, schlimmer, eine
+# Bibliothek, die auf einem iPhone mit iOS 17 oder 18 beim Start abstuerzt.
+# Der Wert muss zu bundle.iOS.minimumSystemVersion in tauri.ios.conf.json
+# passen. Xcode setzt die Variable in seiner Bauphase selbst, ein gesetzter
+# Wert wird hier nicht ueberschrieben (kein force).
+#
+# Achtung, zweite Haelfte der Falle: Das Build-Skript von llama-cpp-sys-2
+# bemerkt eine geaenderte Variable nicht. Nach einer Aenderung des Werts:
+#   cargo clean --target aarch64-apple-ios -p llama-cpp-sys-2
+#   cargo clean --target aarch64-apple-ios-sim -p llama-cpp-sys-2
+# Waechter: src/lib/__tests__/mobile-bau-fallen.test.ts
+[env]
+IPHONEOS_DEPLOYMENT_TARGET = "17.0"

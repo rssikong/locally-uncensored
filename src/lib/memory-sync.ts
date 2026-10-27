@@ -1,3 +1,4 @@
+import { v4 as uuid } from 'uuid'
 import { useMemoryStore } from '../stores/memoryStore'
 import { useCloudAuthStore } from '../stores/cloudAuthStore'
 import { withMemorySyncSession, MemorySyncError } from '../api/cloud/memory-sync'
@@ -15,8 +16,20 @@ export interface MemorySyncResolution {
   remoteRevision: number
   remoteHash: string
   localHash: string
-  choice: 'local' | 'cloud'
+  /**
+   * local: this device's version replaces the account's.
+   * cloud: the account's version replaces this device's.
+   * both:  this device's version stays under the shared id (as with 'local')
+   *        and the account's version is kept as a memory of its own, with a
+   *        new id. Both land in the same commit as the resolution, so there
+   *        is no moment in which the account version exists nowhere.
+   */
+  choice: 'local' | 'cloud' | 'both'
+  /** 'both' only: appended to the title of the kept account version. Default "(account)". */
+  copySuffix?: string
 }
+
+const COPY_TITLE_MAX = 60
 
 function ownerMetadata(all: unknown, owner: string, minimumRevision: number): Record<string, MemorySyncBaseline> {
   const invalid = () => new Error('Invalid stored memory synchronization data')
@@ -45,7 +58,7 @@ export async function synchronizeMemoryCollection(owner: string, allowSensitive 
   let expectedPending = initial.memorySyncPending
   const revision = initial.memoryCollectionRevision
   const choice = resolution ? { ...resolution } : undefined
-  if (choice && (choice.owner !== owner || choice.collectionRevision !== revision || !['local', 'cloud'].includes(choice.choice))) throw conflictChanged()
+  if (choice && (choice.owner !== owner || choice.collectionRevision !== revision || !['local', 'cloud', 'both'].includes(choice.choice))) throw conflictChanged()
   const check = () => {
     if (signal?.aborted) throw new MemorySyncError('cancelled', 'Memory synchronization cancelled. Some changes may already be saved.')
     const state = useMemoryStore.getState()
@@ -98,6 +111,7 @@ export async function synchronizeMemoryCollection(owner: string, allowSensitive 
       for (const id of forcedDeletes.keys()) delete planningBase[id]
       const plan = await planMemorySync(expectedEntries.filter(entry => !forcedDeletes.has(entry.id)), planningBase, remote.filter(row => !forcedDeletes.has(row.memory_id)))
       guard()
+      const keptCopies: ReturnType<typeof decodeSyncMemory>[] = []
       if (choice) {
         const conflict = plan.conflicts.find(item => item.id === choice.id && item.reason === 'both-edited')
         const local = expectedEntries.find(entry => entry.id === choice.id)
@@ -108,8 +122,26 @@ export async function synchronizeMemoryCollection(owner: string, allowSensitive 
         const localHash = await syncMemoryHash(local)
         guard()
         if (cloudHash !== choice.remoteHash || localHash !== choice.localHash) throw conflictChanged()
-        if (choice.choice === 'local') plan.push.push({ id: local.id, expectedRevision: row.revision, payload: decodeSyncMemory(local) })
-        else plan.pull.push({ memory: cloud, baseline: { revision: row.revision, hash: cloudHash } })
+        if (choice.choice === 'cloud') plan.pull.push({ memory: cloud, baseline: { revision: row.revision, hash: cloudHash } })
+        else plan.push.push({ id: local.id, expectedRevision: row.revision, payload: decodeSyncMemory(local) })
+        if (choice.choice === 'both') {
+          // The account version becomes a record of its own. It carries no
+          // supersede links: those belong to the id it no longer has.
+          const now = Date.now()
+          const suffix = (choice.copySuffix ?? '(account)').trim()
+          const copy = decodeSyncMemory({
+            ...cloud,
+            id: uuid(),
+            title: `${cloud.title} ${suffix}`.trim().slice(0, COPY_TITLE_MAX),
+            source: 'manual',
+            createdAt: now,
+            updatedAt: now,
+            supersededBy: undefined,
+            supersedesId: undefined,
+          })
+          keptCopies.push(copy)
+          plan.push.push({ id: copy.id, expectedRevision: 0, payload: copy })
+        }
         plan.conflicts = plan.conflicts.filter(item => item.id !== choice.id)
       }
       for (const [id, expectedRevision] of forcedDeletes) plan.push.push({ id, expectedRevision, payload: null })
@@ -126,7 +158,7 @@ export async function synchronizeMemoryCollection(owner: string, allowSensitive 
       }
       const incoming = new Map(plan.pull.map(item => [item.memory.id, item.memory]))
       const removed = new Set([...plan.remove.map(item => item.id), ...forcedDeletes.keys()])
-      const entries = expectedEntries.filter(entry => !removed.has(entry.id) && !incoming.has(entry.id)).concat([...incoming.values()])
+      const entries = expectedEntries.filter(entry => !removed.has(entry.id) && !incoming.has(entry.id)).concat([...incoming.values()], keptCopies)
       for (const item of plan.pull) { baselines[item.memory.id] = item.baseline; delete pending[item.memory.id] }
       for (const item of [...plan.remove, ...plan.acknowledge]) { baselines[item.id] = item.baseline; delete pending[item.id] }
       await commit(entries, { ...baselines }, { ...pending })

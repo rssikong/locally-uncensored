@@ -3,6 +3,8 @@ import { ComputerControlHost } from '../computer/ComputerControlHost'
 import { Header } from './Header'
 import { StaleModelsBanner } from './StaleModelsBanner'
 import { BackgroundShutdownBanner } from './BackgroundShutdownBanner'
+import { CloudOutageBanner } from './CloudOutageBanner'
+import { RemoteCreateBar } from './RemoteCreateBar'
 import { StorageQuotaToast } from './StorageQuotaToast'
 import { Sidebar } from './Sidebar'
 import { ChatView } from '../chat/ChatView'
@@ -29,6 +31,10 @@ import { offloadWhenLocalLaneFree } from '../../lib/cloud-offload-defer'
 import { useModelStore } from '../../stores/modelStore'
 import { useRemoteStore } from '../../stores/remoteStore'
 import { useRemoteRecovery } from '../../hooks/useRemoteRecovery'
+import { useRemoteAnywhere } from '../../hooks/useRemoteAnywhere'
+import { RemotePairPrompt } from '../remote/RemotePairPrompt'
+import { PhoneContinuedBar } from '../remote/PhoneContinuedBar'
+import { RemoteSigninPrompt } from '../remote/RemoteSigninPrompt'
 import { useModelHealthStore } from '../../stores/modelHealthStore'
 import { extractMemoriesFromPair } from '../../hooks/useMemory'
 import { detectLocalBackends, type DetectedBackend } from '../../lib/backend-detector'
@@ -47,6 +53,7 @@ import type { TextChunk } from '../../types/rag'
 import type { Role } from '../../types/chat'
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts'
 import { useCloudAuth } from '../../hooks/useCloudAuth'
+import { useCloudOutageWatch } from '../../hooks/useCloudOutageWatch'
 import { useCloudAuthStore, deriveCloudAvailable } from '../../stores/cloudAuthStore'
 import { useCreateStore } from '../../stores/createStore'
 import { CloudGateModal } from '../cloud/CloudGateModal'
@@ -131,6 +138,7 @@ const loadOnboarding = () => import('../onboarding/Onboarding').then((m) => ({ d
  */
 export function AppShell() {
   useRemoteRecovery()
+  useRemoteAnywhere()
   // Targeted, NOT `useUIStore()`. A whole-store subscription here put the
   // entire app tree behind every uiStore write — and the explorer's resize
   // handle writes `explorerWidth` on every pointermove, so dragging the
@@ -156,6 +164,7 @@ export function AppShell() {
   // LU Cloud account boot: keychain session restore + /api/me probe; keeps
   // the cloud Create axis and the lu-cloud chat provider in sync.
   useCloudAuth()
+  useCloudOutageWatch()
 
   // ── Global Local/Cloud mode (2.5.7) — appMode drives everything ──
   const appMode = settings.appMode
@@ -1137,8 +1146,10 @@ export function AppShell() {
       <div className="h-full flex flex-col">
         <Titlebar />
         <Header />
+        <CloudOutageBanner />
         <StaleModelsBanner />
         <BackgroundShutdownBanner />
+        <RemoteCreateBar />
         {restoreError && (
           <div className="mx-2 mt-2 flex items-start gap-2 rounded-lg border border-red-500/20 bg-red-500/[0.06] px-3 py-2">
             <p role="alert" className="flex-1 text-[0.65rem] leading-snug text-red-500 dark:text-red-400 whitespace-pre-line">
@@ -1185,6 +1196,9 @@ export function AppShell() {
           it can never stack on top of the onboarding wizard. */}
       <ReleaseNotesModal />
       <ShortcutsModal />
+      <RemotePairPrompt />
+      <RemoteSigninPrompt />
+      <PhoneContinuedBar />
       {/* Cmd/Ctrl+K. Hoert auf `lu-command-palette`, genau wie die
           Kuerzel-Uebersicht darueber auf `lu-show-shortcuts` hoert — kein
           zweiter Tastatur-Handler. */}

@@ -60,6 +60,7 @@ import {
 import { tryAcquireLuEngineSwap, releaseLuEngineSwap, luEngineSwapInFlight, useLuEngineSwapRunning } from '../../api/lu-engine-swap-lock'
 import { HINWEIS_TEXT } from '../../lib/hinweis'
 import { useLuEngineSwitchStore } from '../../stores/luEngineSwitchStore'
+import { FitActionButtons } from '../ui/FitActionButtons'
 import { isBuiltinEngineMissing } from '../../lib/builtin-engine-presence'
 import { engineNoticeDismissed, dismissEngineNoticeForSession, resetEngineNoticeDismissal } from '../../lib/engine-notice-session'
 import { log } from '../../lib/logger'
@@ -881,6 +882,8 @@ export function ModelSelector({ openUpward = false, surface = 'chat', answeredBy
    */
   const engineSwitchNote = useLuEngineSwitchStore((s) => s.note)
   const engineSwitchTone = useLuEngineSwitchStore((s) => s.tone)
+  const engineSwitchActions = useLuEngineSwitchStore((s) => s.actions)
+  const engineSwitchActionModel = useLuEngineSwitchStore((s) => s.actionModel)
 
   const [open, setOpen] = useState(false)
   useDismissOnEscape(open, () => setOpen(false))
@@ -1887,7 +1890,16 @@ export function ModelSelector({ openUpward = false, surface = 'chat', answeredBy
                   engineSwitchTone === 'error' ? HINWEIS_TEXT.fehler : HINWEIS_TEXT.ruhig
                 }`}
               >
-                <span className="flex-1 min-w-0 leading-snug">{engineSwitchNote}</span>
+                <span className="flex-1 min-w-0 leading-snug">
+                  {engineSwitchNote}
+                  {/* 3.0.8 (A25): "Context 16K" / "KV q8_0" under a fit sentence. */}
+                  <FitActionButtons
+                    actions={engineSwitchActions}
+                    modelPath={engineSwitchActionModel}
+                    onApplied={() => useLuEngineSwitchStore.getState().dismiss()}
+                    className="mt-1"
+                  />
+                </span>
                 <button
                   onClick={() => useLuEngineSwitchStore.getState().dismiss()}
                   aria-label="Dismiss"

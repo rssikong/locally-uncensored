@@ -1,0 +1,242 @@
+{
+ "name": "/settings/search",
+ "art": "seite",
+ "quelle": "integ-306",
+ "route": "/settings/search",
+ "strang": "agent",
+ "code": "E9",
+ "lage": {
+  "route": "/settings/search",
+  "screen": "m-settings-search-screen",
+  "blaetter": [],
+  "dialog": [],
+  "reiter": null,
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back-under",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-search-screen",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-search-provider",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    324
+   ]
+  },
+  {
+   "id": "m-search-provider-auto",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Auto Uses your key when one is saved, else the free search.",
+   "el": "E9.1",
+   "box": [
+    356,
+    76
+   ]
+  },
+  {
+   "id": "m-search-provider-duckduckgo",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "DuckDuckGo Free. No key is sent, even when one is saved. DuckDuckGo sometimes re",
+   "el": "E9.1",
+   "box": [
+    356,
+    94
+   ]
+  },
+  {
+   "id": "m-search-provider-brave",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Brave Add a Brave API key below first.",
+   "el": "E9.1",
+   "deaktiviert": true,
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-search-provider-tavily",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Tavily Add a Tavily API key below first.",
+   "el": "E9.1",
+   "deaktiviert": true,
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-search-brave-block",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "empty",
+   "box": [
+    390,
+    146
+   ]
+  },
+  {
+   "id": "m-search-brave-key",
+   "tag": "input",
+   "rolle": "textbox",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Brave API key",
+   "el": "E9.2",
+   "box": [
+    284,
+    48
+   ]
+  },
+  {
+   "id": "m-search-brave-save",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Save the Brave API key",
+   "el": "E9.2",
+   "deaktiviert": true,
+   "box": [
+    136,
+    52
+   ]
+  },
+  {
+   "id": "m-search-tavily-block",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "empty",
+   "box": [
+    390,
+    146
+   ]
+  },
+  {
+   "id": "m-search-tavily-key",
+   "tag": "input",
+   "rolle": "textbox",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Tavily API key",
+   "el": "E9.3",
+   "box": [
+    284,
+    48
+   ]
+  },
+  {
+   "id": "m-search-tavily-save",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Save the Tavily API key",
+   "el": "E9.3",
+   "deaktiviert": true,
+   "box": [
+    136,
+    52
+   ]
+  },
+  {
+   "id": "m-search-key-hint",
+   "tag": "p",
+   "rolle": "p",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    69
+   ]
+  },
+  {
+   "id": "m-search-test",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Test search",
+   "el": "E9.4",
+   "box": [
+    358,
+    48
+   ]
+  }
+ ]
+}

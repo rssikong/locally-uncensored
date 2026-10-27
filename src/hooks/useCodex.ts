@@ -32,17 +32,18 @@ import { endLoopUnlessRearmed, useAgentLoopStore } from '../stores/agentLoopStor
 import { beginRun, isRunStopped, stopRun } from '../lib/run-stop'
 import { REJECTED_CALL_FOR_MODEL } from '../lib/rejected-call'
 import { noteStoppedIfEmpty } from '../lib/stopped-note'
-import { CODEX_CONFIRM_TOOLS, renderApprovalPreview } from './codexShellGate'
+import { renderApprovalPreview } from './codexShellGate'
+import { codexAsksBefore } from '../lib/agent-approval-policy'
 import { buildHermesToolPrompt, buildHermesToolResult, buildHermesToolCall, parseHermesToolCalls, stripToolCallTags, hasToolCallTags } from '../api/hermes-tool-calling'
 import { streamProviderTurn, type StreamedProviderTurn } from '../lib/provider-stream'
 import { createHermesDisplayFilter, createThinkStreamSplitter, createTurnThinkingSink } from '../lib/hermes-stream'
 import { beginAgentRun, endAgentRun, setActiveAgentModel, type AgentRunContext } from '../api/agent-context'
 import { resolveChatWorkspaceSlug } from '../api/workspace-slug'
-import { codexModeKnobs, type CodexMode } from '../lib/codex-mode'
+import { codexModeKnobs, isCodexMode, stricterCodexMode, type CodexMode } from '../lib/codex-mode'
 import { CODEX_PLAN_SYSTEM_PROMPT } from '../lib/codex-plan-prompt'
 import { resolveWorkspace } from '../api/agents/workspace-resolve'
 import { useChatNoticeStore, CHAT_NOTICE_MS } from '../stores/chatNoticeStore'
-import { copyFailedMessage, fileMessageFields, placeChatFiles, type ChatFileInput } from '../lib/chat-files'
+import { copyFailedMessage, fileMessageFields, placeChatFiles, toolRoutingText, type ChatFileInput } from '../lib/chat-files'
 import { fitFilesForSend, requestTextOf } from './chat-file-room'
 import type { FileAttachment } from '../types/chat'
 import { useAgentModeStore } from '../stores/agentModeStore'
@@ -63,6 +64,7 @@ import { useStagedChangesStore, flushStagedPersist } from '../stores/stagedChang
 import { log } from '../lib/logger'
 import type { AgentToolCall } from '../types/agent-mode'
 import { isThinkingCompatible, isPlainTextPlanner } from '../lib/model-compatibility'
+import { isCompatProviderId, speaksOpenAIProtocol } from '../api/providers/compat-id'
 import type { ChatMessage, ToolCall, ToolCallProgress, ToolDefinition } from '../api/providers/types'
 import { useRunActivityStore, toolProgressActivity, waitBeforeRetry } from '../stores/runActivityStore'
 import { executeParallel, applyResultToToolCall, resultFailed, APPROVE_ALL, type ExecutionRequest } from '../api/agents/tool-executor'
@@ -82,6 +84,7 @@ import { CREDITS_EXHAUSTED_MESSAGE } from '../lib/credits-exhausted'
 import { streamOllamaChatWithTools } from '../lib/ollama-stream-tools'
 import { repairToolCall } from '../lib/loose-tool-parse'
 import { selectRelevantTools, selectRelevantToolsAsync, SMALL_MODEL_MAX_TOOLS, gateCreateTools, wantsMediaTools, isGatedTool } from '../lib/tool-selection'
+import { reaRoutingText } from '../lib/plugins/rea-tools'
 import { generateEmbeddings } from '../api/rag'
 import { truncateToolResult } from '../lib/truncate-tool-result'
 import { toolCallCapMs, raceWithToolTimeout, SHELL_EXECUTE_DEFAULT_TIMEOUT_MS } from '../lib/tool-timeout'
@@ -95,7 +98,8 @@ import { resolveAgentNumCtx } from '../lib/agent-num-ctx'
 import { platformPromptLine, hostClockLine } from '../lib/host-platform'
 import { ensureBuiltinAgentCtx } from '../api/builtin-ensure'
 import { AgentLoopGuard } from '../lib/agent-loop-guard'
-import { applyAllStagedChanges } from '../lib/staged-apply'
+import { applyAllStagedChanges, waitForStagedReview } from '../lib/staged-apply'
+import { turnCaps } from '../lib/remote-turn-caps'
 import { useMemoryStore } from '../stores/memoryStore'
 import { extractMemoriesFromPair } from './useMemory'
 import { useCodexConfirmStore } from '../stores/codexConfirmStore'
@@ -109,6 +113,7 @@ import { codexModeRefusal } from './codex/mode-refusal'
 import { createAgentBlockSink } from './codex/agent-blocks'
 import { createLivePaint } from './codex/live-paint'
 import { seedEstimatedUsage, reportTurnUsage } from './codex/turn-usage'
+import { lastRequestUsageNotice, requestUsageTracker } from '../lib/request-usage'
 import { shouldDowngradeThinking, engineDeniedThinking } from './codex/thinking-downgrade'
 import { recoverToolCallsFromContent } from './codex/tool-call-recovery'
 import { codexStallVerdict } from './codex/stall-verdict'
@@ -356,6 +361,13 @@ export function useCodex() {
        * shell tools can open the real bytes. See lib/chat-files.ts.
        */
       files?: ChatFileInput[]
+      /**
+       * The mode the composer showed when the person pressed Send (A37). The
+       * run never takes a looser mode than the one on screen: where this and
+       * the store disagree, the stricter one runs and the conversation is
+       * pinned to it, so the next look at the trigger tells the truth.
+       */
+      shownMode?: CodexMode
     },
   ) => {
     const { activeModel } = useModelStore.getState()
@@ -467,9 +479,16 @@ export function useCodex() {
     // effect, which is exactly what the dropdown promises. The mode is read
     // per sendInstruction and NEVER written back into the global settings.
     useCodexStore.getState().applyParkedMode(convId)
-    const codexMode: CodexMode = useCodexStore
+    const storedMode: CodexMode = useCodexStore
       .getState()
       .codexModeFor(convId, settings.codexDefaultMode)
+    const codexMode: CodexMode = opts?.shownMode && isCodexMode(opts.shownMode)
+      ? stricterCodexMode(opts.shownMode, storedMode)
+      : storedMode
+    if (codexMode !== storedMode) {
+      console.warn(`[codex] mode on screen (${opts?.shownMode}) and stored mode (${storedMode}) differed, running ${codexMode}`)
+      useCodexStore.getState().alignConversationMode(convId, codexMode)
+    }
     // A fresh instruction supersedes a plan that was waiting for approval. The
     // approve button re-sends through here too, so it clears its own card and
     // the plan run below is what puts a new one up.
@@ -559,6 +578,19 @@ export function useCodex() {
       return
     }
 
+    // /usage: the numbers on the last answer, as an app notice (lib/request-usage).
+    if (slash?.command.handledLocally && slash.command.name === 'usage') {
+      const messages = useChatStore.getState().conversations.find((c) => c.id === convId)?.messages ?? []
+      useChatStore.getState().addMessage(convId, {
+        id: uuid(), role: 'system', notice: 'info', content: rawInstruction, timestamp: Date.now(),
+      })
+      useChatStore.getState().addMessage(convId, {
+        id: uuid(), role: 'system', notice: 'info', content: lastRequestUsageNotice(messages), timestamp: Date.now(),
+      })
+      activeCodexRuns.delete(convId)
+      return
+    }
+
     if (slash?.command.handledLocally && slash.command.name === 'goal') {
       const res = applyGoalCommand(convId, slash.args)
       useChatStore.getState().addMessage(convId, {
@@ -607,6 +639,8 @@ export function useCodex() {
       workspace: runWorkspace,
       readOnlyShellTurn: effectiveReadOnly,
       mode: codexMode,
+      // The Code transcript draws the set_setting card (ToolCallBlock).
+      settingsCard: true,
     })
 
     // Add instruction event
@@ -661,6 +695,8 @@ export function useCodex() {
       ...(slash ? { slashCommand: slash.command.name } : {}),
     }
     useChatStore.getState().addMessage(convId, assistantMsg)
+    // The request's sum over every model call of this run (lib/request-usage).
+    const requestUsage = requestUsageTracker(convId, assistantMsg.id)
     let thinkingContent = ''
     // G21-2 parity: true once a batch actually went to the executor. Gates
     // whether a round's thought becomes a chronological block or stays in the
@@ -694,7 +730,7 @@ export function useCodex() {
     // running listModels), so ask the server itself before the first request.
     // Only a hard `false` downgrades to the prompt transport; cloud endpoints
     // answer without a network call.
-    if (strategy === 'native' && providerId === 'openai' && provider.serverToolSupport) {
+    if (strategy === 'native' && (providerId === 'openai' || isCompatProviderId(providerId)) && provider.serverToolSupport) {
       if ((await provider.serverToolSupport(modelToUse)) === false) strategy = 'hermes_xml'
     }
 
@@ -1454,7 +1490,7 @@ export function useCodex() {
           // pushed as role 'user', and routing on those swapped the tool list
           // mid-run to whatever the harness happened to say last. The real
           // instruction is the routing intent for the whole run.
-          const lastUserMsg = instruction
+          const lastUserMsg = toolRoutingText(instruction, attachedFiles)
           // CODEX_CATEGORIES filter: Codex is a CODING agent — screenshot,
           // run_workflow etc. are distractions that pollute the tool list for
           // small/3B models. Filter the registry by category BEFORE keyword
@@ -1507,16 +1543,22 @@ export function useCodex() {
           // tokens instead of 4.223, measured 2026-08-12 against the model's
           // own tokenizer. Nothing is removed, the keyword weiche just now
           // decides on both paths.
+          // REA's tools follow the conversation, not only this message: a
+          // follow-up after a stopped run lost them all (A37).
+          const reaText = reaRoutingText(lastUserMsg, (useChatStore.getState().conversations
+            .find((c) => c.id === convId)?.messages ?? [])
+            .filter((m) => m.role === 'user').map((m) => m.content))
           const routedDefs = settings.smallModelMode
             ? await selectRelevantToolsAsync(lastUserMsg, codexTools, permissions, {
                 embed: (texts) => generateEmbeddings(texts),
                 topN: 5,
                 embeddingThreshold: 6,
                 maxTools: SMALL_MODEL_MAX_TOOLS,
+                reaText,
               })
             : !isLocalModelByName(activeModel)
               ? codexTools
-              : selectRelevantTools(lastUserMsg, codexTools, permissions)
+              : selectRelevantTools(lastUserMsg, codexTools, permissions, undefined, reaText)
           // Planning is opt-in (lib/plan-gate.ts): without Plan mode, a plan
           // request or an open plan, todo_write is not offered at all.
           const relevantDefs = gatePlanTool(
@@ -1633,6 +1675,7 @@ export function useCodex() {
             turnContent = turn.content || ''
             turnFinishReason = turn.doneReason
             reportTurnUsage(convId!, assistantMsg.id, turn)
+            requestUsage.add(turn)
             diagLog('streamWithTools-return', {
               iter: i,
               toolCallsCount: toolCalls.length,
@@ -1688,6 +1731,7 @@ export function useCodex() {
             turnContent = turn.content || ''
             turnFinishReason = turn.finishReason
             reportTurnUsage(convId!, assistantMsg.id, turn)
+            requestUsage.add(turn)
             // GH #147: a model on LU Cloud wrote its calls into the text
             // (!function_call:{"call": "file_read", ...}). This path never
             // looked, so the run stopped on prose. A call from the text counts
@@ -1831,6 +1875,7 @@ export function useCodex() {
           // abschneiden, und dann steht hier ebenfalls kein Werkzeugaufruf.
           // Gleiche Stelle wie in useAgentChat.
           turnFinishReason = hermesTurn.finishReason
+          requestUsage.add(hermesTurn)
           if (keepThinking && hermesTurn.thinking) {
             thinkingContent += (thinkingContent ? '\n\n' : '') + hermesTurn.thinking
             useChatStore.getState().updateMessageThinking(convId!, assistantMsg.id, thinkingContent)
@@ -2125,7 +2170,7 @@ export function useCodex() {
         // iteration), then the batch itself (windowed signature repeats +
         // identical reads against an unchanged workspace).
         const narrationVerdict = loopGuard.recordNarration(turnContent)
-        const batchVerdict = narrationVerdict.action === 'halt'
+        const recordedVerdict = narrationVerdict.action === 'halt'
           ? narrationVerdict
           : loopGuard.recordBatch(
               toolCalls.map((tc) => ({ name: tc.function.name, args: JSON.stringify(tc.function.arguments) })),
@@ -2135,6 +2180,9 @@ export function useCodex() {
               // not a loop (plan A1, LOOP-GUARD).
               { trimmedReadKeys },
             )
+        // A plan the model keeps restating steers like a repeated batch does;
+        // the batch's own verdict wins where it has one (A37).
+        const batchVerdict = recordedVerdict.action === 'ok' ? narrationVerdict : recordedVerdict
         if (batchVerdict.action === 'halt') {
           diagLog('loop-guard-halt', { iter: i, reason: batchVerdict.reason })
           const msg = `\n\n_(halted: ${batchVerdict.reason}. The model is looping. Try a stronger model for multi-step code tasks, or rephrase the instruction.)_`
@@ -2289,11 +2337,16 @@ export function useCodex() {
 
         // Die Ablage-Warteschlange und ALLES, was sie anfasst — die vier
         // Zugriffe, die nur zusammen richtig sind: hooks/codex/staged-writes.ts.
+        // A turn from the paired phone (it carries the device's caps) waits
+        // for each write's review, so the model does not run a file that is
+        // not on disk yet. At the desktop the queue stays a batch review.
+        const phoneTurn = turnCaps(convId!) !== undefined
         const stagedWriter = createStagedWriter({
           convId: convId!,
           workDir,
           workspaceSlug,
           readFile: readWorkspaceFile,
+          waitForReview: phoneTurn ? (changeId, path) => waitForStagedReview(convId!, changeId, path, abort.signal) : undefined,
         })
 
         const dispatchTool = (name: string, args: ToolArgs, signal?: AbortSignal): Promise<string> => {
@@ -2341,9 +2394,15 @@ export function useCodex() {
           // 2.6.6 (plan C1): the mode preset decides whether this gate is
           // armed. Ask forces it on, Bypass turns the local arm off, and the
           // cloud arm only survives Bypass for a user who opted in.
+          // Ask also asks before every external (MCP) tool, REA included (A37,
+          // Davids Entscheidung 26.10.2026); Bypass does not.
           awaitApproval: knobs.confirmExec
             ? async (req) => {
-                if (!CODEX_CONFIRM_TOOLS.has(req.toolName)) return true
+                if (!codexAsksBefore(req.toolName, {
+                  codexMode,
+                  execConfirm: true,
+                  external: toolRegistry.getToolByName(req.toolName)?.source === 'external',
+                })) return true
                 const a = req.args || {}
                 // In-app popup, not window.confirm. The native dialog carried OS
                 // chrome and the app origin in its title bar, could not be
@@ -2360,6 +2419,7 @@ export function useCodex() {
                   // user did not ask for it themselves and Ask mode is not
                   // what put the gate up.
                   cloudReason: !settings.codexConfirmShell && codexMode !== 'ask' && providerId === 'lu-cloud',
+                  ...(convId ? { conversationId: convId } : {}),
                 }, abort.signal)
               }
             // Unattended by choice, stated in writing: awaitApproval is a
@@ -2508,7 +2568,7 @@ export function useCodex() {
               entry.tc,
             ))
           }
-        } else if (providerId === 'openai' || providerId === 'anthropic' || providerId === 'lu-cloud') {
+        } else if (speaksOpenAIProtocol(providerId) || providerId === 'anthropic') {
           messages.push({ role: 'assistant', content: turnContent || '', tool_calls: toolCalls })
           for (const { tc } of batch) {
             const result = results.find((r) => r.id === batch.find((b) => b.tc === tc)?.ac.id)!

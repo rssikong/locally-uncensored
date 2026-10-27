@@ -37,7 +37,7 @@ describe('a GGUF file from the drive', () => {
     })
   })
 
-  it('lands in the LU Engine folder set under Model Storage', async () => {
+  it('lands in the LU Engine folder set under Storage', async () => {
     useSettingsStore.getState().updateSettings({ hfDownloadPathOverride: '/Volumes/AI/models' })
     picked.path = '/Volumes/AI/loose/mistral.gguf'
     await addGgufFile()

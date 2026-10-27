@@ -6,7 +6,10 @@
 
 import { clearCreateChatRelease, noteCreateChatRelease } from '../lib/create/chat-release'
 import { useCallback, useEffect, useRef } from 'react'
-import { supabaseCloud } from '../api/cloud/supabase'
+import { supabaseCloud, savedSessionUser, onOAuthSignedIn } from '../api/cloud/supabase'
+import { isMobile } from '../lib/device-kind'
+import { platformText } from '../lib/platform-text'
+import { onAppForeground, onNetworkBack } from '../lib/app-lifecycle'
 import { CloudJobError } from '../api/cloud/client'
 import { getMe, getQuota } from '../api/cloud/jobs'
 import { useCloudAuthStore, deriveCloudAvailable } from '../stores/cloudAuthStore'
@@ -40,7 +43,8 @@ function withTimeout<T>(promise: Promise<T>): Promise<T> {
   })
 }
 
-async function probeAccount(): Promise<void> {
+/** Exported so the boot behaviour can be tested without rendering the hook. */
+export async function probeAccount(): Promise<void> {
   const gen = ++probeGen
   const stale = () => gen !== probeGen
   const store = useCloudAuthStore.getState()
@@ -90,6 +94,20 @@ async function probeAccount(): Promise<void> {
     // interval tick retry. The boot probe still resolves to signed-out so the
     // UI never hangs in 'probing'.
     const authFailure = err instanceof CloudJobError && (err.status === 401 || err.status === 403)
+    // A phone starts in dead zones all the time. There, a first probe that
+    // could not reach the server must not sign the user out, and above all
+    // must not write appMode 'local' into the saved settings, which threw a
+    // Cloud user into Local mode for good. With a session on the device the
+    // state is "offline, session kept": the user stays, the mode stays, and
+    // the probe runs again the moment the network or the app is back.
+    if (!authFailure && isMobile() && useCloudAuthStore.getState().status === 'probing') {
+      const saved = await savedSessionUser()
+      if (stale()) return
+      if (saved) {
+        store.setOfflineSessionKept(saved)
+        return
+      }
+    }
     if (authFailure || useCloudAuthStore.getState().status === 'probing') {
       clearCreateChatRelease()
       store.setSignedOut()
@@ -163,7 +181,7 @@ export async function signOutAccount(): Promise<void> {
       // Leave the store signed in: the account really is still usable here, and
       // a "signed out" panel over a live session is the dangerous half of this.
       throw new Error(
-        `Sign-out failed — the saved session is still on this computer, so the account stays signed in here. ${failure}`,
+        platformText('signOutFailed', { failure }),
       )
     }
   }
@@ -192,7 +210,19 @@ export function useCloudAuth() {
     // transient failure self-heals once connectivity returns, instead of
     // stranding the app signed-out until a manual re-probe.
     const timer = setInterval(() => void probeAccount(), REFRESH_MS)
-    return () => clearInterval(timer)
+    // Phone: ask again at once when the app or the network is back, instead
+    // of up to five minutes later, and after a sign-in that came in through a
+    // link with no login() call waiting for it (cold start). On a desktop
+    // nobody sends the first two signals and the third never fires.
+    const offBack = onAppForeground(() => void probeAccount())
+    const offNet = onNetworkBack(() => void probeAccount())
+    const offLink = onOAuthSignedIn(() => void probeAccount())
+    return () => {
+      clearInterval(timer)
+      offBack()
+      offNet()
+      offLink()
+    }
   }, [])
 
   const login = useCallback(async (email: string, password: string): Promise<void> => {

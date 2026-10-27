@@ -84,6 +84,7 @@ import { enhancerNames, pickQwenEnhancer, rewrittenByName, type ImproveWriter } 
 import { buildQwenEnhancerWorkflow, runQwenEnhancer } from '../api/qwen-enhancer'
 import { enhancePromptOnMac } from '../api/mlx-enhancer'
 import { extraReferenceSlots, referenceSide } from '../lib/edit-references'
+import { canonicalImageRefs } from '../lib/image-ref-names'
 import { macEditReferenceRoom } from '../lib/mac-edit-memory'
 import { getSharedMemoryGb } from '../lib/hardware'
 import { resolveRunSeed } from '../lib/run-seed'
@@ -92,13 +93,15 @@ import {
   clearTrainingSet, stageTrainingImage, startCharacterTraining,
   characterTrainingStatus, cancelCharacterTraining,
 } from '../api/trainer'
+import { getMacTrainStatus, macTrainMissing } from '../api/mlx-train'
 import { buildTrainCaption } from '../lib/train-captions'
 import { useCreateStore, EDIT_MAX_DENOISE, characterImageRun, deriveIntent, type CreateState } from '../stores/createStore'
 import { useWorkflowStore } from '../stores/workflowStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { renderStallLimitMs, renderStallMessage } from '../lib/tool-timeout'
 import { injectParameters, injectLaneParameters } from '../api/workflows'
-import { applyNativeHiresFix } from '../api/hires-fix'
+import { applyNativeHiresFix, latentDownscale } from '../api/hires-fix'
+import { editHiresBase } from '../lib/edit-hires'
 import { lorasForRun, skippedLorasLine } from '../lib/lora-stack'
 import { macNoLocalLaneLine, macNoModelLine } from '../lib/mac-create-wording'
 import {
@@ -566,6 +569,16 @@ export function useCreate() {
         // the cloud's 30. A Mac trains locally too.
         : tooFewTrainPhotosLine('local'))
       return
+    }
+    // GH #194: the Train tab of a Mac without Z-Image Turbo takes a trigger
+    // word and photos now; say what is missing before staging any of them.
+    if (mac) {
+      const st = await getMacTrainStatus().catch(() => null)
+      const missing = st && (st.memoryRefusal ?? macTrainMissing(st))
+      if (missing) {
+        setError(st.memoryRefusal ?? `${missing} Install it in the Model Manager, then hit Create again.`)
+        return
+      }
     }
     setError(null)
     setIsGenerating(true)
@@ -1097,6 +1110,9 @@ export function useCreate() {
           if (!own.signal.aborted) takeRewrite(out, macEnhancer.variant)
           setProgress(10, 'Starting MLX image generation...')
         }
+        // mflux labels the images of a Qwen-Image 2.1 edit <image1>,
+        // <image2>, so the prompt names them so (lib/image-ref-names).
+        const macRefs = mlxEdit && listed?.type === 'qwenimage'
         for (let n = 0; n < count && !own.signal.aborted; n++) {
           const startTime = Date.now()
           const imageSeed = bumpSeed(runSeed, n)
@@ -1104,13 +1120,13 @@ export function useCreate() {
           state.setProgressPhase('sampling')
           setProgress(40, `${nth}Generating with MLX...`)
           const made = await generateMlxImageDataUrl({
-            prompt: transparent ? transparentPrompt(prompt) : prompt,
+            prompt: macRefs ? canonicalImageRefs(prompt, editImages.length, 'qwen21') : transparent ? transparentPrompt(prompt) : prompt,
             steps, seed: imageSeed, guidance: cfgScale,
             ...(mlxEdit
               ? { images: editImages, resolution: editSide, ...(editSize ?? {}), mask: editMask, strength: state.editStrength }
               : { width, height }),
             model: mlxModelIdFor(effImageModel),
-            negativePrompt: negativePrompt || undefined,
+            negativePrompt: (macRefs ? canonicalImageRefs(negativePrompt, editImages.length, 'qwen21') : negativePrompt) || undefined,
             ...(runLoras.length ? { loras: runLoras } : {}),
           }, {
             signal: own.signal,
@@ -1120,9 +1136,10 @@ export function useCreate() {
           // HiRes fix: the picture goes back in as the image of an edit at
           // the larger size, started partway down the schedule (lib/mac-hires).
           // Only a model that edits can, and only the final picture is kept,
-          // as on Windows.
+          // as on Windows. After an edit the same: the edited picture is the
+          // image of the second pass (Discord feature request 21.10.2026).
           let first = made
-          const pass = !mlxEdit && hiresFixEnabled && (listed?.editImages ?? 0) > 0
+          const pass = hiresFixEnabled && (listed?.editImages ?? 0) > 0
             ? macHiresPass(made.width || width, made.height || height, { scale: hiresScale, steps: hiresSteps, denoise: hiresDenoise })
             : null
           if (pass) {
@@ -2001,15 +2018,24 @@ export function useCreate() {
       // it after Auto/custom workflow construction so the same switch works on
       // every compatible local text-to-image graph. Unsupported custom graphs
       // fail with an actionable message rather than silently ignoring the knob.
-      if (hiresFixEnabled && intent === 'image') {
+      // Edit (Discord feature request 21.10.2026, "Native HiRes Upscale in
+      // the EDIT"): the same pass after the edit. Its canvas follows the
+      // source (lib/edit-hires), and a masked edit is refused with a line
+      // (api/hires-fix).
+      const hiresEdit = intent === 'edit' && isI2I && !isRemoveBg && !!effInputImage
+      if (hiresFixEnabled && (intent === 'image' || hiresEdit)) {
         setProgress(8, 'Adding native HiRes Fix...')
+        const editBase = hiresEdit
+          ? editHiresBase({ source, width, height, modelType: imageModelType, modelName: activeModel })
+          : null
         const hires = applyNativeHiresFix(workflow, {
-          baseWidth: width,
-          baseHeight: height,
+          baseWidth: editBase?.width ?? width,
+          baseHeight: editBase?.height ?? height,
           scale: hiresScale,
           denoise: hiresDenoise,
           steps: hiresSteps,
           upscaleMethod: hiresUpscaleMethod,
+          latentDownscale: latentDownscale(imageModelType),
         })
         workflow = hires.workflow
         outputWidth = hires.width
@@ -2360,7 +2386,7 @@ export function useCreate() {
             const elapsedSec = Math.round(elapsed / 1000)
             const expectedSteps = mode === 'video'
               ? steps * frames * 0.5
-              : steps + (hiresFixEnabled && intent === 'image' ? hiresSteps : 0)
+              : steps + (hiresFixEnabled && (intent === 'image' || hiresEdit) ? hiresSteps : 0)
             const pct = Math.min(10 + (attempts / expectedSteps * 85), 95)
 
             try {

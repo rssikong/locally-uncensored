@@ -61,3 +61,19 @@ export async function recoverChatsFromBackup(
   storage.setItem(RECOVERY_DONE_KEY, '1')
   return recovered.length
 }
+
+/**
+ * The same look into the native backup, asked again whenever the phone
+ * journal says so (mobile/lib/store-journal.ts), not once per installation.
+ * Same rules, so a chat comes back once and a deleted one does not: a chat
+ * already in the store is only replaced by a newer copy of itself.
+ * Returns how many chats came back. Rejects when the backup cannot be read.
+ */
+export async function mergeChatsFromBackup(
+  live: () => readonly Conversation[],
+  add: (conversations: Conversation[]) => void,
+): Promise<number> {
+  const recovered = conversationsToRecover(live(), backupConversations(await backendCall<string | null>('restore_stores')))
+  if (recovered.length > 0) add(recovered)
+  return recovered.length
+}

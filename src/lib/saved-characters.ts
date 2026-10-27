@@ -24,7 +24,7 @@ export interface SavedCharacter {
 
 /** What is written to disk. Bytes plus type instead of a Blob: WebKit has
  *  lost Blobs stored in IndexedDB before, an ArrayBuffer always comes back. */
-interface StoredCharacter {
+export interface StoredCharacter {
   id: string
   name: string
   createdAt: number
@@ -78,6 +78,60 @@ async function readAll(): Promise<StoredCharacter[]> {
 async function write(row: StoredCharacter): Promise<void> {
   if (!hasIDB()) { memory.set(row.id, row); return }
   await request('readwrite', (s) => s.put(row))
+}
+
+// ── A copy outside IndexedDB (phone only) ───────────────────────────────
+//
+// On Android a full phone can make the WebView drop all of IndexedDB at the
+// next start (mobile-docs/r35/n6b.md), and these characters had no other
+// copy (gap L3, mobile-docs/r38/luecken.md). The phone registers a mirror
+// (mobile/lib/saved-characters-backup.ts) that writes them beside the native
+// store backup. Without one (the desktop, a browser) nothing changes.
+
+export interface SavedCharactersMirror {
+  /** Called after every save and delete with every character as stored. */
+  sync(rows: readonly StoredCharacter[]): Promise<void>
+}
+
+let mirror: SavedCharactersMirror | null = null
+
+export function setSavedCharactersMirror(next: SavedCharactersMirror | null): void {
+  mirror = next
+}
+
+/** The mirror follows the store. A failure costs the copy, never the save. */
+async function mirrorAll(): Promise<void> {
+  if (!mirror) return
+  try {
+    await mirror.sync(await readAll())
+  } catch {
+    /* the mirror logs; the next save or start tries again */
+  }
+}
+
+/** Every character as stored, for the mirror at the start. Throws when the store cannot be read. */
+export function readStoredCharacters(): Promise<StoredCharacter[]> {
+  return readAll()
+}
+
+/** Put characters back from the copy, all in one transaction, so a reload in
+ *  the middle leaves all or none of them. */
+export async function restoreStoredCharacters(rows: readonly StoredCharacter[]): Promise<void> {
+  if (rows.length === 0) return
+  if (!hasIDB()) {
+    for (const row of rows) memory.set(row.id, row)
+  } else {
+    const database = await open()
+    await new Promise<void>((resolve, reject) => {
+      const tx = database.transaction(STORE, 'readwrite')
+      const store = tx.objectStore(STORE)
+      for (const row of rows) store.put(row)
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error)
+      tx.onabort = () => reject(tx.error)
+    })
+  }
+  changed()
 }
 
 const listeners = new Set<() => void>()
@@ -136,6 +190,7 @@ export async function saveCharacter(name: string, photos: readonly Blob[]): Prom
     ? { ...existing, photos: [...existing.photos, ...fresh] }
     : { id: crypto.randomUUID(), name: clean, createdAt: Date.now(), photos: fresh }
   await write(row)
+  await mirrorAll()
   changed()
   return { character: revive(row), added: take.length, dropped: photos.length - take.length, merged: !!existing }
 }
@@ -143,10 +198,12 @@ export async function saveCharacter(name: string, photos: readonly Blob[]): Prom
 export async function deleteSavedCharacter(id: string): Promise<void> {
   if (!hasIDB()) memory.delete(id)
   else await request('readwrite', (s) => s.delete(id))
+  await mirrorAll()
   changed()
 }
 
 /** Test seam: forget the in-memory characters. */
 export function __resetSavedCharacters(): void {
   memory.clear()
+  mirror = null
 }

@@ -73,4 +73,19 @@ describe('stripModelNoise', () => {
     expect(stripModelNoise(code, { aggressive: true })).toContain('const a = 1')
     expect(stripModelNoise('```json\n[]\n```')).toContain('[]')
   })
+
+  // Acceptance on the small iPhone, 09.10.2026 (N6): SmolLM2 360M in Agent
+  // mode answered a search question with this and nothing else.
+  it('an answer that is nothing but empty tag pairs is no answer', () => {
+    expect(stripModelNoise('<source></source>')).toBe('')
+    expect(stripModelNoise('<source></source>', { aggressive: true })).toBe('')
+    expect(stripModelNoise(' <source>\n</source>\n<answer></answer> ')).toBe('')
+  })
+
+  it('a tag somebody asked for stays: in prose, in a code block, or with content', () => {
+    expect(stripModelNoise('Use <div></div> for the box.')).toBe('Use <div></div> for the box.')
+    expect(stripModelNoise('```html\n<div></div>\n```')).toContain('<div></div>')
+    expect(stripModelNoise('<source>notes.txt</source>')).toBe('<source>notes.txt</source>')
+    expect(stripModelNoise('<a></b>')).toBe('<a></b>')
+  })
 })

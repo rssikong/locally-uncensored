@@ -1,0 +1,379 @@
+{
+ "name": "/settings/troubleshooting",
+ "art": "seite",
+ "quelle": "integ-306",
+ "route": "/settings/troubleshooting",
+ "strang": "settings",
+ "code": "E19",
+ "lage": {
+  "route": "/settings/troubleshooting",
+  "screen": "m-settings-troubleshooting-screen",
+  "blaetter": [],
+  "dialog": [],
+  "reiter": null,
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back-under",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-troubleshooting-screen",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-troubleshooting-checks",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    249
+   ]
+  },
+  {
+   "id": "m-settings-troubleshooting-check-engine",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    356,
+    76
+   ]
+  },
+  {
+   "id": "m-settings-troubleshooting-check-internet",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-settings-troubleshooting-check-cloud",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    356,
+    76
+   ]
+  },
+  {
+   "id": "m-settings-troubleshooting-run",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Run checks again",
+   "el": "E19.1",
+   "box": [
+    358,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-troubleshooting-share-log",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Share log The end of the app log and the last crash record, for support",
+   "risiko": "leaves-app",
+   "el": "E19.2",
+   "box": [
+    356,
+    76
+   ]
+  },
+  {
+   "id": "m-settings-troubleshooting-copy-details",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Copy details Version, device and storage",
+   "el": "E19.3",
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-settings-troubleshooting-setup",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Run setup again Models you already have are found again",
+   "risiko": "destructive",
+   "el": "E19.4",
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-settings-troubleshooting-reset",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Reset all settings Chats and models stay",
+   "risiko": "destructive",
+   "el": "E19.5",
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-settings-troubleshooting-diagnostics",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    702
+   ]
+  },
+  {
+   "id": "m-settings-troubleshooting-diag-device",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-settings-troubleshooting-diag-system",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-troubleshooting-diag-app-version",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-troubleshooting-diag-store-preset",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-settings-troubleshooting-diag-memory",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-settings-troubleshooting-diag-memory-free",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    356,
+    62
+   ]
+  },
+  {
+   "id": "m-settings-troubleshooting-diag-storage-free",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-settings-troubleshooting-diag-storage-used",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-troubleshooting-diag-text-size",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-settings-troubleshooting-diag-accelerator",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-troubleshooting-diag-model",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-troubleshooting-diag-speed",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-troubleshooting-self-test",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Run engine self test",
+   "box": [
+    358,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-troubleshooting-copy-report",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Copy report",
+   "box": [
+    358,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-troubleshooting-share-report",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Share report",
+   "risiko": "leaves-app",
+   "box": [
+    358,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-troubleshooting-refresh",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Refresh",
+   "box": [
+    358,
+    48
+   ]
+  }
+ ]
+}

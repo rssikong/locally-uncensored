@@ -65,6 +65,19 @@ export function resolveCodexMode(
   return 'ask'
 }
 
+/** Plan reads only, Ask confirms, Bypass runs unattended. Higher is stricter. */
+const STRICTNESS: Record<CodexMode, number> = { bypass: 0, ask: 1, plan: 2 }
+
+/**
+ * The stricter of two modes (A37, 26.10.2026). Where the mode the composer
+ * showed and the mode the store resolves disagree, the run takes this one:
+ * a user who saw Ask must never get an unattended run, whatever state drift
+ * put Bypass behind it.
+ */
+export function stricterCodexMode(a: CodexMode, b: CodexMode): CodexMode {
+  return STRICTNESS[a] >= STRICTNESS[b] ? a : b
+}
+
 export type PermissionDecision = 'ask' | 'allow' | 'deny'
 
 export interface CodexModeRule {

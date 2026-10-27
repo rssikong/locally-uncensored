@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  LU Mobile, iOS: was NUR ein Bau mit Fernzugriff traegt (Schalter
+  remoteDesktop des Store-Presets, src/mobile/policy/storePolicy.ts).
+
+  Die Bauskripte reichen diese Datei der Tauri-CLI ueber
+  --config (bundle.iOS.infoPlist), wenn das Preset den Fernzugriff hat
+  (scripts/mobile/ios/preset-plist.mjs). Sie wird nach Info.ios.plist
+  eingemischt und gewinnt, wo beide denselben Schluessel nennen.
+  Ein Bau ohne Fernzugriff (Preset appstore) bekommt sie nicht.
+  Alle Texte sind Nutzertexte: Englisch, ohne Gedankenstriche.
+-->
+<plist version="1.0">
+<dict>
+    <!-- Wie in Info.ios.plist, dazu der QR-Code, mit dem Remote das Handy koppelt. -->
+    <key>NSCameraUsageDescription</key>
+    <string>LU uses the camera when you choose to take a photo for a chat or an image request, and to scan the QR code that pairs this phone with LU on your computer.</string>
+
+    <!-- Remote: das Handy bedient ein Desktop-LU im selben WLAN. Loest die Abfrage "Lokales Netzwerk" aus. -->
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>LU connects to LU on your own computer over your local network when you set up Remote.</string>
+</dict>
+</plist>

@@ -1,0 +1,44 @@
+[package]
+name = "tauri-plugin-lu-native"
+version = "0.1.0"
+description = "The native layer of LU on a phone: secure storage, sharing, device facts, lifecycle, deep links, the Remote transport and background downloads."
+authors = ["purpledoubled"]
+edition = "2021"
+license = "AGPL-3.0-only"
+publish = false
+links = "tauri-plugin-lu-native"
+exclude = ["/android/build", "/android/.tauri", "/ios/.build", "/.tauri"]
+
+[features]
+# Acceptance builds only. Lets `simulate_memory_warning` act, and lets
+# `download_to_temp` and `bg_download_start` reach a plain http test server on
+# a private address. Never part of a store build.
+abnahme = []
+
+[build-dependencies]
+tauri-plugin = { version = "2", features = ["build"] }
+
+[dependencies]
+tauri = { version = "2" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["fs", "io-util", "sync", "time", "rt", "macros"] }
+tokio-util = "0.7"
+futures-util = "0.3"
+sha2 = "0.10"
+base64 = "0.22"
+url = "2"
+uuid = { version = "1", features = ["v4"] }
+
+# The TLS stack follows the app (src-tauri/Cargo.toml): the system one on a
+# desktop, rustls on both phones. Naming other features here would switch them
+# on for the whole build, cargo unifies features per target.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+reqwest = { version = "0.12", features = ["stream"] }
+
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "charset", "http2", "stream"] }
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["full"] }

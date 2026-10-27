@@ -432,20 +432,17 @@ pub fn install_mlx_diffusion_status(state: &AppState, _args: &Value) -> CmdResul
     Ok(serde_json::to_value(state.install_mlx_diffusion().snapshot()).unwrap())
 }
 
-/// Whether an interpreter starts at all. A venv is a set of links onto the
-/// Python it was built from; after `brew upgrade` or an uninstall the links
-/// point at nothing and no pip run can repair that.
-fn interpreter_runs(python: &Path) -> bool {
-    crate::python::python_command(python)
-        .args(["-c", "import sys"])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+/// Whether the venv's interpreter starts AND is a version the pins have
+/// wheels for. A venv is a set of links onto the Python it was built from;
+/// after `brew upgrade` or an uninstall the links point at nothing and no pip
+/// run can repair that. A venv a Python 3.15 left behind starts, and pip
+/// fails in it on every retry (GH #188).
+fn interpreter_fits(python: &Path) -> bool {
+    crate::commands::video::venv_python_fits(&python.to_string_lossy(), crate::commands::video::TORCH_ENGINES_PYTHON)
 }
 
-/// A venv whose interpreter does not start is thrown away and built again.
+/// A venv whose interpreter does not start, or is a Python the pins have no
+/// wheels for, is thrown away and built again.
 /// One that starts is kept: pip continues from what is there, which is what
 /// makes a second click on "Set up" a repair and not a 3 GB restart.
 fn clear_dead_venv(
@@ -456,7 +453,7 @@ fn clear_dead_venv(
     if std::fs::symlink_metadata(venv_dir).is_err() || runs(&venv_dir.join("bin/python")) {
         return Ok(());
     }
-    slot.log("the existing environment does not start, building it again");
+    slot.log("the existing environment does not start or runs a Python this engine cannot use, building it again");
     std::fs::remove_dir_all(venv_dir)
         .map_err(|e| format!("remove the broken environment: {}", os_error::english(&e)))
 }
@@ -495,15 +492,20 @@ fn pip_install_requirements(
 fn install_mlx_steps(slot: &crate::install_state::InstallSlot, root: &Path) -> Result<(), String> {
     // A Python found on this Mac comes first. Without one the app fetches its
     // own into the data folder: no terminal, no Homebrew, no admin rights.
-    let python = match locate_python_311() {
+    let python = match locate_engine_python() {
         Some(python) => python,
-        None => crate::private_python::ensure(slot)?,
+        None => {
+            let range = crate::commands::video::TORCH_ENGINES_PYTHON.label();
+            let log = format!("no Python {range} on this computer");
+            let sentence = format!("This computer has no Python {range}");
+            crate::private_python::ensure_for(slot, crate::private_python::Why { log: &log, sentence: &sentence })?
+        }
     };
     slot.log(format!("Python: {}", python.display()));
 
     let venv_dir = root.join("venv");
     let venv_py = venv_dir.join("bin/python");
-    clear_dead_venv(slot, &venv_dir, interpreter_runs)?;
+    clear_dead_venv(slot, &venv_dir, interpreter_fits)?;
     if !venv_dir.exists() {
         slot.log(format!("creating venv at {}", venv_dir.display()));
         std::fs::create_dir_all(root).map_err(|e| os_error::english(&e))?;
@@ -591,7 +593,8 @@ fn bring_engine_up_to_date(slot: &crate::install_state::InstallSlot) -> Result<(
 }
 
 /// The interpreters worth asking, best first: 3.12 and 3.11 (every wheel the
-/// engine needs exists for them), then 3.13, then whatever `python3` is, each
+/// engine needs exists for them), then 3.13 and 3.14, then whatever `python3`
+/// is (Homebrew's is 3.15 by now, which `pick_engine_python` passes over), each
 /// from PATH and from the directories a Finder-started app does not have on
 /// its PATH, then every pyenv and uv install on the machine, and last the
 /// Python LU downloaded for itself when the machine had none.
@@ -604,7 +607,7 @@ fn system_python_candidates() -> Vec<PathBuf> {
     let mut out: Vec<PathBuf> = Vec::new();
     #[cfg(not(target_os = "windows"))]
     {
-        let named = ["python3.12", "python3.11", "python3.13", "python3"]
+        let named = ["python3.12", "python3.11", "python3.13", "python3.14", "python3"]
             .iter()
             .flat_map(|name| crate::python::python_paths_for(name));
         let rest = crate::python::python_interpreters().into_iter().map(PathBuf::from);
@@ -617,18 +620,23 @@ fn system_python_candidates() -> Vec<PathBuf> {
     out
 }
 
-/// The first candidate that answers with a version of at least 3.11.
+/// The first candidate that answers with a version the engine's pins have
+/// wheels for: 3.11 to 3.14, not the 3.15 Homebrew installs (GH #188).
 fn pick_engine_python(
     candidates: &[PathBuf],
     version_of: impl Fn(&Path) -> Option<String>,
 ) -> Option<PathBuf> {
     candidates
         .iter()
-        .find(|p| version_of(p).is_some_and(|v| version_at_least(&v, 3, 11)))
+        .find(|p| {
+            version_of(p)
+                .and_then(|v| major_minor(&v))
+                .is_some_and(|v| crate::commands::video::TORCH_ENGINES_PYTHON.fits(v))
+        })
         .cloned()
 }
 
-fn locate_python_311() -> Option<PathBuf> {
+fn locate_engine_python() -> Option<PathBuf> {
     pick_engine_python(&engine_python_candidates(), python_version)
 }
 
@@ -646,15 +654,12 @@ fn python_version(python: &Path) -> Option<String> {
     Some(v.trim_start_matches("Python ").to_string())
 }
 
-fn version_at_least(version: &str, major: u32, minor: u32) -> bool {
-    let parts: Vec<&str> = version.split('.').take(2).collect();
-    if parts.len() < 2 {
-        return false;
-    }
-    let (Ok(maj), Ok(min)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>()) else {
-        return false;
-    };
-    maj > major || (maj == major && min >= minor)
+/// `(3, 12)` from "3.12.7", None from anything that is not a version.
+fn major_minor(version: &str) -> Option<(u32, u32)> {
+    let mut parts = version.split('.');
+    let major = parts.next()?.parse::<u32>().ok()?;
+    let minor = parts.next()?.parse::<u32>().ok()?;
+    Some((major, minor))
 }
 
 /// The first `max` bytes of `s`, cut back to a character boundary.
@@ -2972,7 +2977,7 @@ pub fn mlx_start(_state: &AppState, _args: &Value) -> CmdResult {
 // It was two lines — `kill_listeners_on_port(MLX_PORT)` and an `{"ok":true}` —
 // under a doc comment calling itself "the Stop button counterpart to
 // `mlx_start`". Counted before removing: no Rust caller, no
-// `#[tauri::command]` wrapper in `media_cmds.rs`, no line in `main.rs`'s
+// `#[tauri::command]` wrapper in `media_cmds.rs`, no line in `lib.rs`'s
 // handler list, and no occurrence of the STRING "mlx_stop" anywhere under
 // `src/`, `dev-server/`, `e2e/` or `mobile-client/` — which is how a Tauri
 // command is actually invoked. Every other mlx entry point is wired all four
@@ -2989,7 +2994,7 @@ pub fn mlx_start(_state: &AppState, _args: &Value) -> CmdResult {
 //     in `state.rs::shutdown`. Same call, one line, on the path that actually
 //     runs.
 //
-// Wiring it would have meant a bridge in `media_cmds.rs`, a line in `main.rs`
+// Wiring it would have meant a bridge in `media_cmds.rs`, a line in `lib.rs`
 // and a caller in `src/` — a third door onto a job the other two already do,
 // and the frontend is not this agent's to change.
 
@@ -3510,22 +3515,17 @@ mod tests {
     }
 
     #[test]
-    fn version_at_least_accepts_higher_minor() {
-        assert!(version_at_least("3.12.1", 3, 11));
-        assert!(version_at_least("3.11.0", 3, 11));
+    fn major_minor_reads_the_first_two_numbers() {
+        assert_eq!(major_minor("3.12.1"), Some((3, 12)));
+        assert_eq!(major_minor("3.15.0a1"), Some((3, 15)));
+        assert_eq!(major_minor("3.11"), Some((3, 11)));
     }
 
     #[test]
-    fn version_at_least_rejects_lower_minor() {
-        assert!(!version_at_least("3.10.5", 3, 11));
-        assert!(!version_at_least("2.7.0", 3, 11));
-    }
-
-    #[test]
-    fn version_at_least_rejects_garbage() {
-        assert!(!version_at_least("abc", 3, 11));
-        assert!(!version_at_least("", 3, 11));
-        assert!(!version_at_least("3", 3, 11));
+    fn major_minor_rejects_garbage() {
+        assert_eq!(major_minor("abc"), None);
+        assert_eq!(major_minor(""), None);
+        assert_eq!(major_minor("3"), None);
     }
 
     #[test]
@@ -3549,6 +3549,8 @@ mod tests {
     fn the_engine_python_is_the_first_candidate_that_is_new_enough() {
         let versions: std::collections::HashMap<&str, &str> = [
             ("/usr/bin/python3", "3.9.6"),
+            // GH #188: Homebrew's python3, no wheel of torch 2.12.1 for it.
+            ("/opt/homebrew/bin/python3", "3.15.0"),
             ("/opt/homebrew/bin/python3.12", "3.12.7"),
             ("/Users/u/.pyenv/shims/python3.11", "3.11.9"),
         ]
@@ -3557,6 +3559,7 @@ mod tests {
         let version_of = |p: &Path| versions.get(p.to_str().unwrap()).map(|v| v.to_string());
         let all: Vec<PathBuf> = [
             "/usr/bin/python3",
+            "/opt/homebrew/bin/python3",
             "/opt/homebrew/bin/python3.13",
             "/opt/homebrew/bin/python3.12",
             "/Users/u/.pyenv/shims/python3.11",
@@ -3567,10 +3570,12 @@ mod tests {
         assert_eq!(
             pick_engine_python(&all, version_of),
             Some(PathBuf::from("/opt/homebrew/bin/python3.12")),
-            "3.9 is too old and the 3.13 does not start, so the 3.12 is the one"
+            "3.9 is too old, 3.15 too new and the 3.13 does not start, so the 3.12 is the one"
         );
         // Only the Command Line Tools 3.9: nothing usable, and the hint follows.
         assert_eq!(pick_engine_python(&all[..1], version_of), None);
+        // The stub and Homebrew's 3.15: nothing usable, LU fetches its own.
+        assert_eq!(pick_engine_python(&all[..2], version_of), None);
         assert_eq!(pick_engine_python(&[], version_of), None);
     }
 

@@ -1,0 +1,210 @@
+{
+ "name": "/settings/storage",
+ "art": "seite",
+ "quelle": "integ-306",
+ "route": "/settings/storage",
+ "strang": "models",
+ "code": "E14",
+ "lage": {
+  "route": "/settings/storage",
+  "screen": "m-settings-storage-screen",
+  "blaetter": [],
+  "dialog": [],
+  "reiter": null,
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back-under",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-storage-screen",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-storage-bar",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "el": "E14.1",
+   "box": [
+    358,
+    169
+   ]
+  },
+  {
+   "id": "m-settings-storage-models",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    324,
+    19
+   ]
+  },
+  {
+   "id": "m-settings-storage-chats",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    324,
+    19
+   ]
+  },
+  {
+   "id": "m-settings-storage-free",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    324,
+    19
+   ]
+  },
+  {
+   "id": "m-settings-storage-none",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-storage-downloads",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Open downloads",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-storage-partials-clear",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Clean up partial downloads Nothing to clean",
+   "risiko": "destructive",
+   "el": "E14.3",
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-settings-storage-wifi",
+   "tag": "button",
+   "rolle": "switch",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Download on Wi-Fi only Downloads wait for Wi-Fi. LU asks before one uses mobile ",
+   "el": "E14.5",
+   "box": [
+    356,
+    76
+   ]
+  },
+  {
+   "id": "m-settings-storage-token",
+   "tag": "input",
+   "rolle": "textbox",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Hugging Face token",
+   "el": "E14.6",
+   "box": [
+    284,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-storage-token-save",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Save token",
+   "deaktiviert": true,
+   "box": [
+    113,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-storage-cache-clear",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Clear cached results Removes saved previews. Your gallery and chats stay.",
+   "risiko": "destructive",
+   "el": "E14.7",
+   "box": [
+    356,
+    76
+   ]
+  }
+ ]
+}

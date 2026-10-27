@@ -9,6 +9,7 @@
  */
 
 import type { AgentWorkspace } from '../../types/agent-workspace'
+import { isMobile } from '../../lib/device-kind'
 
 export interface ResolveInput {
   perChat: AgentWorkspace | undefined
@@ -16,6 +17,9 @@ export interface ResolveInput {
 }
 
 export function resolveWorkspace({ perChat, defaultWorkspace }: ResolveInput): AgentWorkspace | null {
+  // A phone has no folder to pick: the agent always works in the sandbox of
+  // this app, whatever an old store or a synced setting says.
+  if (isMobile()) return null
   if (perChat) return perChat
   if (defaultWorkspace) return defaultWorkspace
   return null

@@ -1,0 +1,194 @@
+{
+ "name": "/create/styles",
+ "art": "seite",
+ "quelle": "integ-306",
+ "route": "/create/styles",
+ "strang": "create",
+ "code": "K12",
+ "lage": {
+  "route": "/create/styles",
+  "screen": "m-create-styles-screen",
+  "blaetter": [],
+  "dialog": [],
+  "reiter": null,
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back-under",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-create-styles-screen",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-create-styles-none",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-create-style-card",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Apply style Cinematic",
+   "box": [
+    356,
+    76
+   ]
+  },
+  {
+   "id": "m-create-style-card",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Apply style Portrait",
+   "box": [
+    356,
+    76
+   ]
+  },
+  {
+   "id": "m-create-style-card",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Apply style Product",
+   "box": [
+    356,
+    76
+   ]
+  },
+  {
+   "id": "m-create-style-card",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Apply style Anime",
+   "box": [
+    356,
+    76
+   ]
+  },
+  {
+   "id": "m-create-style-card",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Apply style Quick sketch",
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-create-style-card",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Apply style Slow motion",
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-create-style-card",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Apply style Drone shot",
+   "box": [
+    356,
+    76
+   ]
+  },
+  {
+   "id": "m-create-style-card",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Apply style Timelapse",
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-create-style-new",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "New style",
+   "box": [
+    358,
+    48
+   ]
+  }
+ ]
+}

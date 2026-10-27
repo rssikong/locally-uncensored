@@ -1,0 +1,187 @@
+{
+ "name": "/chats",
+ "art": "seite",
+ "quelle": "integ-306",
+ "route": "/chats",
+ "strang": "chat",
+ "code": "C1",
+ "lage": {
+  "route": "/chats",
+  "screen": "m-chats-screen",
+  "blaetter": [],
+  "dialog": [],
+  "reiter": "chat",
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    791
+   ]
+  },
+  {
+   "id": "m-chats-screen",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    791
+   ]
+  },
+  {
+   "id": "m-cloud-switch",
+   "tag": "button",
+   "rolle": "switch",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Cloud, off",
+   "el": "G11",
+   "box": [
+    115,
+    48
+   ]
+  },
+  {
+   "id": "m-chats-segment",
+   "tag": "div",
+   "rolle": "radiogroup",
+   "sichtbar": true,
+   "bedienbar": false,
+   "el": "C1.2",
+   "box": [
+    358,
+    54
+   ]
+  },
+  {
+   "id": "m-chats-segment-phone",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "On this phone",
+   "box": [
+    167,
+    48
+   ]
+  },
+  {
+   "id": "m-chats-segment-remote",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Remote desktop",
+   "box": [
+    183,
+    48
+   ]
+  },
+  {
+   "id": "m-chats-empty",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    196
+   ]
+  },
+  {
+   "id": "m-chats-empty-new",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "New chat",
+   "el": "C1.6",
+   "box": [
+    358,
+    48
+   ]
+  },
+  {
+   "id": "m-nav",
+   "tag": "nav",
+   "rolle": "tablist",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    53
+   ]
+  },
+  {
+   "id": "m-nav-chat",
+   "tag": "button",
+   "rolle": "tab",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Chat",
+   "el": "G1.1",
+   "box": [
+    98,
+    52
+   ]
+  },
+  {
+   "id": "m-nav-create",
+   "tag": "button",
+   "rolle": "tab",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Create",
+   "el": "G1.2",
+   "box": [
+    98,
+    52
+   ]
+  },
+  {
+   "id": "m-nav-models",
+   "tag": "button",
+   "rolle": "tab",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Models",
+   "el": "G1.3",
+   "box": [
+    98,
+    52
+   ]
+  },
+  {
+   "id": "m-nav-settings",
+   "tag": "button",
+   "rolle": "tab",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Settings",
+   "el": "G1.4",
+   "box": [
+    98,
+    52
+   ]
+  }
+ ]
+}

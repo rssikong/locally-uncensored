@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Entitlements NUR fuer den Geraete-Bau (sdk=iphoneos*), siehe project.yml.
+  Der Simulator-Bau nimmt locally-uncensored_iOS.entitlements, die leer bleibt.
+
+  increased-memory-limit: bittet das System um ein hoeheres Speicherlimit fuer
+  die App, damit groessere Modelle geladen werden koennen. Braucht ein
+  Provisioning-Profil mit dieser Capability (letzte 5 Prozent). Die App muss
+  auch ohne laufen: sie fragt os_proc_available_memory und verlaesst sich auf
+  nichts.
+
+  applesignin (Runde 15): "Sign in with Apple" auf der Seite Account
+  (plugins/lu-native/ios/Sources/AppleSignIn.swift). Braucht die Faehigkeit
+  "Sign in with Apple" an der App-ID und ein Profil, das sie traegt. Ohne
+  sie antwortet das System mit Fehler 1000, und die App zeigt dafuer einen
+  Satz. Der Simulator-Bau und der unsignierte Geraete-Bau tragen es nicht:
+  ohne Signatur gibt es keine Entitlements.
+  Waechter: src/lib/__tests__/mobile-ios-fallen.test.ts
+-->
+<plist version="1.0">
+<dict>
+	<key>com.apple.developer.kernel.increased-memory-limit</key>
+	<true/>
+	<key>com.apple.developer.applesignin</key>
+	<array>
+		<string>Default</string>
+	</array>
+</dict>
+</plist>

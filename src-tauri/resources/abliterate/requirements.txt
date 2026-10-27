@@ -1,0 +1,6 @@
+# What the refusal-removal tool installs on top of PyTorch. Versions are
+# fixed in constraints.txt next to this file.
+heretic-llm==1.4.0
+huggingface-hub==1.33.0
+datasets==4.8.5
+sentencepiece==0.2.2

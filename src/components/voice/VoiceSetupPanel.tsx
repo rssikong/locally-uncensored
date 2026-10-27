@@ -28,7 +28,7 @@ interface Props {
 
 const cardCls = 'rounded-lg border border-gray-200 dark:border-white/[0.08] bg-gray-50 dark:bg-white/[0.03]'
 const baseCls = 'inline-flex items-center justify-center gap-1.5 t-control transition-colors disabled:opacity-40 disabled:cursor-not-allowed'
-const primaryCls = `${baseCls} h-[var(--control-h-lg)] px-6 rounded-full bg-gray-900 text-white hover:bg-gray-700 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200`
+const primaryCls = `${baseCls} h-[var(--control-h-lg)] px-6 rounded-full bg-gray-900 !text-white hover:bg-gray-700 dark:bg-white dark:!text-gray-900 dark:hover:bg-gray-200`
 const quietCls = `${baseCls} h-[var(--control-h-md)] px-3 rounded-md border border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/[0.06]`
 
 function ErrorCard({ title, detail }: { title: string; detail: string }) {

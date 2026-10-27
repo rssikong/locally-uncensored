@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Vorlage fuer den Export des Archivs zum IPA fuer den App Store.
+  ios-appstore.sh kopiert sie in einen Wegwerfordner und traegt dort ein:
+    teamID                 aus APPLE_DEVELOPMENT_TEAM
+    signingStyle           automatic oder manual (LU_IOS_SIGNING)
+    signingCertificate     nur bei manual, aus LU_IOS_SIGN_IDENTITY
+    provisioningProfiles   nur bei manual: Kennung der App und LU_IOS_PROFILE
+  In dieser Datei steht nie ein echtes Team und nie ein Profil, das Repo ist oeffentlich.
+
+  destination ist export und bleibt export: mit upload wuerde xcodebuild das
+  Paket beim Exportieren selbst hochladen. Hochgeladen wird nur im eigenen,
+  bestaetigten Schritt von ios-appstore.sh.
+  manageAppVersionAndBuildNumber ist aus: Version und Baunummer kommen aus
+  version-setzen.sh und werden beim Export nicht umgeschrieben.
+-->
+<plist version="1.0">
+<dict>
+	<key>method</key>
+	<string>app-store-connect</string>
+	<key>destination</key>
+	<string>export</string>
+	<key>teamID</key>
+	<string>__TEAM_ID__</string>
+	<key>signingStyle</key>
+	<string>automatic</string>
+	<key>manageAppVersionAndBuildNumber</key>
+	<false/>
+	<key>uploadSymbols</key>
+	<true/>
+	<key>stripSwiftSymbols</key>
+	<true/>
+</dict>
+</plist>

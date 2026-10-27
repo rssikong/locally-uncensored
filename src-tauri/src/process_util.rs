@@ -1253,7 +1253,15 @@ mod command_new_coverage_guard {
         // bundled sidecar. K11/K14's doc comment on foreign_system_command
         // is explicit that a bundled sidecar stays raw, it needs exactly
         // the AppImage-bundled libraries the adapter would strip out.
-        ("src/commands/engine.rs", 2),
+        // 3.0.8 (A2) adds the third: the same sidecar asked
+        // `--list-devices` to find the chat card's Vulkan device. A14 (3.0.8)
+        // a fourth, the same sidecar started for the refusal-removal tool's
+        // check (`spawn_private_server`).
+        ("src/commands/engine.rs", 4),
+        // The refusal-removal tool's one raw spawn is `lu-llama-quantize`,
+        // a sidecar LU ships next to the engine; its Python steps go through
+        // python_command.
+        ("src/commands/abliterate/mod.rs", 1),
         // The login shell that is asked for the user's PATH on a Mac is a
         // foreign program like any other and goes through the adapter.
         ("src/finder_path.rs", 0),

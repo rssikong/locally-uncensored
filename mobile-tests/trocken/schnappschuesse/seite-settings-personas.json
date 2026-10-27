@@ -1,0 +1,777 @@
+{
+ "name": "/settings/personas",
+ "art": "seite",
+ "quelle": "integ-306",
+ "route": "/settings/personas",
+ "strang": "agent",
+ "code": "E6",
+ "lage": {
+  "route": "/settings/personas",
+  "screen": "m-settings-personas-screen",
+  "blaetter": [],
+  "dialog": [],
+  "reiter": null,
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back-under",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-personas-screen",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-personas-use",
+   "tag": "button",
+   "rolle": "switch",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Use personas Personas are off. Every chat talks to the plain model.",
+   "el": "E6.1",
+   "box": [
+    356,
+    76
+   ]
+  },
+  {
+   "id": "m-personas-list",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    1475
+   ]
+  },
+  {
+   "id": "m-personas-pick-assistant",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Helpful Assistant Built in",
+   "el": "E6.2",
+   "box": [
+    304,
+    57
+   ]
+  },
+  {
+   "id": "m-personas-edit-assistant",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Edit Helpful Assistant",
+   "el": "E6.3",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-personas-pick-coder",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Code Expert Built in",
+   "el": "E6.2",
+   "box": [
+    304,
+    57
+   ]
+  },
+  {
+   "id": "m-personas-edit-coder",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Edit Code Expert",
+   "el": "E6.3",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-personas-pick-writer",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Writing Coach Built in",
+   "el": "E6.2",
+   "box": [
+    304,
+    57
+   ]
+  },
+  {
+   "id": "m-personas-edit-writer",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Edit Writing Coach",
+   "el": "E6.3",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-personas-pick-researcher",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Research Analyst Built in",
+   "el": "E6.2",
+   "box": [
+    304,
+    57
+   ]
+  },
+  {
+   "id": "m-personas-edit-researcher",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Edit Research Analyst",
+   "el": "E6.3",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-personas-pick-translator",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Translator Built in",
+   "el": "E6.2",
+   "box": [
+    304,
+    57
+   ]
+  },
+  {
+   "id": "m-personas-edit-translator",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Edit Translator",
+   "el": "E6.3",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-personas-pick-unrestricted",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "No Filter Built in",
+   "el": "E6.2",
+   "box": [
+    304,
+    57
+   ]
+  },
+  {
+   "id": "m-personas-edit-unrestricted",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Edit No Filter",
+   "el": "E6.3",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-personas-pick-devil",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Devil's Advocate Built in",
+   "el": "E6.2",
+   "box": [
+    304,
+    57
+   ]
+  },
+  {
+   "id": "m-personas-edit-devil",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Edit Devil's Advocate",
+   "el": "E6.3",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-personas-pick-sigma",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Sigma Grindset Built in",
+   "el": "E6.2",
+   "box": [
+    304,
+    57
+   ]
+  },
+  {
+   "id": "m-personas-edit-sigma",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Edit Sigma Grindset",
+   "el": "E6.3",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-personas-pick-roast",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Roast Master Built in",
+   "el": "E6.2",
+   "box": [
+    304,
+    57
+   ]
+  },
+  {
+   "id": "m-personas-edit-roast",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Edit Roast Master",
+   "el": "E6.3",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-personas-pick-conspiracy",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Conspiracy Brain Built in",
+   "el": "E6.2",
+   "box": [
+    304,
+    57
+   ]
+  },
+  {
+   "id": "m-personas-edit-conspiracy",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Edit Conspiracy Brain",
+   "el": "E6.3",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-personas-pick-drunk-prof",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Drunk Professor Built in",
+   "el": "E6.2",
+   "box": [
+    304,
+    57
+   ]
+  },
+  {
+   "id": "m-personas-edit-drunk-prof",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Edit Drunk Professor",
+   "el": "E6.3",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-personas-pick-villain",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Supervillain Built in",
+   "el": "E6.2",
+   "box": [
+    304,
+    57
+   ]
+  },
+  {
+   "id": "m-personas-edit-villain",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Edit Supervillain",
+   "el": "E6.3",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-personas-pick-time-traveler",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Time Traveler Built in",
+   "el": "E6.2",
+   "box": [
+    304,
+    57
+   ]
+  },
+  {
+   "id": "m-personas-edit-time-traveler",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Edit Time Traveler",
+   "el": "E6.3",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-personas-pick-sarcasm",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Maximum Sarcasm Built in",
+   "el": "E6.2",
+   "box": [
+    304,
+    57
+   ]
+  },
+  {
+   "id": "m-personas-edit-sarcasm",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Edit Maximum Sarcasm",
+   "el": "E6.3",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-personas-pick-chadgpt",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "ChadGPT Built in",
+   "el": "E6.2",
+   "box": [
+    304,
+    57
+   ]
+  },
+  {
+   "id": "m-personas-edit-chadgpt",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Edit ChadGPT",
+   "el": "E6.3",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-personas-pick-therapist",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Unhinged Therapist Built in",
+   "el": "E6.2",
+   "box": [
+    304,
+    57
+   ]
+  },
+  {
+   "id": "m-personas-edit-therapist",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Edit Unhinged Therapist",
+   "el": "E6.3",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-personas-pick-pirate",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "AI Pirate Built in",
+   "el": "E6.2",
+   "box": [
+    304,
+    57
+   ]
+  },
+  {
+   "id": "m-personas-edit-pirate",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Edit AI Pirate",
+   "el": "E6.3",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-personas-pick-philosopher",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Existential Crisis Built in",
+   "el": "E6.2",
+   "box": [
+    304,
+    57
+   ]
+  },
+  {
+   "id": "m-personas-edit-philosopher",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Edit Existential Crisis",
+   "el": "E6.3",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-personas-pick-gen-alpha",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Gen Alpha Brain Built in",
+   "el": "E6.2",
+   "box": [
+    304,
+    57
+   ]
+  },
+  {
+   "id": "m-personas-edit-gen-alpha",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Edit Gen Alpha Brain",
+   "el": "E6.3",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-personas-pick-narrator",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Morgan Freeman Built in",
+   "el": "E6.2",
+   "box": [
+    304,
+    57
+   ]
+  },
+  {
+   "id": "m-personas-edit-narrator",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Edit Morgan Freeman",
+   "el": "E6.3",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-personas-pick-hacker",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "L33T H4X0R Built in",
+   "el": "E6.2",
+   "box": [
+    304,
+    57
+   ]
+  },
+  {
+   "id": "m-personas-edit-hacker",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Edit L33T H4X0R",
+   "el": "E6.3",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-personas-pick-gordon",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Chef Ramsay Built in",
+   "el": "E6.2",
+   "box": [
+    304,
+    57
+   ]
+  },
+  {
+   "id": "m-personas-edit-gordon",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Edit Chef Ramsay",
+   "el": "E6.3",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-personas-pick-alien",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Confused Alien Built in",
+   "el": "E6.2",
+   "box": [
+    304,
+    57
+   ]
+  },
+  {
+   "id": "m-personas-edit-alien",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Edit Confused Alien",
+   "el": "E6.3",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-personas-pick-rizz",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Rizz Coach Built in",
+   "el": "E6.2",
+   "box": [
+    304,
+    57
+   ]
+  },
+  {
+   "id": "m-personas-edit-rizz",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Edit Rizz Coach",
+   "el": "E6.3",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-personas-pick-medieval",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Medieval Peasant Built in",
+   "el": "E6.2",
+   "box": [
+    304,
+    57
+   ]
+  },
+  {
+   "id": "m-personas-edit-medieval",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Edit Medieval Peasant",
+   "el": "E6.3",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-personas-reset",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Reset built in personas The built in personas are unchanged.",
+   "risiko": "destructive",
+   "el": "E6.9",
+   "deaktiviert": true,
+   "box": [
+    358,
+    52
+   ]
+  },
+  {
+   "id": "m-personas-add",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "New persona",
+   "el": "E6.4",
+   "box": [
+    358,
+    48
+   ]
+  }
+ ]
+}

@@ -44,7 +44,8 @@
  * of call #2 and re-trigger the exact OOM we are avoiding.
  */
 
-import { setChatBackendsRestore } from '../lib/chat-backends-gate'
+import { setChatBackendsRestore, holdChatBackends } from '../lib/chat-backends-gate'
+import { gpuRolesSeparate } from '../lib/gpu-roles'
 import { backendCall, ollamaUrl, localFetch, isOllamaLocal, isWindows } from './backend'
 import type { ComfyApiGraph } from '../types/comfy-graph'
 import { asNumber, asRecordArray, asString, prop } from '../types/json-guards'
@@ -84,6 +85,8 @@ import { PaceTracker, overBudget, renderBudgetNotice, renderTimeoutNotice, warmu
 import { asComfyGpuMode } from '../lib/comfy-cpu-banner'
 import { comfyHoldsNoVram } from '../lib/comfy-device'
 import { log } from '../lib/logger'
+import { renderStallLimitMs } from '../lib/tool-timeout'
+import { aspectFrame, parseAspectRatio } from '../lib/aspect-frame'
 import { buildWithFixups, wasDeclined } from '../lib/render-fixups'
 import { renderFixupDeps } from './render-fixup-deps'
 
@@ -367,6 +370,17 @@ interface ComfyStatus {
   found?: boolean
 }
 
+/** True only when ComfyUI is neither running nor installed here: a remote
+ *  host and a server the user started by hand both count as there. */
+async function comfyMissing(): Promise<boolean> {
+  try {
+    const s = await backendCall<ComfyStatus>('comfyui_status')
+    return !!s && s.running !== true && s.found === false
+  } catch {
+    return false
+  }
+}
+
 async function comfyIsRunning(): Promise<boolean> {
   try {
     const s = await backendCall<ComfyStatus>('comfyui_status')
@@ -399,6 +413,28 @@ async function ensureComfyRunning(timeoutMs = 90_000): Promise<boolean> {
     if (await comfyIsRunning()) return true
   }
   return false
+}
+
+/**
+ * ComfyUI up before a chat attachment is uploaded to it (A13, box run
+ * 22.10.2026). The upload of "attachment 1" ran before the hand-off had
+ * started ComfyUI, so every edit of an attached picture failed with
+ * "could not hand attachment 1 to ComfyUI: Failed to upload image" whenever
+ * ComfyUI was not already running. Not tied to the generation's cancel
+ * channel (that one belongs to the run being built); the call's own signal
+ * ends the wait. Returns the line for model and user, or null when it is up.
+ */
+export async function comfyUpForUpload(signal?: AbortSignal, timeoutMs = 90_000): Promise<string | null> {
+  if (await comfyIsRunning()) return null
+  if (await comfyMissing()) return 'ComfyUI is not installed on this computer, so the attached picture cannot be used. Install it once from the Create tab, then try again.'
+  try { await backendCall('start_comfyui') } catch (e) { log.warn('vram_handoff.start_comfyui_failed', { err: String(e) }) }
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (signal?.aborted) return 'cancelled'
+    await sleep(1500)
+    if (await comfyIsRunning()) return null
+  }
+  return 'ComfyUI did not start within 90s, so the attached picture could not be handed to it. Start it from the Create tab and try again.'
 }
 
 /**
@@ -607,10 +643,18 @@ let _cancelledThrough = 0
  */
 const _genOwner = new Map<number, string | null>()
 /** Seqs cancelled by a conversation-scoped requestGenerationCancel(convId)
- *  call, as opposed to the app-wide `_cancelledThrough` epoch below (still
- *  used by callers that pass no conversation at all). Cleared per-seq once
- *  that generation's own runHandoff body has finished. */
+ *  call or by the signal of their own tool call, as opposed to the app-wide
+ *  `_cancelledThrough` epoch below (still used by callers that pass no
+ *  conversation at all). A13: kept after the run has settled. The run's
+ *  promise settles when Stop wins the race, while the abandoned build under
+ *  it is still on its way to submitCancellable; deleting the mark there let
+ *  that build post its job as soon as the next run's resetCancel() cleared
+ *  the flag. A number per stopped render is all it costs. */
 const _cancelledSeqs = new Set<number>()
+/** The seq of the generation actually executing right now, next to
+ *  `_currentGenConvId`: a tool call's signal reaches the live cancel channel
+ *  only when its own generation is the one running. */
+let _currentSeq = 0
 /** The conversation that owns the generation ACTUALLY executing right now
  *  (set at the top of runHandoff, cleared in its finally): generations are
  *  strictly serialised through `_inFlight`, so there is at most one. */
@@ -733,12 +777,6 @@ async function submitCancellable(
   return promptId
 }
 
-// Last image LU actually produced this session. Small models routinely pass a
-// hallucinated filename (e.g. "locally_saved_image.png") to a follow-up
-// video_generate; when the given name can't be resolved we fall back to this so
-// the "animate the image you just made" chain still works. Set after each
-// successful image generation.
-let _lastImageFilename: string | null = null
 
 /**
  * Test-only: reset the module-level serialisation/cancel state so each unit test
@@ -753,7 +791,6 @@ export function __resetGenerationStateForTests(): void {
   _activeHandoffs = 0
   _genCancelRequested = false
   _currentPromptId = null
-  _lastImageFilename = null
   _genOwner.clear()
   _cancelledSeqs.clear()
   _currentGenConvId = null
@@ -788,17 +825,73 @@ export interface VramHandoffArgs {
  * It is what lets `requestGenerationCancel(convId)` tell this generation
  * apart from one running for a different conversation.
  */
+export interface HandoffOptions {
+  /** The tool call's own Stop and timeout (A13). Aborting it cancels exactly
+   *  this generation: queued, building, rendering, or still at the picker. */
+  signal?: AbortSignal
+  /** Ask which model to use (api/model-pick) when the call names none. Done
+   *  after ComfyUI is up, so the installed list and the saved choice are
+   *  read from a running server instead of falling back to the first file. */
+  pickModel?: boolean
+}
+
 export async function vramHandoffGenerate(
   kind: 'image' | 'video', args: VramHandoffArgs, conversationId: string | null = null,
+  opts: HandoffOptions = {},
+): Promise<string> {
+  const { signal } = opts
+  if (signal?.aborted) return `${label(kind)} generation cancelled.`
+  return enqueueHandoff(kind, conversationId, (seq) => runHandoff(kind, args, seq, conversationId, undefined, opts.pickModel === true), signal)
+}
+
+/**
+ * A ComfyUI graph of its own through the same hand-off as image_generate:
+ * queued behind any other generation, the chat model moved off the card when
+ * the model would not fit next to it, the graph built with the same fix-up
+ * question, submitted, polled and the chat model put back. Create over the
+ * desktop runs Enhance, Remove Background and Music this way
+ * (lib/remote-create-lanes.ts), with the builders the Create tab uses.
+ * Resolves to the same result line as image_generate:
+ * `<label> generated: <file> (prompt: "...")\n<ComfyUI /view URL>`.
+ */
+export interface HandoffLane {
+  /** Which budget and events it counts as. */
+  kind: 'image' | 'video'
+  /** The first word of the result line, such as "Music". */
+  label: string
+  /** The model the footprint estimate reads; '' when there is none. */
+  model: string
+  /** Prompt text for the result line. */
+  prompt: string
+  build: () => Promise<ComfyApiGraph>
+}
+
+export function vramHandoffLane(lane: HandoffLane, conversationId: string | null = null): Promise<string> {
+  return enqueueHandoff(lane.kind, conversationId, (seq) => runHandoff(lane.kind, { prompt: lane.prompt, model: lane.model }, seq, conversationId, lane))
+}
+
+function enqueueHandoff(
+  kind: 'image' | 'video', conversationId: string | null, body: (seq: number) => Promise<string>,
+  signal?: AbortSignal,
 ): Promise<string> {
   // Serialise. We park on the previous call's settled promise (success OR
   // failure — `.catch` swallows so a prior error doesn't reject our chain),
   // then run our own body and expose it as the new tail.
   const seq = ++_genSeq
   _genOwner.set(seq, conversationId)
+  // The signal cancels this seq and nothing else: marked for the queue and
+  // the abandoned build, and the live channel only when it is the one running.
+  const onAbort = () => {
+    _cancelledSeqs.add(seq)
+    if (_currentSeq !== seq) return
+    _genCancelRequested = true
+    _cancelNotify?.()
+    if (_activeHandoffs > 0 && _currentPromptId) void abandonPrompt(_currentPromptId)
+  }
+  signal?.addEventListener('abort', onAbort)
   const run = _inFlight
     .catch(() => {})
-    .then(() => runHandoff(kind, args, seq, conversationId))
+    .then(() => body(seq))
     // Defensive: runHandoff is written to always RETURN a string (the finally
     // block never rethrows), but if anything unexpected slips through we still
     // hand the agent a clean tool message instead of rejecting the chain.
@@ -810,7 +903,8 @@ export async function vramHandoffGenerate(
     // "yes" to `requestGenerationCancel`'s ownership checks forever.
     .finally(() => {
       _genOwner.delete(seq)
-      _cancelledSeqs.delete(seq)
+      signal?.removeEventListener('abort', onAbort)
+      if (_currentSeq === seq) _currentSeq = 0
       if (_currentGenConvId === conversationId) _currentGenConvId = null
     })
   _inFlight = run.catch(() => {})
@@ -818,7 +912,8 @@ export async function vramHandoffGenerate(
 }
 
 async function runHandoff(
-  kind: 'image' | 'video', args: VramHandoffArgs, seq: number, conversationId: string | null,
+  kind: 'image' | 'video', args: VramHandoffArgs, seq: number, conversationId: string | null, lane?: HandoffLane,
+  pickModel = false,
 ): Promise<string> {
   // Fresh run — re-arm the cancel channel (clears any flag/notify left over from
   // a previous cancelled gen).
@@ -835,6 +930,7 @@ async function runHandoff(
   // requestGenerationCancel(convId) reaches ComfyUI/the live cancel channel
   // only when convId matches this.
   _currentGenConvId = conversationId
+  _currentSeq = seq
   // Robustness for small local models (gemma4:e4b live): they frequently emit a
   // snake_case `input_image` alias and sometimes omit `prompt` on a video call.
   // Normalize the alias so the I2V path still finds the source image.
@@ -850,7 +946,7 @@ async function runHandoff(
     if (Number.isFinite(n) && n > 0) args.seconds = n
   }
   let prompt = String(args.prompt ?? args.description ?? '').trim()
-  if (!prompt) {
+  if (!prompt && !lane) {
     // A video call (esp. image-to-video / SVD) can animate without an explicit
     // prompt — default a gentle motion rather than hard-failing on "prompt
     // required" (which made gemma give up mid-chain). Images still need a prompt.
@@ -871,18 +967,40 @@ async function runHandoff(
   // the Create tab started it on the first render. The order is what was wrong,
   // so the order is what changed. Free when ComfyUI is already up (one
   // comfyui_status call), and nothing has been evicted yet if it fails.
+  // A13: no install at all is said at once, not after 90 s of waiting for a
+  // start that cannot happen, with advice to start what is not there.
+  if (await comfyMissing()) {
+    emitHandoff('error', { kind, detail: 'ComfyUI is not installed' })
+    return `Error: ComfyUI is not installed on this computer, so local ${kind} generation cannot run. Install it once from the Create tab, then try again.`
+  }
   const comfyUp = await ensureComfyRunning()
   if (_genCancelRequested) return `${label(kind)} generation cancelled.`
   if (!comfyUp) {
     emitHandoff('error', { kind, detail: 'ComfyUI did not start' })
     return 'Error: ComfyUI did not start within 90s. Start it from the Create tab and try again.'
   }
+  // The model picker reads ComfyUI's list. Before A13 it ran before this
+  // start, found nothing while ComfyUI was down, and the run took the first
+  // file instead of the model chosen in Create or saved in the picker.
+  if (pickModel && !(typeof args.model === 'string' && args.model)) {
+    const { pickModelForGeneration } = await import('./model-pick')
+    const picked = await raceCancel(pickModelForGeneration(kind, args))
+    if (picked === CANCELLED) {
+      const { useModelPickStore } = await import('../stores/modelPickStore')
+      useModelPickStore.getState().cancel()
+      return `${label(kind)} generation cancelled.`
+    }
+    if (picked) args.model = picked
+  }
 
   // ── (a) DECIDE — resolve target model (no side effects yet) ──────
   let targetModel: string
   let videoBackend: VideoBackend = 'none'
   try {
-    if (kind === 'image') {
+    if (lane) {
+      // A lane brings its model and its graph; nothing to pick here.
+      targetModel = lane.model
+    } else if (kind === 'image') {
       const models = await getImageModels()
       if (models.length === 0) {
         emitHandoff('error', { kind, detail: 'no image model installed' })
@@ -1023,9 +1141,18 @@ async function runHandoff(
         systemVramGB: systemVram,
         mode,
       })
-      willUnload = decision.unload && !!textModel
+      // Two cards, one per service (3.0.8, A2): the chat engine LU starts
+      // (LU Engine, Ollama) is pinned to another card than ComfyUI, so taking
+      // it off its card frees nothing the render can use and only costs the
+      // chat its model. LM Studio picks its card itself, LU cannot pin it, so
+      // it keeps the old rule.
+      const apart = chatAndComfyApart()
+      willUnload = decision.unload && !!textModel && !apart
       willUnloadLms = decision.unload && !!lmsTarget
-      willUnloadBundled = decision.unload && !!bundledTarget
+      willUnloadBundled = decision.unload && !!bundledTarget && !apart
+      if (apart && decision.unload && (textModel || bundledTarget)) {
+        log.info('vram_handoff.skipped_separate_gpus', { kind, textModel, bundledModel: bundledTarget?.modelPath ?? null })
+      }
       log.info('vram_handoff.decision', {
         kind,
         targetModel,
@@ -1051,6 +1178,12 @@ async function runHandoff(
   let evictedModel: string | null = null
   let evictedLms: LmsTextModel | null = null
   let evictedBundled: (BundledTarget & { slotSaved: boolean }) | null = null
+  // While the chat model is off the card for this render, a chat request to a
+  // local backend waits until it is back (lib/chat-backends-gate). Before
+  // 3.0.8 nothing could ask: the chat waited for the tool. Now the render can
+  // go on in the background, and a message sent meanwhile would load the
+  // model into the card the render is using.
+  let releaseChatHold: (() => void) | null = null
 
   try {
     // A chat-initiated ComfyUI gen is now ACTUALLY in flight — we are past every
@@ -1062,6 +1195,9 @@ async function runHandoff(
     // counter and a later plain-chat Stop would wrongly /interrupt + clear an
     // unrelated Create-tab render (the exact bug this counter prevents).
     _activeHandoffs++
+    if (willUnload || willUnloadLms || willUnloadBundled) {
+      releaseChatHold = holdChatBackends(kind === 'video' ? 'video' : 'image')
+    }
     // ── (b) HANDOFF-OUT — only if we decided to unload ─────────────
     if (willUnload && textModel) {
       emitHandoff('freeing_vram', { kind, detail: textModel })
@@ -1169,9 +1305,11 @@ async function runHandoff(
     // upload, submit, poll). The abandoned promise keeps running in the
     // background but its output is ignored; requestGenerationCancel already
     // fired /interrupt + queue-clear, and the finally restores the text model.
-    const genPromise = kind === 'image'
-      ? generateImage(prompt, targetModel, args, seq)
-      : generateVideo(prompt, targetModel, videoBackend, args, seq)
+    const genPromise = lane
+      ? generateLane(lane, seq)
+      : kind === 'image'
+        ? generateImage(prompt, targetModel, args, seq)
+        : generateVideo(prompt, targetModel, videoBackend, args, seq)
     const result = await raceCancel(genPromise)
     if (result === CANCELLED) return `${label(kind)} generation cancelled.`
     return result
@@ -1253,6 +1391,7 @@ async function runHandoff(
         log.warn('vram_handoff.bundled_reload_failed', { err: String(e) })
       }
     }
+    releaseChatHold?.()
     emitHandoff('done', { kind })
   }
 }
@@ -1274,6 +1413,20 @@ function buildErrorResult(kind: 'image' | 'video', err: unknown): string {
   return wasDeclined(err)
     ? `${label(kind)} generation was not started. ${message}`
     : `${label(kind)} generation failed: ${message}`
+}
+
+/** A lane's own graph: built with the fix-up question, submitted, polled. */
+async function generateLane(lane: HandoffLane, seq: number): Promise<string> {
+  try {
+    const workflow = await buildFixable(lane.kind, lane.build)
+    log.info('vram_handoff.lane.submit', { label: lane.label, model: lane.model })
+    const submitted = await submitCancellable(workflow, seq)
+    if (submitted === CANCELLED) return `${lane.label} generation cancelled.`
+    return await pollAndExtract(submitted, lane.prompt, lane.label, lane.kind === 'video' ? getVideoTimeoutMs() : getImageTimeoutMs())
+  } catch (err) {
+    if (wasDeclined(err)) return `${lane.label} generation was not started. ${err instanceof Error ? err.message : String(err)}`
+    return `${lane.label} generation failed: ${err instanceof Error ? err.message : String(err)}`
+  }
 }
 
 /** Image path — mirrors the legacy executeImageGenerate, via buildDynamicWorkflow. */
@@ -1308,9 +1461,14 @@ async function generateImage(
     // GH #142: a whole figure in the model's square default comes out as a
     // close-up. Nobody named a size and the prompt wants the full figure, so
     // it gets the portrait frame the model was trained on (lib/subject-framing).
-    const frame = a.width == null && a.height == null && !args.inputImage && wantsFullFigure(prompt)
-      ? portraitFrame(idef.width)
-      : { width: idef.width, height: idef.height }
+    // A13: an asked aspect ratio wins over the full-figure guess, at the
+    // pixel count of the model's own size.
+    const ratio = parseAspectRatio(a.aspectRatio)
+    const frame = a.width == null && a.height == null && ratio != null
+      ? aspectFrame(ratio, idef.width, idef.height)
+      : a.width == null && a.height == null && !args.inputImage && wantsFullFigure(prompt)
+        ? portraitFrame(idef.width)
+        : { width: idef.width, height: idef.height }
     const width = clampInt(a.width, frame.width, 64, 4096)
     const height = clampInt(a.height, frame.height, 64, 4096)
     const seed = (typeof a.seed === 'number' && Number.isFinite(a.seed)) ? Math.floor(a.seed) : -1
@@ -1322,7 +1480,9 @@ async function generateImage(
     let denoise: number | undefined
     if (typeof args.inputImage === 'string' && args.inputImage) {
       inputImage = (await resolveInputImage(args.inputImage)).name
-      denoise = clampFloat(args.denoise, 0.6, 0.05, 1.0)
+      // 0.75 since A13: at 0.6 the A12 box run kept the picture and lost the
+      // asked change ("make it snow" came back with hardly any snow).
+      denoise = clampFloat(args.denoise, 0.75, 0.05, 1.0)
     }
     // Qwen-Image 2.1: the agent loads the text encoder the user picked in
     // Create's advanced settings, so a picture made in chat reads the prompt
@@ -1359,6 +1519,12 @@ async function generateImage(
         ...(typeof a.vae === 'string' && a.vae ? { vae: a.vae as string } : {}),
         ...(typeof a.clipSkip === 'number' ? { clipSkip: a.clipSkip as number } : {}),
         ...(inputImage ? { inputImage, denoise } : {}),
+        // Edit (Create over the desktop): further references and a mask,
+        // already in ComfyUI's input folder, as Create hands them over.
+        ...(inputImage && stagedNames(a.referenceImages).length ? { referenceImages: stagedNames(a.referenceImages) } : {}),
+        ...(inputImage && stagedNames([a.maskImage]).length
+          ? { maskImage: stagedNames([a.maskImage])[0], growMaskBy: clampInt(a.growMaskBy, 6, 0, 64) }
+          : {}),
         ...(listed?.parts ? { modelParts: listed.parts } : {}),
       },
       type,
@@ -1372,14 +1538,7 @@ async function generateImage(
     if (submitted === CANCELLED) return `${label('image')} generation cancelled.`
     const promptId = submitted
     log.info('vram_handoff.image.submitted', { promptId })
-    const result = await pollAndExtract(promptId, prompt, label('image'), getImageTimeoutMs())
-    // Remember the produced filename so a follow-up "animate it" video call can
-    // fall back to it when the model passes a wrong/hallucinated inputImage.
-    const fn = result.match(/generated:\s*([^\s(]+\.(?:png|jpe?g|webp))/i)
-    // Don't let an abandoned (cancelled) gen that finishes in the background
-    // overwrite the filename a later "animate it" might pick up.
-    if (fn && !_genCancelRequested) _lastImageFilename = fn[1]
-    return result
+    return await pollAndExtract(promptId, prompt, label('image'), getImageTimeoutMs())
   } catch (err) {
     // Surface ComfyUI's message verbatim — an OOM must NOT be masked.
     return buildErrorResult('image', err)
@@ -1413,23 +1572,13 @@ async function generateVideo(
       const d = MODEL_TYPE_DEFAULTS[type]
       const av = args as Record<string, unknown>
 
-      // Optional source still (I2V). A wrong/hallucinated name falls back to the
-      // last image LU produced this session — same recovery as the SVD path.
+      // Optional source still (I2V). A13: a name that is not there is an
+      // error that lists what is, never the last picture of some other chat.
       let inputImage: string | undefined
       let srcW = 0
       let srcH = 0
       if (typeof args.inputImage === 'string' && args.inputImage) {
-        let resolved: ResolvedInputImage
-        try {
-          resolved = await resolveInputImage(args.inputImage)
-        } catch (e) {
-          if (_lastImageFilename) {
-            log.warn('vram_handoff.i2v_input_fallback', { bad: String(args.inputImage), fallback: _lastImageFilename })
-            resolved = await resolveInputImage(_lastImageFilename)
-          } else {
-            throw e
-          }
-        }
+        const resolved = await resolveInputImage(args.inputImage)
         inputImage = resolved.name
         srcW = resolved.width
         srcH = resolved.height
@@ -1452,7 +1601,11 @@ async function generateVideo(
       const tunCfg = (avq.cfg ?? avq.cfg_scale ?? avq.cfgScale) !== undefined ? tun.cfg : d.cfg
 
       // I2V → resolution from the source aspect (faithful framing); T2V → model default.
-      const base = inputImage ? resolveI2VResolution(type, srcW, srcH) : { width: d.width, height: d.height }
+      // A13: from text, an asked aspect ratio at the model's own pixel count.
+      const ratio = parseAspectRatio(av.aspectRatio)
+      const base = inputImage
+        ? resolveI2VResolution(type, srcW, srcH)
+        : ratio != null ? aspectFrame(ratio, d.width, d.height, 32) : { width: d.width, height: d.height }
       const snapped = snapToVideoGrid(clampInt(av.width, base.width, 64, 2048), clampInt(av.height, base.height, 64, 2048))
       const seed = (typeof av.seed === 'number' && Number.isFinite(av.seed)) ? Math.floor(av.seed) : -1
 
@@ -1489,19 +1642,9 @@ async function generateVideo(
     // it inside 12 GB; SVD bundles its own CLIP-vision + VAE in the checkpoint.
     if (typeof args.inputImage === 'string' && args.inputImage && isI2VModel(model)) {
       const { buildDynamicWorkflow } = await import('./dynamic-workflow')
-      // Resolve the source still; if the model gave a wrong/hallucinated name,
-      // fall back to the last image LU actually produced this session.
-      let resolved: ResolvedInputImage
-      try {
-        resolved = await resolveInputImage(args.inputImage)
-      } catch (e) {
-        if (_lastImageFilename) {
-          log.warn('vram_handoff.i2v_input_fallback', { bad: String(args.inputImage), fallback: _lastImageFilename })
-          resolved = await resolveInputImage(_lastImageFilename)
-        } else {
-          throw e
-        }
-      }
+      // Resolve the source still. A name that is not there fails with the
+      // reason; the executor adds the pictures of this chat (A13).
+      const resolved = await resolveInputImage(args.inputImage)
       const inputImage = resolved.name
       // SVD-XT genuinely caps ~25 frames. FramePack PACKS long video, so its real
       // ceiling comes from getModelCapabilities (request-driven — 2026-06-04:
@@ -1565,7 +1708,9 @@ async function generateVideo(
     const tun = resolveTunables(args, caps, { steps: defaults.steps, cfg: defaults.cfg, sampler: defaults.sampler, scheduler: defaults.scheduler })
     if (tun.reject) return `Cannot generate: ${tun.reject}`
     const av = args as Record<string, unknown>
-    const snapped = snapToVideoGrid(clampInt(av.width, defaults.width, 64, 2048), clampInt(av.height, defaults.height, 64, 2048))
+    const tRatio = parseAspectRatio(av.aspectRatio)
+    const tBase = tRatio != null ? aspectFrame(tRatio, defaults.width, defaults.height) : { width: defaults.width, height: defaults.height }
+    const snapped = snapToVideoGrid(clampInt(av.width, tBase.width, 64, 2048), clampInt(av.height, tBase.height, 64, 2048))
     const seed = (typeof av.seed === 'number' && Number.isFinite(av.seed)) ? Math.floor(av.seed) : -1
 
     const workflow = await buildTxt2VidWorkflow(
@@ -1615,7 +1760,7 @@ export async function cpuRenderFacts(): Promise<CpuRenderFacts | null> {
     // GPU path to a user who had picked Force CPU himself. Same reply, same
     // normaliser the Create tab's banner uses, so an unknown or absent value
     // reads as 'auto' and can never claim a press that never happened.
-    _cpuRenderFacts = { startedCpu: s.startedCpu === true, mode: asComfyGpuMode(s.mode), hasAmd: s.hasAmd === true, isWindows: isWindows() }
+    _cpuRenderFacts = { startedCpu: s.startedCpu === true, mode: asComfyGpuMode(s.mode), hasAmd: s.hasAmd === true, isWindows: isWindows(), amdRocmServed: (s as { amdRocmServed?: boolean | null }).amdRocmServed === true }
     return _cpuRenderFacts
   } catch {
     return null
@@ -1771,7 +1916,7 @@ async function pollAndExtract(promptId: string, prompt: string, kindLabel: strin
         if (comfyMisses >= 2) {
           const elapsedMs = Date.now() - startedAt
           log.warn('vram_handoff.comfy_died_mid_render', { promptId, elapsedMs })
-          return `${kindLabel} generation failed: ComfyUI stopped responding after ${Math.round(elapsedMs / 1000)}s, so the render cannot finish. Start ComfyUI from the Create tab and try again.`
+          return comfyDiedNotice(kindLabel, elapsedMs, await comfyCrash())
         }
       }
       const projected = pace.projectedTotalMs()
@@ -1801,6 +1946,40 @@ async function pollAndExtract(promptId: string, prompt: string, kindLabel: strin
 }
 
 // ── Small helpers ─────────────────────────────────────────────────
+
+/** Whether LU's ComfyUI process is gone, and the line it died with: the
+ *  last fatal or error line of its output (comfyui_last_output). Null when
+ *  that cannot be asked (web build, a ComfyUI the user started himself). */
+async function comfyCrash(): Promise<{ exited: boolean; line: string | null } | null> {
+  try {
+    const out = await backendCall<{ exited?: boolean; lines?: unknown }>('comfyui_last_output')
+    const lines = Array.isArray(out?.lines) ? out.lines.filter((l): l is string => typeof l === 'string') : []
+    // eslint-disable-next-line no-control-regex
+    const clean = lines.map((l) => l.replace(/\x1b\[[0-9;]*m/g, '').trim()).filter(Boolean)
+    const line = [...clean].reverse().find((l) => /fatal|exception|error|out of memory|killed|segmentation/i.test(l) && !/^File "/.test(l)) ?? null
+    return { exited: out?.exited === true, line: line ? line.slice(0, 200) : null }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The tool result when ComfyUI went away mid-render (A13). The box run of
+ * 22.10.2026 had ComfyUI crash on every render ("Windows fatal exception:
+ * access violation"), and the old line only said it "stopped responding",
+ * so model and user retried a render that could never work. When the process
+ * is known to have ended, it says so, with the line it ended on.
+ */
+export function comfyDiedNotice(kindLabel: string, elapsedMs: number, crash: { exited: boolean; line: string | null } | null): string {
+  const secs = Math.round(elapsedMs / 1000)
+  if (crash?.exited && crash.line) {
+    return `${kindLabel} generation failed: ComfyUI crashed after ${secs}s while rendering. Its last error line: "${crash.line}". This is a fault in ComfyUI on this computer, so the same render will crash again: do not retry it. The user can restart ComfyUI from the Create tab, and should look at its log there if it keeps crashing.`
+  }
+  if (crash?.exited) {
+    return `${kindLabel} generation failed: ComfyUI ended after ${secs}s while rendering, so the render cannot finish. Do not retry at once: the user can start ComfyUI again from the Create tab, and if it ends again, its log there says why.`
+  }
+  return `${kindLabel} generation failed: ComfyUI stopped responding after ${secs}s, so the render cannot finish. Start ComfyUI from the Create tab and try again.`
+}
 
 /**
  * Map a known-cryptic ComfyUI node error to an actionable hint (C-fix pattern).
@@ -1884,6 +2063,13 @@ export function comfyErrorHint(
 
 function label(kind: 'image' | 'video'): string {
   return kind === 'video' ? 'Video' : 'Image'
+}
+
+/** Names in ComfyUI's input folder, as a caller hands them over: plain file
+ *  names only, never a path. */
+function stagedNames(v: unknown): string[] {
+  const list = Array.isArray(v) ? v : []
+  return list.filter((x): x is string => typeof x === 'string' && /^[\w.-]+$/.test(x)).slice(0, 9)
 }
 
 function clampInt(v: unknown, fallback: number, min: number, max: number): number {
@@ -2049,19 +2235,56 @@ interface ResolvedInputImage {
   height: number
 }
 
-async function resolveInputImage(ref: string): Promise<ResolvedInputImage> {
+/** The file a ComfyUI /view address names, in any of its forms: absolute,
+ *  `/view?…` or the dev proxy's `/comfyui/view?…`. Null for anything else. */
+export function comfyViewRef(ref: string): { filename: string; subfolder: string; type: string } | null {
+  const at = ref.search(/\/view\?/i)
+  if (at < 0) return null
+  const q = new URLSearchParams(ref.slice(ref.indexOf('?', at) + 1))
+  const filename = q.get('filename')
+  if (!filename) return null
+  return { filename, subfolder: q.get('subfolder') ?? '', type: q.get('type') || 'output' }
+}
+
+/** A clip, by its file name: LoadImage reads its first frame or refuses it
+ *  with a raw PIL error, neither of which is what the model asked for. */
+export const VIDEO_FILE_RE = /\.(mp4|webm|mov|mkv|avi|m4v|gif)$/i
+
+export async function resolveInputImage(ref: string): Promise<ResolvedInputImage> {
   let url: string
   let name: string
-  if (/^https?:\/\//i.test(ref)) {
+  // A13: a /view address is read by its file, subfolder and folder type, and
+  // asked of the ComfyUI configured NOW. Before, only an absolute address
+  // was taken as one; `/comfyui/view?…` lost its subfolder to a basename
+  // lookup in the output root, and an old host:port could never answer.
+  const view = comfyViewRef(ref)
+  if (view) {
+    name = view.filename
+    url = getImageUrl(view.filename, view.subfolder, view.type)
+  } else if (/^https?:\/\//i.test(ref)) {
     url = ref
-    const m = ref.match(/[?&]filename=([^&]+)/)
-    name = m ? decodeURIComponent(m[1]) : 'lu_input.png'
+    name = 'lu_input.png'
   } else {
     name = ref.replace(/^.*[\\/]/, '')
     url = getImageUrl(name, '', 'output')
   }
+  if (VIDEO_FILE_RE.test(name)) {
+    throw new Error(`"${name}" is a video clip, and inputImage takes a still image. Pass a picture (a generated image or "attachment N"); continuing a clip is not something this tool does.`)
+  }
   const resp = await fetch(url)
-  if (!resp.ok) throw new Error(`could not read input image "${ref}" (HTTP ${resp.status})`)
+  // A12 (20.10.2026): a bare name that is not in the output folder may
+  // already sit in ComfyUI's input folder, where a chat attachment is staged
+  // (builtin-tools, stageChatAttachment) and where a user puts a picture by
+  // hand. LoadImage reads from there, so it needs no second upload.
+  if (resp.status === 404 && (view || !/^https?:\/\//i.test(ref))) {
+    const fromInput = await fetch(getImageUrl(name, '', 'input'))
+    if (fromInput.ok) {
+      const blob = await fromInput.blob()
+      if (blob && blob.size > 0) return { name, ...(await probeSize(blob)) }
+    }
+    throw new Error(`could not find input image "${ref}": there is no file of that name in ComfyUI's output or input folder. A picture the user attached in the chat is passed as "attachment 1" (its number in the chat), not by a filename.`)
+  }
+  if (!resp.ok) throw new Error(`could not read input image "${name}": ComfyUI answered HTTP ${resp.status}.`)
   const blob = await resp.blob()
   if (!blob || blob.size === 0) {
     throw new Error(`could not read input image "${ref}", ComfyUI returned an empty file`)
@@ -2070,17 +2293,21 @@ async function resolveInputImage(ref: string): Promise<ResolvedInputImage> {
   // aspect ratio (2026-06-11: a portrait still forced into 768×448
   // landscape no longer resembled the source). Best-effort — a probe failure
   // just yields 0×0 and the caller falls back to a sane default.
-  let width = 0
-  let height = 0
-  try {
-    const bmp = await createImageBitmap(blob)
-    width = bmp.width
-    height = bmp.height
-    bmp.close()
-  } catch { /* dimensions unknown → caller uses defaults */ }
+  const size = await probeSize(blob)
   const file = new File([blob], name, { type: blob.type || 'image/png' })
   const uploaded = await uploadImage(file)
-  return { name: uploaded, width, height }
+  return { name: uploaded, ...size }
+}
+
+async function probeSize(blob: Blob): Promise<{ width: number; height: number }> {
+  try {
+    const bmp = await createImageBitmap(blob)
+    const size = { width: bmp.width, height: bmp.height }
+    bmp.close()
+    return size
+  } catch {
+    return { width: 0, height: 0 } // dimensions unknown → caller uses defaults
+  }
 }
 
 /**
@@ -2166,22 +2393,33 @@ export function resolveI2VResolution(
   return { width: snap(w), height: snap(h) }
 }
 
+/** The render budget of the chat tools, from the same setting and with the
+ *  same defaults as the Create tab and the tool call's own cap (A13). It was
+ *  5 and 10 minutes here while Settings showed 20 and 60, so a video the
+ *  description promised an hour got ten. */
 function getImageTimeoutMs(): number {
-  // ~5 min default per spec; respect the user's imageGenTimeoutMinutes if set.
   try {
-    const mins = readSettingNumber('imageGenTimeoutMinutes')
-    if (mins && mins > 0) return mins * 60_000
-  } catch { /* ignore */ }
-  return 5 * 60_000
+    return renderStallLimitMs('image', useSettingsStore.getState().settings)
+  } catch {
+    return renderStallLimitMs('image', {})
+  }
 }
 
 function getVideoTimeoutMs(): number {
-  // ~10 min default per spec; respect videoGenTimeoutMinutes if set.
   try {
-    const mins = readSettingNumber('videoGenTimeoutMinutes')
-    if (mins && mins > 0) return mins * 60_000
-  } catch { /* ignore */ }
-  return 10 * 60_000
+    return renderStallLimitMs('video', useSettingsStore.getState().settings)
+  } catch {
+    return renderStallLimitMs('video', {})
+  }
+}
+
+/** Chat and ComfyUI are pinned to two different cards (lib/gpu-roles). */
+function chatAndComfyApart(): boolean {
+  try {
+    return gpuRolesSeparate(useSettingsStore.getState().settings.gpuRoles)
+  } catch {
+    return false
+  }
 }
 
 function getExclusiveVramMode(): ExclusiveVramMode {
@@ -2190,15 +2428,6 @@ function getExclusiveVramMode(): ExclusiveVramMode {
     if (m === 'auto' || m === 'always' || m === 'never') return m
   } catch { /* store not available */ }
   return 'auto'
-}
-
-function readSettingNumber(key: 'imageGenTimeoutMinutes' | 'videoGenTimeoutMinutes'): number | null {
-  try {
-    const v = useSettingsStore.getState().settings[key]
-    return typeof v === 'number' ? v : null
-  } catch {
-    return null
-  }
 }
 
 // ..................................................................
@@ -2339,6 +2568,21 @@ async function evictBody(): Promise<RenderEviction> {
   }
 
   const result: RenderEviction = { ...EMPTY_EVICTION }
+
+  // Two cards, one per service (3.0.8, A2): what LU starts for the chat sits
+  // on another card than ComfyUI, so only LM Studio, whose card LU cannot
+  // choose, still has to make room.
+  if (chatAndComfyApart()) {
+    try {
+      const lms = (await detectLmsTextModel(getActiveAgentModel())) ?? (await detectAnyLoadedLmsModel())
+      if (lms) {
+        result.lms = lms
+        await backendCall('lmstudio_unload_model', { model: '--all' }).catch(() => {})
+      }
+    } catch { /* LM Studio absent */ }
+    log.info('render_juggle.separate_gpus', { lms: result.lms?.id ?? null })
+    return inherited ? mergeEvictions(inherited, result) : result
+  }
 
   // Capture BEFORE the kill so the restore list is honest.
   if (isOllamaLocal()) {

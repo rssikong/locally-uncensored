@@ -21,6 +21,8 @@
  * down. The first question, `isLocalTransportFailure`, is the same for both.
  */
 
+import { platformText } from './platform-text'
+
 /** The shapes a refused or broken local connection arrives in. */
 const TRANSPORT_RE =
   /error sending request|connection refused|failed to fetch|ECONNREFUSED|tcp connect|proxy_localhost/i
@@ -74,7 +76,7 @@ export function hostOf(baseUrl: string): string {
  * named are the three that actually happen, in the order they happen.
  */
 export function localBackendUnreachableMessage(name: string, baseUrl: string): string {
-  return `${name} is not answering on ${hostOf(baseUrl)}. It is either not running, still starting up, or listening on a different address. Start it and send again, or pick a different backend in Settings, AI Backends.`
+  return platformText('localBackendUnreachable', { name, host: hostOf(baseUrl) })
 }
 
 /**
@@ -89,5 +91,5 @@ export function localBackendUnreachableMessage(name: string, baseUrl: string): s
  * run would be nonsense.
  */
 export function remoteBackendUnreachableMessage(name: string, baseUrl: string): string {
-  return `${name} is not answering on ${hostOf(baseUrl)}. The request never reached it, so the address may be wrong or the connection may be down. Check the base URL in Settings, AI Backends, and check your network, then send again.`
+  return platformText('remoteBackendUnreachable', { name, host: hostOf(baseUrl) })
 }

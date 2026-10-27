@@ -1,0 +1,360 @@
+{
+ "name": "/settings",
+ "art": "seite",
+ "quelle": "integ-306",
+ "route": "/settings",
+ "strang": "settings",
+ "code": "E1",
+ "lage": {
+  "route": "/settings",
+  "screen": "m-settings-screen",
+  "blaetter": [],
+  "dialog": [],
+  "reiter": "settings",
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    791
+   ]
+  },
+  {
+   "id": "m-settings-screen",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    791
+   ]
+  },
+  {
+   "id": "m-settings-account",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Sign in to LU Cloud",
+   "state": "signed-out",
+   "el": "E1.1",
+   "box": [
+    358,
+    112
+   ]
+  },
+  {
+   "id": "m-settings-account-title",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    254,
+    23
+   ]
+  },
+  {
+   "id": "m-settings-theme",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Appearance System",
+   "el": "E1.2",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-chat",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Chat defaults Temperature 0.7",
+   "el": "E1.3",
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-settings-personas",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Personas Off",
+   "el": "E1.4",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-memory",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Memory",
+   "el": "E1.5",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-voice",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Voice Off",
+   "el": "E1.6",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-agent",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Agent and permissions",
+   "el": "E1.7",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-search",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Web search",
+   "el": "E1.8",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-workflows",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Workflows",
+   "el": "E1.9",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-engine",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "On device engine",
+   "el": "E1.10",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-providers",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Providers",
+   "el": "E1.11",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-remote",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Remote desktop Not connected",
+   "el": "E1.12",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-storage",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Storage and downloads",
+   "el": "E1.13",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-data",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Backup and import",
+   "el": "E1.14",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-privacy",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Privacy",
+   "el": "E1.15",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-content-policy",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Content policy",
+   "el": "E1.16",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-troubleshooting",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Troubleshooting",
+   "el": "E1.17",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-about",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "About LU 3.0.7",
+   "el": "E1.18",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-nav",
+   "tag": "nav",
+   "rolle": "tablist",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    53
+   ]
+  },
+  {
+   "id": "m-nav-chat",
+   "tag": "button",
+   "rolle": "tab",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Chat",
+   "el": "G1.1",
+   "box": [
+    98,
+    52
+   ]
+  },
+  {
+   "id": "m-nav-create",
+   "tag": "button",
+   "rolle": "tab",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Create",
+   "el": "G1.2",
+   "box": [
+    98,
+    52
+   ]
+  },
+  {
+   "id": "m-nav-models",
+   "tag": "button",
+   "rolle": "tab",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Models",
+   "el": "G1.3",
+   "box": [
+    98,
+    52
+   ]
+  },
+  {
+   "id": "m-nav-settings",
+   "tag": "button",
+   "rolle": "tab",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Settings",
+   "el": "G1.4",
+   "box": [
+    98,
+    52
+   ]
+  }
+ ]
+}

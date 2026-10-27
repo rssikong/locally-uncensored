@@ -24,7 +24,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { safeJSONStorage } from '../lib/storage-quota'
 import { backendCall } from '../api/backend'
-import { LOCAL_API_DEFAULT_PORT, kannStarten, parseCorsOrigins } from '../lib/local-api'
+import { LOCAL_API_DEFAULT_PORT, kannStarten, parseCorsOrigins, sollBeimStartStarten } from '../lib/local-api'
 
 interface LocalApiState {
   port: number
@@ -37,6 +37,8 @@ interface LocalApiState {
    * was der Server bekommt.
    */
   corsOrigins: string[]
+  /** Beim Start von LU von selbst starten (`sollBeimStartStarten`). Aus ab Werk. */
+  mitLuStarten: boolean
   /** Nur zur Laufzeit. Kommt aus `local_api_status`, nie aus dem Speicher. */
   laeuft: boolean
   adresse: string | null
@@ -45,6 +47,7 @@ interface LocalApiState {
   setPort: (p: number) => void
   setLan: (v: boolean) => void
   setCors: (text: string) => void
+  setMitLuStarten: (v: boolean) => void
   neuesToken: () => Promise<void>
   starten: () => Promise<void>
   stoppen: () => Promise<void>
@@ -58,6 +61,7 @@ export const useLocalApiStore = create<LocalApiState>()(
       lan: false,
       token: '',
       corsOrigins: [],
+      mitLuStarten: false,
       laeuft: false,
       adresse: null,
       fehler: null,
@@ -65,6 +69,7 @@ export const useLocalApiStore = create<LocalApiState>()(
       setPort: (p) => set({ port: p }),
       setLan: (v) => set({ lan: v }),
       setCors: (text) => set({ corsOrigins: parseCorsOrigins(text) }),
+      setMitLuStarten: (v) => set({ mitLuStarten: v }),
 
       neuesToken: async () => {
         try {
@@ -113,9 +118,21 @@ export const useLocalApiStore = create<LocalApiState>()(
       // QuotaExceededError bis in den Aufrufer — und die Einstellung sperrte
       // sich zu, ohne zu sagen warum.
       storage: safeJSONStorage(),
-      // Genau die vier Einstellungen. `laeuft`, `adresse` und `fehler` sind
+      // Genau die Einstellungen. `laeuft`, `adresse` und `fehler` sind
       // Laufzeit und gehoeren nicht in die Datei — siehe Kopfkommentar.
-      partialize: (s) => ({ port: s.port, lan: s.lan, token: s.token, corsOrigins: s.corsOrigins }),
+      partialize: (s) => ({ port: s.port, lan: s.lan, token: s.token, corsOrigins: s.corsOrigins, mitLuStarten: s.mitLuStarten }),
     },
   ),
 )
+
+/**
+ * Beim Start der App einmal gerufen (App.tsx). Fragt zuerst Rust, ob schon ein
+ * Server laeuft: ein neu geladenes Fenster in derselben Sitzung findet den
+ * alten noch vor und soll keinen zweiten auf denselben Port setzen.
+ */
+export async function startLocalApiAtLaunch(): Promise<void> {
+  const store = useLocalApiStore.getState()
+  if (!store.mitLuStarten) return
+  await store.auffrischen()
+  if (sollBeimStartStarten(useLocalApiStore.getState())) await useLocalApiStore.getState().starten()
+}

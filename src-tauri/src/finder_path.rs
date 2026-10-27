@@ -20,7 +20,7 @@
 //! Windows has no such split and Linux desktop sessions hand the session PATH
 //! to their apps, so both keep exactly what they had.
 
-#[cfg(any(target_os = "macos", all(test, unix)))]
+#[cfg(unix)]
 use std::path::Path;
 #[cfg(not(target_os = "windows"))]
 use std::path::PathBuf;
@@ -80,9 +80,9 @@ pub fn resolve_tool(name: &str, extra: &[PathBuf]) -> Option<PathBuf> {
 /// The markers the PATH is printed between. A profile may print anything it
 /// likes before or after (a greeting, a version manager's banner), so the
 /// value is cut out and never taken as "all of stdout".
-#[cfg(any(target_os = "macos", all(test, unix)))]
+#[cfg(unix)]
 const PATH_START: &str = "__LU_PATH_START__";
-#[cfg(any(target_os = "macos", all(test, unix)))]
+#[cfg(unix)]
 const PATH_END: &str = "__LU_PATH_END__";
 
 /// How long the login shell gets. A healthy profile answers in well under a
@@ -93,7 +93,7 @@ const PATH_END: &str = "__LU_PATH_END__";
 pub const LOGIN_PATH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 
 /// The PATH between the markers, or `None` when the shell printed none.
-#[cfg(any(target_os = "macos", all(test, unix)))]
+#[cfg(unix)]
 fn parse_marked_path(stdout: &str) -> Option<String> {
     let start = stdout.rfind(PATH_START)? + PATH_START.len();
     let len = stdout[start..].find(PATH_END)?;
@@ -106,7 +106,7 @@ fn parse_marked_path(stdout: &str) -> Option<String> {
 /// list, nushell has no `$PATH` at all) is replaced by zsh, the shell every
 /// Mac since 10.15 ships, which still reads `/etc/zprofile` and with it
 /// `path_helper` and the Homebrew line most installs put into `~/.zprofile`.
-#[cfg(any(target_os = "macos", all(test, unix)))]
+#[cfg(unix)]
 fn login_shell_for(shell_env: Option<&str>) -> PathBuf {
     const POSIX_LIKE: [&str; 5] = ["zsh", "bash", "sh", "dash", "ksh"];
     shell_env
@@ -130,7 +130,7 @@ fn login_shell_for(shell_env: Option<&str>) -> PathBuf {
 /// `read`, the things that hang without a terminal. Standard input is closed
 /// for the same reason. A PATH that is only set in `~/.zshrc` is therefore
 /// not seen; the fixed directories cover the common part of that.
-#[cfg(any(target_os = "macos", all(test, unix)))]
+#[cfg(unix)]
 fn read_login_path(shell: &Path, max: std::time::Duration) -> Option<String> {
     let mut cmd = crate::process_util::foreign_system_command(shell);
     cmd.arg("-l")
@@ -199,6 +199,25 @@ pub fn child_path() -> &'static std::ffi::OsStr {
             |p| p.is_dir(),
         )
     })
+}
+
+/// The PATH a Linux user's login shell has, asked fresh, or None.
+///
+/// A Linux app started from the menu gets the desktop session's PATH, which
+/// holds nothing a shell profile adds. Only asked when a program the app
+/// needs (Node for REA) is not on its own PATH, so it is not cached: a Node
+/// installed while the app runs is found at the next switch.
+#[cfg(any(all(unix, not(target_os = "macos")), all(test, unix)))]
+pub fn linux_login_path() -> Option<String> {
+    let shell = std::env::var("SHELL").ok();
+    let shell = shell
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(|s| login_shell_for(Some(s)))
+        .filter(|p| p.as_os_str() != "/bin/zsh" || p.exists())
+        .unwrap_or_else(|| PathBuf::from("/bin/bash"));
+    let shell = if shell.exists() { shell } else { PathBuf::from("/bin/sh") };
+    read_login_path(&shell, std::time::Duration::from_secs(3))
 }
 
 #[cfg(all(test, unix))]
@@ -293,6 +312,14 @@ mod tests {
     }
 
     /// Fund 7: the agent's shell had the Finder PATH and nothing of Homebrew.
+    #[test]
+    fn the_linux_login_path_comes_back_from_the_users_shell() {
+        // Built for Linux; the same code runs here against this machine's
+        // shell, which is enough to see it asks with -l -c and parses.
+        let path = linux_login_path().expect("a login PATH");
+        assert!(path.split(':').any(|p| p == "/usr/bin"), "{path}");
+    }
+
     #[test]
     fn the_child_path_carries_the_login_shell_first_and_loses_nothing() {
         let merged = merge_path(

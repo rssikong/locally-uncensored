@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Everything the native layer needs is declared here and merged into
+         the app, so the app's own manifest stays as short as it is.
+
+         Model downloads run in a foreground service: Android stops network
+         work of an app that is not visible, and a model takes minutes to
+         hours. The service shows a notification with the progress, which
+         from Android 13 needs the user's consent (asked at the first
+         download, the download runs without it). The wake lock keeps the
+         processor awake while bytes are arriving with the screen off. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- Reading aloud: from Android 11 an app only sees the speech engine of
+         the system when it says that it looks for one. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
+
+    <application>
+        <service
+            android:name="com.purpledoubled.lunative.DownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <!-- A17: keeps the app alive while it waits for an answer, a render
+             or an approval of the paired computer. -->
+        <service
+            android:name="com.purpledoubled.lunative.RemoteWatchService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <!-- Files handed to the share sheet. Only the plugin's own temp
+             folder is reachable, and only for the app that the user picks. -->
+        <provider
+            android:name="com.purpledoubled.lunative.LuNativeFileProvider"
+            android:authorities="${applicationId}.lunative.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/lu_native_file_paths" />
+        </provider>
+    </application>
+</manifest>

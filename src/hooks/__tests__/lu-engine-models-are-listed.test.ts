@@ -3,7 +3,7 @@
  *
  * A14 (2.6.8), the owner, measured on his Mac: Ollama is the chat backend, the LU
  * Engine folder is ~/lu-e2e-models and holds Qwen2.5-0.5B-Instruct-Q8_0.gguf,
- * and the model appears nowhere in the app. Model Storage says in writing that
+ * and the model appears nowhere in the app. Storage says in writing that
  * the folder is read; useModels asked `list_bundled_models` only while the LU
  * Engine held the chat slot, so the promise was true about the disk and false
  * about the screen.

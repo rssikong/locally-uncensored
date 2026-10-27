@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  LU Mobile, iOS: Datenschutz-Manifest. Liegt im Ordner des App-Ziels und wird
+  als Ressource ins Paket kopiert.
+
+  Erster Abgleich am 08.10.2026 gegen den unsignierten Geraete-Bau
+  (aarch64-apple-ios, Release), mit scripts/mobile/ios/pruefe-geraete-paket.sh.
+  Damals waren SystemBootTime und UserDefaults ohne Fund im Programm erklaert.
+  Seit dem Plugin lu-native benutzt die App alle vier erklaerten Kategorien
+  selbst (Stand 14.10.2026, Runde 28):
+    FileTimestamp   Rust std (fs::metadata), Modell- und Chatdateien
+    DiskSpace       src-tauri/src/disk.rs (statvfs) vor jedem Download
+    SystemBootTime  ContentGuard.swift (ProcessInfo.systemUptime)
+    UserDefaults    StartTheme.swift, Downloads.swift, Secrets.swift
+  Der Abgleich am naechsten Paket wiederholt die Pruefung am Programm.
+  Offen bleibt der Abgleich der erhobenen Daten mit App Store Connect.
+-->
+<plist version="1.0">
+<dict>
+    <!-- Kein Tracking im Sinne von Apple: keine Werbe-ID, keine Weitergabe an Datenhaendler. -->
+    <key>NSPrivacyTracking</key>
+    <false/>
+    <key>NSPrivacyTrackingDomains</key>
+    <array/>
+
+    <key>NSPrivacyAccessedAPITypes</key>
+    <array>
+        <!-- Zeitstempel von Dateien: Rust std (fs::metadata ruft stat), Modell- und Chatdateien im Container.
+             C617.1 = Dateien im eigenen Container. 3B52.1 = Dateien, die der Nutzer ueber die Auswahl freigibt. -->
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <string>C617.1</string>
+                <string>3B52.1</string>
+            </array>
+        </dict>
+        <!-- Freier Speicher: src-tauri/src/disk.rs ruft statvfs vor jedem Modell-Download.
+             E174.1 = pruefen, ob genug Platz zum Schreiben ist. 85F4.1 = dem Nutzer anzeigen. -->
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryDiskSpace</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <string>E174.1</string>
+                <string>85F4.1</string>
+            </array>
+        </dict>
+        <!-- Systemlaufzeit: ContentGuard.swift liest ProcessInfo.systemUptime und misst
+             damit Zeitabstaende innerhalb der App (Rust misst ueber clock_gettime, das
+             ist keine Required-Reason-API). 35F9.1 = Zeitabstaende innerhalb der App messen. -->
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategorySystemBootTime</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <string>35F9.1</string>
+            </array>
+        </dict>
+        <!-- UserDefaults: das Plugin lu-native legt dort eigene Einstellungen der App ab
+             (StartTheme.swift das Startbild, Downloads.swift die WLAN-Regel, Secrets.swift
+             eine Markierung fuer den Schluesselbund). CA92.1 = nur eigene Daten der App. -->
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <string>CA92.1</string>
+            </array>
+        </dict>
+    </array>
+
+    <!-- Erhobene Daten. Muss zu den Angaben in App Store Connect passen (STORE-VORBEREITUNG.md). -->
+    <key>NSPrivacyCollectedDataTypes</key>
+    <array>
+        <!-- Konto bei LU Cloud -->
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypeEmailAddress</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <true/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+            </array>
+        </dict>
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypeUserID</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <true/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+            </array>
+        </dict>
+        <!-- Prompts, Dateien und Erinnerungen, die im Cloud-Modus an LU Cloud gehen (mit der Sitzung
+             des Kontos, also verknuepft). Eine Inhaltsmeldung (src/mobile/policy/report.ts) traegt
+             einen Ausschnitt ohne Kontobezug. Erklaert ist der verknuepfte Fall, er ist der strengere. -->
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypeOtherUserContent</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <true/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+            </array>
+        </dict>
+        <!-- Bilder und Videos als Quelle fuer Cloud-Auftraege -->
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypePhotosorVideos</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <true/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+            </array>
+        </dict>
+        <!-- Sprachaufnahmen fuer Diktat (Cloud-Transkription) -->
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypeAudioData</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <true/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+            </array>
+        </dict>
+        <!-- Zaehler fuer den Cloud-Schalter. Das Handy sendet nur den anonymen Tageszaehler
+             (src/api/cloud/switch-counter.ts, funnel_ping in src-tauri/src/commands/funnel.rs):
+             Ereignis, Plattform, App-Version, ohne Sitzung, auch wenn jemand angemeldet ist.
+             Den Zaehler je Konto (POST /api/funnel/switch) sendet nur der Desktop. Deshalb
+             nicht verknuepft. Der Waechter src/lib/__tests__/ios-privacy-manifest.test.ts
+             haelt diese Angabe und den sendenden Code zusammen. -->
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypeProductInteraction</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAnalytics</string>
+            </array>
+        </dict>
+    </array>
+</dict>
+</plist>

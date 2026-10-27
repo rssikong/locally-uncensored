@@ -6,6 +6,7 @@ import { ICON_STROKE_PX } from './components/ui/icon-size'
 import { mountFatalError } from './lib/fatal-error'
 import { installMcpShutdown } from './api/mcp/shutdown'
 import { installBackgroundShutdown } from './lib/background-shutdown'
+import { isMobileHost } from './lib/mobile-host'
 import { applyDocumentLocale } from './lib/i18n'
 
 // i18n, before anything renders: `index.html` ships `lang="en"` so the first
@@ -17,6 +18,10 @@ applyDocumentLocale()
 
 const rootEl = document.getElementById('root')!
 
+// A phone or tablet gets the mobile shell (src/mobile), everything else the
+// desktop shell. Decided once; see lib/mobile-host.ts.
+const mobileHost = isMobileHost()
+
 // T-53: external MCP servers are child processes this page owns, and nothing
 // took them down when the page went away — a reload orphaned them for the rest
 // of the app's life. Wired here, not in a component effect: the listeners
@@ -24,13 +29,17 @@ const rootEl = document.getElementById('root')!
 // anything can connect a server. Cheap by construction — `external-client`
 // imports the shell plugin lazily inside connect(), so this adds two listeners
 // and no Tauri runtime to the boot chunk.
-installMcpShutdown()
+// Not on a phone: there are no MCP child processes there, and the mobile
+// shell has its own lifecycle (src/mobile/platform/lifecycle.ts).
+if (!mobileHost) installMcpShutdown()
 
 // B1 Nachbesserung 1 (3.0.1): "Stop heisst Stop" gilt auch fuer App beenden,
 // Fenster schliessen und Netzabbruch, nicht nur fuer den Stop-Knopf. Wired
 // here for the same reason installMcpShutdown is: the listeners belong to
 // the page's whole lifetime, not to a component mount.
-installBackgroundShutdown()
+// Not on a phone, for the same reason as above: `beforeunload` and the tray
+// event this listens to do not come there.
+if (!mobileHost) installBackgroundShutdown()
 
 // Bug D (surfingbird1010): a throw while a persisted store hydrates from corrupt
 // data (D1 corrupt chat-settings / D2 migrate throw / D5 locked IndexedDB) fires
@@ -45,6 +54,30 @@ installBackgroundShutdown()
  * und steht einmal, in lib/host-window.ts.
  */
 async function treeForThisWindow(): Promise<ReactNode> {
+  // The one way into src/mobile, and the only import of it in the desktop
+  // code. It stands before everything else, so App, AppShell and their
+  // desktop effects (backend probes, second window, shortcuts) never load on
+  // a phone, and the mobile shell never loads on a desktop.
+  //
+  // The first half of the condition is a constant of the build and has to
+  // stand here literally. Only a build that names the phone
+  // (VITE_LU_BUILD_TARGET=mobile: the Android and iOS builds, the dev server
+  // of `npm run dev:mobile`, the Playwright project `mobile`) keeps the
+  // branch. In every other build, and that is every desktop build because
+  // none of them sets the variable, it is `false`, the branch is dead, and
+  // the bundler leaves the whole mobile shell out of the package. Routed
+  // through a named constant from another module the bundler keeps the
+  // import (measured). The same variable is the lock in lib/mobile-host.ts.
+  if (import.meta.env.VITE_LU_BUILD_TARGET === 'mobile' && mobileHost) {
+    const { bootMobile } = await import('./mobile/boot')
+    return bootMobile()
+  }
+  // A developer who asks for the mobile shell on a server that does not carry
+  // it gets told why the desktop loads instead.
+  if (import.meta.env.DEV && import.meta.env.VITE_LU_BUILD_TARGET !== 'mobile' && new URLSearchParams(window.location.search).get('mobile') === '1') {
+    console.warn('[lu] ?mobile=1 needs a server that carries the mobile shell. Start it with: npm run dev:mobile')
+  }
+
   const { hostWindow, awaitOnboardingHandover } = await import('./lib/host-window')
 
   // Das kleine Fenster bekommt den kleinsten Baum, der den Assistenten trägt
@@ -112,4 +145,9 @@ async function boot() {
   )
 }
 
-void boot().catch((err) => mountFatalError(rootEl, err))
+// An Android web view below the floor the app is built for shows its own
+// notice ("Update Android System WebView", public/webview-check.js, which runs
+// before this file). The app does not start under it. Never set on a desktop.
+if (!(window as unknown as { __LU_WEBVIEW_TOO_OLD__?: boolean }).__LU_WEBVIEW_TOO_OLD__) {
+  void boot().catch((err) => mountFatalError(rootEl, err))
+}

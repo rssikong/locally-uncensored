@@ -18,6 +18,7 @@ import { backendCall } from '../api/backend'
 import { idbStorage, hasFailedRead, onIdbWrite } from './idbStorage'
 import { log } from './logger'
 import { isBackupHeld } from './backup-hold'
+import { isMobile } from './device-kind'
 
 /** Every store that is worth carrying across an update or a wiped WebView2
  *  profile. Order is irrelevant, presence is not: a key missing from this list
@@ -36,6 +37,8 @@ export const STORE_KEYS = [
   'locally-uncensored-voice', 'lu-benchmark-store', 'lu-update-checker-v2',
   'rag-store', 'workflow-store', 'lu-cloud-catalog', 'lu-cloud-gate',
   'lu_cloud_notice', 'lu_comfy_notice', 'locally-uncensored-model-health',
+  // 3.0.8: which LU Cloud outage sentence was closed (stores/cloudOutageStore).
+  'lu-cloud-outage',
   'locally-uncensored-agent-goal',
   // Computer control: the switch and the always allowed apps.
   'locally-uncensored-computer',
@@ -60,7 +63,186 @@ export const STORE_KEYS = [
   // verloren, antwortet die API allen bereits eingerichteten Programmen des
   // Nutzers mit 401 — und die Fehlermeldung dort sagt nichts ueber ein Update.
   'lu-local-api',
+  // The phone shell (3.1). Settings that only a phone has and that live in
+  // plain localStorage keys of their own, outside src/stores, so the test
+  // that walks src/stores cannot see them: after a restore the theme, the
+  // small preferences, the list of paired desktops and the two model
+  // switches were back on their defaults. None of them carries a secret (the
+  // Remote token sits in the Keystore or Keychain under its own name and is
+  // not listed, on purpose). A desktop never has these keys, and a key that
+  // holds nothing is left out of the snapshot, so nothing changes there.
+  //   lu-mobile-theme                 System, Dark or Light
+  //   lu-mobile-settings-prefs        counter opt out, system voice, self test
+  //   lu-mobile-remote-desktops       addresses of desktops paired before
+  //   lu-mobile-resume-seen           which cut off answers were already announced
+  //   lu-mobile-download-wifi-only    model settings: ask before mobile data
+  //   lu-mobile-unload-in-background  model settings: free the model in the background
+  'lu-mobile-theme', 'lu-mobile-settings-prefs', 'lu-mobile-remote-desktops',
+  'lu-mobile-resume-seen', 'lu-mobile-download-wifi-only', 'lu-mobile-unload-in-background',
+  // Round 3 (M8). Found missing by the review: the text of the backup says
+  // "chats and settings", and these did not come back.
+  //   lu-mobile-remote            the chats held with a paired desktop, on
+  //                               IndexedDB (see IDB_STORE_KEYS). The session
+  //                               token is NOT in this state, it sits under
+  //                               `lu-mobile-remote-token` or in the Keystore
+  //                               or Keychain (mobile/remote/tokenVault.ts)
+  //   lu-mobile-create-presets    Create settings the user saved under a name
+  //   lu-mobile-character-names   the names given to trained characters
+  //   lu-pending-cloud-jobs       paid cloud jobs that are still running, so
+  //                               their result is fetched after a restore
+  //   lu-cloud-submit-intents     a submit that was sent and not answered yet
+  // Guard: src/lib/__tests__/store-backup-covers-mobile.test.ts
+  'lu-mobile-remote', 'lu-mobile-create-presets', 'lu-mobile-character-names',
+  'lu-pending-cloud-jobs', 'lu-cloud-submit-intents',
+  // Round 39 (gap L7, mobile-docs/r39/restore.md). Phone keys that had only
+  // the IndexedDB copy of boot/settings-durable.ts, which does not help when
+  // localStorage is dropped as a whole:
+  //   lu-mobile-thinking-default-v1    the mark that thinking was switched off
+  //                                    once; without it the start switches it
+  //                                    off again over the user's choice
+  //   lu-mobile-report-queue           reports the user was told are saved and
+  //                                    sent later (at most REPORT_QUEUE_MAX,
+  //                                    each field cut, a few dozen KB at most)
+  //   lu-mobile-switched-under-answer  which answers stopped for a model switch
+  //                                    (at most SWITCHED_MAX ids)
+  // Guard: src/mobile/boot/__tests__/local-keys-backup.test.ts
+  'lu-mobile-thinking-default-v1', 'lu-mobile-report-queue', 'lu-mobile-switched-under-answer',
+  // L5, check of package 17 (mobile-docs/r41/funde.md). When the settings were
+  // last written (boot/settings-durable.ts). The start compares it with the
+  // stamp in localStorage when the copy in IndexedDB is gone, and takes the
+  // settings of this backup when they are newer. Listed last, so a snapshot
+  // reads it after the settings it stamps.
+  'lu-mobile-settings-stamp',
 ]
+
+/** The phone keys of STORE_KEYS, for the tests that hold the two lists together. */
+export const MOBILE_STORE_KEYS: readonly string[] = [
+  'lu-mobile-theme', 'lu-mobile-settings-prefs', 'lu-mobile-remote-desktops',
+  'lu-mobile-resume-seen', 'lu-mobile-download-wifi-only', 'lu-mobile-unload-in-background',
+]
+
+// ── No secrets in a phone backup ────────────────────────────────────────
+//
+// On the desktop store_backup.json is a file in the app's own data folder
+// that nothing but the app reads, and it exists to carry the stores across a
+// WebView2 wipe, API token of the local API included (see 'lu-local-api'
+// above). On a phone the same folder is what the system copies off the
+// device: the cloud backup of Android, a transfer to a new phone, an iTunes
+// or Finder backup. That makes the file one that travels, and a key must not
+// travel with it.
+//
+// What would: `lu-providers` keeps a provider key in localStorage, reversed
+// and base64 encoded, whenever the secure storage is missing or a write to it
+// failed (stores/providerStore.ts, partialize). That is obfuscation, not
+// encryption. `chat-settings` holds the Brave and Tavily keys of the web
+// search as plain text. `lu-local-api` holds a token, and an MCP server entry
+// can carry tokens in its environment. So on a phone these four are written
+// into the snapshot WITHOUT those values. A provider whose key was left out
+// keeps its entry and its address; after a restore the key is read from the
+// secure storage again, or the user types it once more.
+//
+// The desktop snapshot is byte for byte what it was.
+
+type Json = null | boolean | number | string | Json[] | { [key: string]: Json }
+
+/** Names of fields that hold a credential. Matched on the whole name, so `maxTokens` or `tokenCount` are not touched. */
+const SECRET_FIELD = /^(api[-_]?key|[a-z0-9]+api[-_]?key|token|[a-z0-9]+token|secret|[a-z0-9]+secret|password|passcode|authorization)$/i
+
+/** Blank every string in a field that is named like a credential, at any depth. Returns whether something changed. */
+function blankSecretFields(node: Json): boolean {
+  if (!node || typeof node !== 'object') return false
+  let changed = false
+  if (Array.isArray(node)) {
+    for (const item of node) if (blankSecretFields(item)) changed = true
+    return changed
+  }
+  for (const [name, value] of Object.entries(node)) {
+    if (typeof value === 'string') {
+      if (value !== '' && SECRET_FIELD.test(name)) {
+        node[name] = ''
+        changed = true
+      }
+    } else if (blankSecretFields(value)) {
+      changed = true
+    }
+  }
+  return changed
+}
+
+/** The environment of an MCP server is free text chosen by the user: every value goes. */
+function blankMcpEnvironments(node: Json): boolean {
+  if (!node || typeof node !== 'object') return false
+  let changed = false
+  if (Array.isArray(node)) {
+    for (const item of node) if (blankMcpEnvironments(item)) changed = true
+    return changed
+  }
+  for (const [name, value] of Object.entries(node)) {
+    if (name === 'env' && value && typeof value === 'object' && !Array.isArray(value)) {
+      for (const key of Object.keys(value)) {
+        if (value[key] !== '') {
+          value[key] = ''
+          changed = true
+        }
+      }
+    } else if (blankMcpEnvironments(value)) {
+      changed = true
+    }
+  }
+  return changed
+}
+
+/** The stores that can hold a credential, and how each one is cleaned. */
+const SECRET_CLEANERS: Record<string, (parsed: Json) => boolean> = {
+  'lu-providers': blankSecretFields,
+  'chat-settings': blankSecretFields,
+  'lu-local-api': blankSecretFields,
+  'locally-uncensored-mcp-servers': (parsed) => {
+    const a = blankSecretFields(parsed)
+    const b = blankMcpEnvironments(parsed)
+    return a || b
+  },
+}
+
+/** Keys of STORE_KEYS whose value is cleaned of credentials before it goes into a phone backup. */
+export const SECRET_BEARING_STORE_KEYS: readonly string[] = Object.keys(SECRET_CLEANERS)
+
+/**
+ * Pure: the value of one store as it may leave the device, credentials
+ * blanked. A store that holds none comes back as the same string, so the
+ * "did anything change" comparison of the snapshot still works on identity.
+ * A value that cannot be parsed is left OUT (null): what cannot be checked
+ * cannot be vouched for, and the Rust side keeps the previous backup of a
+ * key the snapshot does not carry.
+ */
+export function withoutSecrets(key: string, value: string): string | null {
+  const clean = SECRET_CLEANERS[key]
+  if (!clean) return value
+  let parsed: Json
+  try {
+    parsed = JSON.parse(value) as Json
+  } catch {
+    return null
+  }
+  return clean(parsed) ? JSON.stringify(parsed) : value
+}
+
+// The cleaned form is asked for every five seconds; the stores behind it
+// change a few times a day. One remembered answer per key keeps the tick at a
+// string comparison, and keeps the cleaned string the SAME object from tick
+// to tick, which is what differsFromDisk compares.
+const cleanedCache = new Map<string, { raw: string; clean: string | null }>()
+
+/** What goes into the snapshot for this key on this device. Null: leave the key out. */
+function valueForSnapshot(key: string, raw: string | null): string | null {
+  if (!raw) return null
+  if (!isMobile() || !(key in SECRET_CLEANERS)) return raw
+  const known = cleanedCache.get(key)
+  if (known && known.raw === raw) return known.clean
+  const clean = withoutSecrets(key, raw)
+  cleanedCache.set(key, { raw, clean })
+  return clean
+}
 
 /** These persist through idbStorage (IndexedDB) since 2.5.0, because the
  *  5 MB localStorage cap could not hold a real history. The snapshot has to
@@ -68,6 +250,8 @@ export const STORE_KEYS = [
  *  copy, so localStorage.getItem answers nothing. */
 export const IDB_STORE_KEYS = new Set([
   'chat-conversations', 'locally-uncensored-memory', 'staged-changes',
+  // The Remote chats of the phone shell (mobile/remote/remoteClientStore.ts).
+  'lu-mobile-remote',
 ])
 
 /**
@@ -174,9 +358,9 @@ function differsFromDisk(next: Record<string, string>): boolean {
 export async function collectStoreSnapshot(): Promise<Record<string, string>> {
   const snapshot: Record<string, string> = { __ts: new Date().toISOString() }
   for (const key of STORE_KEYS) {
-    const val = IDB_STORE_KEYS.has(key)
+    const val = valueForSnapshot(key, IDB_STORE_KEYS.has(key)
       ? await idbValueForBackup(key)
-      : localStorage.getItem(key)
+      : localStorage.getItem(key))
     if (val) snapshot[key] = val
   }
   return snapshot
@@ -187,12 +371,42 @@ export async function collectStoreSnapshot(): Promise<Record<string, string>> {
 async function collectComparableSnapshot(): Promise<Record<string, string>> {
   const body: Record<string, string> = {}
   for (const key of STORE_KEYS) {
-    const val = IDB_STORE_KEYS.has(key)
+    const val = valueForSnapshot(key, IDB_STORE_KEYS.has(key)
       ? await idbValueForBackup(key)
-      : localStorage.getItem(key)
+      : localStorage.getItem(key))
     if (val) body[key] = val
   }
   return body
+}
+
+// ── When the file was last written ──────────────────────────────────────
+//
+// "Automatic backup: today, 14:02" on the phone used to show the moment the
+// user pressed "Back up now", because nothing else was known. What the line
+// claims is the moment the file was WRITTEN, and that is known exactly here:
+// `backup_stores` resolved. Kept for the running session only. Saving it in a
+// store would change a store, which the next tick would back up, which would
+// change the time again.
+
+let lastWrittenAt: number | null = null
+const writtenListeners = new Set<() => void>()
+
+function noteWritten(): void {
+  lastWrittenAt = Date.now()
+  for (const listener of [...writtenListeners]) {
+    try { listener() } catch { /* a listener must not cost the next backup */ }
+  }
+}
+
+/** When `backup_stores` last confirmed a write in this session, ms since the epoch. Null: not yet. */
+export function lastStoreBackupAt(): number | null {
+  return lastWrittenAt
+}
+
+/** Called after every confirmed write. Returns the unsubscribe. */
+export function onStoreBackupWritten(listener: () => void): () => void {
+  writtenListeners.add(listener)
+  return () => { writtenListeners.delete(listener) }
 }
 
 interface SnapshotWrite {
@@ -210,6 +424,7 @@ function dispatchWrite(job: SnapshotWrite): void {
   activeWrite = job
   const complete = (ok: boolean) => {
     if (ok) lastWritten = job.body
+    if (ok) noteWritten()
     activeWrite = null
     job.resolve(ok)
     const next = pendingWrite
@@ -294,7 +509,7 @@ export function flushSyncStoreBackup(): 'written' | 'unchanged' | 'held-back' {
     // seconds for nothing.
     const body: Record<string, string> = {}
     for (const key of STORE_KEYS) {
-      const val = IDB_STORE_KEYS.has(key) ? (idbMirror[key] ?? null) : localStorage.getItem(key)
+      const val = valueForSnapshot(key, IDB_STORE_KEYS.has(key) ? (idbMirror[key] ?? null) : localStorage.getItem(key))
       if (val) body[key] = val
     }
     if (!differsFromDisk(body)) return 'unchanged'
@@ -302,6 +517,25 @@ export function flushSyncStoreBackup(): 'written' | 'unchanged' | 'held-back' {
     return 'written'
   } catch {
     return 'held-back' // best-effort: the window is going away either way
+  }
+}
+
+/**
+ * Write the backup now and resolve true only when the file on disk holds
+ * `value` under `key` (the phone journal, mobile/lib/store-journal.ts).
+ * False when the backup is held (a store is about to shrink), when the
+ * snapshot carries something else under the key (a newer value took over,
+ * and it is written by its own path), or when the write failed.
+ */
+export async function backupStoresHolding(key: string, value: string): Promise<boolean> {
+  if (isBackupHeld()) return false
+  try {
+    const body = await collectComparableSnapshot()
+    const wanted = valueForSnapshot(key, value)
+    if (wanted === null || body[key] !== wanted) return false
+    return await writeSnapshot(body)
+  } catch {
+    return false
   }
 }
 

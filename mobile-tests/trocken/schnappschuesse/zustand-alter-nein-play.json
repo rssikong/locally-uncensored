@@ -1,0 +1,38 @@
+{
+ "name": "alter-nein-play",
+ "art": "zustand",
+ "quelle": "integ-306",
+ "preset": "play",
+ "lage": {
+  "route": null,
+  "screen": null,
+  "blaetter": [],
+  "dialog": [],
+  "reiter": null,
+  "alter": "blocked"
+ },
+ "kennungen": [
+  {
+   "id": "m-age-gate",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-age-blocked",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    219
+   ]
+  }
+ ]
+}

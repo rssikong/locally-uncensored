@@ -1,0 +1,151 @@
+{
+ "name": "remote-attach",
+ "art": "blatt",
+ "quelle": "integ-306",
+ "blatt": "remote-attach",
+ "strang": "remote",
+ "code": "R4",
+ "lage": {
+  "route": "/dev/routes",
+  "screen": "m-dev-routes-screen",
+  "blaetter": [
+   "remote-attach"
+  ],
+  "dialog": [],
+  "reiter": null,
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back-under",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-page-back",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-overlays",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-sheet-scrim",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "",
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-sheet-remote-attach",
+   "tag": "div",
+   "rolle": "dialog",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    255
+   ]
+  },
+  {
+   "id": "m-sheet-close",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Close",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-remote-attach",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    117
+   ]
+  },
+  {
+   "id": "m-remote-attach-camera",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Take a photo Open a chat with your desktop first.",
+   "risiko": "sensor",
+   "deaktiviert": true,
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-remote-attach-library",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Choose from library Open a chat with your desktop first.",
+   "risiko": "sensor",
+   "deaktiviert": true,
+   "box": [
+    356,
+    57
+   ]
+  }
+ ]
+}

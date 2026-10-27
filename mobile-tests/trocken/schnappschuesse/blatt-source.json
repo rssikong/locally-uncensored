@@ -1,0 +1,179 @@
+{
+ "name": "source",
+ "art": "blatt",
+ "quelle": "integ-306",
+ "blatt": "source",
+ "strang": "create",
+ "code": "K5",
+ "lage": {
+  "route": "/dev/routes",
+  "screen": "m-dev-routes-screen",
+  "blaetter": [
+   "source"
+  ],
+  "dialog": [],
+  "reiter": null,
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back-under",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-page-back",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-overlays",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-sheet-scrim",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "",
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-sheet-source",
+   "tag": "div",
+   "rolle": "dialog",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    415
+   ]
+  },
+  {
+   "id": "m-sheet-close",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Close",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-create-source-take",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Take photo Open the camera",
+   "risiko": "sensor",
+   "el": "K5.1",
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-create-source-library",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Photo library Pick one photo, or up to 50 to run them one after another",
+   "risiko": "sensor",
+   "el": "K5.2",
+   "box": [
+    356,
+    76
+   ]
+  },
+  {
+   "id": "m-create-source-file",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "File Pick from Files",
+   "el": "K5.3",
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-create-source-gallery",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "From gallery Use one of your results",
+   "el": "K5.4",
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-create-source-saved",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Saved characters Photos you saved from your results",
+   "el": "K5.5",
+   "box": [
+    356,
+    57
+   ]
+  }
+ ]
+}

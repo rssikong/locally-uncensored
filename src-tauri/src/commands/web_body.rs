@@ -46,7 +46,7 @@ fn read_capped<R: Read>(mut reader: R, what: &str) -> Result<Vec<u8>, String> {
         // A stream that breaks after it gave real content (a cut connection)
         // still carries the top of the page, and the top is what gets read.
         Err(_) if out.len() >= 1024 => Ok(out),
-        Err(e) => Err(format!("the {what} packing of the page could not be opened ({e})")),
+        Err(e) => Err(format!("the {what} packing of the page could not be opened ({})", crate::os_error::english(&e))),
     }
 }
 
@@ -67,7 +67,7 @@ fn unpack_one(raw: &[u8], coding: &str) -> Result<Vec<u8>, String> {
         "br" => read_capped(brotli::Decompressor::new(raw, 4096), "brotli"),
         "zstd" => match zstd::stream::read::Decoder::new(raw) {
             Ok(decoder) => read_capped(decoder, "zstd"),
-            Err(e) => Err(format!("the zstd packing of the page could not be opened ({e})")),
+            Err(e) => Err(format!("the zstd packing of the page could not be opened ({})", crate::os_error::english(&e))),
         },
         other => Err(format!("the page is packed with \"{other}\", which cannot be opened here")),
     }

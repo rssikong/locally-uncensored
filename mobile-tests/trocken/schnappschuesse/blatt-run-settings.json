@@ -1,0 +1,331 @@
+{
+ "name": "run-settings",
+ "art": "blatt",
+ "quelle": "integ-306",
+ "blatt": "run-settings",
+ "strang": "create",
+ "code": "K4",
+ "lage": {
+  "route": "/dev/routes",
+  "screen": "m-dev-routes-screen",
+  "blaetter": [
+   "run-settings"
+  ],
+  "dialog": [],
+  "reiter": null,
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back-under",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-page-back",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-overlays",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-sheet-scrim",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "",
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-sheet-run-settings",
+   "tag": "div",
+   "rolle": "dialog",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    566
+   ]
+  },
+  {
+   "id": "m-sheet-close",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Close",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-create-aspect",
+   "tag": "div",
+   "rolle": "radiogroup",
+   "sichtbar": true,
+   "bedienbar": false,
+   "el": "K4.1",
+   "box": [
+    390,
+    54
+   ]
+  },
+  {
+   "id": "m-create-aspect-1x1",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "1:1",
+   "box": [
+    88,
+    48
+   ]
+  },
+  {
+   "id": "m-create-aspect-3x4",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "3:4",
+   "box": [
+    95,
+    48
+   ]
+  },
+  {
+   "id": "m-create-aspect-4x3",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "4:3",
+   "box": [
+    95,
+    48
+   ]
+  },
+  {
+   "id": "m-create-aspect-16x9",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "16:9",
+   "box": [
+    101,
+    48
+   ]
+  },
+  {
+   "id": "m-create-quality",
+   "tag": "div",
+   "rolle": "radiogroup",
+   "sichtbar": true,
+   "bedienbar": false,
+   "el": "K4.2",
+   "box": [
+    390,
+    54
+   ]
+  },
+  {
+   "id": "m-create-quality-draft",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Draft",
+   "box": [
+    117,
+    48
+   ]
+  },
+  {
+   "id": "m-create-quality-standard",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Standard",
+   "box": [
+    147,
+    48
+   ]
+  },
+  {
+   "id": "m-create-quality-high",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "High",
+   "box": [
+    115,
+    48
+   ]
+  },
+  {
+   "id": "m-create-count",
+   "tag": "div",
+   "rolle": "radiogroup",
+   "sichtbar": true,
+   "bedienbar": false,
+   "el": "K4.3",
+   "box": [
+    390,
+    54
+   ]
+  },
+  {
+   "id": "m-create-count-1",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "1",
+   "box": [
+    92,
+    48
+   ]
+  },
+  {
+   "id": "m-create-count-2",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "2",
+   "box": [
+    95,
+    48
+   ]
+  },
+  {
+   "id": "m-create-count-3",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "3",
+   "box": [
+    95,
+    48
+   ]
+  },
+  {
+   "id": "m-create-count-4",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "4",
+   "box": [
+    96,
+    48
+   ]
+  },
+  {
+   "id": "m-create-improve",
+   "tag": "button",
+   "rolle": "switch",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Improve my prompt The chat model rewrites your prompt for the picked model befor",
+   "el": "K4.5",
+   "box": [
+    356,
+    76
+   ]
+  },
+  {
+   "id": "m-create-history-open",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Prompt history 0 prompts",
+   "el": "K4.7",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-create-save-style",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Save as prompt style",
+   "el": "K4.9",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-create-settings-price",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "checking",
+   "box": [
+    358,
+    41
+   ]
+  }
+ ]
+}

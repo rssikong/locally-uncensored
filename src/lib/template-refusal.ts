@@ -48,6 +48,15 @@ export const BAD_REQUEST_SENTENCE =
   'Nothing was sent to the model, so nothing was charged. Send the message again, and if it keeps ' +
   'happening, start a new chat or pick another model.'
 
+/** A backend that names the temperature in its refusal (A33): one LU Cloud
+ *  model takes 0 to 1 and answered 1.9 with a bare 400. */
+const TEMPERATURE_MARKERS = /\btemperature\b/i
+
+export const TEMPERATURE_REFUSAL_SENTENCE =
+  'This model does not accept the temperature this chat uses, so nothing was generated and nothing ' +
+  'was charged. Open Sampling next to the model picker and press Reset to default, or set Temperature ' +
+  'to 1.0 or lower.'
+
 /**
  * The English sentence for a refusal that produced no output at all, or null
  * when this error is not one of those. Callers put it in place of the raw
@@ -55,6 +64,7 @@ export const BAD_REQUEST_SENTENCE =
  */
 export function explainSendRefusal(err: unknown): string | null {
   if (isTemplateRefusal(err)) return withDetail(TEMPLATE_REFUSAL_SENTENCE, err)
+  if (httpStatusOf(err) === 400 && TEMPERATURE_MARKERS.test(detailOf(err))) return withDetail(TEMPERATURE_REFUSAL_SENTENCE, err)
   if (httpStatusOf(err) === 400) return withDetail(BAD_REQUEST_SENTENCE, err)
   return null
 }

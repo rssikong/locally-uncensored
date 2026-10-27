@@ -1,4 +1,6 @@
 // MCP-shaped tool definitions and permission types
+import { isMobile } from '../../lib/device-kind'
+import { mobilePermissionDefaults } from '../../lib/mobile-permission-defaults'
 
 export type ToolCategory = 'filesystem' | 'terminal' | 'desktop' | 'web' | 'system' | 'image' | 'video' | 'workflow'
 
@@ -19,6 +21,15 @@ export const DEFAULT_PERMISSIONS: PermissionMap = {
   // old persisted 'blocked' (which was UI-locked, never a user choice) up.
   video: 'confirm',
   workflow: 'confirm',
+}
+
+/**
+ * The defaults a fresh install starts with on THIS device. A desktop gets
+ * DEFAULT_PERMISSIONS, value for value. A phone starts with the categories
+ * blocked whose tools do not exist there (terminal, desktop, image, video).
+ */
+export function defaultPermissionsForDevice(): PermissionMap {
+  return isMobile() ? mobilePermissionDefaults(DEFAULT_PERMISSIONS) : { ...DEFAULT_PERMISSIONS }
 }
 
 // A loose JSON-Schema-ish property shape. Deliberately recursive so tool inputs

@@ -18,6 +18,7 @@
  */
 
 import { OUTSIDE_WORKSPACE } from '../../lib/workspace-refusal'
+import { platformText } from '../../lib/platform-text'
 
 type HintRule = { pattern: RegExp; hint: string }
 
@@ -29,7 +30,7 @@ type HintRule = { pattern: RegExp; hint: string }
  */
 const OUTSIDE_WORKSPACE_HINT: HintRule = {
   pattern: OUTSIDE_WORKSPACE,
-  hint: 'Outside this chat\'s working folder. Ask the user to choose the folder that holds it as the working folder, then try again.',
+  hint: platformText('outsideWorkspaceHint'),
 }
 
 /**
@@ -95,6 +96,9 @@ const TOOL_HINTS: Record<string, HintRule[]> = {
     { pattern: /empty body|empty content/i, hint: 'Page returned empty body. Try a different URL or a web_search snippet instead.' },
   ],
   web_search: [
+    // 3.0.8: every tier failed. The sentence itself says what to do; the
+    // hints below (rate limit, no results) would invite another search.
+    { pattern: /unavailable right now/i, hint: 'Do not search again in this answer. Answer from what you know and say that search was unavailable.' },
     { pattern: /api key|unauthorized|401/i, hint: 'Search provider not configured. Tell the user to set Brave/Tavily key in Settings.' },
     { pattern: /rate limit|429/i, hint: 'Rate limited by provider. Wait or use a different tool.' },
     { pattern: /empty|no results/i, hint: 'No results. Broaden the query or switch to web_fetch with a known URL.' },

@@ -15,6 +15,7 @@ import {
   type DiscoverModel, type DownloadProgress, type ModelBundle, type HfGgufFile, type ImagePartSource, type PlannedDownload,
 } from '../../api/discover'
 import { startPlannedDownload } from '../../api/model-download'
+import { kimiK31CatalogEntries } from '../../api/kimi-k3-catalog'
 import { asOneDownload, downloadSizeGB, gbOf, imagePartFileName, includeImageInputLabel, isImagePartFile } from '../../lib/image-part'
 import { sortByTier, tierGroup } from '../../lib/render/model-tier'
 import { bundlesForTabAndSearch } from '../../lib/discover-bundle-search'
@@ -621,8 +622,19 @@ export function DiscoverModels({ category, search = '', searchSubmitToken = 0 }:
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchSubmitToken])
 
+  // Kimi K3.1 Pro kommt erst in die Liste, wenn es die Gewichte als GGUF auf
+  // HF gibt und die Engine sie oeffnet (api/kimi-k3-catalog.ts). Gecacht,
+  // offline oder bei einem Fehler bleibt die Liste einfach ohne.
+  const [gatedTextModels, setGatedTextModels] = useState<DiscoverModel[]>([])
+  useEffect(() => {
+    if (!isText) return
+    let live = true
+    kimiK31CatalogEntries().then((entries) => { if (live) setGatedTextModels(entries) }).catch(() => {})
+    return () => { live = false }
+  }, [isText])
+
   const uncensoredModels = isText ? forThisPlatform(getUncensoredTextModels(), isMacOS()) : []
-  const mainstreamModels = isText ? forThisPlatform(getMainstreamTextModels(), isMacOS()) : []
+  const mainstreamModels = isText ? forThisPlatform([...getMainstreamTextModels(), ...gatedTextModels], isMacOS()) : []
 
   // Apply the size filter to text models too (Feature 46, GH #46).
   // We use the model's GGUF `sizeGB` as a proxy for VRAM need — Q4 quants run

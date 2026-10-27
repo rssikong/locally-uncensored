@@ -1,0 +1,939 @@
+/* Styles of the strand "chat" (C1, C2, C3, C6, C14). Only tokens, text in
+   rem, spacing in px. They live here until the scaffold takes them into
+   styles/ (wish in mobile-docs/geruest-wuensche/chat.md). */
+
+/* ---------- C1: chat list ---------- */
+.m-app .m-chat-tools {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s3);
+  padding: var(--m-s2) var(--m-gutter) var(--m-s3);
+}
+/* A phone too low for a fixed footer (on its side, or at the largest text): the tabs and the search share one line,
+   and a row keeps its title and one line of preview, so the first view shows a chat and not only the bars around the
+   list (short check 7 on Android, F2). The model and the time are in the chat itself. */
+.m-app .m-screen[data-testid='m-chats-screen'][data-m-foot='scrolls'] .m-chat-tools {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--m-s2) var(--m-s3);
+  padding-bottom: var(--m-s2);
+}
+.m-app .m-screen[data-testid='m-chats-screen'][data-m-foot='scrolls'] .m-chat-tools > * {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+.m-app .m-screen[data-testid='m-chats-screen'][data-m-foot='scrolls'] .m-chat-row-sub {
+  -webkit-line-clamp: 1;
+}
+.m-app .m-screen[data-testid='m-chats-screen'][data-m-foot='scrolls'] .m-chat-row-meta {
+  display: none;
+}
+/* As low as 340 px (a small phone on its side) at the largest text the bars take most of the page: the title alone. */
+@media (max-height: 340px) {
+  .m-app .m-screen[data-testid='m-chats-screen'][data-m-foot='scrolls'] .m-chat-row-sub {
+    display: none;
+  }
+  /* Check Android package 11, F2 rest: at the text zoom of Android 2.0 on a small phone on its side (520 by 272)
+     the tabs alone are wider than the line. They stacked, the search went under them, and the first row began
+     below the edge. Here the bar keeps one line at the height of one control and scrolls sideways instead; the
+     search follows the tabs in the same line. */
+  .m-app .m-screen[data-testid='m-chats-screen'][data-m-foot='scrolls'] .m-chat-tools {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+  .m-app .m-screen[data-testid='m-chats-screen'][data-m-foot='scrolls'] .m-chat-tools > * {
+    flex: 1 0 auto;
+  }
+  .m-app .m-screen[data-testid='m-chats-screen'][data-m-foot='scrolls'] .m-chat-tools > .m-seg {
+    flex: 0 0 auto;
+    flex-direction: row;
+    flex-wrap: nowrap;
+  }
+  .m-app .m-screen[data-testid='m-chats-screen'][data-m-foot='scrolls'] .m-chat-tools > .m-seg .m-seg-opt {
+    width: auto;
+    /* Round 57: the tabs take the width of their text here, the bar scrolls. */
+    flex: 0 0 auto;
+    padding-inline: var(--m-s3);
+  }
+  .m-app .m-screen[data-testid='m-chats-screen'][data-m-foot='scrolls'] .m-chat-tools > .m-seg .m-seg-label {
+    max-width: none;
+    white-space: nowrap;
+  }
+  /* Check Android package 15, H3: the search came out wider than the bar (461 to 439 px). Scrolled to the end its
+     first 58 px stayed cut off at the left edge of the bar, next to the navigation: "rch chats". It is never wider
+     than the bar, and a swipe that ends near one of the two settles on its start. */
+  .m-app .m-screen[data-testid='m-chats-screen'][data-m-foot='scrolls'] .m-chat-tools > :not(.m-seg) {
+    min-width: min(10rem, 100%);
+    max-width: 100%;
+  }
+  .m-app .m-screen[data-testid='m-chats-screen'][data-m-foot='scrolls'] .m-chat-tools {
+    scroll-snap-type: x proximity;
+    scroll-padding-inline: var(--m-gutter);
+  }
+  .m-app .m-screen[data-testid='m-chats-screen'][data-m-foot='scrolls'] .m-chat-tools > * {
+    scroll-snap-align: start;
+  }
+}
+/* The round "go to the buttons" key leads to New chat at the end of the list. Where the header carries New chat
+   itself (N8) it leads nowhere that is not already in view, and its strip took 60 px of a low page. */
+.m-app .m-screen[data-testid='m-chats-screen']:has(.m-hdr [data-testid='m-chats-new-head']) .m-foot-jump-slot {
+  display: none;
+}
+/* One line of preview: the list is for finding a chat, the chat itself has the rest (round 57, flat list). */
+.m-app .m-chat-row-sub {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.m-app .m-chat-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px var(--m-s2);
+  margin-top: 2px;
+  font-family: var(--m-font-mono);
+  font-size: var(--m-text-label);
+  color: var(--m-t3);
+  overflow-wrap: anywhere;
+}
+.m-app .m-chat-row-live {
+  color: var(--m-accent-text);
+  font-family: var(--m-font);
+  font-weight: 600;
+}
+/* A group brings its own gutter. A second one here made the cards narrower than the search field above them. */
+.m-app .m-chat-list {
+  padding: 0;
+}
+
+/* ---------- C2: transcript ---------- */
+.m-app .m-chat-scroll {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+.m-app .m-chat-thread {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s4);
+  width: 100%;
+  max-width: var(--m-measure);
+  margin: 0 auto;
+  padding: var(--m-s3) var(--m-gutter) var(--m-s4);
+}
+.m-app .m-chat-msg {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s1);
+  min-width: 0;
+}
+/* A long chat skips the layout of messages far from the window. */
+.m-app .m-chat-msg[data-skip] {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 7rem;
+}
+.m-app .m-chat-msg[data-m-role='user'] {
+  align-items: flex-end;
+}
+.m-app .m-chat-bubble {
+  max-width: 86%;
+  padding: 10px 14px;
+  border: 1px solid var(--m-hair);
+  border-radius: 18px 18px 6px 18px;
+  background: var(--m-fill);
+  color: var(--m-t1);
+  font-size: var(--m-text-body);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+/* The bubble of the user with the profile picture next to it (settings, Appearance). */
+.m-app .m-chat-userline {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: var(--m-s2);
+  width: 100%;
+  min-width: 0;
+}
+.m-app .m-chat-userline .m-chat-bubble {
+  max-width: calc(86% - 2.25rem);
+  min-width: 0;
+}
+.m-app .m-chat-thought {
+  color: var(--m-t3);
+}
+.m-app .m-chat-thought::before {
+  content: '\00b7';
+  margin-right: 6px;
+}
+.m-app .m-chat-by {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--m-t3);
+  font-size: var(--m-text-caption);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.m-app .m-chat-answer {
+  min-width: 0;
+  color: var(--m-t1);
+  font-size: var(--m-text-body);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.m-app .m-chat-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-left: -11px;
+}
+.m-app .m-chat-msg[data-m-role='user'] .m-chat-actions {
+  margin-left: 0;
+  margin-right: -11px;
+}
+.m-app .m-chat-actions .m-ib[aria-pressed='true'] {
+  color: var(--m-accent-text);
+}
+/* How fast the answer was written: one quiet line, the same figure the diagnostics show. */
+.m-app .m-chat-speed {
+  font-family: var(--m-font-mono);
+  font-size: var(--m-text-label);
+  color: var(--m-t3);
+  overflow-wrap: anywhere;
+}
+.m-app .m-chat-sysnote {
+  align-self: center;
+  max-width: 100%;
+  padding: 6px var(--m-s3);
+  border-radius: var(--m-r-md);
+  background: var(--m-fill);
+  color: var(--m-t2);
+  font-size: var(--m-text-caption);
+  line-height: 1.4;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.m-app .m-chat-sysnote[data-tone='warn'] {
+  background: var(--m-warn-soft);
+}
+.m-app .m-chat-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px;
+  color: var(--m-t3);
+  font-size: var(--m-text-caption);
+  line-height: 1.4;
+}
+.m-app .m-chat-hint > svg {
+  flex: none;
+  margin-top: 1px;
+}
+.m-app .m-chat-hint > span {
+  flex: 1 1 10rem;
+  min-width: 0;
+}
+.m-app .m-chat-hint > .m-btn {
+  flex: none;
+}
+/* Notices inside the transcript use the full width of the thread. */
+.m-app .m-chat-thread .m-note {
+  margin: 0;
+}
+.m-app .m-chat-earlier {
+  align-self: center;
+}
+
+/* The caret at the end of an answer that is still being written. */
+.m-app .m-chat-answer[data-streaming] > .m-chat-md > :last-child::after,
+.m-app .m-chat-answer[data-streaming]:empty::after {
+  content: '';
+  display: inline-block;
+  width: 0.5em;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  border-radius: 2px;
+  background: var(--m-accent);
+  animation: m-chat-blink 1s steps(2, start) infinite;
+}
+@keyframes m-chat-blink {
+  to {
+    visibility: hidden;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .m-app .m-chat-answer[data-streaming] > .m-chat-md > :last-child::after,
+  .m-app .m-chat-answer[data-streaming]:empty::after {
+    animation: none;
+  }
+}
+
+/* ---------- Markdown ---------- */
+.m-app .m-chat-md {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s3);
+  min-width: 0;
+}
+.m-app .m-chat-md h1,
+.m-app .m-chat-md h2,
+.m-app .m-chat-md h3,
+.m-app .m-chat-md h4,
+.m-app .m-chat-md h5,
+.m-app .m-chat-md h6 {
+  margin: var(--m-s1) 0 0;
+  color: var(--m-t1);
+  font-family: var(--m-font-display);
+  font-weight: 600;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.m-app .m-chat-md h1 {
+  font-size: 1.375rem;
+}
+.m-app .m-chat-md h2 {
+  font-size: 1.1875rem;
+}
+.m-app .m-chat-md h3,
+.m-app .m-chat-md h4,
+.m-app .m-chat-md h5,
+.m-app .m-chat-md h6 {
+  font-size: var(--m-text-title);
+}
+.m-app .m-chat-md ul,
+.m-app .m-chat-md ol {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 1.4em;
+}
+.m-app .m-chat-md ul {
+  list-style: disc;
+}
+.m-app .m-chat-md ol {
+  list-style: decimal;
+}
+.m-app .m-chat-md li > ul,
+.m-app .m-chat-md li > ol {
+  margin-top: 6px;
+}
+.m-app .m-chat-md li.task-list-item {
+  list-style: none;
+  margin-left: -1.2em;
+}
+.m-app .m-chat-md input[type='checkbox'] {
+  margin-right: 6px;
+}
+.m-app .m-chat-md blockquote {
+  margin: 0;
+  padding: 2px 0 2px var(--m-s3);
+  border-left: 3px solid var(--m-hair);
+  color: var(--m-t2);
+}
+.m-app .m-chat-md hr {
+  width: 100%;
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--m-hair);
+}
+.m-app .m-chat-md strong {
+  font-weight: 600;
+}
+.m-app .m-chat-md img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--m-r-md);
+}
+.m-app .m-chat-md :not(pre) > code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--m-fill-2);
+  font-family: var(--m-font-mono);
+  font-size: 0.9em;
+  overflow-wrap: anywhere;
+}
+/* A link is a target: the padding makes it 44 px high without moving the line. */
+.m-app .m-chat-link {
+  display: inline;
+  padding: 12px 0;
+  margin: -12px 0;
+  color: var(--m-accent-text);
+  font: inherit;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  overflow-wrap: anywhere;
+  min-width: 44px;
+}
+.m-app .m-chat-table {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--m-hair);
+  border-radius: var(--m-r-md);
+}
+.m-app .m-chat-table table {
+  border-collapse: collapse;
+  font-size: var(--m-text-caption);
+}
+.m-app .m-chat-table th,
+.m-app .m-chat-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--m-hair);
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+}
+.m-app .m-chat-table th {
+  background: var(--m-fill);
+  font-weight: 600;
+}
+.m-app .m-chat-table tr:last-child td {
+  border-bottom: 0;
+}
+
+/* ---------- code block ---------- */
+.m-app .m-chat-code {
+  max-width: 100%;
+  min-width: 0;
+  border: 1px solid var(--m-hair);
+  border-radius: var(--m-r-lg);
+  background: var(--m-surface);
+  overflow: hidden;
+}
+.m-app .m-chat-code-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--m-s1);
+  padding: 0 var(--m-s1) 0 var(--m-s3);
+  border-bottom: 1px solid var(--m-hair);
+  color: var(--m-t3);
+  font-family: var(--m-font-mono);
+  font-size: var(--m-text-label);
+}
+.m-app .m-chat-code-lang {
+  flex: 1 1 3rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.m-app .m-chat-code-btn {
+  min-height: var(--m-touch);
+  min-width: var(--m-touch);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 var(--m-s2);
+  color: var(--m-t2);
+  font-family: var(--m-font);
+  font-size: var(--m-text-caption);
+  font-weight: 500;
+}
+.m-app .m-chat-code pre {
+  margin: 0;
+  padding: var(--m-s3);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  font-family: var(--m-font-mono);
+  font-size: var(--m-text-mono);
+  line-height: 1.5;
+  color: var(--m-t1);
+  white-space: pre;
+  tab-size: 2;
+}
+.m-app .m-chat-code pre code {
+  font: inherit;
+}
+
+/* ---------- images and files in a message ---------- */
+.m-app .m-chat-media {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--m-s2);
+  max-width: 100%;
+}
+.m-app .m-chat-msg[data-m-role='user'] .m-chat-media {
+  justify-content: flex-end;
+}
+.m-app .m-chat-thumb {
+  position: relative;
+  width: 7.5rem;
+  max-width: 100%;
+  min-width: var(--m-touch);
+  min-height: var(--m-touch);
+  aspect-ratio: 4 / 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--m-hair);
+  border-radius: var(--m-r-md);
+  background: var(--m-fill);
+  color: var(--m-t3);
+  font-size: var(--m-text-label);
+  overflow: hidden;
+}
+.m-app .m-chat-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.m-app .m-chat-thumb span {
+  padding: 4px;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.m-app .m-chat-filecard {
+  max-width: 100%;
+  min-height: var(--m-touch);
+  display: flex;
+  align-items: center;
+  gap: var(--m-s2);
+  padding: var(--m-s2) var(--m-s3);
+  border: 1px solid var(--m-hair);
+  border-radius: var(--m-r-md);
+  background: var(--m-surface);
+  color: var(--m-t1);
+  font-size: var(--m-text-control);
+  text-align: left;
+}
+.m-app .m-chat-filecard > svg {
+  flex: none;
+  color: var(--m-t3);
+}
+.m-app .m-chat-filecard-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-wrap: anywhere;
+}
+.m-app .m-chat-filecard-sub {
+  color: var(--m-t3);
+  font-family: var(--m-font-mono);
+  font-size: var(--m-text-label);
+}
+.m-app .m-chat-sources {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: var(--m-s2);
+  border-top: 1px solid var(--m-hair);
+  color: var(--m-t3);
+  font-size: var(--m-text-caption);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.m-app .m-chat-sources strong {
+  color: var(--m-t2);
+  font-weight: 600;
+}
+/* One row per document. The row opens the passages the answer was given (B12). */
+.m-app .m-chat-sources .m-fold-title {
+  overflow-wrap: anywhere;
+}
+.m-app .m-chat-source-passage {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: var(--m-s2) 0;
+}
+.m-app .m-chat-source-passage + .m-chat-source-passage {
+  border-top: 1px solid var(--m-hair);
+}
+.m-app .m-chat-source-passage > span {
+  color: var(--m-t2);
+  font-size: var(--m-text-caption);
+}
+.m-app .m-chat-source-passage > p {
+  margin: 0;
+  color: var(--m-t1);
+  font-size: var(--m-text-control);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- C2: lines around the composer ---------- */
+.m-app .m-chat-status {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px var(--m-s2);
+  padding: 6px var(--m-gutter);
+  color: var(--m-t2);
+  font-size: var(--m-text-caption);
+  line-height: 1.4;
+}
+.m-app .m-chat-status > span:last-child {
+  flex: 1 1 6rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.m-app .m-chat-dock {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--m-canvas);
+}
+/* Little visible height (ui/room.ts): everything docked over the keyboard, with its status lines,
+   takes at most about half of the page and scrolls inside beyond that, so some of the transcript
+   stays in view at the largest text and with the keyboard open (M6). */
+html[data-m-room] .m-app .m-chat-dock {
+  max-height: 52%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+html[data-m-room] .m-app .m-chat-dock > * {
+  flex: none;
+}
+/* Typing on a short screen: "Editing your message" is one thin line. */
+html.m-kb-open[data-m-room] .m-app .m-chat-editing {
+  min-height: 0;
+}
+.m-app .m-chat-jump {
+  position: sticky;
+  bottom: var(--m-s2);
+  align-self: center;
+  z-index: 2;
+  min-height: var(--m-touch);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: calc(-1 * var(--m-touch) - var(--m-s2));
+  padding: 0 var(--m-s3);
+  border: 1px solid var(--m-hair);
+  border-radius: var(--m-r-pill);
+  background: var(--m-surface);
+  box-shadow: var(--m-shadow-toast);
+  color: var(--m-t1);
+  font-size: var(--m-text-caption);
+  font-weight: 600;
+}
+.m-app .m-chat-cmds {
+  margin: 0 var(--m-s3);
+  border: 1px solid var(--m-hair);
+  border-radius: var(--m-r-lg);
+  background: var(--m-surface);
+  overflow: hidden;
+}
+.m-app .m-chat-cmd {
+  width: 100%;
+  min-height: var(--m-touch);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px var(--m-s2);
+  padding: var(--m-s2) var(--m-s3);
+  text-align: left;
+}
+.m-app .m-chat-cmd + .m-chat-cmd {
+  border-top: 1px solid var(--m-hair);
+}
+.m-app .m-chat-cmd code {
+  color: var(--m-accent-text);
+  font-family: var(--m-font-mono);
+  font-size: var(--m-text-mono);
+}
+.m-app .m-chat-cmd span {
+  flex: 1 1 8rem;
+  min-width: 0;
+  color: var(--m-t3);
+  font-size: var(--m-text-caption);
+  overflow-wrap: anywhere;
+}
+.m-app .m-chat-editing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--m-s2);
+  margin: 0 var(--m-s3);
+  padding: 0 var(--m-s1) 0 var(--m-s3);
+  border-radius: var(--m-r-md);
+  background: var(--m-accent-soft);
+  color: var(--m-accent-text);
+  font-size: var(--m-text-caption);
+  font-weight: 600;
+}
+.m-app .m-chat-editing > span {
+  flex: 1 1 6rem;
+  min-width: 0;
+}
+
+/* The context figure is short ("7%"): it keeps a width, so the target stays 44 px. */
+.m-app .m-chat-ctx {
+  display: inline-block;
+  min-width: 28px;
+  text-align: center;
+  font-family: var(--m-font-mono);
+}
+
+/* Attachment chips in the composer: a target that opens, a target that removes. */
+.m-app .m-chat-att {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  max-width: 14rem;
+  margin: 6px 4px 0 0;
+  border: 1px solid var(--m-hair);
+  border-radius: var(--m-r-md);
+  background: var(--m-fill);
+}
+.m-app .m-chat-att-open {
+  min-width: var(--m-touch);
+  min-height: var(--m-touch);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--m-s2);
+  padding: 0 0 0 6px;
+  color: var(--m-t1);
+  font-size: var(--m-text-caption);
+  text-align: left;
+  overflow: hidden;
+}
+.m-app .m-chat-att-open img {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+.m-app .m-chat-att--reading .m-chat-att-open {
+  padding-right: var(--m-s3);
+  color: var(--m-t2);
+}
+.m-app .m-chat-att-open > svg {
+  flex: none;
+  color: var(--m-t3);
+}
+.m-app .m-chat-att-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 7rem;
+}
+
+/* Dictation: shown instead of the text field. */
+.m-app .m-chat-meter {
+  width: 100%;
+  min-height: 2.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--m-s1) var(--m-s3);
+  padding: 12px 14px 4px;
+  color: var(--m-t1);
+  font-size: var(--m-text-control);
+  text-align: left;
+}
+.m-app .m-chat-meter-bars {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 20px;
+}
+.m-app .m-chat-meter-bars i {
+  width: 3px;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--m-err);
+  transform-origin: center;
+  /* The height is the level of the microphone (parts/ComposerParts.tsx, LevelBars). */
+  transition: transform 90ms linear;
+}
+@media (prefers-reduced-motion: reduce) {
+  .m-app .m-chat-meter-bars i {
+    transition: none;
+  }
+}
+.m-app .m-chat-meter-quiet {
+  color: var(--m-t3);
+  font-size: var(--m-text-caption);
+}
+.m-app .m-chat-meter-clock {
+  font-family: var(--m-font-mono);
+  font-size: var(--m-text-mono);
+  color: var(--m-t2);
+}
+.m-app .m-chat-meter-hint {
+  flex: 1 1 5rem;
+  min-width: 0;
+  color: var(--m-t3);
+  font-size: var(--m-text-caption);
+}
+
+/* ---------- C3: model sheet ---------- */
+.m-app .m-chat-sheet-tools {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s3);
+  padding: 0 var(--m-gutter) var(--m-s3);
+}
+.m-app .m-chat-model-sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin-top: 2px;
+}
+/* A quiet note of a row, for example "Limited capacity": small, grey, no frame. */
+.m-app .m-chat-model-note {
+  font-size: var(--m-text-label);
+  color: var(--m-t3);
+}
+.m-app .m-chat-model-size {
+  font-family: var(--m-font-mono);
+  font-size: var(--m-text-label);
+  color: var(--m-t3);
+}
+.m-app .m-chat-price {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s3);
+  padding: 0 var(--m-gutter) var(--m-s4);
+}
+.m-app .m-chat-price-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 2px var(--m-s3);
+  padding: var(--m-s3) 0;
+  border-bottom: 1px solid var(--m-hair);
+  font-size: var(--m-text-body);
+}
+.m-app .m-chat-price-row strong {
+  font-family: var(--m-font-mono);
+  font-weight: 600;
+}
+.m-app .m-chat-sheet-text {
+  padding: 0 var(--m-gutter) var(--m-s3);
+  color: var(--m-t2);
+  font-size: var(--m-text-control);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.m-app .m-chat-url {
+  margin: 0 var(--m-gutter) var(--m-s3);
+  padding: var(--m-s3);
+  border-radius: var(--m-r-md);
+  background: var(--m-fill);
+  color: var(--m-t1);
+  font-family: var(--m-font-mono);
+  font-size: var(--m-text-mono);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.m-app .m-chat-quote {
+  /* No padding above and below: a clamped box would show the next line inside it. */
+  margin: var(--m-s2) var(--m-gutter) calc(var(--m-s3) + var(--m-s2));
+  padding: 0 var(--m-s3);
+  border-left: 3px solid var(--m-hair);
+  color: var(--m-t2);
+  font-size: var(--m-text-caption);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.m-app .m-chat-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s2);
+}
+
+/* ---------- edit and select pages, viewer ---------- */
+.m-app .m-chat-page-pad {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s3);
+  padding: var(--m-s3) var(--m-gutter) var(--m-s4);
+}
+.m-app .m-chat-editor textarea {
+  width: 100%;
+  min-height: 40vh;
+  overflow: hidden;
+  border: 0;
+  outline: 0;
+  resize: none;
+  background: none;
+  color: var(--m-t1);
+  font-size: max(var(--m-text-body), 16px);
+  line-height: 1.5;
+}
+.m-app .m-chat-select {
+  color: var(--m-t1);
+  font-size: var(--m-text-body);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+  -webkit-user-select: text;
+  -webkit-touch-callout: default;
+}
+.m-app .m-chat-filestage {
+  align-items: stretch;
+  touch-action: pan-y;
+}
+.m-app .m-chat-fileview {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: auto;
+  padding: var(--m-s3) var(--m-gutter);
+  color: inherit;
+  font-family: var(--m-font-mono);
+  font-size: var(--m-text-mono);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  text-align: left;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.m-app .m-chat-fileinfo {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--m-s3);
+  padding: var(--m-s6);
+  color: inherit;
+  text-align: center;
+  overflow-wrap: anywhere;
+  overflow-y: auto;
+}
+.m-app .m-chat-fileinfo strong {
+  font-size: var(--m-text-title);
+  font-weight: 600;
+}
+.m-app .m-chat-fileinfo span {
+  opacity: 0.75;
+  font-size: var(--m-text-caption);
+  line-height: 1.4;
+}
+.m-app .m-chat-filesummary {
+  max-width: 34rem;
+  white-space: pre-wrap;
+  text-align: left;
+}

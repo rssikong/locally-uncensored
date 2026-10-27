@@ -2421,6 +2421,624 @@
           "markdownDescription": "Denies the unregister_all command without any pre-configured scope."
         },
         {
+          "description": "Everything the phone shell needs from the native layer. `simulate-memory-warning` is listed although the command only acts in a build with the cargo feature `abnahme`; without the feature it answers with an error.\n#### This default permission set includes:\n\n- `allow-share-file`\n- `allow-save-to-photos`\n- `allow-save-to-files`\n- `allow-write-temp-file`\n- `allow-download-to-temp`\n- `allow-delete-temp-file`\n- `allow-device-info`\n- `allow-simulate-memory-warning`\n- `allow-begin-background-task`\n- `allow-end-background-task`\n- `allow-back-arm`\n- `allow-back-ack`\n- `allow-back-exit`\n- `allow-pending-deep-link`\n- `allow-haptic`\n- `allow-open-external`\n- `allow-scan-qr`\n- `allow-open-system-settings`\n- `allow-set-system-bars`\n- `allow-remote-client-request`\n- `allow-remote-client-cancel`\n- `allow-bg-download-start`\n- `allow-bg-download-pause`\n- `allow-bg-download-resume`\n- `allow-bg-download-cancel`\n- `allow-bg-download-forget`\n- `allow-bg-download-list`\n- `allow-bg-download-network-rule`\n- `allow-bg-download-allow-metered`\n- `allow-connection-info`\n- `allow-request-notification-permission`\n- `allow-tts-voices`\n- `allow-tts-speak`\n- `allow-tts-stop`\n- `allow-import-model-document`\n- `allow-import-model-cancel`\n- `allow-bg-download-limit`\n- `allow-transcode-image`\n- `allow-clipboard-read-text`\n- `allow-clipboard-write-text`\n- `allow-local-notify`\n- `allow-remote-watch`\n- `allow-remote-notify-permission`\n- `allow-apple-sign-in`\n- `allow-web-auth`\n- `allow-pick-documents`\n- `allow-read-temp-file`\n- `allow-iap-products`\n- `allow-iap-purchase`\n- `allow-iap-finish`\n- `allow-iap-unfinished`",
+          "type": "string",
+          "const": "lu-native:default",
+          "markdownDescription": "Everything the phone shell needs from the native layer. `simulate-memory-warning` is listed although the command only acts in a build with the cargo feature `abnahme`; without the feature it answers with an error.\n#### This default permission set includes:\n\n- `allow-share-file`\n- `allow-save-to-photos`\n- `allow-save-to-files`\n- `allow-write-temp-file`\n- `allow-download-to-temp`\n- `allow-delete-temp-file`\n- `allow-device-info`\n- `allow-simulate-memory-warning`\n- `allow-begin-background-task`\n- `allow-end-background-task`\n- `allow-back-arm`\n- `allow-back-ack`\n- `allow-back-exit`\n- `allow-pending-deep-link`\n- `allow-haptic`\n- `allow-open-external`\n- `allow-scan-qr`\n- `allow-open-system-settings`\n- `allow-set-system-bars`\n- `allow-remote-client-request`\n- `allow-remote-client-cancel`\n- `allow-bg-download-start`\n- `allow-bg-download-pause`\n- `allow-bg-download-resume`\n- `allow-bg-download-cancel`\n- `allow-bg-download-forget`\n- `allow-bg-download-list`\n- `allow-bg-download-network-rule`\n- `allow-bg-download-allow-metered`\n- `allow-connection-info`\n- `allow-request-notification-permission`\n- `allow-tts-voices`\n- `allow-tts-speak`\n- `allow-tts-stop`\n- `allow-import-model-document`\n- `allow-import-model-cancel`\n- `allow-bg-download-limit`\n- `allow-transcode-image`\n- `allow-clipboard-read-text`\n- `allow-clipboard-write-text`\n- `allow-local-notify`\n- `allow-remote-watch`\n- `allow-remote-notify-permission`\n- `allow-apple-sign-in`\n- `allow-web-auth`\n- `allow-pick-documents`\n- `allow-read-temp-file`\n- `allow-iap-products`\n- `allow-iap-purchase`\n- `allow-iap-finish`\n- `allow-iap-unfinished`"
+        },
+        {
+          "description": "Enables the apple_sign_in command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-apple-sign-in",
+          "markdownDescription": "Enables the apple_sign_in command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the back_ack command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-back-ack",
+          "markdownDescription": "Enables the back_ack command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the back_arm command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-back-arm",
+          "markdownDescription": "Enables the back_arm command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the back_exit command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-back-exit",
+          "markdownDescription": "Enables the back_exit command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the begin_background_task command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-begin-background-task",
+          "markdownDescription": "Enables the begin_background_task command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the bg_download_allow_metered command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-bg-download-allow-metered",
+          "markdownDescription": "Enables the bg_download_allow_metered command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the bg_download_cancel command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-bg-download-cancel",
+          "markdownDescription": "Enables the bg_download_cancel command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the bg_download_forget command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-bg-download-forget",
+          "markdownDescription": "Enables the bg_download_forget command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the bg_download_limit command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-bg-download-limit",
+          "markdownDescription": "Enables the bg_download_limit command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the bg_download_list command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-bg-download-list",
+          "markdownDescription": "Enables the bg_download_list command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the bg_download_network_rule command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-bg-download-network-rule",
+          "markdownDescription": "Enables the bg_download_network_rule command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the bg_download_pause command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-bg-download-pause",
+          "markdownDescription": "Enables the bg_download_pause command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the bg_download_resume command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-bg-download-resume",
+          "markdownDescription": "Enables the bg_download_resume command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the bg_download_start command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-bg-download-start",
+          "markdownDescription": "Enables the bg_download_start command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the clipboard_read_text command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-clipboard-read-text",
+          "markdownDescription": "Enables the clipboard_read_text command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the clipboard_write_text command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-clipboard-write-text",
+          "markdownDescription": "Enables the clipboard_write_text command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the connection_info command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-connection-info",
+          "markdownDescription": "Enables the connection_info command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the delete_temp_file command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-delete-temp-file",
+          "markdownDescription": "Enables the delete_temp_file command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the device_info command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-device-info",
+          "markdownDescription": "Enables the device_info command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the download_to_temp command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-download-to-temp",
+          "markdownDescription": "Enables the download_to_temp command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the end_background_task command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-end-background-task",
+          "markdownDescription": "Enables the end_background_task command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the haptic command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-haptic",
+          "markdownDescription": "Enables the haptic command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the iap_finish command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-iap-finish",
+          "markdownDescription": "Enables the iap_finish command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the iap_products command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-iap-products",
+          "markdownDescription": "Enables the iap_products command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the iap_purchase command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-iap-purchase",
+          "markdownDescription": "Enables the iap_purchase command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the iap_unfinished command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-iap-unfinished",
+          "markdownDescription": "Enables the iap_unfinished command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the import_model_cancel command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-import-model-cancel",
+          "markdownDescription": "Enables the import_model_cancel command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the import_model_document command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-import-model-document",
+          "markdownDescription": "Enables the import_model_document command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the local_notify command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-local-notify",
+          "markdownDescription": "Enables the local_notify command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the open_external command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-open-external",
+          "markdownDescription": "Enables the open_external command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the open_system_settings command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-open-system-settings",
+          "markdownDescription": "Enables the open_system_settings command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the pending_deep_link command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-pending-deep-link",
+          "markdownDescription": "Enables the pending_deep_link command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the pick_documents command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-pick-documents",
+          "markdownDescription": "Enables the pick_documents command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the read_temp_file command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-read-temp-file",
+          "markdownDescription": "Enables the read_temp_file command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the remote_client_cancel command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-remote-client-cancel",
+          "markdownDescription": "Enables the remote_client_cancel command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the remote_client_request command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-remote-client-request",
+          "markdownDescription": "Enables the remote_client_request command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the remote_notify_permission command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-remote-notify-permission",
+          "markdownDescription": "Enables the remote_notify_permission command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the remote_watch command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-remote-watch",
+          "markdownDescription": "Enables the remote_watch command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the request_notification_permission command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-request-notification-permission",
+          "markdownDescription": "Enables the request_notification_permission command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the save_to_files command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-save-to-files",
+          "markdownDescription": "Enables the save_to_files command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the save_to_photos command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-save-to-photos",
+          "markdownDescription": "Enables the save_to_photos command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the scan_qr command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-scan-qr",
+          "markdownDescription": "Enables the scan_qr command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the set_system_bars command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-set-system-bars",
+          "markdownDescription": "Enables the set_system_bars command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the share_file command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-share-file",
+          "markdownDescription": "Enables the share_file command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the simulate_memory_warning command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-simulate-memory-warning",
+          "markdownDescription": "Enables the simulate_memory_warning command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the transcode_image command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-transcode-image",
+          "markdownDescription": "Enables the transcode_image command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the tts_speak command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-tts-speak",
+          "markdownDescription": "Enables the tts_speak command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the tts_stop command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-tts-stop",
+          "markdownDescription": "Enables the tts_stop command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the tts_voices command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-tts-voices",
+          "markdownDescription": "Enables the tts_voices command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the web_auth command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-web-auth",
+          "markdownDescription": "Enables the web_auth command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the write_temp_file command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:allow-write-temp-file",
+          "markdownDescription": "Enables the write_temp_file command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the apple_sign_in command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-apple-sign-in",
+          "markdownDescription": "Denies the apple_sign_in command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the back_ack command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-back-ack",
+          "markdownDescription": "Denies the back_ack command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the back_arm command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-back-arm",
+          "markdownDescription": "Denies the back_arm command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the back_exit command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-back-exit",
+          "markdownDescription": "Denies the back_exit command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the begin_background_task command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-begin-background-task",
+          "markdownDescription": "Denies the begin_background_task command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the bg_download_allow_metered command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-bg-download-allow-metered",
+          "markdownDescription": "Denies the bg_download_allow_metered command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the bg_download_cancel command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-bg-download-cancel",
+          "markdownDescription": "Denies the bg_download_cancel command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the bg_download_forget command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-bg-download-forget",
+          "markdownDescription": "Denies the bg_download_forget command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the bg_download_limit command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-bg-download-limit",
+          "markdownDescription": "Denies the bg_download_limit command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the bg_download_list command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-bg-download-list",
+          "markdownDescription": "Denies the bg_download_list command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the bg_download_network_rule command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-bg-download-network-rule",
+          "markdownDescription": "Denies the bg_download_network_rule command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the bg_download_pause command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-bg-download-pause",
+          "markdownDescription": "Denies the bg_download_pause command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the bg_download_resume command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-bg-download-resume",
+          "markdownDescription": "Denies the bg_download_resume command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the bg_download_start command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-bg-download-start",
+          "markdownDescription": "Denies the bg_download_start command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the clipboard_read_text command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-clipboard-read-text",
+          "markdownDescription": "Denies the clipboard_read_text command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the clipboard_write_text command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-clipboard-write-text",
+          "markdownDescription": "Denies the clipboard_write_text command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the connection_info command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-connection-info",
+          "markdownDescription": "Denies the connection_info command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the delete_temp_file command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-delete-temp-file",
+          "markdownDescription": "Denies the delete_temp_file command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the device_info command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-device-info",
+          "markdownDescription": "Denies the device_info command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the download_to_temp command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-download-to-temp",
+          "markdownDescription": "Denies the download_to_temp command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the end_background_task command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-end-background-task",
+          "markdownDescription": "Denies the end_background_task command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the haptic command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-haptic",
+          "markdownDescription": "Denies the haptic command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the iap_finish command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-iap-finish",
+          "markdownDescription": "Denies the iap_finish command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the iap_products command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-iap-products",
+          "markdownDescription": "Denies the iap_products command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the iap_purchase command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-iap-purchase",
+          "markdownDescription": "Denies the iap_purchase command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the iap_unfinished command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-iap-unfinished",
+          "markdownDescription": "Denies the iap_unfinished command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the import_model_cancel command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-import-model-cancel",
+          "markdownDescription": "Denies the import_model_cancel command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the import_model_document command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-import-model-document",
+          "markdownDescription": "Denies the import_model_document command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the local_notify command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-local-notify",
+          "markdownDescription": "Denies the local_notify command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the open_external command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-open-external",
+          "markdownDescription": "Denies the open_external command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the open_system_settings command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-open-system-settings",
+          "markdownDescription": "Denies the open_system_settings command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pending_deep_link command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-pending-deep-link",
+          "markdownDescription": "Denies the pending_deep_link command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pick_documents command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-pick-documents",
+          "markdownDescription": "Denies the pick_documents command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the read_temp_file command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-read-temp-file",
+          "markdownDescription": "Denies the read_temp_file command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the remote_client_cancel command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-remote-client-cancel",
+          "markdownDescription": "Denies the remote_client_cancel command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the remote_client_request command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-remote-client-request",
+          "markdownDescription": "Denies the remote_client_request command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the remote_notify_permission command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-remote-notify-permission",
+          "markdownDescription": "Denies the remote_notify_permission command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the remote_watch command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-remote-watch",
+          "markdownDescription": "Denies the remote_watch command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the request_notification_permission command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-request-notification-permission",
+          "markdownDescription": "Denies the request_notification_permission command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the save_to_files command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-save-to-files",
+          "markdownDescription": "Denies the save_to_files command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the save_to_photos command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-save-to-photos",
+          "markdownDescription": "Denies the save_to_photos command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the scan_qr command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-scan-qr",
+          "markdownDescription": "Denies the scan_qr command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_system_bars command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-set-system-bars",
+          "markdownDescription": "Denies the set_system_bars command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the share_file command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-share-file",
+          "markdownDescription": "Denies the share_file command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the simulate_memory_warning command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-simulate-memory-warning",
+          "markdownDescription": "Denies the simulate_memory_warning command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the transcode_image command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-transcode-image",
+          "markdownDescription": "Denies the transcode_image command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the tts_speak command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-tts-speak",
+          "markdownDescription": "Denies the tts_speak command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the tts_stop command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-tts-stop",
+          "markdownDescription": "Denies the tts_stop command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the tts_voices command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-tts-voices",
+          "markdownDescription": "Denies the tts_voices command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the web_auth command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-web-auth",
+          "markdownDescription": "Denies the web_auth command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the write_temp_file command without any pre-configured scope.",
+          "type": "string",
+          "const": "lu-native:deny-write-temp-file",
+          "markdownDescription": "Denies the write_temp_file command without any pre-configured scope."
+        },
+        {
           "description": "This permission set configures which\nshell functionality is exposed by default.\n\n#### Granted Permissions\n\nIt allows to use the `open` functionality with a reasonable\nscope pre-configured. It will allow opening `http(s)://`,\n`tel:` and `mailto:` links.\n\n#### This default permission set includes:\n\n- `allow-open`",
           "type": "string",
           "const": "shell:default",

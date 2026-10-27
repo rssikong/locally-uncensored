@@ -1057,6 +1057,6 @@ mod tests {
     #[test]
     fn quitting_and_starting_the_app_end_a_training() {
         assert!(include_str!("../state.rs").contains("crate::commands::mlx::train::stop();"));
-        assert!(include_str!("../main.rs").contains("commands::mlx::train::reap_orphaned_run()"));
+        assert!(include_str!("../lib.rs").contains("commands::mlx::train::reap_orphaned_run()"));
     }
 }

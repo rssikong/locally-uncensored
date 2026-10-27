@@ -96,7 +96,7 @@ pub(crate) async fn fetch_to_file(
         return Ok(Outcome::Cancelled);
     }
     let asking = reqwest::Client::builder()
-        .user_agent("LocallyUncensored/1.5")
+        .user_agent(crate::app_identity::outgoing_agent!("1.5"))
         .redirect(reqwest::redirect::Policy::none())
         .connect_timeout(Duration::from_secs(15))
         .read_timeout(Duration::from_secs(60))

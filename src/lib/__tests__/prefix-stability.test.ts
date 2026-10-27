@@ -53,35 +53,33 @@ describe('A5.1: the clock is its own line and it goes last', () => {
     expect(clockAt).toBeGreaterThan(memoryAt)
   })
 
-  it('the agent loop appends the clock after persona, memory and caveman', () => {
+  it('the agent loop keeps the clock out of the system prompt (A7)', () => {
+    // A5 put the clock at the END of the system prompt. That is still in
+    // front of the whole conversation, so every new minute cost the cache the
+    // entire chat (box, 20.10.2026: 11 to 72 s on "Starting"). It now rides in
+    // the turn note behind the newest user message (lib/turn-context.ts).
     const agent = src('hooks', 'useAgentChat.ts')
-    const clockAt = agent.indexOf('agentSystemPrompt += `\\n\\n${hostClockLine()}`')
-    const cavemanAt = agent.indexOf('agent.caveman_load_failed')
-    expect(clockAt).toBeGreaterThan(-1)
-    expect(clockAt).toBeGreaterThan(cavemanAt)
+    expect(agent).not.toContain('agentSystemPrompt += `\\n\\n${hostClockLine()}`')
+    expect(agent).toMatch(/buildTurnContext\(\{ memory: memoryContext, rag: ragSuffix, clock: hostClockLine\(\) \}\)/)
+    expect(agent).toMatch(/agentMessages = withTurnContext\(agentMessages, turnContext\)/)
   })
 })
 
-describe('A5.3: the RAG block moved from byte 0 to the end', () => {
-  it('the plain chat appends retrieval instead of prepending it', () => {
+describe('A5.3 / A7: retrieval and memory stay out of the system prompt', () => {
+  it('the plain chat sends both in the turn note, not in the system prompt', () => {
     const chat = src('hooks', 'useChat.ts')
     expect(chat).not.toMatch(/systemPrompt = ragPrefix \+/)
-    expect(chat).toMatch(/ragSuffix = /)
-    expect(chat).toMatch(/if \(ragSuffix\) systemPrompt = \(systemPrompt \|\| ''\) \+ ragSuffix/)
-  })
-
-  it('the append lands after the memory block, not before it', () => {
-    const chat = src('hooks', 'useChat.ts')
-    const memoryAt = chat.indexOf('remembered context from previous conversations')
-    const appendAt = chat.indexOf("if (ragSuffix) systemPrompt = (systemPrompt || '') + ragSuffix")
-    expect(memoryAt).toBeGreaterThan(-1)
-    expect(appendAt).toBeGreaterThan(memoryAt)
+    expect(chat).not.toMatch(/systemPrompt = \(systemPrompt \|\| ''\) \+ ragSuffix/)
+    expect(chat).not.toMatch(/systemPrompt = \(systemPrompt \|\| ''\) \+ `\\n\\nThe following is remembered context/)
+    expect(chat).toMatch(/buildTurnContext\(\{ memory: memoryContext, rag: ragSuffix \}\)/)
+    expect(chat).toMatch(/withTurnContext\(\[/)
   })
 
   it('the agent surface got the same treatment', () => {
     const agent = src('hooks', 'useAgentChat.ts')
     expect(agent).toMatch(/ragSuffix = /)
-    expect(agent).toMatch(/agentSystemPrompt \+= ragSuffix/)
+    expect(agent).not.toMatch(/agentSystemPrompt \+= ragSuffix/)
+    expect(agent).not.toMatch(/systemPrompt = \(systemPrompt \|\| ''\) \+ `\\n\\nThe following is remembered context/)
   })
 })
 

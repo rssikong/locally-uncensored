@@ -3,7 +3,8 @@ import { v4 as uuid } from 'uuid'
 import { GlowButton } from '../ui/GlowButton'
 import { useSettingsStore } from '../../stores/settingsStore'
 import type { SamplerValues } from '../../types/settings'
-import { clampSampling } from '../../lib/sampling'
+import { clampSampling, TEMPERATURE_MAX } from '../../lib/sampling'
+import { HighTemperatureWarning } from '../chat/HighTemperatureWarning'
 import { DEFAULT_NOTE_DEPTH, MAX_NOTE_DEPTH, clampNoteDepth } from '../../lib/persona-note'
 
 /**
@@ -13,7 +14,7 @@ import { DEFAULT_NOTE_DEPTH, MAX_NOTE_DEPTH, clampNoteDepth } from '../../lib/pe
  * the Sampling popup in the chat says which ones do for the current model.
  */
 export const PERSONA_SAMPLING_FIELDS: { key: keyof SamplerValues; label: string; step: number; min: number; max: number }[] = [
-  { key: 'temperature', label: 'Temperature', step: 0.05, min: 0, max: 2 },
+  { key: 'temperature', label: 'Temperature', step: 0.05, min: 0, max: TEMPERATURE_MAX },
   { key: 'topP', label: 'Top P', step: 0.01, min: 0, max: 1 },
   { key: 'topK', label: 'Top K', step: 1, min: 0, max: 1000 },
   { key: 'minP', label: 'Min P', step: 0.01, min: 0, max: 1 },
@@ -150,6 +151,12 @@ export function SystemPromptEditor({
               />
             </label>
           ))}
+        </div>
+        <div className="mt-1.5">
+          <HighTemperatureWarning
+            temperature={sampling.temperature === undefined || sampling.temperature === '' ? undefined : Number(sampling.temperature)}
+            onReset={() => setSampling((d) => ({ ...d, temperature: '' }))}
+          />
         </div>
         <p className="mt-1.5 text-[0.55rem] text-gray-500">
           Empty fields follow the chat. A value moved in the chat's Sampling popup still wins. Each value only reaches a backend that reads it.

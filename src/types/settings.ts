@@ -1,7 +1,20 @@
 import type { AgentWorkspace } from './agent-workspace'
 import type { EffortLevel } from '../lib/effort'
 
-export type SearchProvider = 'auto' | 'brave' | 'tavily'
+/**
+ * The tier `web_search` asks first (src-tauri/src/commands/search_tiers.rs).
+ * `auto` runs them all in order; any other one is asked first and Auto
+ * follows when it fails. The labels live in lib/search-providers.ts.
+ */
+export type SearchProvider =
+  | 'auto'
+  | 'exa'
+  | 'you'
+  | 'searxng'
+  | 'duckduckgo'
+  | 'wikipedia'
+  | 'brave'
+  | 'tavily'
 
 export type CavemanMode = 'off' | 'lite' | 'full' | 'ultra'
 
@@ -136,6 +149,13 @@ export interface Settings {
   braveApiKey: string
   tavilyApiKey: string
   /**
+   * 3.0.8: the user's own Exa key. Empty or absent = Exa's keyless endpoint.
+   * Optional on purpose: a store saved before 3.0.8 lacks it and means
+   * keyless, so no migration is needed. Kept in the local settings store
+   * only, like the Brave and Tavily keys.
+   */
+  exaApiKey?: string
+  /**
    * D16 (3.0.7): the User-Agent the free search tiers and `web_fetch` send.
    * Empty or absent = the one each of them always sent. Optional on purpose:
    * a store saved before 3.0.7 lacks it and means the default, so no
@@ -144,6 +164,14 @@ export interface Settings {
    * falls back to the default instead of failing the request.
    */
   searchUserAgent?: string
+  /**
+   * True when the key of that provider lies in the keychain instead of in
+   * the field above (src/lib/search-keys.ts). The phone stores keys only
+   * that way, so the settings and every backup carry this one bit and never
+   * the key. The desktop settings page still writes the plain field.
+   */
+  braveKeyStored: boolean
+  tavilyKeyStored: boolean
   // Agent budget (Phase 10 v2.4.0) — hard caps that halt a runaway agent.
   /** Hard cap on tool calls per user turn. 0 = unlimited (not recommended). */
   agentMaxToolCalls: number
@@ -176,6 +204,11 @@ export interface Settings {
   /** Cap for the model files LU downloads itself, in MB/s, shared by all
    *  downloads at once. 0 = no limit (Discord 2026-09-23). */
   downloadLimitMBps: number
+  /** Unload the LU Engine's chat model after this many minutes without a
+   *  request (commands/engine_idle.rs), 0 or absent for never (Discord
+   *  21.10.2026). Optional: an existing profile has no key and reads as never,
+   *  so no store version is spent on it. */
+  engineIdleUnloadMinutes?: number
   /** Model ids an OpenAI-compatible server serves but does not list in
    *  /models, by endpoint (lib/extra-model-ids.ts `endpointKey`). GitHub #112. */
   extraModelIds: Record<string, string[]>
@@ -192,6 +225,9 @@ export interface Settings {
   /** GitHub #19: the browser tab name of the Remote Access page on the
    *  phone. Empty keeps "AI Terminal" (lib/remote-page-title.ts). */
   remotePageTitle: string
+  /** Shared chats (mobile-docs/remote/CHATS-V1.md): a new chat is shared
+   *  with the paired phones from the start. Default off. */
+  shareNewChatsWithPhone: boolean
   // Bug AA v2.5.0 — Discord 2026-05-27. Ollama defaults `num_ctx` to
   // 2048, which silently caps RAG payloads and long-turn chats even on
   // models that support way more. This override is forwarded to Ollama
@@ -294,6 +330,14 @@ export interface Settings {
   // the api/engine chokepoint. Defaults reproduce the pre-2.6.0 argv exactly.
   /** Expert settings for the bundled llama-server (chat engine only). */
   builtinEngine: BuiltinEngineTuning
+  // Phone only (src/mobile). Optional and without a default: absent means
+  // off, the desktop never reads them, and they travel with a backup like
+  // every other setting. They lived in localStorage of the phone shell before
+  // (mobile-docs/geruest-wuensche/models.md, wish 5).
+  /** Phone: ask before a model is downloaded on mobile data (E14.5). */
+  mobileDownloadWifiOnly?: boolean
+  /** Phone: free the loaded model when LU leaves the screen (E13.7). */
+  mobileUnloadInBackground?: boolean
   // Bug BB v2.5.0 — Discord 2026-05-26. GPU vendor + indices to
   // forward as CUDA_VISIBLE_DEVICES / HIP_VISIBLE_DEVICES /
   // ONEAPI_DEVICE_SELECTOR on next Ollama / ComfyUI spawn. "auto" + empty
@@ -318,6 +362,20 @@ export interface Settings {
   // local VRAM and are always skipped.
   /** VRAM exclusivity policy for image/video generation. Default 'auto'. */
   exclusiveVramMode: 'auto' | 'always' | 'never'
+  /**
+   * A picture or video the chat asked for that takes longer than a few
+   * seconds goes on in the background (3.0.8, A2). The turn ends, the chat can
+   * be used, and the result appears in the call's own block when it is done.
+   * Off: the chat waits for every generation, as before 3.0.8.
+   */
+  backgroundMediaTools: boolean
+  /**
+   * Which card each service runs on, for a machine with two or more GPUs
+   * (3.0.8, A2). `chat` is the chat engine (LU Engine, Ollama), `comfy` is
+   * ComfyUI. null = the card pick above (gpuVendor/gpuIndices) applies, which
+   * is what a machine with one card always gets.
+   */
+  gpuRoles: GpuRoles
   /** ComfyUI GPU device policy (rhodium92 AMD RX 6600 XT, 2026-07-01).
    *  'auto'  — NVIDIA fast-path; on a non-NVIDIA box probe the ComfyUI python's
    *            torch and run on the GPU if it reports one (ROCm/ZLUDA), else CPU.
@@ -504,3 +562,17 @@ export interface CharacterCard {
 // Voice settings (sttEnabled, ttsEnabled, ttsVoice, ttsRate, ttsPitch) are
 // managed in src/stores/voiceStore.ts via the dedicated Zustand voice store
 // with persistence.
+
+/** One card, as the Hardware tab detected it. `index` is vendor-scoped, in the
+ *  order the vendor tool lists the cards (nvidia-smi: PCI bus order). */
+export interface GpuRef {
+  vendor: 'nvidia' | 'amd' | 'intel'
+  index: number
+  /** The card's name, kept to find it again and for the readout. */
+  name: string
+}
+
+export interface GpuRoles {
+  chat: GpuRef | null
+  comfy: GpuRef | null
+}

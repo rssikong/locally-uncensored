@@ -55,6 +55,12 @@ const SERVICE: &str = crate::app_identity::KEYCHAIN_SERVICE;
 //                                   through the same storage adapter under
 //                                   `${storageKey}-code-verifier`
 //
+// On a phone only (`PHONE_ACCOUNTS`, the desktop refuses the name as v3.0.5
+// did, because nothing on the desktop stores under it):
+//   lu-remote-token                 `REMOTE_TOKEN_ACCOUNT` in lib/lu-native.ts,
+//                                   the session token of the phone as a
+//                                   Remote client (createSecureTokenVault)
+//
 // HAZARD, named on purpose: this is an exact-match list, so a supabase-js
 // upgrade that routes a THIRD key through `keychainStorage` would be refused
 // here and would break sign-in. That is why a refusal is logged at warn level
@@ -71,6 +77,16 @@ const ALLOWED_ACCOUNTS: [&str; 6] = [
     "lu-cloud-session-code-verifier",
 ];
 
+/// The accounts only the Android and iOS builds store under. The desktop has
+/// no caller for them, so there they stay what they were in v3.0.5: refused.
+const PHONE_ACCOUNTS: [&str; 1] = ["lu-remote-token"];
+
+/// The rule itself, with the platform as an argument so both halves can be
+/// tested on any machine.
+fn account_allowed(account: &str, phone: bool) -> bool {
+    ALLOWED_ACCOUNTS.contains(&account) || (phone && PHONE_ACCOUNTS.contains(&account))
+}
+
 /// Reject an account name the app never stores under.
 ///
 /// Deliberately NOT phrased like the two strings the frontend treats as "there
@@ -79,16 +95,20 @@ const ALLOWED_ACCOUNTS: [&str; 6] = [
 /// latch the adapter onto its plaintext-localStorage fallback — that would turn
 /// a rejected write into a downgrade, which is worse than the write.
 fn check_account(account: &str) -> Result<(), String> {
-    if ALLOWED_ACCOUNTS.contains(&account) {
+    if account_allowed(account, cfg!(mobile)) {
         return Ok(());
     }
     tracing::warn!(
         account = %account,
         "refused a secret operation for an account this app does not store"
     );
+    let mut known: Vec<&str> = ALLOWED_ACCOUNTS.to_vec();
+    if cfg!(mobile) {
+        known.extend(PHONE_ACCOUNTS);
+    }
     Err(format!(
         "refused: '{account}' is not one of the accounts this app stores ({})",
-        ALLOWED_ACCOUNTS.join(", ")
+        known.join(", ")
     ))
 }
 
@@ -432,47 +452,144 @@ pub async fn secret_park_delete(backend_id: String) -> Result<(), String> {
     run_keychain(move || chunked::delete(&account)).await
 }
 
+// ── The desktop key of the sealed remote channel ───────────────────────
+//
+// commands/remote_sealed.rs keeps one 32 byte secret here, from which the
+// channel's X25519 and Ed25519 keys are derived (REMOTE-PROTOKOLL v2,
+// section 3). The account is NOT in ALLOWED_ACCOUNTS on purpose: the webview
+// can neither read nor overwrite it, only Rust code in this crate reaches it,
+// through the two functions below. Both block (the keychain may prompt), so
+// callers run them on a blocking thread.
+
+/// Vault account of the remote channel key. Keep it stable: a new name would
+/// mean a new desktop key and every paired phone pairing again.
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+const REMOTE_CHANNEL_ACCOUNT: &str = "remote-channel-key";
+
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+pub(crate) fn remote_channel_key_get() -> Result<Option<String>, String> {
+    if keychain_disabled() {
+        return Err("keychain unavailable (LU_NO_KEYCHAIN test mode)".into());
+    }
+    let _serialized = KEYCHAIN_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    chunked::get(REMOTE_CHANNEL_ACCOUNT)
+}
+
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+pub(crate) fn remote_channel_key_set(value: &str) -> Result<(), String> {
+    if keychain_disabled() {
+        return Err("keychain unavailable (LU_NO_KEYCHAIN test mode)".into());
+    }
+    let _serialized = KEYCHAIN_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    chunked::set(REMOTE_CHANNEL_ACCOUNT, value)
+}
+
+// ── Android and iOS ──────────────────────────────────────────────────────
+// The same six commands, answered by the native layer (plugins/lu-native):
+// the Android Keystore (an AES-GCM key that never leaves it, the values
+// encrypted in a file only this app can read) and the iOS Keychain
+// (kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly). Until this existed a
+// phone fell into the stub below and the Cloud session sat in the webview's
+// localStorage. The plugin has no command of its own for this on purpose:
+// these six, with their name checks, are the only way from JavaScript to a
+// stored value.
+
+#[cfg(mobile)]
+#[tauri::command]
+pub async fn secret_set(app: tauri::AppHandle, account: String, value: String) -> Result<(), String> {
+    check_account(&account)?;
+    crate::commands::mobile_native::vault(app, move |v| {
+        // An empty value means "no key", as on the desktop.
+        if value.is_empty() {
+            return v.secret_delete(&account);
+        }
+        v.secret_set(&account, &value)
+    })
+    .await
+}
+
+#[cfg(mobile)]
+#[tauri::command]
+pub async fn secret_get(app: tauri::AppHandle, account: String) -> Result<Option<String>, String> {
+    check_account(&account)?;
+    crate::commands::mobile_native::vault(app, move |v| v.secret_get(&account)).await
+}
+
+#[cfg(mobile)]
+#[tauri::command]
+pub async fn secret_delete(app: tauri::AppHandle, account: String) -> Result<(), String> {
+    check_account(&account)?;
+    crate::commands::mobile_native::vault(app, move |v| v.secret_delete(&account)).await
+}
+
+#[cfg(mobile)]
+#[tauri::command]
+pub async fn secret_park_set(app: tauri::AppHandle, backend_id: String, value: String) -> Result<(), String> {
+    let account = parked_account(&backend_id)?;
+    crate::commands::mobile_native::vault(app, move |v| {
+        if value.is_empty() {
+            return v.secret_delete(&account);
+        }
+        v.secret_set(&account, &value)
+    })
+    .await
+}
+
+#[cfg(mobile)]
+#[tauri::command]
+pub async fn secret_park_get(app: tauri::AppHandle, backend_id: String) -> Result<Option<String>, String> {
+    let account = parked_account(&backend_id)?;
+    crate::commands::mobile_native::vault(app, move |v| v.secret_get(&account)).await
+}
+
+#[cfg(mobile)]
+#[tauri::command]
+pub async fn secret_park_delete(app: tauri::AppHandle, backend_id: String) -> Result<(), String> {
+    let account = parked_account(&backend_id)?;
+    crate::commands::mobile_native::vault(app, move |v| v.secret_delete(&account)).await
+}
+
 // ── Non-keychain platforms (Linux desktop) ──────────────────────────────
 // The commands still exist so `invoke('secret_get', …)` resolves, but they
 // report unsupported. The frontend treats any error here as "no keychain" and
 // keeps using the obfuscated-localStorage path — identical to today's behavior.
 
-#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+#[cfg(all(desktop, not(any(target_os = "windows", target_os = "macos"))))]
 #[tauri::command]
 pub fn secret_set(account: String, _value: String) -> Result<(), String> {
     check_account(&account)?;
     Err("keychain unsupported on this platform".into())
 }
 
-#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+#[cfg(all(desktop, not(any(target_os = "windows", target_os = "macos"))))]
 #[tauri::command]
 pub fn secret_get(account: String) -> Result<Option<String>, String> {
     check_account(&account)?;
     Err("keychain unsupported on this platform".into())
 }
 
-#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+#[cfg(all(desktop, not(any(target_os = "windows", target_os = "macos"))))]
 #[tauri::command]
 pub fn secret_delete(account: String) -> Result<(), String> {
     check_account(&account)?;
     Err("keychain unsupported on this platform".into())
 }
 
-#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+#[cfg(all(desktop, not(any(target_os = "windows", target_os = "macos"))))]
 #[tauri::command]
 pub fn secret_park_set(backend_id: String, _value: String) -> Result<(), String> {
     parked_account(&backend_id)?;
     Err("keychain unsupported on this platform".into())
 }
 
-#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+#[cfg(all(desktop, not(any(target_os = "windows", target_os = "macos"))))]
 #[tauri::command]
 pub fn secret_park_get(backend_id: String) -> Result<Option<String>, String> {
     parked_account(&backend_id)?;
     Err("keychain unsupported on this platform".into())
 }
 
-#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+#[cfg(all(desktop, not(any(target_os = "windows", target_os = "macos"))))]
 #[tauri::command]
 pub fn secret_park_delete(backend_id: String) -> Result<(), String> {
     parked_account(&backend_id)?;
@@ -541,6 +658,24 @@ mod account_allowlist_tests {
         }
     }
 
+    /// The token of the phone as a Remote client has a place in the vault of
+    /// a phone and none on the desktop: v3.0.5 refused the name, and the
+    /// desktop has no caller that stores under it.
+    #[test]
+    fn the_remote_token_of_the_phone_is_a_phone_account_only() {
+        for account in PHONE_ACCOUNTS {
+            assert!(account_allowed(account, true), "{account} on a phone");
+            assert!(!account_allowed(account, false), "{account} on the desktop");
+            assert_eq!(check_account(account).is_ok(), cfg!(mobile), "{account} in this build");
+            assert!(!ALLOWED_ACCOUNTS.contains(&account), "{account} is in both lists");
+        }
+        // The six of the desktop are the six of the phone.
+        for account in ALLOWED_ACCOUNTS {
+            assert!(account_allowed(account, true) && account_allowed(account, false), "{account}");
+        }
+        assert!(!account_allowed("anything-else", true));
+    }
+
     #[test]
     fn a_foreign_account_is_refused_and_never_reaches_the_vault() {
         // The three names the finding is actually about: anything the caller
@@ -586,6 +721,7 @@ mod account_allowlist_tests {
         const PROVIDER_STORE: &str = include_str!("../../../src/stores/providerStore.ts");
         const MLX_IMAGE: &str = include_str!("../../../src/api/mlx-image.ts");
         const SUPABASE: &str = include_str!("../../../src/api/cloud/supabase.ts");
+        const LU_NATIVE: &str = include_str!("../../../src/lib/lu-native.ts");
 
         let mut wanted: Vec<String> = Vec::new();
 
@@ -619,15 +755,19 @@ mod account_allowlist_tests {
         wanted.push(format!("{session}-code-verifier"));
         wanted.push(session);
 
+        // lib/lu-native.ts: the token of the phone as a Remote client. Its
+        // only callers live in the phone interface, so it is a phone account.
+        wanted.push(quoted_after(LU_NATIVE, "const REMOTE_TOKEN_ACCOUNT ="));
+
         for account in &wanted {
             assert!(
-                ALLOWED_ACCOUNTS.contains(&account.as_str()),
+                account_allowed(account.as_str(), true),
                 "the frontend stores a secret under '{account}', which the allowlist refuses"
             );
         }
         // …and nothing sits in the allowlist that no caller uses. An account
         // nobody writes is an account nobody notices being read.
-        for allowed in ALLOWED_ACCOUNTS {
+        for allowed in ALLOWED_ACCOUNTS.iter().chain(PHONE_ACCOUNTS.iter()) {
             assert!(
                 wanted.iter().any(|w| w == allowed),
                 "'{allowed}' is allowlisted but no frontend call site stores under it"
@@ -636,9 +776,10 @@ mod account_allowlist_tests {
     }
 
     /// Every command body checks the name before it does anything else.
-    /// Twelve commands total: the original three (account allowlist) plus
+    /// Eighteen commands total: the original three (account allowlist) plus
     /// the three R9 parked-key commands (backend-id pattern), each present
-    /// once for the keychain platforms and once for the stub platforms.
+    /// once for the keychain platforms, once for the phones and once for the
+    /// stub platforms.
     #[test]
     fn no_command_reaches_the_vault_without_the_check() {
         const SECRET_RS: &str = include_str!("secret.rs");
@@ -651,13 +792,13 @@ mod account_allowlist_tests {
         let parked_checks = SECRET_RS
             .matches(concat!("parked_account", "(&backend_id)?;"))
             .count();
-        assert_eq!(commands, 12, "command count changed, recount the checks");
+        assert_eq!(commands, 18, "command count changed, recount the checks");
         assert_eq!(
-            account_checks, 6,
+            account_checks, 9,
             "a plain secret command runs without the account name check"
         );
         assert_eq!(
-            parked_checks, 6,
+            parked_checks, 9,
             "a parked-key command runs without the backend-id check"
         );
     }

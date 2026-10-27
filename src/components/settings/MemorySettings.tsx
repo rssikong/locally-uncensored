@@ -13,11 +13,13 @@ import { getModelMaxTokens } from '../../lib/context-compaction'
 // diese Zeile 31K und der Rest der Oberflaeche 31.3K.
 import { formatContextWindow } from '../../lib/formatters'
 import { GlowButton } from '../ui/GlowButton'
+import { saveOrShare } from '../../lib/save-or-share'
 import { HINWEIS_TEXT } from '../../lib/hinweis'
 import type { MemoryType, MemoryFile } from '../../types/agent-mode'
 import { useCloudAuthStore } from '../../stores/cloudAuthStore'
 import { synchronizeMemoryCollection, type MemorySyncResolution } from '../../lib/memory-sync'
 import { reviewPreviousMemories, finalizePreviousMemories, type LegacyMemoryReview } from '../../lib/memory-legacy'
+import { MemoryRowDelete, MemoryUndoBar, useMemoryUndo } from '../chat/MemoryDelete'
 
 // ── Subtle type indicator (internal, not user-facing) ─────────
 
@@ -94,9 +96,11 @@ function MemorySettingsPanel() {
   const conversation = useChatStore(s => s.conversations.find(c => c.id === s.activeConversationId))
   const [savedProject, setSavedProject] = useState<string | null>(null)
   const [projectSaveError, setProjectSaveError] = useState(false)
-  const { entries, removeMemory, updateMemory, clearAll, settings, updateMemorySettings, exportAsMarkdown, importFromMarkdown, exportAsJSON, importFromJSON } = useMemoryStore()
+  const { entries, updateMemory, settings, updateMemorySettings, exportAsMarkdown, importFromMarkdown, exportAsJSON, importFromJSON } = useMemoryStore()
   const [search, setSearch] = useState('')
   const [confirmClear, setConfirmClear] = useState(false)
+  // A27: every delete here can be undone too, same bar as the Memory panel.
+  const { removal, failed: undoFailed, remove, undo, dismiss } = useMemoryUndo()
   const [addingNew, setAddingNew] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   // Only the ASYNC half of the budget line is state; "no model selected" is a
@@ -220,27 +224,16 @@ function MemorySettingsPanel() {
 
   // ── Handlers ────────────────────────────────────────────────
 
-  const handleExportMd = () => {
-    const md = exportAsMarkdown()
-    const blob = new Blob([md], { type: 'text/markdown' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'memory.md'
-    a.click()
-    URL.revokeObjectURL(url)
+  // Desktop and browser: a download, as before. Phone: the share sheet
+  // (lib/save-or-share.ts). A failure is shown where import messages are.
+  const exportMemory = async (filename: string, mime: string, text: string) => {
+    const outcome = await saveOrShare({ filename, mime, text }, { via: 'anchor' })
+    if (outcome.status === 'error') setImportMsg(`Export failed. ${outcome.error}`)
   }
 
-  const handleExportJSON = () => {
-    const json = exportAsJSON()
-    const blob = new Blob([json], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'memory.json'
-    a.click()
-    URL.revokeObjectURL(url)
-  }
+  const handleExportMd = () => { void exportMemory('memory.md', 'text/markdown', exportAsMarkdown()) }
+
+  const handleExportJSON = () => { void exportMemory('memory.json', 'application/json', exportAsJSON()) }
 
   // One Import button for BOTH .md and .json. The old UI wired the single
   // button only to the markdown picker, so the JSON path (jsonInputRef /
@@ -291,7 +284,7 @@ function MemorySettingsPanel() {
       setTimeout(() => setConfirmClear(false), 3000)
       return
     }
-    clearAll()
+    remove(entries.map(e => e.id))
     setConfirmClear(false)
   }
 
@@ -666,7 +659,9 @@ function MemorySettingsPanel() {
                   Sensitive: exclude from AI requests
                 </label>
               </div>
-              <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+              {/* Always visible (A27): behind `group-hover` they never showed
+                  where WebKitGTK reports no hover (MemoryDelete.tsx). */}
+              <div className="flex items-center gap-0.5 shrink-0">
                 {/* Outdated entries are read-only — no edit affordance. */}
                 {!stale && (
                   <button
@@ -677,18 +672,14 @@ function MemorySettingsPanel() {
                     <Pencil size={10} />
                   </button>
                 )}
-                <button
-                  onClick={() => removeMemory(entry.id)}
-                  className="p-0.5 rounded hover:bg-red-500/20 text-gray-600 hover:text-red-400"
-                  aria-label="Delete entry"
-                >
-                  <Trash2 size={10} />
-                </button>
+                <MemoryRowDelete title={entry.title} onDelete={() => remove([entry.id])} />
               </div>
             </div>
           )
         })}
       </div>
+
+      <MemoryUndoBar removal={removal} failed={undoFailed} onUndo={undo} onDismiss={dismiss} />
 
       {/* Re-embed all — backfills missing memory embeddings (Feature FF) */}
       {entries.length > 0 && (
@@ -718,7 +709,7 @@ function MemorySettingsPanel() {
           onClick={handleClear}
           className="text-[0.6rem] flex items-center justify-center gap-1 px-2.5"
         >
-          <Trash2 size={10} /> {confirmClear ? 'Sure?' : 'Clear'}
+          <Trash2 size={10} /> {confirmClear ? 'Sure?' : 'Delete all'}
         </GlowButton>
         <input ref={fileInputRef} type="file" accept=".md,.txt,.json" onChange={handleImport} className="hidden" />
       </div>

@@ -79,6 +79,8 @@ const PFLICHT: Record<string, Record<string, string>> = {
   // nur auf dem Papier. Der Ausgang ist hier ein Satz an das Modell statt ein
   // unterbundener Bridge-Aufruf, und genau das prueft die Reihe unten.
   message_agent: { task_id: 'task-1-abcdef', message: 'halte dich kurz' },
+  // A11: ohne Schluessel keine Karte und keine Aenderung.
+  set_setting: { key: 'theme' },
 }
 
 /**

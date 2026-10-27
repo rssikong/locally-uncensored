@@ -1,10 +1,13 @@
 // Dynamic Tool Registry — MCP-shaped, replaces hardcoded AGENT_TOOL_DEFS
 
+import { turnCaps, capCategory } from '../../lib/remote-turn-caps'
 import type { MCPToolDefinition, PermissionMap, PermissionLevel, ToolArgs } from './types'
 import type { OllamaTool } from '../../types/agent-mode'
 import type { ToolDefinition } from '../providers/types'
 import { MUTATING_TOOLS } from '../../lib/mutating-tools'
 import { RETIRED_TOOL_NAMES, retiredPermissionLevel } from '../../lib/retired-tools'
+import { retiredToolRunsOnThisDevice } from '../../lib/mobile-tools'
+import { toolOfferedToChatModel, SUB_AGENTS_NEED_CLOUD_FOR_MODEL } from '../../lib/phone-sub-agents'
 import type { AgentRunContext } from '../agent-context'
 
 /**
@@ -172,8 +175,15 @@ export class ToolRegistry {
 
   // ── Query ─────────────────────────────────────────────────────
 
+  /**
+   * Every tool a run may be offered. On a phone whose chat model runs on the
+   * phone itself the sub agent tools are left out (lib/phone-sub-agents.ts);
+   * every other device and model gets the whole registry, as before.
+   */
   getAll(): MCPToolDefinition[] {
-    return Array.from(this.tools.values()).map(t => t.definition)
+    return Array.from(this.tools.values())
+      .map(t => t.definition)
+      .filter(t => toolOfferedToChatModel(t.name))
   }
 
   getAvailableTools(permissions: PermissionMap): MCPToolDefinition[] {
@@ -194,7 +204,9 @@ export class ToolRegistry {
   resolveExecutable(name: string): { name: string; inputSchema?: MCPToolDefinition['inputSchema'] } | undefined {
     const td = this.tools.get(name)?.definition
     if (td) return { name: td.name, inputSchema: td.inputSchema }
-    if (RETIRED_TOOL_NAMES.has(name)) return { name }
+    // Not on a phone, apart from the clock: a stub here would carry the old
+    // shell names all the way to an approval dialog for a tool that cannot run.
+    if (RETIRED_TOOL_NAMES.has(name) && retiredToolRunsOnThisDevice(name)) return { name }
     return undefined
   }
 
@@ -242,6 +254,9 @@ export class ToolRegistry {
     // must not start. The executor checks this too, but the registry is also
     // reached directly (sub-agents, retired-name redirects).
     if (abort?.aborted) return `Error: cancelled by the user before "${name}" started.`
+    // Not offered means not runnable either: a restored chat or a model that
+    // writes the name from memory must not start what the list left out.
+    if (!toolOfferedToChatModel(name)) return SUB_AGENTS_NEED_CLOUD_FOR_MODEL
     const entry = this.tools.get(name)
     if (!entry) {
       // Retired names (2.6.6 tool merge) still run: a restored session or a
@@ -251,6 +266,11 @@ export class ToolRegistry {
       const redirected = this.retiredRunner ? await this.retiredRunner(name, args, run, abort) : null
       if (redirected !== null) return redirected
       return `Error: Unknown tool "${name}"`
+    }
+    // A turn from the paired phone never uses more than the device may
+    // (lib/remote-turn-caps), whatever the permissions or the Code preset say.
+    if (turnCaps(run?.conversationId ?? undefined)?.[capCategory(entry.definition)] === 'blocked') {
+      return `Error: ${name} is not allowed for the phone that started this turn. Its rights on this computer leave it out. Continue without it.`
     }
 
     // Audit B2: a retry re-RUNS the tool. For a side-effecting tool that is a

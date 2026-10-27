@@ -864,9 +864,24 @@ fn video_run() {
     if let Some(negative) = var("LU_REAL_NEGATIVE") {
         args["negative_prompt"] = json!(negative);
     }
+    // Size, steps and the LoRA stack, as `generateVideo` sends them since the
+    // second engine takes them (`mlxVideoRunSize`, `mlxVideoRunSteps`).
     if let (Some(width), Some(height)) = (number::<u32>("LU_REAL_WIDTH"), number::<u32>("LU_REAL_HEIGHT")) {
         args["width"] = json!(width);
         args["height"] = json!(height);
+    }
+    if let Some(steps) = number::<u32>("LU_REAL_STEPS") {
+        args["steps"] = json!(steps);
+    }
+    if let Some(stack) = var("LU_REAL_LORAS") {
+        let loras: Vec<Value> = stack
+            .split('|')
+            .map(|one| {
+                let (name, strength) = one.rsplit_once(':').unwrap_or((one, "1"));
+                json!({ "name": name, "strength": strength.parse::<f64>().expect("a strength is a number") })
+            })
+            .collect();
+        args["loras"] = json!(loras);
     }
     if let Some(image) = var("LU_REAL_IMAGES") {
         assert_eq!(model["acceptsImage"], true, "{id} takes no start image by the catalogue");

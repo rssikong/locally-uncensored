@@ -87,6 +87,8 @@ export function sectionsFor(tab: SettingsTab, flags: SettingsSectionFlags): stri
         'Chat Backup',
         ...(flags.chatTimeout ? ['Chat Reply Timeout'] : []),
         ...(flags.mediaTimeouts ? ['Image / Video Generation Timeouts'] : []),
+        // 3.0.8 (A2): local only, the same condition as the reply timeout.
+        ...(flags.chatTimeout ? ['Pictures and Video from the Chat'] : []),
         'Privacy',
         'Onboarding',
         'Updates',
@@ -95,7 +97,7 @@ export function sectionsFor(tab: SettingsTab, flags: SettingsSectionFlags): stri
     case 'backends':
       return [
         'Providers',
-        'Model Storage',
+        'Storage',
         'CivitAI API key',
         'Hugging Face token',
         ...(flags.builtinExpert ? ['LU Engine (expert)'] : []),

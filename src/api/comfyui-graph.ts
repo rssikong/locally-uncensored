@@ -101,3 +101,45 @@ export function videoDecodeNode(
       }
     : { class_type: 'VAEDecode', inputs: { samples: samplesRef, vae: vaeRef } }
 }
+
+/** Speicherknoten für ein fertiges Video, für alle stummen Video-Wege gleich
+ *  (A19, 3.0.8). Wan 2.1 schrieb im Chat fest SaveAnimatedWEBP und in Create
+ *  ohne VideoHelperSuite ebenfalls: ein animiertes Bild ohne Steuerung, das im
+ *  Chat-Player und in der Galerie nicht als Video lief. Die Reihenfolge ist
+ *  deshalb
+ *    1. CreateVideo + SaveVideo aus dem ComfyUI-Kern (MP4, H.264; der Kern
+ *       schreibt yuv420p), also nichts, was ein Nutzer nachinstallieren muss,
+ *    2. VHS_VideoCombine (video/h264-mp4, ebenfalls yuv420p),
+ *    3. SaveAnimatedWEBP nur noch für Kerne, die beides nicht haben,
+ *    4. SaveImage (Einzelbilder) als allerletzter Ausweg.
+ *  Gibt die nächste freie Knotennummer zurück. */
+export function addVideoSave(
+  workflow: ComfyApiGraph,
+  n: number,
+  images: ComfyLinkRef,
+  fps: number,
+  prefix: string,
+  has: (classType: string) => boolean,
+): number {
+  if (has('CreateVideo') && has('SaveVideo')) {
+    const createId = String(n++)
+    workflow[createId] = { class_type: 'CreateVideo', inputs: { images, fps } }
+    workflow[String(n++)] = {
+      class_type: 'SaveVideo',
+      inputs: { video: [createId, 0], filename_prefix: prefix, format: 'mp4', codec: 'h264' },
+    }
+  } else if (has('VHS_VideoCombine')) {
+    workflow[String(n++)] = {
+      class_type: 'VHS_VideoCombine',
+      inputs: { images, frame_rate: fps, loop_count: 0, filename_prefix: prefix, format: 'video/h264-mp4', pingpong: false, save_output: true },
+    }
+  } else if (has('SaveAnimatedWEBP')) {
+    workflow[String(n++)] = {
+      class_type: 'SaveAnimatedWEBP',
+      inputs: { images, filename_prefix: prefix, fps, lossless: false, quality: 90, method: 'default' },
+    }
+  } else {
+    workflow[String(n++)] = { class_type: 'SaveImage', inputs: { images, filename_prefix: prefix } }
+  }
+  return n
+}

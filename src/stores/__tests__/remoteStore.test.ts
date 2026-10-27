@@ -65,7 +65,7 @@ describe('remoteStore', () => {
       mobileUrl: '',
       qrPngBase64: '',
       connectedDevices: [],
-      permissions: { filesystem: false, downloads: false, process_control: false, shell: false },
+      permissions: { filesystem: false, downloads: false, process_control: false, shell: false, create: false },
       tunnelActive: false,
       tunnelUrl: '',
       tunnelLoading: false,
@@ -224,7 +224,7 @@ describe('remoteStore', () => {
   // ── regenerateToken ────────────────────────────────────────
 
   describe('regenerateToken', () => {
-    it('updates passcode and sets passcodeExpiresAt to now + 300', async () => {
+    it('updates passcode and sets passcodeExpiresAt to now + 900', async () => {
       mockBackendCall
         .mockResolvedValueOnce('NEWCODE')
         .mockResolvedValueOnce({ qr_png_base64: '', url: '', passcode: '' })
@@ -234,8 +234,8 @@ describe('remoteStore', () => {
 
       const state = useRemoteStore.getState()
       expect(state.passcode).toBe('NEWCODE')
-      expect(state.passcodeExpiresAt).toBeGreaterThanOrEqual(before + 300)
-      expect(state.passcodeExpiresAt).toBeLessThanOrEqual(before + 301)
+      expect(state.passcodeExpiresAt).toBeGreaterThanOrEqual(before + 900)
+      expect(state.passcodeExpiresAt).toBeLessThanOrEqual(before + 901)
     })
 
     it('leaves connected devices intact on regen (Bug #7: decoupled from JWT rotation)', async () => {
@@ -434,6 +434,7 @@ describe('remoteStore', () => {
         downloads: true,
         process_control: false,
         shell: false,
+        create: false,
       })
     })
 
@@ -442,7 +443,7 @@ describe('remoteStore', () => {
       mockBackendCall.mockResolvedValueOnce(undefined)
       await useRemoteStore.getState().setPermissions(perms)
       expect(mockBackendCall).toHaveBeenCalledWith('set_remote_permissions', {
-        permissions: { ...perms, shell: false },
+        permissions: { ...perms, shell: false, create: false },
       })
     })
 
@@ -460,7 +461,7 @@ describe('remoteStore', () => {
       // RA-1: a failed toggle must not repaint the panel as if it applied —
       // the panel has to keep showing the server's last known truth.
       useRemoteStore.setState({
-        permissions: { filesystem: false, downloads: false, process_control: false, shell: false },
+        permissions: { filesystem: false, downloads: false, process_control: false, shell: false, create: false },
       })
       mockBackendCall.mockRejectedValueOnce(new Error('Perm error'))
       await useRemoteStore.getState().setPermissions({
@@ -468,12 +469,14 @@ describe('remoteStore', () => {
         downloads: true,
         process_control: true,
         shell: true,
+        create: false,
       })
       expect(useRemoteStore.getState().permissions).toEqual({
         filesystem: false,
         downloads: false,
         process_control: false,
         shell: false,
+        create: false,
       })
     })
   })
@@ -502,7 +505,7 @@ describe('remoteStore', () => {
     it('maps the permissions reported by remote_server_status', async () => {
       mockBackendCall.mockResolvedValueOnce({
         ...statusBase,
-        permissions: { filesystem: true, downloads: false, process_control: true, shell: false },
+        permissions: { filesystem: true, downloads: false, process_control: true, shell: false, create: false },
       })
       await useRemoteStore.getState().refreshStatus()
       expect(useRemoteStore.getState().permissions).toEqual({
@@ -510,6 +513,7 @@ describe('remoteStore', () => {
         downloads: false,
         process_control: true,
         shell: false,
+        create: false,
       })
     })
 
@@ -518,11 +522,11 @@ describe('remoteStore', () => {
       // desktop never sees on its own. Status polling is the path that catches
       // it, so the desktop toggle stops lying about what the phone can do.
       useRemoteStore.setState({
-        permissions: { filesystem: false, downloads: false, process_control: false, shell: false },
+        permissions: { filesystem: false, downloads: false, process_control: false, shell: false, create: false },
       })
       mockBackendCall.mockResolvedValueOnce({
         ...statusBase,
-        permissions: { filesystem: true, downloads: false, process_control: false, shell: false },
+        permissions: { filesystem: true, downloads: false, process_control: false, shell: false, create: false },
       })
       await useRemoteStore.getState().refreshStatus()
       expect(useRemoteStore.getState().permissions.filesystem).toBe(true)
@@ -530,7 +534,7 @@ describe('remoteStore', () => {
 
     it('treats a missing scope as denied, never as granted', async () => {
       useRemoteStore.setState({
-        permissions: { filesystem: true, downloads: true, process_control: true, shell: true },
+        permissions: { filesystem: true, downloads: true, process_control: true, shell: true, create: false },
       })
       mockBackendCall.mockResolvedValueOnce({
         ...statusBase,
@@ -542,6 +546,7 @@ describe('remoteStore', () => {
         downloads: false,
         process_control: false,
         shell: false,
+        create: false,
       })
     })
 
@@ -549,7 +554,7 @@ describe('remoteStore', () => {
       // A backend predating the read-back tells us nothing. Coercing to
       // all-false there would just move the lie to the other side.
       useRemoteStore.setState({
-        permissions: { filesystem: true, downloads: false, process_control: false, shell: false },
+        permissions: { filesystem: true, downloads: false, process_control: false, shell: false, create: false },
       })
       mockBackendCall.mockResolvedValueOnce({ ...statusBase })
       await useRemoteStore.getState().refreshStatus()
@@ -558,6 +563,7 @@ describe('remoteStore', () => {
         downloads: false,
         process_control: false,
         shell: false,
+        create: false,
       })
     })
 
@@ -565,7 +571,7 @@ describe('remoteStore', () => {
       // No window may exist in which `enabled` is already true while the panel
       // still shows the pre-start guess.
       useRemoteStore.setState({
-        permissions: { filesystem: false, downloads: false, process_control: false, shell: false },
+        permissions: { filesystem: false, downloads: false, process_control: false, shell: false, create: false },
       })
       const seen: Array<{ enabled: boolean; filesystem: boolean }> = []
       const unsub = useRemoteStore.subscribe((st) =>
@@ -578,7 +584,7 @@ describe('remoteStore', () => {
           passcodeExpiresAt: 9999,
           lanUrl: 'http://lan',
           mobileUrl: 'http://lan/m',
-          permissions: { filesystem: true, downloads: true, process_control: false, shell: false },
+          permissions: { filesystem: true, downloads: true, process_control: false, shell: false, create: false },
         })
         .mockResolvedValueOnce({ qr_png_base64: '', url: '', passcode: '' })
 
@@ -590,6 +596,7 @@ describe('remoteStore', () => {
         downloads: true,
         process_control: false,
         shell: false,
+        create: false,
       })
       // Not one emitted state had the server running under permissions the
       // panel wasn't showing.
@@ -598,7 +605,7 @@ describe('remoteStore', () => {
 
     it('maps the permissions returned by a restart', async () => {
       useRemoteStore.setState({
-        permissions: { filesystem: true, downloads: true, process_control: true, shell: true },
+        permissions: { filesystem: true, downloads: true, process_control: true, shell: true, create: false },
       })
       mockBackendCall
         .mockResolvedValueOnce({
@@ -607,7 +614,7 @@ describe('remoteStore', () => {
           passcodeExpiresAt: 9999,
           lanUrl: 'http://lan',
           mobileUrl: 'http://lan/m',
-          permissions: { filesystem: false, downloads: false, process_control: false, shell: false },
+          permissions: { filesystem: false, downloads: false, process_control: false, shell: false, create: false },
         })
         .mockResolvedValueOnce({ qr_png_base64: '', url: '', passcode: '' })
 
@@ -617,6 +624,7 @@ describe('remoteStore', () => {
         downloads: false,
         process_control: false,
         shell: false,
+        create: false,
       })
     })
 
@@ -628,6 +636,7 @@ describe('remoteStore', () => {
         downloads: false,
         process_control: false,
         shell: false,
+        create: false,
       })
     })
   })
@@ -635,13 +644,13 @@ describe('remoteStore', () => {
 
 describe('normalizeRemotePermissions (RA-1)', () => {
   it('coerces every scope to an explicit boolean', () => {
-    expect(normalizeRemotePermissions({ filesystem: true, downloads: false, process_control: true, shell: true }))
-      .toEqual({ filesystem: true, downloads: false, process_control: true, shell: true })
+    expect(normalizeRemotePermissions({ filesystem: true, downloads: false, process_control: true, shell: true, create: false }))
+      .toEqual({ filesystem: true, downloads: false, process_control: true, shell: true, create: false })
   })
 
   it('reads anything that is not exactly `true` as denied', () => {
     expect(normalizeRemotePermissions({ filesystem: 'true', downloads: 1, process_control: null }))
-      .toEqual({ filesystem: false, downloads: false, process_control: false, shell: false })
+      .toEqual({ filesystem: false, downloads: false, process_control: false, shell: false, create: false })
   })
 
   it('returns null for a payload that carries no permissions object', () => {

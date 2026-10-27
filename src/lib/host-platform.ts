@@ -16,11 +16,14 @@
 // tokens that also spare the agent a system_info round trip and improve every
 // other shell task, not just opening a folder.
 
-export type HostPlatform = 'macos' | 'windows' | 'linux' | 'unknown'
+import { isMobile, nativeHost } from './device-kind'
+
+export type HostPlatform = 'macos' | 'windows' | 'linux' | 'ios' | 'android' | 'unknown'
 
 interface NavLike {
   platform?: string
   userAgent?: string
+  maxTouchPoints?: number
 }
 
 function currentNav(): NavLike {
@@ -28,15 +31,41 @@ function currentNav(): NavLike {
 }
 
 /** Injectable so every branch is testable from one machine. */
-export function hostPlatform(nav: NavLike = currentNav()): HostPlatform {
+export function hostPlatform(nav?: NavLike): HostPlatform {
+  // Asked about this very machine, the app answers first: it knows what it
+  // was built for (lib/device-kind.ts, nativeHost). A handed-in navigator is
+  // a question about some other machine and is read as it stands.
+  if (nav === undefined) {
+    const told = nativeHost()
+    if (told !== null) return told
+  }
+  return platformOf(nav ?? currentNav())
+}
+
+function platformOf(nav: NavLike): HostPlatform {
   const plat = nav.platform || ''
   const ua = nav.userAgent || ''
   const both = `${plat} ${ua}`
-  if (/Mac|iPhone|iPad|iPod|Macintosh/.test(both)) return 'macos'
+  // The phones first. An iPhone says "like Mac OS X", an iPad since iPadOS 13
+  // says "MacIntel" and differs from a Mac only by its touch screen, and an
+  // Android WebView says "Linux armv8l". Read as macOS and Linux the agent was
+  // told about bash, Finder and xdg-open on a device that has none of them.
+  // The same rules as isIOS and isAndroid in api/backend.ts, spelled against
+  // the injectable navigator so every branch stays testable.
+  if (/iPhone|iPad|iPod/.test(both)) return 'ios'
+  if (/Mac/.test(plat) && (nav.maxTouchPoints || 0) > 1) return 'ios'
+  if (/Android/.test(ua)) return 'android'
+  if (/Mac|Macintosh/.test(both)) return 'macos'
   if (/Win/.test(both)) return 'windows'
   if (/Linux|X11|CrOS/.test(both)) return 'linux'
   return 'unknown'
 }
+
+/** The platform sentence on a phone or tablet. No shell, no desktop verbs:
+ *  the tools that would run them are not registered there (see
+ *  registerBuiltinTools), and a model told about `open` goes looking for it. */
+export const MOBILE_PLATFORM_LINE =
+  'This device is a phone or tablet. There is no shell, no terminal and no desktop to open things on. Files live only in the working folder of this app; use the file tools with paths relative to that folder.'
 
 /**
  * The platform sentence for the agent system prompt.
@@ -51,6 +80,9 @@ export function platformPromptLine(p: HostPlatform = hostPlatform()): string {
       return 'This machine runs macOS and shell_execute runs bash. Open a file or folder with `open <path>`, reveal it in Finder with `open -R <path>`, start an application with `open -a "<App Name>"`.'
     case 'windows':
       return 'This machine runs Windows and shell_execute runs PowerShell. Open a file or folder with `Invoke-Item <path>`, reveal it in Explorer with `explorer "/select,<path>"` (one argument, the comma matters), start an application with `Start-Process "<App Name>"`.'
+    case 'ios':
+    case 'android':
+      return MOBILE_PLATFORM_LINE
     case 'linux':
       return 'This machine runs Linux and shell_execute runs bash. Open a file or folder with `xdg-open <path>`, start an application with `gtk-launch <name>`. There is no reveal, so open the containing folder instead.'
     default:
@@ -100,5 +132,23 @@ export function hostClockLine(now: Date = new Date()): string {
     // No timezone is better than a wrong one.
   }
   const stamp = now.toLocaleString('en-GB', { dateStyle: 'full', timeStyle: 'short' })
-  return `Date and time at the start of this run: ${stamp}${tz ? ` (${tz})` : ''}. Trust this line; there is no clock tool.`
+  const line = `Date and time at the start of this run: ${stamp}${tz ? ` (${tz})` : ''}. Trust this line; there is no clock tool.`
+  return isMobile() ? `${line} ${todayIsLaterNote(now)}` : line
+}
+
+/**
+ * What a small model on a phone needs said on top of the date.
+ *
+ * Acceptance on Android with 8 GB, B7: asked who won the World Cup of 2026,
+ * Qwen 3.5 2B answered that the tournament lies in the future and did not
+ * search, although the line above named the date. Another run wrote "2024"
+ * into a search query. A model of that size reads a date as a fact about the
+ * run and does not conclude that its own knowledge is older. So the
+ * conclusion is spelled out: the year, and what follows from it.
+ *
+ * Phone only. The desktop line is word for word what it was.
+ */
+export function todayIsLaterNote(now: Date = new Date()): string {
+  const year = now.getFullYear()
+  return `The current year is ${year}. Your own knowledge ends earlier, so never call something up to this date "in the future": for anything recent, look it up if you have a search tool, and write ${year} in the query, not an earlier year.`
 }

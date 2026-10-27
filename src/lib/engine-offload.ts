@@ -30,7 +30,9 @@
  */
 
 import { useUIStore } from '../stores/uiStore'
+import { platformText } from './platform-text'
 import { useLuEngineSwitchStore } from '../stores/luEngineSwitchStore'
+import { fitActionsOf, type FitAction } from './engine-fit'
 
 /** What a `bundled_engine_status` answer says about offload. */
 export interface EngineOffloadStatus {
@@ -56,11 +58,19 @@ export interface EngineOffloadStatus {
    *  IMAGE_PART_REFUSED_NOTE). Written in Rust, shown as it is. Null on every
    *  start that loaded the part, and on a model that has none. */
   imageNote?: string | null
+  /** How the model fits (3.0.8, A25, Rust vram_plan.rs): how many layers the
+   *  card holds and what a shorter context or KV q8_0 would buy, and whether
+   *  the model leaves the computer little RAM ("Tight fit: ..."). Written in
+   *  Rust, shown as it is. Null when everything fits with room. */
+  memoryNote?: string | null
+  /** The buttons under `memoryNote` ("Context 16K", "KV q8_0"). */
+  fitActions?: FitAction[] | null
+  /** MoE layers whose experts stay on the processor (`--n-cpu-moe`). */
+  cpuMoe?: number | null
 }
 
 /** The sentence the standing line carries after a fallback. */
-export const ENGINE_CPU_ONLY_NOTE =
-  'Running on the CPU. The GPU start failed; see the log file in Settings > Troubleshoot.'
+export const ENGINE_CPU_ONLY_NOTE = platformText('engineCpuOnly')
 
 /**
  * The clause the engine-details line adds, or null when there is nothing to
@@ -80,6 +90,10 @@ export function engineOffloadLine(status: EngineOffloadStatus | null | undefined
     return status.sanityNote ? 'GPU layers: 0, the GPU answered unreadably' : 'GPU layers: 0, the GPU start failed'
   }
   const layers = status.gpuLayers
+  const moe = typeof status.cpuMoe === 'number' && Number.isInteger(status.cpuMoe) && status.cpuMoe > 0 ? status.cpuMoe : 0
+  // An MoE model that does not fit keeps every layer on the card and the
+  // experts of its first layers on the processor (3.0.8, A25).
+  if (moe > 0 && (layers === null || layers === undefined)) return `GPU layers: all, experts of ${moe} on the CPU`
   if (typeof layers !== 'number' || !Number.isInteger(layers) || layers < 0) return null
   return `GPU layers: ${layers}`
 }
@@ -93,11 +107,11 @@ export function engineOffloadLine(status: EngineOffloadStatus | null | undefined
  */
 export function engineCpuFallbackKey(status: EngineOffloadStatus | null | undefined): string | null {
   if (!status?.running) return null
-  if (!status.cpuOnly && !status.sanityNote && !status.imageNote) return null
+  if (!status.cpuOnly && !status.sanityNote && !status.imageNote && !status.memoryNote) return null
   // The sentence is part of the key: an engine that was first healed without
   // Flash Attention and then, on the next pass, moved to the processor has
   // something new to say about the same port and model.
-  return `${status.port ?? '?'}|${status.model_path ?? '?'}|${status.sanityNote ?? ''}|${status.imageNote ?? ''}`
+  return `${status.port ?? '?'}|${status.model_path ?? '?'}|${status.sanityNote ?? ''}|${status.imageNote ?? ''}|${status.memoryNote ?? ''}`
 }
 
 /** The sentence the standing line carries for this status. */
@@ -106,8 +120,13 @@ export function engineStandingNote(status: EngineOffloadStatus): string {
   // generic fallback line whenever it is there. The image note is about
   // something else (what the model can see, not where it computes), so it
   // stands beside whichever of the two applies and alone when neither does.
-  const where = status.sanityNote || (status.cpuOnly ? ENGINE_CPU_ONLY_NOTE : null)
-  return [where, status.imageNote].filter(Boolean).join(' ')
+  // The fallback sentence is asked when it is needed, not when this module
+  // was loaded: a phone learns what it is a moment after the first import, and
+  // the constant above then still held the desktop sentence with "Settings >
+  // Troubleshoot", a place a phone does not have (mobile round 5).
+  const where = status.sanityNote || (status.cpuOnly ? platformText('engineCpuOnly') : null)
+  // The memory note is about the rest of the computer, so it comes last.
+  return [where, status.imageNote, status.memoryNote].filter(Boolean).join(' ')
 }
 
 /**
@@ -195,9 +214,13 @@ export function announceEngineCpuFallback(status: EngineOffloadStatus | null | u
   if (angesagt === key) return
   angesagt = key
   const ende = Date.now() + ENGINE_NOTE_UNSEEN_HOLD_MS
+  // The buttons belong to the memory sentence, so they come along only
+  // when that sentence is in the line.
+  const actions = status?.memoryNote ? fitActionsOf(status.fitActions) : []
   useLuEngineSwitchStore.getState().announce(
     engineStandingNote(status as EngineOffloadStatus),
     'info',
     () => Date.now() < ende && !dieZeileIstZuSehen(),
+    actions.length > 0 ? { list: actions, model: status?.model_path ?? null } : undefined,
   )
 }

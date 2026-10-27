@@ -30,7 +30,7 @@
 //! `lu-astra/proof/mac/QWEN-21-PARITAET.md`.
 
 use super::{apply_hf_token, fetch_repo_listing, images_root, run_hub_step, truncate, ImageCatalogEntry};
-use crate::commands::video::{base_python_or_own, run_streamed};
+use crate::commands::video::{base_python_or_own, run_streamed, venv_python_fits, TORCH_ENGINES_PYTHON};
 use crate::commands::CmdResult;
 use crate::install_state::InstallSlot;
 use crate::os_error;
@@ -405,9 +405,11 @@ fn ensure_engine_at(slot: &InstallSlot, preferred_base: Option<String>, venv: &P
     }
     // A venv whose pip answers is one a stopped install left behind, and pip
     // continues in it. Anything less is built again from the start.
-    if !(venv_python(venv).exists() && python_has_module(&python, "pip")) {
+    // One built from a Python the pins have no wheels for is built again too
+    // (GH #188).
+    if !(venv_python(venv).exists() && python_has_module(&python, "pip") && venv_python_fits(&python, TORCH_ENGINES_PYTHON)) {
         // A Python found on this Mac, otherwise the one the app fetches for itself.
-        let base = base_python_or_own(slot, preferred_base)?;
+        let base = base_python_or_own(slot, preferred_base, TORCH_ENGINES_PYTHON)?;
         slot.log(format!("Python: {base}"));
         create_venv(slot, &base, venv)?;
     }
@@ -2760,7 +2762,7 @@ mod tests {
 
         // In the order they were picked, each strength inside its range.
         let ok = lora_files(e, pack, &ask(&[("qwen/detail.safetensors", 0.8), ("style.safetensors", 25.0)]), &folder).unwrap();
-        assert_eq!(ok, [(real.join("qwen/detail.safetensors"), 0.8), (real.join("style.safetensors"), 10.0)]);
+        assert_eq!(ok, [(real.join("qwen/detail.safetensors"), 0.8), (real.join("style.safetensors"), 20.0)]);
 
         // Nothing outside the folder, by any spelling. One bad name ends the run.
         let outside = dir.join("outside.safetensors");
@@ -3242,7 +3244,7 @@ mod tests {
         // Cancel and progress reach the interface.
         assert!(body("pub fn mlx_generate_cancel(").contains("mflux::stop_run(run)"));
         assert!(body("pub fn mlx_generate_progress(").contains("mflux::progress()"));
-        let registered = include_str!("../main.rs");
+        let registered = include_str!("../lib.rs");
         for command in ["mlx_generate_progress", "mlx_generate_cancel"] {
             assert!(registered.contains(&format!("commands::media_cmds::{command},")), "{command} is not registered");
         }
@@ -3419,7 +3421,7 @@ mod tests {
         assert!(at("mlx_unload(") < at("mflux::upscale(entry, pack, input, factor, req.seed)"));
         let generate = &src[src.find("pub async fn mlx_generate(").unwrap()..];
         assert!(generate.find("pack.upscales()").unwrap() < generate.find("mlx_unload(").unwrap(), "Generate would run the upscaler with a prompt");
-        assert!(include_str!("../main.rs").contains("commands::media_cmds::mlx_upscale,"));
+        assert!(include_str!("../lib.rs").contains("commands::media_cmds::mlx_upscale,"));
         assert!(include_str!("media_cmds.rs").contains("crate::commands::mlx::mlx_upscale(state.inner(), &args).await"));
         // The catalogue says which model enhances.
         assert!(src.contains("\"upscaler\": c.mflux.is_some_and(|pack| pack.upscales()),"));

@@ -9,6 +9,7 @@ import { persist } from 'zustand/middleware'
 import { safeJSONStorage } from '../lib/storage-quota'
 import { TRAIN_STEPS_DEFAULT, TRAIN_VRAM_PRESET_DEFAULT, isTrainVramPreset, type TrainVramPreset } from '../lib/trainer-presets'
 import { TRAIN_CAPTION_MAX } from '../lib/train-captions'
+import { isMobile } from '../lib/device-kind'
 import { isRecord } from '../types/json-guards'
 import { cleanFolderName, newFolderId, sanitizeFolders, FOLDER_CAP, type GalleryFolder } from '../lib/gallery-folders'
 
@@ -20,7 +21,7 @@ import { cleanFolderName, newFolderId, sanitizeFolders, FOLDER_CAP, type Gallery
 const RUNTIME_ONLY_KEYS: readonly string[] = [
   'backend', 'source', 'mask', 'references', 'caps', 'isGenerating', 'comfyCorsBlocked',
   // A queue of source images from yesterday must never start a run today.
-  'batchSources', 'batchRun',
+  'batchSources', 'batchRun', 'batchOriginal',
   // Ein gespeicherter Preis von gestern ist eine Luege (siehe partialize
   // unten): auch wenn ein fremder/aelterer Blob ihn doch mitbringt, darf er
   // nie zurueckkommen.
@@ -451,6 +452,10 @@ export interface CreateState {
   batchSources: MediaRef[]
   /** The queue of a running batch, null when none runs. */
   batchRun: BatchRunState | null
+  /** The image a list was made from. A batch puts a new image on the Stage
+   *  for every entry, so this one stays to pick after the run, however many
+   *  results it made. Runtime-only like `source`. */
+  batchOriginal: ImageRef | null
   sourceSetAt: number
   mask: ImageRef | null
   /** Runtime-only: local (Bridge) vs cloud (/api/jobs), derived from session. */
@@ -653,6 +658,7 @@ export interface CreateState {
   setReferences: (refs: ImageRef[]) => void
   setBatchSources: (list: MediaRef[]) => void
   setBatchRun: (run: BatchRunState | null) => void
+  setBatchOriginal: (img: ImageRef | null) => void
   setMask: (img: ImageRef | null) => void
   setBackend: (backend: CreateBackend) => void
   setCloudImageModel: (id: string) => void
@@ -900,11 +906,20 @@ function imageLaneParams(s: Pick<CreateState, 'imageModel' | 'imageModelType' | 
   return params
 }
 
+/** The model family whose size and sampling values a phone sends with a cloud
+ *  clip while no local video model exists. 16:9, like the default cloud model. */
+export const MOBILE_CLOUD_VIDEO_FAMILY: ModelType = 'minimaxh3'
+
 /** The video model's own sampling values, for picking it and for every tab
  *  that runs it. Lightning/rapid merges are distilled to few steps at cfg 1,
  *  the architecture defaults (30 steps, cfg 5+) render them to mush. */
 function videoModelParams(model: string, list: readonly ClassifiedModel[] | null = [], intent = 'video') {
-  const defaults = MODEL_TYPE_DEFAULTS[classifyModel(model)] || MODEL_TYPE_DEFAULTS.unknown
+  // A phone has no local video model, so `model` is empty there and the
+  // family would be 'unknown': 1024 by 1024, a square image size, sent along
+  // with a cloud clip. It takes the family of the cloud's own default video
+  // model instead (DEFAULT_MODEL_IDS.video in lib/render/cloud-models.ts).
+  const family = !model && isMobile() ? MOBILE_CLOUD_VIDEO_FAMILY : classifyModel(model)
+  const defaults = MODEL_TYPE_DEFAULTS[family] || MODEL_TYPE_DEFAULTS.unknown
   const lightning = /rapid|lightning|lightx2v/i.test(model)
   // On the Mac the catalogue entry of the model the lane runs says how long
   // a clip is, at what rate it plays and at what size it is made. The
@@ -1024,9 +1039,12 @@ export const useCreateStore = create<CreateState>()(
       references: [] as ImageRef[],
       batchSources: [] as MediaRef[],
       batchRun: null as BatchRunState | null,
+      batchOriginal: null as ImageRef | null,
       sourceSetAt: 0,
       mask: null as ImageRef | null,
-      backend: 'local' as CreateBackend,
+      // A phone has no local render engine: LU Cloud is the only track there,
+      // from the first frame on, with no switch to flip (see setBackend).
+      backend: (isMobile() ? 'cloud' : 'local') as CreateBackend,
       cloudImageModel: '',
       cloudVideoModel: '',
       cloudOpModel: '',
@@ -1074,8 +1092,11 @@ export const useCreateStore = create<CreateState>()(
       setMode: (mode) => set((state) => {
         // Reset parameters to the correct defaults when switching modes
         // This prevents image resolution (1024x1024) leaking into video mode (causes HTTP 500)
-        if (mode === 'video' && state.videoModel) return { mode, ...videoModelParams(state.videoModel, state.videoModelList, videoIntentOf(state)) }
-        if (mode === 'image' && state.imageModel) return { mode, ...imageModelParams(state) }
+        // On a phone both lists are empty for good, and the reset must still
+        // happen: the video tab takes the cloud clip size, the way back takes
+        // the image size again.
+        if (mode === 'video' && (state.videoModel || isMobile())) return { mode, ...videoModelParams(state.videoModel, state.videoModelList, videoIntentOf(state)) }
+        if (mode === 'image' && (state.imageModel || isMobile())) return { mode, ...imageModelParams(state) }
         return { mode }
       }),
       setImageSubMode: (subMode) => set({ imageSubMode: subMode }),
@@ -1235,6 +1256,7 @@ export const useCreateStore = create<CreateState>()(
         })())))
         // The list of further source images stays only where it can run.
         if (get().batchSources.length && (!get().source || !BATCH_INTENTS.has(intent))) get().setBatchSources([])
+        if (!BATCH_INTENTS.has(intent) && get().batchOriginal) set({ batchOriginal: null })
       },
       toggleNegative: () => set((s) => ({ showNegative: !s.showNegative })),
       setExpertOpen: (expertOpen) => set({ expertOpen }),
@@ -1394,6 +1416,7 @@ export const useCreateStore = create<CreateState>()(
         set({ batchSources })
       },
       setBatchRun: (batchRun) => set({ batchRun }),
+      setBatchOriginal: (batchOriginal) => set({ batchOriginal }),
       setMask: (mask) => set({ mask }),
       // Flipping to local clears the intents that have no local lane
       // (eraser, and upscale on a Mac, which has no ComfyUI) so the
@@ -1433,6 +1456,9 @@ export const useCreateStore = create<CreateState>()(
           // from the Cloud shelf stood on in red after the flip to Local
           // (how-to recording, 15.10.2026).
           const cleared: Partial<CreateState> = s.backend !== backend ? { error: null } : {}
+          // On a phone the axis has one end. A caller that asks for the local
+          // track (a shared component, a restored habit) gets the cloud.
+          if (isMobile()) return { backend: 'cloud', ...cleared }
           if (backend !== 'local') return { backend, ...cleared }
           const patch: Partial<CreateState> = { backend, ...cleared }
           // Enhance keeps its tab on Windows and Linux (local ComfyUI upscale,
@@ -1705,7 +1731,10 @@ export const useCreateStore = create<CreateState>()(
     }),
     {
       name: 'create-store',
-      storage: safeJSONStorage(),
+      // skipUnchanged: setProgress and the other runtime setters change nothing
+      // partialize keeps, and without the flag each of them still rewrote the
+      // whole slice (measured in stores/__tests__/createStore-write-load.test.ts).
+      storage: safeJSONStorage({ skipUnchanged: true }),
       partialize: (state) => ({
         mode: state.mode,
         videoBackend: state.videoBackend,

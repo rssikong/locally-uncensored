@@ -1,11 +1,11 @@
 diff --git a/src/main.tsx b/src/main.tsx
-index 244d9300..52a1b388 100644
+index 1965ec0e..00a91a48 100644
 --- a/src/main.tsx
 +++ b/src/main.tsx
-@@ -6,6 +6,14 @@ import { ICON_STROKE_PX } from './components/ui/icon-size'
- import { mountFatalError } from './lib/fatal-error'
+@@ -7,6 +7,14 @@ import { mountFatalError } from './lib/fatal-error'
  import { installMcpShutdown } from './api/mcp/shutdown'
  import { installBackgroundShutdown } from './lib/background-shutdown'
+ import { isMobileHost } from './lib/mobile-host'
 +import { applyDocumentLocale } from './lib/i18n'
 +
 +// i18n, before anything renders: `index.html` ships `lang="en"` so the first

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ab Android 12 (API 31) zeigt das System Hintergrundfarbe und Icon selbst.
+     lu_splash_icon ist 288 dp gross, das Motiv liegt im sichtbaren Kreis von
+     192 dp. Farbe, Icon (drawable-* dunkles Motiv, drawable-night-* weisses)
+     und Leistensymbole folgen dem System, siehe values/lu_colors.xml. Kein
+     eigener Icon-Hintergrund und kein Markenbild am unteren Rand: Google raet
+     vom Markenbild ab, und das Icon traegt den Ring schon selbst. -->
+<resources>
+    <style name="Theme.locally_uncensored" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="android:windowBackground">@color/lu_splash_background</item>
+        <item name="android:windowLightStatusBar">@bool/lu_light_bars</item>
+        <item name="android:windowLightNavigationBar">@bool/lu_light_bars</item>
+        <item name="android:windowSplashScreenBackground">@color/lu_splash_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/lu_splash_icon</item>
+    </style>
+</resources>

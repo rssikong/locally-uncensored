@@ -29,7 +29,14 @@
  *
  *  4. Repeated narration: the model emitting the same non-trivial text 3×
  *     in a row ("Let me check the rotation engine…") halts even when its
- *     tool calls vary enough to dodge 1-3.
+ *     tool calls vary enough to dodge 1-3. The same plan coming back in
+ *     alternation (A, B, A, B, A) is counted over a window: steered on its
+ *     third time, halted on its fourth (A37, xxcoder 26.10.2026, Qwen 3.8 27B
+ *     on REA: "Let me first check the file details and set up the project." /
+ *     "Let me create the project and run analysis. I'll use the
+ *     analyzeHeadless script." over and over, reading the docs between, and
+ *     never three times in a row). Only text the length of a plan counts
+ *     there, so "Now let me run the tests." in an edit-test cycle does not.
  *
  *  5. Rounds that only ever fail: detectors 1-4 look at what the model ASKED
  *     for, never at what came back, and 2-3 are scoped to reads because a
@@ -71,6 +78,12 @@ const READ_HALT_AT = 5
 const NARRATION_HALT_AT = 3
 /** Ignore trivial repeated lines ("Done.", "ok") — too easy to hit honestly. */
 const MIN_NARRATION_LEN = 12
+/** Detector 4, windowed: how many iterations back a repeated plan is counted. */
+const NARRATION_WINDOW = 8
+const NARRATION_WINDOW_STEER_AT = 3
+const NARRATION_WINDOW_HALT_AT = 4
+/** A plan, not a one-liner: shorter text may honestly repeat in a cycle. */
+const MIN_PLAN_LEN = 50
 /**
  * Failing rounds in a row, no success of any kind in between. Three is still
  * plausible probing (wrong flag, wrong quoting, wrong path), so that only
@@ -135,6 +148,9 @@ export class AgentLoopGuard {
   private steeredKeys = new Set<string>()
   private lastNarration = ''
   private narrationSeen = 0
+  /** Detector 4, windowed: the last plans written, newest last. */
+  private narrations: string[] = []
+  private narrationSteered = new Set<string>()
   private failingRounds = 0
   private failSteered = false
   /** Detector 6: consecutive failures per executable, reset by mutations. */
@@ -372,6 +388,28 @@ export class AgentLoopGuard {
       return {
         action: 'halt',
         reason: `the model repeated the same message ${this.narrationSeen}× without making progress`,
+      }
+    }
+    if (norm.length < MIN_PLAN_LEN) return { action: 'ok' }
+    this.narrations.push(norm)
+    if (this.narrations.length > NARRATION_WINDOW) this.narrations.shift()
+    const times = this.narrations.filter((n) => n === norm).length
+    const quoted = text.trim().replace(/\s+/g, ' ')
+    const quote = quoted.length > 90 ? `${quoted.slice(0, 90)}…` : quoted
+    if (times >= NARRATION_WINDOW_HALT_AT) {
+      return {
+        action: 'halt',
+        reason: `the model wrote the same plan ${times} times ("${quote}") and kept starting over instead of carrying it out`,
+      }
+    }
+    if (times >= NARRATION_WINDOW_STEER_AT && !this.narrationSteered.has(norm)) {
+      this.narrationSteered.add(norm)
+      return {
+        action: 'steer',
+        message:
+          `You have now written the same plan ${times} times ("${quote}") and started over each time. ` +
+          'Do not restate it. Use what the earlier tool results already showed and make the next concrete tool call now. ' +
+          'If something stops you from going on, say plainly what it is and end your turn.',
       }
     }
     return { action: 'ok' }

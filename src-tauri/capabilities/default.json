@@ -2,6 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Main-window capability. shell:allow-spawn is the only permission here that can start a process, and it is scoped to the two package runners external MCP servers are actually launched with (npx, uvx). Every general-purpose interpreter and container runtime was removed: node, deno, bun, python and py all take a one-shot eval flag (node -e, python -c), npm/pnpm/yarn run whatever a package.json in the cwd defines, and docker run -v /:/host hands out the whole disk. With those in the allow-list, any script-execution bug in the WebView (a PDF viewer, a markdown renderer, a dependency) was code execution on the user's machine rather than defacement inside the app.",
+  "platforms": ["linux", "macOS", "windows"],
   "windows": ["main"],
   "permissions": [
     "core:default",

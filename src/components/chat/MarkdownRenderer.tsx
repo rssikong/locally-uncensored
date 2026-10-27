@@ -7,7 +7,7 @@ import { MATH_OPTIONS, contentNeedsKatex } from '../../lib/markdown-math'
 import { CodeBlock } from './CodeBlock'
 import { codeBlockText } from '../../lib/markdown-code'
 import { openExternal } from '../../api/backend'
-import { useComfyViewRescue } from './comfyViewRescue'
+import { useComfyViewRescue, isInlineVideoUrl } from './comfyViewRescue'
 import { log } from '../../lib/logger'
 import type { Components, Options } from 'react-markdown'
 
@@ -98,6 +98,11 @@ function isTrustedImageSrc(src: string): boolean {
 function ChatImage({ src, alt }: { src: string; alt: string }) {
   const [failed, setFailed] = useState(false)
   const rescued = useComfyViewRescue(src, failed)
+  // A clip the model links the same way (`![clip](…/view?filename=x.mp4…)`)
+  // plays here instead of standing as a broken picture (3.0.8 A1).
+  if (isInlineVideoUrl(src)) {
+    return <video src={rescued ?? src} aria-label={alt || 'Video'} controls loop playsInline preload="metadata" onError={() => setFailed(true)} className="block max-w-full max-h-[320px] rounded-md my-2" />
+  }
   return <img src={rescued ?? src} alt={alt} loading="lazy" onError={() => setFailed(true)} className="max-w-full rounded-md my-2" />
 }
 

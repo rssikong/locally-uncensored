@@ -1,4 +1,7 @@
+import { registerChatSender } from '../../lib/remote-chat-senders'
+import { composeFileMessage } from '../../lib/chat-files'
 import { useCodex } from '../../hooks/useCodex'
+import { RequestUsageLine } from './RequestUsageLine'
 import { useAutoScroll } from '../../hooks/useAutoScroll'
 import { useCodexStore } from '../../stores/codexStore'
 import { useChatStore } from '../../stores/chatStore'
@@ -44,6 +47,7 @@ import {
 } from '../../lib/codex-workdir'
 import { resolveWorkspacePath } from '../../api/agents/workspace-resolve'
 import { StagedChangesPanel } from './StagedChangesPanel'
+import { PhoneWritesLine } from './PhoneWritesLine'
 import { SlashStepsBlock } from './SlashStepsBlock'
 import { CompactBlock } from './CompactBlock'
 import { compactionAnchors } from '../../lib/compact-summary'
@@ -76,6 +80,15 @@ const QUIET_HINT_TEXT = `text-[0.55rem] ${HINWEIS_TEXT.ruhig}`
 
 export function CodexView() {
   const { sendInstruction, stopCodex, isRunning } = useCodex()
+  // A message from the paired phone in a shared Code chat goes through this
+  // send path (lib/remote-chats-bridge). Code takes no pictures; files go in
+  // as the same file blocks the chat composer writes.
+  useEffect(() => registerChatSender('code', {
+    send: async (content, _images, files) => {
+      await sendInstruction(files.length ? composeFileMessage(content, files.map((f) => f.attachment)) : content)
+    },
+    stop: (convId) => stopCodex(convId),
+  }), [sendInstruction, stopCodex])
   // Derselbe Weckhaken wie im Agentenweg: eine Hintergrundaufgabe endet fast
   // immer NACH dem Zug, der sie startete, und ohne diesen Haken erfuehre das
   // Modell davon erst bei der naechsten Eingabe des Menschen.
@@ -92,6 +105,10 @@ export function CodexView() {
   const activeConversationId = useChatStore((s) => s.activeConversationId)
   const conversations = useChatStore((s) => s.conversations)
   const thread = useCodexStore((s) => activeConversationId ? s.threads[activeConversationId] : undefined)
+  // The mode the composer's trigger shows right now (CodexModeDropdown reads
+  // the same function). Handed to the send, which never runs looser (A37).
+  const codexDefaultMode = useSettingsStore((s) => s.settings.codexDefaultMode)
+  const shownMode = useCodexStore((s) => s.nextSendMode(activeConversationId, codexDefaultMode))
 
   const conversation = conversations.find(c => c.id === activeConversationId)
   const messages = conversation?.messages || []
@@ -305,7 +322,7 @@ export function CodexView() {
               crowding the prompt row (2026-08-22: "das promptfenster ist
               ueberfuellt"). The dropdown itself is untouched, only the place
               and the trigger changed. */}
-          <PluginsDropdown iconOnly />
+          <PluginsDropdown iconOnly agentTools />
           {/* EIN Kontextelement (D-S06): der Fuellstand ist die Beschriftung
               des Fensterwaehlers, nicht dieselbe Zahl ein zweites Mal daneben. */}
           <ContextDropdown><TokenCounter /></ContextDropdown>
@@ -368,6 +385,7 @@ export function CodexView() {
             are no pending changes for the active chat, so non-stage-mode
             users never see it. */}
         <StagedChangesPanel chatId={activeConversationId} />
+        <PhoneWritesLine chatId={activeConversationId} />
 
         {/* Messages */}
         <div ref={scrollRef} className="flex-1 min-h-[10rem] overflow-y-auto scrollbar-thin" data-testid="codex-transcript">
@@ -690,6 +708,9 @@ export function CodexView() {
                           </>
                         )
                       })()}
+                      {msg.role === 'assistant' && (
+                        <RequestUsageLine usage={msg.requestUsage} className="block px-1" />
+                      )}
                     </div>
                   </div>
                 )
@@ -742,7 +763,7 @@ export function CodexView() {
         <ChatInput
           // Images have no path into a coding run; attached files do, they
           // are copied into the working folder (lib/chat-files.ts).
-          onSend={(content, _images, files) => sendInstruction(content, files ? { files } : undefined)}
+          onSend={(content, _images, files) => sendInstruction(content, files ? { files, shownMode } : { shownMode })}
           onStop={stopCodex}
           // Store flag, not the hook's local isRunning (audit A2): the view
           // remounts on every tab switch and a fresh hook says "idle" while
@@ -753,6 +774,7 @@ export function CodexView() {
           waitingForLocalLane={queuedForLocalLane}
           slashCommands="agent"
           filesReachTools
+          draftScope="code"
           composerModel={<ModelSelector openUpward surface="code" />}
           // Ask / Bypass / Plan sits here, in the CODE composer only (plan
           // C1). ChatInput stays surface-neutral, so the Chat tab inherits

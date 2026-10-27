@@ -31,6 +31,9 @@ export interface CodexConfirmRequest {
   /** True when the CLOUD arm is the only reason we are asking, which changes
    *  both the hint we show and which setting "don't ask again" turns off. */
   cloudReason: boolean
+  /** The chat that asks, when known: a shared chat forwards the question to
+   *  the paired phone (lib/remote-chats-bridge). */
+  conversationId?: string
 }
 
 interface Waiting {
@@ -47,6 +50,24 @@ interface CodexConfirmState {
   queue: Waiting[]
   ask: (req: CodexConfirmRequest, signal?: AbortSignal) => Promise<boolean>
   answer: (allow: boolean) => void
+  /** Answer one request wherever it waits (the phone). False when it no
+   *  longer waits. */
+  answerRequest: (req: CodexConfirmRequest, allow: boolean) => boolean
+}
+
+/** Who answered, with what (shared chats forward it to the phone,
+ *  lib/remote-chats-bridge). */
+type CodexAnswerListener = (req: CodexConfirmRequest, allow: boolean, by: 'desktop' | 'phone') => void
+const codexAnswerListeners = new Set<CodexAnswerListener>()
+export function subscribeCodexAnswers(fn: CodexAnswerListener): () => void {
+  codexAnswerListeners.add(fn)
+  return () => { codexAnswerListeners.delete(fn) }
+}
+function heard(req: CodexConfirmRequest | undefined, allow: boolean, by: 'desktop' | 'phone') {
+  if (!req) return
+  for (const fn of codexAnswerListeners) {
+    try { fn(req, allow, by) } catch { /* a listener never stops the run */ }
+  }
 }
 
 /** The card shows the head of the queue. */
@@ -87,5 +108,15 @@ export const useCodexConfirmStore = create<CodexConfirmState>((set, get) => ({
     const [first, ...rest] = get().queue
     set(head(rest))
     first?.resolve(allow)
+    heard(first?.req, allow, 'desktop')
+  },
+
+  answerRequest: (req, allow) => {
+    const entry = get().queue.find((w) => w.req === req)
+    if (!entry) return false
+    set(head(get().queue.filter((w) => w !== entry)))
+    entry.resolve(allow)
+    heard(entry.req, allow, 'phone')
+    return true
   },
 }))

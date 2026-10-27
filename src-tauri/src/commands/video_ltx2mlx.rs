@@ -14,7 +14,7 @@
 //! source at the pinned commit (`ltx_pipelines_mlx/cli.py`, `distilled.py`,
 //! `utils/blocks.py`, `ltx_core_mlx/utils/ffmpeg.py`), 08.10.2026.
 
-use super::{base_python_or_own, create_venv, own_venv_dir, python_has_module, run_streamed, venv_python};
+use super::{base_python_or_own, create_venv, own_venv_dir, python_has_module, run_streamed, venv_python, venv_python_fits, VIDEO_ENGINES_PYTHON};
 use crate::install_state::InstallSlot;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -296,9 +296,11 @@ fn ensure_engine_at(slot: &InstallSlot, preferred_base: Option<String>, venv: &P
     }
     // A venv whose pip answers is one a stopped install left behind, and pip
     // continues in it. Anything less is built again from the start.
-    if !(venv_python(venv).exists() && python_has_module(&python, "pip")) {
+    // One built from a Python the pins have no wheels for is built again too
+    // (GH #188).
+    if !(venv_python(venv).exists() && python_has_module(&python, "pip") && venv_python_fits(&python, VIDEO_ENGINES_PYTHON)) {
         // A Python found on this Mac, otherwise the one the app fetches for itself.
-        let base = base_python_or_own(slot, preferred_base)?;
+        let base = base_python_or_own(slot, preferred_base, VIDEO_ENGINES_PYTHON)?;
         slot.log(format!("Python: {base}"));
         create_venv(slot, &base, venv)?;
     }

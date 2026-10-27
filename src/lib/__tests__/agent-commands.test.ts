@@ -29,7 +29,7 @@ const EXPECTED = [
   'goal', 'loop',
   // understand
   // context
-  'compact',
+  'compact', 'usage',
   'plan', 'explain', 'find', 'diff', 'log', 'todo',
   // change
   'fix', 'types', 'test', 'refactor', 'clean', 'optimize',
@@ -102,14 +102,16 @@ describe('AGENT_COMMANDS registry', () => {
   // Die Reichweite: genau ein Befehl darf im normalen Chat erscheinen, und es
   // ist der eine, der ohne Werkzeuge auskommt. Jeder andere wuerde dort eine
   // Arbeit versprechen, die die Oberflaeche nicht ausfuehren kann.
-  it('nur /compact reicht bis in den normalen Chat', () => {
+  // Seit 3.0.8 zwei: /usage liest nur die Zahlen der letzten Antwort und
+  // braucht ebenso wenig ein Werkzeug wie /compact.
+  it('nur /compact und /usage reichen bis in den normalen Chat', () => {
     const imChat = AGENT_COMMANDS.filter((c) => commandInScope(c, 'chat')).map((c) => c.name)
-    expect(imChat).toEqual(['compact'])
+    expect(imChat).toEqual(['compact', 'usage'])
     expect(AGENT_COMMANDS.every((c) => commandInScope(c, 'agent'))).toBe(true)
   })
 
   it('das Menue und der Parser folgen derselben Reichweite', () => {
-    expect(matchAgentCommands('/', 'chat').map((c) => c.name)).toEqual(['compact'])
+    expect(matchAgentCommands('/', 'chat').map((c) => c.name)).toEqual(['compact', 'usage'])
     expect(matchAgentCommands('/', 'agent').length).toBe(AGENT_COMMANDS.length)
     // Ein Agentenbefehl im normalen Chat ist kein Befehl, sondern Text.
     expect(parseAgentCommand('/fix den login', 'chat')).toBeNull()
@@ -122,8 +124,8 @@ describe('AGENT_COMMANDS registry', () => {
     // wrong thing, which is worse than refusing.
     const arg = 'src/hooks/useChat.ts'
     for (const c of AGENT_COMMANDS) {
-      // /init takes no argument by design.
-      if (c.name === 'init') continue
+      // /init and /usage take no argument by design.
+      if (c.name === 'init' || c.name === 'usage') continue
       expect(c.build(arg), `${c.name} dropped its argument`).toContain(arg)
     }
   })

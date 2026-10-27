@@ -24,6 +24,7 @@ import { buildSamplingRequest } from './sampling'
 // Beides sind generische Module ohne Rückkante. Der Shim bleibt für seine
 // verbliebenen Aufrufer bestehen.
 import { toolRegistry } from '../api/mcp/tool-registry'
+import { isSettingsToolName } from './settings-tool-names'
 import type { ToolArgs } from '../api/mcp/types'
 import { streamProviderTurn } from './provider-stream'
 import { runInLane, type HeldLocalLane } from './run-slot'
@@ -92,6 +93,7 @@ export function buildWorkflowApprovalGate(run: AgentRunContext | undefined): App
       codexMode: run?.mode ?? null,
       execConfirm: run?.execApproval?.confirmExec === true,
       readOnlyRun: run?.readOnlyShellTurn === true,
+      external: toolRegistry.getAll().some((t) => t.name === req.toolName && t.source === 'external'),
     })
     if (level === 'blocked') return false
     if (level === 'auto') return true
@@ -789,7 +791,8 @@ export class WorkflowEngine {
       // override the user set on the REAL chat used to reach the gate's
       // decision but not this catalog, or the reverse.
       const permissions = usePermissionStore.getState().getEffectivePermissions(this.effectiveConversationId())
-      const tools: ToolDefinition[] = toolRegistry.toOllamaTools(permissions)
+      // A workflow step has no card to confirm a settings change on (A11).
+      const tools: ToolDefinition[] = toolRegistry.toOllamaTools(permissions).filter((t) => !isSettingsToolName(t.function.name))
       const allowedTools = step.allowedTools
         ? tools.filter(t => step.allowedTools!.includes(t.function.name))
         : tools

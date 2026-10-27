@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Release: Klartext (http, ws) ist ueberall verboten, ausser zur eigenen Schleife.
+     Dort lauscht die lokale Engine (127.0.0.1:8127 und 8128).
+     Diese Datei gilt fuer WebView und Plattform-HTTP. reqwest mit rustls in Rust
+     fragt sie nicht ab.
+     Folge fuer Remote: http zu einem Desktop-LU im WLAN (192.168.x.x) ist aus der
+     WebView heraus gesperrt und muss ueber den Rust-Proxy laufen. IP-Bereiche
+     lassen sich hier nicht freigeben, nur einzelne Namen oder Adressen. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+</network-security-config>

@@ -81,6 +81,12 @@ export interface CloudScenario {
    * the server sends it. Unset is a server from before the rule.
    */
   lengthCatalog?: boolean
+  /**
+   * Further entries of /api/jobs/catalog, appended as they are. For the store
+   * guard of the phone (e2e/mobile/store-waechter.mobile.ts), which plays a
+   * server whose model names carry words a store build may not show.
+   */
+  extraCatalogModels?: unknown[]
 }
 
 // P9: one Studio model, shaped like a real /api/jobs/catalog entry once P0's
@@ -238,6 +244,7 @@ export async function routeCloud(page: Page, scenario: CloudScenario): Promise<v
               ? [{ id: 'z-image-turbo', label: 'Z-Image Turbo (fast)', kind: 'image' as const, edit: false, cfg: false, negative_prompt: false, credits: { base: 300 }, tier: 'best', weights: 'open' },
                  { id: 'nucleus-image', label: 'Nucleus', kind: 'image' as const, adult: true, ops: ['studio'], quote_required: true, tier: 'standard', weights: 'open-family' }]
               : []),
+            ...(scenario.extraCatalogModels ?? []),
           ],
           ops: { removebg: 1000, eraser: 2500, upscale_image: 1000, upscale_video_per_s: 500, upscale_video_min: 2500 },
           voice: { stt: 600, tts_per_1k_chars: 8000 },

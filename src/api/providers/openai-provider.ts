@@ -1,5 +1,5 @@
 import { resolveMessageAttachments } from '../../lib/chat-attachments'
-import { captureFlashGeneration, parseFlashPolicy, recordFlashResponse } from '../../lib/flash-ui'
+import { captureFlashGeneration, chatBilling, parseFlashPolicy, recordFlashResponse } from '../../lib/flash-ui'
 
 /**
  * OpenAI-Compatible Provider
@@ -16,8 +16,9 @@ import type {
   ProviderClient, ProviderModel, ProviderConfig, ChatMessage, ChatOptions,
   ChatStreamChunk, ToolCall, ToolDefinition,
 } from './types'
-import { ProviderError, type CreditRates } from './types'
-import { RepetitionStop } from '../../lib/repetition-stop'
+import { ProviderError, type ChatBilling, type CreditRates } from './types'
+import { LoopStop, RepetitionStop } from '../../lib/repetition-stop'
+import { singleModelSlot } from '../../lib/capabilities'
 import { parseSSEStream } from '../sse'
 import { idleAbortGuard, isStreamIdleTimeout } from '../stream-idle'
 import { sendWithTransientRetry } from './retry'
@@ -28,6 +29,7 @@ import { requestLimitMessage } from '../../lib/request-limit'
 import { localFetch, localFetchStream, isPrivateOrLanHost, isDirectFetchAllowed, hostnameOf, ensureProxyAllowsHost, backendCall } from '../backend'
 import { chatBackendsBack } from '../../lib/chat-backends-gate'
 import { openAiSamplerFields } from './sampler-fields'
+import { topPForTemperature } from '../../lib/sampling'
 import { ensureBuiltinEngineAlive, explainDeadEngine, explainEngineTransportMessage, isManagedBuiltinSlot } from '../builtin-ensure'
 import { isLocalTransportFailure, localBackendUnreachableMessage, remoteBackendUnreachableMessage } from '../../lib/local-backend-transport'
 import { applyTemplateContract } from './normalize-system'
@@ -56,6 +58,7 @@ import { useSettingsStore } from '../../stores/settingsStore'
 import { endpointKey, withExtraModels } from '../../lib/extra-model-ids'
 import { log } from '../../lib/logger'
 import { estimateTokens } from '../../lib/token-estimate'
+import { MOBILE_TEXT, platformText } from '../../lib/platform-text'
 
 // Transport routing lives in the `useLocalProxy` getter (below) plus the shared
 // host helpers in backend.ts. A direct webview fetch only works for hosts the
@@ -133,6 +136,10 @@ export interface OpenAIChatRequest {
   stream_options?: { include_usage: boolean }
   /** Constrained output (ChatOptions.jsonSchema). Never sent to LU Cloud. */
   response_format?: { type: 'json_schema'; json_schema: { name: string; schema: Record<string, unknown> } }
+  /** Round 10, phone only: go on inside the last message, an answer that
+   *  was cut (src-tauri/src/commands/engine_continue.rs). Never set unless
+   *  the caller asked (ChatOptions.continueFinalMessage). */
+  continue_final_message?: boolean
 }
 
 /**
@@ -151,6 +158,11 @@ type ChatFetcher = (
     signal?: AbortSignal
   },
 ) => Promise<Response>
+
+/** The route's own name of a model the app shows under its published one. */
+function catalogNameOf(m: { name?: string; native_name?: string }): string | undefined {
+  return m.native_name && m.name && m.name !== m.native_name ? m.name : undefined
+}
 
 interface OpenAIModelEntry {
   flash?: unknown
@@ -455,6 +467,22 @@ export function __clearContextCatalogForTests(): void {
 }
 
 // ── Provider Implementation ────────────────────────────────────
+
+/**
+ * Laeuft die eingebaute Engine gerade? `null` heisst: nicht zu erfahren (kein
+ * Tauri, das Kommando fehlt). Dann wird gefragt wie bisher. Mit Absicht der
+ * rohe Aufruf und nicht `bundledEngineStatus()` aus api/engine: der gleicht
+ * nebenbei den Port ab und meldet Hinweise, und das ist nicht Sache einer
+ * Kontextabfrage.
+ */
+async function builtinEngineRunning(): Promise<boolean | null> {
+  try {
+    const status = await backendCall<{ running?: unknown } | null>('bundled_engine_status')
+    return typeof status?.running === 'boolean' ? status.running : null
+  } catch {
+    return null
+  }
+}
 
 export class OpenAIProvider implements ProviderClient {
   readonly id = 'openai' as const
@@ -988,6 +1016,9 @@ export class OpenAIProvider implements ProviderClient {
 
     if (options?.temperature !== undefined) body.temperature = options.temperature
     if (options?.topP !== undefined) body.top_p = options.topP
+    // A33: above temperature 1 the tail is held back, or the answer is noise.
+    const heldTopP = topPForTemperature(body.temperature, body.top_p)
+    if (heldTopP !== undefined) body.top_p = heldTopP
     // F3: temperature and top_p reached the request, top_k never did,
     // the sampling popup's slider promised an effect that never happened.
     // LU Cloud is excluded on purpose: its proxy protocol genuinely has no
@@ -1017,6 +1048,9 @@ export class OpenAIProvider implements ProviderClient {
     if (tmplKwargs) body.chat_template_kwargs = tmplKwargs
     this.applyThinkBudget(body, options)
     await this.applyLocalEffortForm(body, model, options)
+    // Round 10, phone only: the caller ends the messages with a cut answer
+    // and the engine of the phone goes on inside it. Absent on every other send.
+    if (options?.continueFinalMessage) body.continue_final_message = true
     // Ask the server for REAL token usage in a final stream chunk
     // (choices:[] + usage:{...}). OpenAI, LU Cloud, Groq, vLLM and
     // LM Studio all honor stream_options; an endpoint that rejects unknown
@@ -1041,6 +1075,11 @@ export class OpenAIProvider implements ProviderClient {
     const guard = idleAbortGuard(options?.signal)
     const repetitionStop = this.config.managed === true ? new RepetitionStop() : undefined
     const reasoningRepetitionStop = this.config.managed === true ? new RepetitionStop() : undefined
+    // A phone runs models small enough to fall into a loop inside one answer (lib/repetition-stop.ts, LoopStop).
+    // Only there: the desktop engine keeps exactly the rule it had.
+    const watchLoops = this.config.managed === true && singleModelSlot()
+    const loopStop = watchLoops ? new LoopStop() : undefined
+    const reasoningLoopStop = watchLoops ? new LoopStop() : undefined
     let res: Response
     try {
       res = await this.sendChat(model, body, guard.signal, fetcher)
@@ -1057,6 +1096,7 @@ export class OpenAIProvider implements ProviderClient {
     let promptTokens = 0
     let completionTokens = 0
     let finishReason: string | undefined
+    const billing = chatBilling(res)
     const doneChunk = (fallbackReason: string): ChatStreamChunk => {
       const toolCalls = this.flushToolCalls(toolCallAccum)
       return {
@@ -1066,6 +1106,7 @@ export class OpenAIProvider implements ProviderClient {
         finishReason: finishReason ?? fallbackReason,
         promptEvalCount: promptTokens || undefined,
         evalCount: completionTokens || undefined,
+        billing,
       }
     }
 
@@ -1138,7 +1179,11 @@ export class OpenAIProvider implements ProviderClient {
         const reasoning = choice.delta?.reasoning_content ?? choice.delta?.reasoning ?? ''
         if (repetitionStop?.push(content) || reasoningRepetitionStop?.push(reasoning)) {
           guard.abort()
-          throw new Error('Generation stopped because the local model repeated question marks continuously. Try setting GPU Layers to 0 in LU Engine settings, or verify and download the model again.')
+          throw new Error(platformText('repeatedQuestionMarks'))
+        }
+        if (loopStop?.push(content) || reasoningLoopStop?.push(reasoning)) {
+          guard.abort()
+          throw new Error(MOBILE_TEXT.repeatedOutput)
         }
         if (reasoning) {
           yield { content: '', thinking: reasoning, done: false }
@@ -1212,7 +1257,7 @@ export class OpenAIProvider implements ProviderClient {
     messages: ChatMessage[],
     tools: ToolDefinition[],
     options?: ChatOptions,
-  ): Promise<{ content: string; toolCalls: ToolCall[]; promptEvalCount?: number; evalCount?: number; thinking?: string }> {
+  ): Promise<{ content: string; toolCalls: ToolCall[]; promptEvalCount?: number; evalCount?: number; thinking?: string; billing?: ChatBilling }> {
     messages = await resolveMessageAttachments(messages)
     const body: OpenAIChatRequest = {
       model,
@@ -1228,6 +1273,9 @@ export class OpenAIProvider implements ProviderClient {
 
     if (options?.temperature !== undefined) body.temperature = options.temperature
     if (options?.topP !== undefined) body.top_p = options.topP
+    // A33: above temperature 1 the tail is held back, or the answer is noise.
+    const heldTopP = topPForTemperature(body.temperature, body.top_p)
+    if (heldTopP !== undefined) body.top_p = heldTopP
     // F3: temperature and top_p reached the request, top_k never did,
     // the sampling popup's slider promised an effect that never happened.
     // LU Cloud is excluded on purpose: its proxy protocol genuinely has no
@@ -1285,6 +1333,7 @@ export class OpenAIProvider implements ProviderClient {
       promptEvalCount: usage?.prompt_tokens,
       evalCount: usage?.completion_tokens,
       thinking: message?.reasoning_content || message?.reasoning || undefined,
+      billing: chatBilling(res),
     }
   }
 
@@ -1355,6 +1404,7 @@ export class OpenAIProvider implements ProviderClient {
         return {
           id: m.id,
           name: m.native_name ?? m.name ?? m.id,
+          catalogName: catalogNameOf(m),
           provider: 'openai' as const,
           providerName: this.config.name,
           // The declared window comes BEFORE the probe: a server that already
@@ -1395,6 +1445,7 @@ export class OpenAIProvider implements ProviderClient {
       return {
         id: m.id,
         name: m.native_name ?? m.name ?? m.id,
+        catalogName: catalogNameOf(m),
         provider: 'openai' as const,
         providerName: this.config.name,
         contextLength: m.context_length ?? KNOWN_CONTEXT[m.id] ?? guessContextFromName(m.id),
@@ -1524,6 +1575,24 @@ export class OpenAIProvider implements ProviderClient {
     /** Die hoechste Decke, die bis hierher jemand genannt hat. */
     let ceiling: number | null = null
     const under = (n: number | null) => Math.max(ceiling ?? 0, n ?? 0) || null
+
+    // Die eingebaute Engine ist ein llama-server, den die App selbst startet.
+    // Zwei Dinge folgen daraus (Befund vom ersten Geraetestart, r2/rust.md 3.2):
+    //   a) Solange sie nicht laeuft, gibt es niemanden zu fragen. Jede Anfrage
+    //      waere ein abgelehnter Verbindungsaufbau und eine Fehlerzeile in der
+    //      Konsole. Die leere Antwort wird NICHT abgelegt, damit die naechste
+    //      Frage nach dem Start die echte Zahl holt.
+    //   b) LM Studios und KoboldCpps Pfade und `/v1/models/<id>` kennt sie nie.
+    //      Gefragt wird `/props` (das geladene Fenster) und, wenn das nichts
+    //      sagt, die Modellliste (`meta.n_ctx`), beides llama.cpp.
+    if (this.config.managed === true) {
+      if ((await builtinEngineRunning()) === false) return { window: null, trained: null }
+      const ownProps = parseLlamaCppProps(await this.serverFact('props', `${root}/props`, signal))
+      if (ownProps) return remember(ownProps, ceiling)
+      const ownList = parseModelsListContext(await this.serverFact('models', `${v1}/models`, signal), model)
+      ceiling = under(ownList.trained)
+      return remember(ownList.window ?? null, ceiling)
+    }
 
     const lms = parseLmStudioModel(await this.probeJson(`${root}/api/v0/models/${id}`, signal))
     ceiling = under(lms.max)

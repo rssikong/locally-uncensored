@@ -7,6 +7,10 @@ import { isEffortLevel } from '../lib/effort'
 import { normalizeThinkBudget } from '../lib/think-budget'
 import { isRecord, asString } from '../types/json-guards'
 import { RETIRED_SEND_WINDOW_DEFAULT } from '../lib/send-window'
+import { normalizeGpuRoles } from '../lib/gpu-roles'
+import { storedTemperature } from '../lib/sampling'
+// From the leaf, not api/backend: that one imports this store (madge).
+import { isMacOS } from '../lib/device-kind'
 
 // v5 (Feature EE v2.5.0): added settings.exclusiveVramMode. The migrate below
 // already merges { ...DEFAULT_SETTINGS, ...persisted.settings }, so bumping the
@@ -207,8 +211,28 @@ export const useSettingsStore = create<SettingsState>()(
         // old switch is gone, and so is what a profile kept of it, an "off"
         // included: nothing reads it, and it would only travel on unseen.
         delete (state.settings as unknown as Record<string, unknown>).chatToolsEnabled
+        // A33 (3.0.8): the temperature sliders ran to 2.0 until 3.0.7, and a
+        // profile that sat above TEMPERATURE_MAX made every model write noise.
+        // Such a value goes back to the default, on the Settings page and in
+        // every persona that carried its own, rather than to the ceiling:
+        // 1.5 is still far from what the user had working before they moved it.
+        state.settings.temperature = storedTemperature(state.settings.temperature) ?? DEFAULT_SETTINGS.temperature
+        if (Array.isArray(state.personas)) {
+          state.personas = state.personas.map((p) => {
+            if (!p?.sampling || p.sampling.temperature === undefined) return p
+            if (storedTemperature(p.sampling.temperature) !== undefined) return p
+            const sampling = { ...p.sampling }
+            delete sampling.temperature
+            return { ...p, sampling }
+          })
+        }
         // REA plugin (3.0.7): only a real true starts a process.
         state.settings.reaPluginEnabled = state.settings.reaPluginEnabled === true
+        // 3.0.8 (A2): background generations are on unless switched off, and
+        // the card per service is read defensively, a hand-edited profile
+        // must not send a half pick to the backend.
+        state.settings.backgroundMediaTools = state.settings.backgroundMediaTools !== false
+        state.settings.gpuRoles = normalizeGpuRoles(state.settings.gpuRoles)
         // 3.0.4 halved the paid-provider send window. A stored 64000 is the old
         // default (no UI writes this key), so it follows the new one. Here and
         // not in migrate for the same reason as above: no version bump, and a
@@ -216,6 +240,9 @@ export const useSettingsStore = create<SettingsState>()(
         if (state.settings.codexSendWindowTokens === RETIRED_SEND_WINDOW_DEFAULT) {
           state.settings.codexSendWindowTokens = DEFAULT_SETTINGS.codexSendWindowTokens
         }
+        // A plain web search key on a phone moves into the keychain in the
+        // boot of the phone (mobile/boot/index.tsx), not from here: the vault
+        // reaches api/backend, which imports this store.
       },
       migrate: (persisted: unknown, version: number): SettingsState => {
         // Foreign at read time, an older build wrote this. A read that throws
@@ -241,10 +268,9 @@ export const useSettingsStore = create<SettingsState>()(
           }
           // v19: release the Mac cloud lock (see the version log above).
           if (version < 19) {
-            const isMac = typeof navigator !== 'undefined' &&
-              (/Mac|iPhone|iPad|iPod/.test(navigator.platform || '') ||
-               /Mac OS X|Macintosh/.test(navigator.userAgent || ''))
-            if (isMac) mergedSettings.appMode = 'local'
+            // A phone is not a Mac: the lock never existed there, and an old
+            // phone profile in Cloud mode must not be thrown back to local.
+            if (isMacOS()) mergedSettings.appMode = 'local'
           }
           return {
             ...blob,

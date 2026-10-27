@@ -13,7 +13,7 @@ export interface RunSignals {
    * default), or a named state such as a context summary or a wait before a
    * retry.
    */
-  activity?: { label: string; detail?: string; kind?: 'compacting' | 'retrying' }
+  activity?: { label: string; detail?: string; kind?: 'compacting' | 'retrying' | 'reading' | 'thinking' }
   /** The assistant message the run is filling. */
   message?: { content?: string; thinking?: string; agentBlocks?: AgentBlock[] }
 }
@@ -102,14 +102,20 @@ function runningTool(blocks: AgentBlock[] | undefined): { name: string; args?: R
 export function deriveRunStatus(signals: RunSignals): RunStatus {
   if (signals.awaitingApproval) return { kind: 'approval', word: WAITING }
   if (signals.loadingModel) return { kind: 'loading', word: 'Loading model' }
-  if (signals.activity) return { kind: signals.activity.kind ?? 'preparing', word: signals.activity.label, detail: signals.activity.detail }
 
   const message = signals.message
   const tool = runningTool(message?.agentBlocks)
-  if (tool) return toolFace(tool.name, tool.args)
-
   const hasContent = !!message?.content?.trim()
   const hasThinking = !!message?.thinking?.trim()
+  // The first wait of a turn (A7) gives way as soon as the model shows
+  // anything: its text, a thought or a call outrank "Reading the
+  // conversation", and the line never falls back to "Starting" in between.
+  const firstWait = signals.activity?.kind === 'reading' || signals.activity?.kind === 'thinking'
+  if (signals.activity && !(firstWait && (tool || hasContent || hasThinking))) {
+    return { kind: signals.activity.kind ?? 'preparing', word: signals.activity.label, detail: signals.activity.detail }
+  }
+
+  if (tool) return toolFace(tool.name, tool.args)
   if (hasThinking && !hasContent) return { kind: 'thinking', word: 'Thinking' }
   if (hasContent) return { kind: 'responding', word: 'Responding' }
   // Nothing has come back at all: the first wait of a run. Later rounds of an

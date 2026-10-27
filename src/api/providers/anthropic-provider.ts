@@ -325,7 +325,8 @@ export class AnthropicProvider implements ProviderClient {
     }
 
     if (system) body.system = system
-    if (options?.temperature !== undefined) body.temperature = options.temperature
+    // The Messages API takes 0 to 1 and answers anything above with a 400 (A33).
+    if (options?.temperature !== undefined) body.temperature = Math.min(1, options.temperature)
     if (options?.topP !== undefined) body.top_p = options.topP
     if (options?.topK !== undefined) body.top_k = options.topK
     // Claude Extended Thinking (Sonnet 3.7+, Opus 4). Opt-in: only when the
@@ -538,7 +539,8 @@ export class AnthropicProvider implements ProviderClient {
     }
 
     if (system) body.system = system
-    if (options?.temperature !== undefined) body.temperature = options.temperature
+    // The Messages API takes 0 to 1 and answers anything above with a 400 (A33).
+    if (options?.temperature !== undefined) body.temperature = Math.min(1, options.temperature)
     if (options?.topP !== undefined) body.top_p = options.topP
     if (options?.topK !== undefined) body.top_k = options.topK
     // Same extended-thinking gate as chatStream.

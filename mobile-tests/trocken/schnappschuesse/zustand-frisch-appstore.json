@@ -1,0 +1,73 @@
+{
+ "name": "frisch-appstore",
+ "art": "zustand",
+ "quelle": "integ-306",
+ "preset": "appstore",
+ "lage": {
+  "route": null,
+  "screen": null,
+  "blaetter": [],
+  "dialog": [],
+  "reiter": null,
+  "alter": "ask"
+ },
+ "kennungen": [
+  {
+   "id": "m-age-gate",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-age-ask",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    242
+   ]
+  },
+  {
+   "id": "m-age-actions",
+   "tag": "footer",
+   "rolle": "footer",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    129
+   ]
+  },
+  {
+   "id": "m-age-yes",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Yes, I am 18 or older",
+   "box": [
+    358,
+    48
+   ]
+  },
+  {
+   "id": "m-age-no",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "No",
+   "box": [
+    358,
+    48
+   ]
+  }
+ ]
+}

@@ -1,7 +1,7 @@
 //! Test-only OS helpers — one place where "and how does that work on Windows"
 //! is answered for the whole crate.
 //!
-//! Nothing here ships: the module is `#[cfg(test)]` in `main.rs`.
+//! Nothing here ships: the module is `#[cfg(test)]` in `lib.rs`.
 //!
 //! It exists because the process-level tests — `state.rs` (the quit path),
 //! `commands/engine.rs` (the health wait) and `commands/bg_tasks.rs`

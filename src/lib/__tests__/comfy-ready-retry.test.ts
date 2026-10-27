@@ -125,7 +125,9 @@ describe('the second pass runs the moment ComfyUI is there', () => {
 
 describe('the model list arms that second pass, and holds the counter while it runs', () => {
   it('THE FIX: an unreachable ComfyUI marks the pass as unanswered', () => {
-    expect(useModels).toMatch(/if \(!isMacOS\(\) && !comfyOk\) comfyAnswered = false/)
+    // hasComfy() is !isMacOS() on every desktop (mobile-capabilities.test.ts
+    // pins that), and false on a phone, which has no ComfyUI either.
+    expect(useModels).toMatch(/if \(hasComfy\(\) && !comfyOk\) comfyAnswered = false/)
   })
 
   it('THE FIX: both lanes rejected marks the pass as unanswered too', () => {
@@ -162,6 +164,6 @@ describe('the model list arms that second pass, and holds the counter while it r
       useModels.indexOf('function armComfyInventoryRetry'),
       useModels.indexOf('export function __resetComfyInventoryRetryForTests'),
     )
-    expect(arm).toMatch(/if \(isMacOS\(\)\) return/)
+    expect(arm).toMatch(/if \(!hasComfy\(\)\) return/)
   })
 })

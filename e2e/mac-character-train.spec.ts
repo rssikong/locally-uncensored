@@ -125,7 +125,13 @@ test('mac: Stop ends the training in Rust and is no error', async ({ page }) => 
 test('mac without Z-Image Turbo: the Train tab says what it needs and Create does not train', async ({ page }) => {
   await openTrainTab(page, { ...MAC, mlx: { engineInstalled: true, installedImages: ['sd-turbo'] } })
   await expect(page.getByTestId('mac-train-note')).toContainText('needs Z-Image Turbo', { timeout: 15_000 })
-  await expect(page.getByTestId('mac-train-controls')).toHaveCount(0)
+  // GH #194: the inputs stay, the missing install sits above them with its button.
+  const controls = page.getByTestId('mac-train-controls')
+  await expect(controls.getByRole('button', { name: 'Install Z-Image Turbo' })).toBeVisible()
+  await controls.getByPlaceholder('Trigger word, e.g. davechar').fill('luxfox')
+  await addPhotos(page, 5)
+  await page.getByRole('button', { name: /^Create$/ }).last().click()
+  await expect(page.getByText(/Install it in the Model Manager, then hit Create again/)).toBeVisible({ timeout: 15_000 })
   expect(await calls(page, 'mlx_train_start')).toHaveLength(0)
 })
 

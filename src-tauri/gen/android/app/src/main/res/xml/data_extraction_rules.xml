@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12 and newer: nothing of this app goes into the cloud backup of
+     the system, and nothing goes along when the phone is copied to a new one.
+     allowBackup="false" alone does not cover the copy from device to device
+     on these versions, this file does. An exclude names a whole domain with
+     path "."; a section with only excludes would include everything else, so
+     every domain is listed.
+     What does not travel: the chats, the settings, the app's own backup file
+     and the encrypted secrets. The key of the secrets sits in the Keystore of
+     this device and could not be read on another one anyway. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
+        <exclude domain="device_root" path="." />
+        <exclude domain="device_file" path="." />
+        <exclude domain="device_database" path="." />
+        <exclude domain="device_sharedpref" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
+        <exclude domain="device_root" path="." />
+        <exclude domain="device_file" path="." />
+        <exclude domain="device_database" path="." />
+        <exclude domain="device_sharedpref" path="." />
+    </device-transfer>
+</data-extraction-rules>

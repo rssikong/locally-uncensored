@@ -1,4 +1,5 @@
 import { CLOUD_BASE } from './config'
+import { cloudContentAllowed } from '../../lib/cloud-content-gate'
 import { supabaseCloud } from './supabase'
 import { useCloudAuthStore } from '../../stores/cloudAuthStore'
 import { isRecord } from '../../types/json-guards'
@@ -12,7 +13,7 @@ export interface SyncedMemoryRecord {
   updated_at: string
 }
 export class MemorySyncError extends Error {
-  readonly kind: 'account' | 'conflict' | 'network' | 'invalid' | 'cancelled'
+  readonly kind: 'account' | 'conflict' | 'network' | 'invalid' | 'cancelled' | 'consent'
   constructor(kind: MemorySyncError['kind'], message: string) { super(message); this.kind = kind }
 }
 const invalid = () => new MemorySyncError('invalid', 'Invalid memory synchronization response')
@@ -45,6 +46,8 @@ export interface MemorySyncSession {
 
 /** No background activity or opt-in: callers explicitly own one bounded run. */
 export async function withMemorySyncSession<T>(ownerId: string, work: (session: MemorySyncSession) => Promise<T>, signal?: AbortSignal): Promise<T> {
+  // Memories are content: on a phone they go to LU Cloud only with the consent of the user (M1).
+  if (!(await cloudContentAllowed())) throw new MemorySyncError('consent', 'Nothing was sent. LU Cloud needs your consent first.')
   const controller = new AbortController()
   const cancel = () => controller.abort(new MemorySyncError('cancelled', 'Memory synchronization cancelled. Some changes may already be saved.'))
   if (signal?.aborted) cancel()

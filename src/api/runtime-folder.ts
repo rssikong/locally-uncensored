@@ -1,6 +1,6 @@
 /**
  * The folder of the voice engine, the read-aloud voices and LU's own Python
- * (Settings, Model Storage). The rules live in Rust (`runtime_root.rs`); this
+ * (Settings, Storage). The rules live in Rust (`runtime_root.rs`); this
  * is the call surface. Desktop only: the browser build has none of the three.
  */
 

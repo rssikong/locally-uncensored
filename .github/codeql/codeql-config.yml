@@ -1,0 +1,17 @@
+name: LU CodeQL config
+
+# security-extended: the default queries plus the ones with more findings
+# and a little more noise. Generated, vendored and test-only trees are left
+# out so the alerts are about code that ships.
+queries:
+  - uses: security-extended
+
+paths-ignore:
+  - node_modules
+  - dist
+  - '**/target'
+  - src-tauri/gen
+  - e2e
+  - '**/__tests__'
+  - '**/*.test.ts'
+  - '**/*.test.tsx'

@@ -5,6 +5,10 @@
    "label": "DeepSeek V4.1 Flash"
   },
   {
+   "id": "moonshotai/Kimi-K3.1-Pro",
+   "label": "Kimi K3.1 Pro"
+  },
+  {
    "id": "moonshotai/Kimi-K3",
    "label": "Kimi K3"
   },
@@ -233,6 +237,10 @@
   {
    "id": "deepseek-ai/DeepSeek-V4.1-Flash",
    "label": "DeepSeek V4.1 Flash"
+  },
+  {
+   "id": "moonshotai/Kimi-K3.1-Pro",
+   "label": "Kimi K3.1 Pro"
   },
   {
    "id": "moonshotai/Kimi-K3",

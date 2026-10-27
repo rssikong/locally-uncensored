@@ -157,6 +157,44 @@ jobs:
       - name: Sidecar tests
         run: python -m pytest
 
+  # Known vulnerabilities in what we ship, checked against the lockfiles on
+  # every push, pull request and release gate. npm: the packages the app
+  # bundles (devDependencies are build tools that never reach a user), failing
+  # from "high" up; the low and moderate ones still print. Cargo: `cargo deny`
+  # holds advisories, licences and crate sources to src-tauri/deny.toml, and
+  # `cargo audit` reads the same advisory database with src-tauri/.cargo/
+  # audit.toml. Each accepted advisory is listed there with its reason.
+  dependency-audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: npm audit (shipped packages)
+        run: npm audit --package-lock-only --omit=dev --audit-level=high
+
+      - name: Install cargo-audit and cargo-deny
+        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
+        with:
+          tool: cargo-audit@0.22.2,cargo-deny@0.20.2
+
+      - name: cargo deny (advisories, licences, sources)
+        working-directory: src-tauri
+        run: cargo deny --locked check
+
+      - name: cargo audit
+        working-directory: src-tauri
+        run: cargo audit
+
   cargo-check:
     runs-on: ${{ matrix.platform }}
     strategy:
@@ -625,6 +663,9 @@ jobs:
           [ "$triple" = "aarch64-apple-darwin" ] || { echo "FAIL: expected an Apple Silicon runner, got $triple" >&2; exit 1; }
           mkdir -p src-tauri/bin dist
           touch "src-tauri/bin/lu-llama-server-$triple"
+          # The refusal-removal tool's quantizer (A14) is a second externalBin
+          # on macOS only (tauri.macos.conf.json), so it needs its stub too.
+          touch "src-tauri/bin/lu-llama-quantize-$triple"
           printf '<!doctype html><title>ci placeholder</title>' > dist/index.html
           ls -la src-tauri/bin/
 

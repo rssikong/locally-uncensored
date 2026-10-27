@@ -79,8 +79,12 @@ export function siGbToBytes(gb: number): number {
 export function formatEta(seconds: number): string {
   const s = Math.round(seconds)
   if (s < 60) return `${s}s`
-  if (s < 3600) return `${Math.round(s / 60)} min`
-  return `${Math.floor(s / 3600)} h ${Math.round((s % 3600) / 60)} min`
+  // Whole minutes first, hours and minutes from that. Rounding the minutes
+  // apart from the hours wrote "11 h 60 min" for 11 h 59.5 min, and "60 min"
+  // for the last half minute below an hour.
+  const minutes = Math.round(s / 60)
+  if (minutes < 60) return `${minutes} min`
+  return `${Math.floor(minutes / 60)} h ${minutes % 60} min`
 }
 
 // #162: the bracket next to the Rebuilding spinner. Empty until the backend

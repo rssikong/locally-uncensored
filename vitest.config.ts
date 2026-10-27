@@ -10,6 +10,8 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    // Clears the composer's draft shelf between tests (src/test-setup.ts).
+    setupFiles: ['src/test-setup.ts'],
     // dev-server/ kam mit ZB-7 dazu: der Dev-Server lag bis dahin in
     // vite.config.ts und war damit fuer vitest unsichtbar. Die Tests dort
     // haengen die ECHTEN Handler an einen echten node:http-Server.

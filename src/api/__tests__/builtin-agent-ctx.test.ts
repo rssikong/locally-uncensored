@@ -44,12 +44,13 @@ const MODELS = { models: [{ name: 'qwen3-8b', path: '/models/qwen3-8b.gguf', ctx
 function mockEngine(opts: {
   running?: boolean
   ctx?: number | null
+  ctxRequested?: number | null
   list?: unknown
   swapFails?: boolean
 }) {
   backendCall.mockImplementation(async (cmd: unknown) => {
     if (cmd === 'bundled_engine_status') {
-      return { running: opts.running ?? true, healthy: opts.running ?? true, ctx: opts.ctx ?? null }
+      return { running: opts.running ?? true, healthy: opts.running ?? true, ctx: opts.ctx ?? null, ctxRequested: opts.ctxRequested ?? null }
     }
     if (cmd === 'list_bundled_models') return opts.list ?? MODELS
     if (cmd === 'swap_bundled_model') {
@@ -181,6 +182,21 @@ describe('ensureBuiltinAgentCtx', () => {
     await ensureBuiltinAgentCtx('qwen3-8b')
     expect(backendCall).not.toHaveBeenCalled()
   })
+  // 3.0.8 (A25): the VRAM plan answers a context nobody chose with as much
+  // as fits the card. An engine that was asked for 32K and runs 16K has had
+  // its answer; asking again on every agent turn would restart it each time.
+  it('does not ask again for a raise the plan already answered with less', async () => {
+    mockEngine({ running: true, ctx: 16384, ctxRequested: AGENT_CONTEXT_CAP })
+    await ensureBuiltinAgentCtx('openai::qwen3-8b')
+    expect(callsTo('swap_bundled_model')).toHaveLength(0)
+    expect(callsTo('start_bundled_engine')).toHaveLength(0)
+  })
+
+  it('still raises when the running engine was asked for less', async () => {
+    mockEngine({ running: true, ctx: 16384, ctxRequested: 8192 })
+    await ensureBuiltinAgentCtx('openai::qwen3-8b')
+    expect(callsTo('swap_bundled_model')).toHaveLength(1)
+  })
 })
 
 describe('wiring: the agent surfaces actually call the raise', () => {
@@ -195,4 +211,5 @@ describe('wiring: the agent surfaces actually call the raise', () => {
     const src = read('../providers/openai-provider.ts')
     expect(src).toContain("backendCall<{ running?: boolean; ctx?: number | null }>('bundled_engine_status')")
   })
+
 })

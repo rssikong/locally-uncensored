@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Security: What Locally Uncensored Does and What We Check</title>
+<meta name="description" content="What Locally Uncensored runs on your machine, which data leaves it and where to, the checks every release passes, signatures and checksums. No independent audit yet; one is planned.">
+<meta name="keywords" content="locally uncensored security, locally uncensored audit, locally uncensored privacy, locally uncensored sbom, locally uncensored checksum">
+<meta property="og:title" content="Security: What Locally Uncensored Does and What We Check">
+<meta property="og:description" content="What Locally Uncensored runs on your machine, which data leaves it and where to, the checks every release passes, signatures and checksums. No independent audit yet; one is planned.">
+<meta property="og:image" content="https://raw.githubusercontent.com/PurpleDoubleD/locally-uncensored/master/docs/social-preview.png">
+<meta property="og:url" content="https://locallyuncensored.com/security/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Locally Uncensored">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Security: What Locally Uncensored Does and What We Check">
+<meta name="twitter:description" content="What Locally Uncensored runs on your machine, which data leaves it and where to, the checks every release passes, signatures and checksums. No independent audit yet; one is planned.">
+<meta name="twitter:image" content="https://raw.githubusercontent.com/PurpleDoubleD/locally-uncensored/master/docs/social-preview.png">
+<link rel="canonical" href="https://locallyuncensored.com/security/">
+<meta name="robots" content="index, follow">
+<meta name="theme-color" content="#0a0a0a">
+<link rel="icon" href="/favicon.png">
+<script type="application/ld+json">
+{"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [{"@type": "ListItem", "position": 1, "name": "Home", "item": "https://locallyuncensored.com/"}, {"@type": "ListItem", "position": 2, "name": "Security", "item": "https://locallyuncensored.com/security/"}]}
+</script>
+<script type="application/ld+json">
+{"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "Has Locally Uncensored been independently audited?", "acceptedAnswer": {"@type": "Answer", "text": "Not yet. No outside firm has reviewed the code so far. An independent audit is planned and the report will be linked from this page and from SECURITY.md once it exists. Until then the checks listed on this page are the ones that run, and the source is public for anyone to review."}}, {"@type": "Question", "name": "Does Locally Uncensored send my chats anywhere?", "acceptedAnswer": {"@type": "Answer", "text": "Not in local mode. Chats, agent runs, documents and generated images, clips and audio stay in the app's folders on your computer. They leave it only when you choose a route that needs it: LU Cloud, a provider you add with your own key, web search, or remote access to your own PC."}}, {"@type": "Question", "name": "How do I check that a download is genuine?", "acceptedAnswer": {"@type": "Answer", "text": "Download only from the GitHub Releases page. From 3.0.8 on every release has a SHA256SUMS.txt; compare the installer's SHA-256 with it. Updates are checked against a minisign signature by the app itself, and the Mac app is signed and notarized by Apple."}}, {"@type": "Question", "name": "How do I report a security problem?", "acceptedAnswer": {"@type": "Answer", "text": "Use GitHub's private vulnerability reporting for the repository, or email hello@lu-labs.ai with Security in the subject. Please do not open a public issue. Reports are acknowledged within 48 hours."}}]}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/lu.css">
+<script defer src="/assets/lu.js"></script>
+  <script data-goatcounter="https://purple47.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
+</head>
+<body>
+
+<nav class="lu-nav">
+  <a class="lu-nav-brand" href="/" aria-label="Locally Uncensored">
+    <span class="lu-mono" data-mono="nav" data-size="40" aria-hidden="true"></span>
+    <span class="lu-nav-word">Locally <span class="accent">Uncensored</span></span>
+  </a>
+  <div class="lu-nav-links" id="lu-nav-links">
+    <a class="lu-nav-link" href="/">Home</a>
+    <a class="lu-nav-link" href="/pricing/">Pricing</a>
+    <a class="lu-nav-link" href="/blog/">Blog</a>
+    <a class="lu-nav-link" href="/guide/">Guide</a>
+    <a class="lu-nav-link" href="/remote-access/">Remote</a>
+  </div>
+  <div class="lu-nav-right">
+    <a class="lu-nav-icon" href="https://github.com/PurpleDoubleD/locally-uncensored" title="GitHub" aria-label="GitHub"><svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.37.5 0 5.87 0 12.5c0 5.3 3.44 9.8 8.21 11.39.6.11.82-.26.82-.58 0-.29-.01-1.04-.02-2.05-3.34.73-4.04-1.61-4.04-1.61-.55-1.39-1.33-1.76-1.33-1.76-1.09-.75.08-.73.08-.73 1.2.08 1.84 1.24 1.84 1.24 1.07 1.83 2.81 1.3 3.5.99.11-.78.42-1.3.76-1.6-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.13-.3-.54-1.52.11-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 6.01 0c2.29-1.55 3.3-1.23 3.3-1.23.65 1.66.24 2.88.12 3.18.77.84 1.23 1.91 1.23 3.22 0 4.61-2.8 5.63-5.48 5.92.43.37.81 1.1.81 2.22 0 1.6-.01 2.9-.01 3.29 0 .32.21.7.82.58A12.01 12.01 0 0 0 24 12.5C24 5.87 18.63.5 12 .5Z"/></svg><span class="lu-nav-badge">2000+&#8202;⭐</span></a>
+    <a class="lu-nav-icon discord" href="https://locallyuncensored.com/discord" target="_blank" rel="noopener" title="Discord" aria-label="Discord"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.32 4.37A19.8 19.8 0 0 0 15.45 3c-.2.36-.44.85-.6 1.23a18.3 18.3 0 0 0-5.7 0c-.16-.38-.4-.87-.6-1.23a19.7 19.7 0 0 0-4.87 1.37C.55 8.9-.32 13.3.11 17.63a19.9 19.9 0 0 0 6 3.03c.48-.66.9-1.36 1.27-2.1-.7-.26-1.36-.58-1.99-.96.17-.12.33-.25.49-.38a14.2 14.2 0 0 0 12.24 0c.16.13.32.26.49.38-.63.38-1.3.7-2 .96.37.74.8 1.44 1.27 2.1a19.8 19.8 0 0 0 6-3.03c.5-5.03-.85-9.39-3.55-13.26ZM8.02 15c-1.18 0-2.15-1.09-2.15-2.42 0-1.34.95-2.43 2.15-2.43 1.2 0 2.17 1.09 2.15 2.43 0 1.33-.95 2.42-2.15 2.42Zm7.96 0c-1.18 0-2.15-1.09-2.15-2.42 0-1.34.95-2.43 2.15-2.43 1.2 0 2.17 1.09 2.15 2.43 0 1.33-.94 2.42-2.15 2.42Z"/></svg><span class="lu-nav-badge">1200+&#8202;<span style="font-size:0.715em">🟢</span></span></a>
+    <span class="lu-nav-sep"></span>
+    <div class="switch" id="theme-switch" role="button" aria-label="Toggle theme"></div>
+    <a class="he-cta" href="/pricing/" aria-label="LU Cloud plans and what they include"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>Cloud</a>
+    <a class="lu-nav-dl" href="https://github.com/PurpleDoubleD/locally-uncensored/releases/latest"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>Download</a>
+    <button type="button" class="lu-nav-toggle" aria-label="Menu"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+  </div>
+</nav>
+<div class="container lu-doc">
+  <div class="breadcrumb"><a href="/">Locally Uncensored</a> / Security</div>
+
+  <div class="post-meta">
+    <span class="post-tag">Security</span>
+    <span>October 20, 2026</span>
+    <span>·</span>
+    <span>6 min read</span>
+  </div>
+
+  <article>
+    <h1>Security</h1>
+
+    <p><strong>The short version:</strong> Locally Uncensored is an open source desktop app (AGPL-3.0) that runs models on your own computer. In local mode your chats and generations stay there. Every release is built in public by GitHub Actions and has to pass the same automated checks first. <strong>There has not been an independent security audit yet.</strong> One is planned, and this page says what is checked until then.</p>
+
+    <h2>What runs on your machine</h2>
+    <p>In local mode the models run on your own hardware, through the built-in engine, Ollama, LM Studio or ComfyUI. Chats, memories, documents and the images, clips and audio you generate are saved in the app's folders inside your user profile. Local mode needs no account. The app has no analytics kit and no advertising ID, and it does not upload crash reports: a crash is written to <code>crash.log</code> on your computer and stays there unless you attach it to a support request yourself.</p>
+
+    <h2>What leaves your machine, and where to</h2>
+    <table>
+      <thead><tr><th>When</th><th>What is sent</th><th>To</th></tr></thead>
+      <tbody>
+        <tr><td>Always, on its own</td><td>Update check a few seconds after start and every six hours</td><td>GitHub Releases</td></tr>
+        <tr><td>When you press the Cloud switch</td><td>One anonymous count: what the press did, the operating system as one word, the app version</td><td>LU Labs</td></tr>
+        <tr><td>Finding or downloading a model</td><td>The search or the file you fetch</td><td>Hugging Face, Civitai or ollama.com</td></tr>
+        <tr><td>Installing an engine</td><td>The packages it needs</td><td>GitHub, python.org, pytorch.org, PyPI</td></tr>
+        <tr><td>Web search in a chat or the agent</td><td>The search words; pages are fetched from your machine</td><td>Your own SearXNG, otherwise DuckDuckGo (Wikipedia as fallback), or Brave or Tavily with your key</td></tr>
+        <tr><td>A provider you add with your own key</td><td>Your prompts, under your key</td><td>That provider (for example OpenAI or OpenRouter)</td></tr>
+        <tr><td>Remote access over the internet</td><td>The traffic between your phone and your PC</td><td>Through a Cloudflare tunnel</td></tr>
+        <tr><td>LU Cloud mode</td><td>Chats, Create renders and voice requests</td><td>lu-labs.ai, processed on managed GPUs</td></tr>
+      </tbody>
+    </table>
+    <p>The full list, with what each request contains, is on the <a href="/privacy/">privacy page</a> and in the app under Settings, General, Privacy.</p>
+
+    <h2>What is off until you turn it on</h2>
+    <ul>
+      <li><strong>Remote access.</strong> Off until you start it. A phone needs the QR code and a six-digit passcode, and the four permission switches start off. In home network mode the traffic stays in your network; internet mode goes through a Cloudflare tunnel whose address is new for every session. Details on the <a href="/remote-access/">remote access page</a>.</li>
+      <li><strong>Computer control.</strong> Off by default. The first time a chat wants the screen, a card asks whether it may be used there, and until you click nothing is captured. Apps such as terminals, password managers and system sign-in dialogs are off limits.</li>
+      <li><strong>The local API.</strong> Runs only when you start it in Settings and asks for a token. It answers on your own machine, and on your home network only if you allow that.</li>
+      <li><strong>LU Cloud.</strong> Needs an account and a deliberate switch from Local to Cloud.</li>
+    </ul>
+
+    <h2>What every release has to pass</h2>
+    <p>Each push to <code>master</code> and every release runs the same gate, defined in <a href="https://github.com/PurpleDoubleD/locally-uncensored/blob/master/.github/workflows/ci.yml"><code>ci.yml</code></a>. A release is built only after it is green.</p>
+    <ul>
+      <li>Lint, type check, the unit test suite and end-to-end tests of the interface</li>
+      <li>Rust tests on Linux, Windows and macOS, Clippy, and a full app build for each platform</li>
+      <li>A dependency audit: <code>npm audit</code> for the packages the app ships, <code>cargo deny</code> and <code>cargo audit</code> for the Rust crates. An advisory we accept is listed with its reason in <a href="https://github.com/PurpleDoubleD/locally-uncensored/blob/master/src-tauri/deny.toml"><code>deny.toml</code></a>.</li>
+      <li>CodeQL static analysis of the TypeScript, Rust, Python and workflow code, with results in the repository's Security tab</li>
+      <li>Every third-party GitHub Action pinned to a full commit hash, so a retagged upstream release cannot run in the build</li>
+    </ul>
+    <p>The <a href="https://scorecard.dev/viewer/?uri=github.com/PurpleDoubleD/locally-uncensored">OpenSSF Scorecard</a> rates how the repository itself is run, and the result is public, gaps included.</p>
+
+    <h2>Signatures and checksums</h2>
+    <ul>
+      <li><strong>Updates are signed.</strong> The app accepts an update only if its minisign signature matches this public key: <code>RWRHseb4LudtbIpBRaMDxMpSLMq+1TqeULJS/HY2/eviNqnAXVVyGsDc</code></li>
+      <li><strong>Mac:</strong> the app is signed with an Apple Developer ID and notarized by Apple.</li>
+      <li><strong>Windows:</strong> the installer is not Authenticode signed yet. SignPath Foundation has accepted the project for free code signing; the production certificate is applied for and not in place yet. Until then SmartScreen and some antivirus engines warn, see <a href="/is-locally-uncensored-safe/">Is it safe?</a></li>
+      <li><strong>Checksums and SBOM:</strong> from 3.0.8 on, every release carries a <code>SHA256SUMS.txt</code> over all its files and a software bill of materials in CycloneDX format for the npm packages, the Rust crates and the Python packages of the voice feature.</li>
+    </ul>
+    <p>To check a download on Linux or macOS, put <code>SHA256SUMS.txt</code> next to it and run <code>sha256sum -c SHA256SUMS.txt --ignore-missing</code> (on a Mac <code>shasum -a 256 -c</code>). On Windows, <code>Get-FileHash</code> in PowerShell prints the hash to compare.</p>
+
+    <h2>Independent audit</h2>
+    <p>No outside firm has audited Locally Uncensored so far. We are looking for funding for one that covers the desktop app (Tauri, Rust and React), its bridges to the local engines, the local API and remote access. When a report exists it will be linked here and in <a href="https://github.com/PurpleDoubleD/locally-uncensored/blob/master/SECURITY.md">SECURITY.md</a>, findings included.</p>
+
+    <h2>Reporting a security problem</h2>
+    <p>Please do not open a public issue. Use <a href="https://github.com/PurpleDoubleD/locally-uncensored/security/advisories/new">GitHub's private vulnerability reporting</a> or email <a href="mailto:hello@lu-labs.ai?subject=Security">hello@lu-labs.ai</a> with "Security" in the subject. Reports are acknowledged within 48 hours and assessed within seven days; a critical or high issue is fixed within 14 days of accepting it. What is in scope is listed in <a href="https://github.com/PurpleDoubleD/locally-uncensored/blob/master/SECURITY.md">SECURITY.md</a>.</p>
+
+    <h2>FAQ</h2>
+    <h3>Has Locally Uncensored been independently audited?</h3>
+    <p>Not yet. No outside firm has reviewed the code so far. An independent audit is planned and the report will be linked from this page and from SECURITY.md once it exists. Until then the checks listed on this page are the ones that run, and the source is public for anyone to review.</p>
+
+    <h3>Does Locally Uncensored send my chats anywhere?</h3>
+    <p>Not in local mode. Chats, agent runs, documents and generated images, clips and audio stay in the app&#x27;s folders on your computer. They leave it only when you choose a route that needs it: LU Cloud, a provider you add with your own key, web search, or remote access to your own PC.</p>
+
+    <h3>How do I check that a download is genuine?</h3>
+    <p>Download only from the GitHub Releases page. From 3.0.8 on every release has a SHA256SUMS.txt; compare the installer&#x27;s SHA-256 with it. Updates are checked against a minisign signature by the app itself, and the Mac app is signed and notarized by Apple.</p>
+
+    <h3>How do I report a security problem?</h3>
+    <p>Use GitHub&#x27;s private vulnerability reporting for the repository, or email hello@lu-labs.ai with Security in the subject. Please do not open a public issue. Reports are acknowledged within 48 hours.</p>
+  </article>
+
+  <div class="post-footer">
+    <p>Read the source, check the hash, then decide.</p>
+    <a href="https://github.com/PurpleDoubleD/locally-uncensored/releases/latest" class="cta-btn">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Download from GitHub Releases
+    </a>
+    <p style="margin-top:14px;margin-bottom:0">AGPL-3.0 &middot; <a href="https://github.com/PurpleDoubleD/locally-uncensored/blob/master/SECURITY.md">Security policy</a> &middot; <a href="/privacy/">Privacy</a></p>
+  </div>
+</div>
+
+<footer>
+  <div class="footer-row footer-meta"><span>&copy; 2026 &middot; Locally Uncensored &middot; AGPL-3.0</span></div>
+  <div class="footer-row footer-links">
+    <a href="https://locallyuncensored.com/blog/">Blog</a>
+    <a href="https://locallyuncensored.com/guide/">Guide</a>
+    <a href="https://locallyuncensored.com/pricing/">Pricing</a>
+    <a href="https://locallyuncensored.com/cloud/">LU Cloud</a>
+    <a href="https://locallyuncensored.com/uncensored-ai-chat-online/">Uncensored AI chat online</a>
+    <a href="https://locallyuncensored.com/uncensored-ai-image-generator-online/">Image generator online</a>
+    <a href="https://locallyuncensored.com/uncensored-ai-video-generator-online/">Video generator online</a>
+    <a href="https://locallyuncensored.com/alternatives/">Alternatives</a>
+    <a href="https://locallyuncensored.com/is-locally-uncensored-safe/">Is it safe?</a>
+    <a href="https://locallyuncensored.com/remote-access/">Remote access</a>
+    <a href="https://locallyuncensored.com/discord" target="_blank" rel="noopener">Discord</a>
+    <a href="https://github.com/PurpleDoubleD/locally-uncensored">GitHub</a>
+    <a href="https://github.com/PurpleDoubleD/locally-uncensored/discussions">Discussions</a>
+    <a href="https://github.com/PurpleDoubleD/locally-uncensored/issues">Issues</a>
+    <a href="https://reddit.com/user/GroundbreakingMall54">Reddit</a>
+    <a href="https://www.linkedin.com/in/david-drobnitza-locallyuncensored/" rel="me noopener" target="_blank">LinkedIn</a>
+    <a href="https://locallyuncensored.com/privacy/">Privacy</a>
+    <a href="https://locallyuncensored.com/terms/">Terms</a>
+    <a href="https://locallyuncensored.com/impressum/">Impressum</a>
+  </div>
+</footer>
+</body>
+</html>

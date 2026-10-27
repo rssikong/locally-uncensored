@@ -156,8 +156,8 @@ export function VoiceControls({ onOpenSettings }: Props) {
         title={!toolsPossible
           ? 'Agent is not available: this model cannot use tools.'
           : agent
-            ? 'Agent ON. Voice can use tools: the web, files, commands. Click for a conversation without tools.'
-            : 'Agent OFF. Conversation only. Click to let Voice use tools.'}
+            ? 'Agent ON. Voice can use tools: the web, files, commands. Click for a conversation with web search only.'
+            : 'Agent OFF. Conversation with web search. Click to let Voice also use files and commands.'}
       >
         <Bot size={12} />
       </button>

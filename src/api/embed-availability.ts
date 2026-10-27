@@ -30,6 +30,7 @@ import {
 } from './engine'
 import { checkConnection, listModels } from './ollama'
 import { getOllamaBase, isOllamaLocal } from './backend'
+import { hasForeignBackends } from '../lib/capabilities'
 
 /**
  * Where indexing would send the text.
@@ -77,6 +78,11 @@ export function laneIsOnThisMachine(lane: EmbedLane): boolean {
  * it (`bundledEmbedLaneReady`, the same question rag.ts answers when it routes).
  */
 export async function builtinEmbedReady(): Promise<boolean> {
+  // A phone has one lane, the bundled one, whoever holds the chat (a Cloud
+  // chat can still read a local document). Its embedder is not kept running
+  // (lib/model-slot.ts), so "ready" there means "installed": rag.ts loads it
+  // for the request.
+  if (!hasForeignBackends()) return bundledEmbedLaneReady()
   if (!isManagedBuiltinActive()) {
     try {
       return (await bundledEmbedStatus()).running
@@ -98,6 +104,8 @@ export async function embeddingLane(embeddingModel: string): Promise<EmbedLaneIn
   // The bundled lane is the only one rag.ts will use here, so a pulled Ollama
   // model is not an answer to this question.
   if (isManagedBuiltinActive()) return { lane: 'none', endpoint: null }
+  // No Ollama on a phone: do not send a probe to a port nothing listens on.
+  if (!hasForeignBackends()) return { lane: 'none', endpoint: null }
   if (!(await checkConnection(EMBED_PROBE_TIMEOUT_MS))) return { lane: 'none', endpoint: null }
   try {
     const models = await listModels()

@@ -1,0 +1,177 @@
+/* Design tokens of the mobile shell, from mobile-docs/design/DESIGN.md
+   section 7. Every name carries the prefix --m-.
+
+   Three blocks. The markers "tokens:shared", "tokens:dark" and "tokens:light"
+   are read by styles/__tests__/tokens.test.ts, which checks that dark and
+   light define the same set of keys. Keep one declaration per line. */
+
+/* tokens:shared */
+html[data-shell='mobile'] {
+  /* 7.2 type scale, rem so the system text size applies */
+  --m-text-display: 1.5rem;
+  --m-text-title: 1.0625rem;
+  --m-text-body: 1rem;
+  --m-text-control: 0.9375rem;
+  --m-text-caption: 0.8125rem;
+  --m-text-label: 0.75rem;
+  --m-text-mono: 0.8125rem;
+  --m-text-tab: min(0.6875rem, calc(15px / var(--m-zoom)));
+  --m-font: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --m-font-display: 'Space Grotesk', 'Inter', system-ui, -apple-system, sans-serif;
+  --m-font-mono: ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+  --m-font-scale: 1;
+  /* What the WebView enlarges text by on its own: 1 on iOS and in a browser,
+     the text zoom on Android, where the root stays at 16 px (ui/text-zoom.ts
+     measures it). --m-u is one text unit as a LENGTH and grows with the text
+     on every platform; a width that has to follow the text is written in it.
+     A cap in px on a font size is divided by the zoom, or it caps nothing. */
+  --m-zoom: 1;
+  --m-u: calc(1rem * var(--m-zoom));
+
+  /* 7.3 spacing, sizes, radii: px, they do not grow with the text */
+  --m-s1: 4px;
+  --m-s2: 8px;
+  --m-s3: 12px;
+  --m-s4: 16px;
+  --m-s5: 20px;
+  --m-s6: 24px;
+  --m-s8: 32px;
+  --m-gutter: 16px;
+  --m-touch: 44px;
+  --m-row: 52px;
+  --m-icon: min(calc(1.375 * var(--m-u)), 36px);
+  --m-icon-sm: min(calc(1.125 * var(--m-u)), 30px);
+  --m-measure: calc(42 * var(--m-u));
+  --m-rail: 72px;
+  --m-r-sm: 6px;
+  --m-r-md: 10px;
+  --m-r-lg: 14px;
+  --m-r-xl: 20px;
+  --m-r-pill: 999px;
+  /* Safe areas. Default from env(); the native layer may override each one
+     through platform/viewport.ts (setSafeAreaInsets), because WKWebView keeps
+     the portrait values after a rotation (measured in the simulator). */
+  --m-safe-top: env(safe-area-inset-top, 0px);
+  --m-safe-right: env(safe-area-inset-right, 0px);
+  --m-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --m-safe-left: env(safe-area-inset-left, 0px);
+  /* Keyboard, set by platform/keyboard.ts from window.visualViewport:
+     --m-kb    height the keyboard covers
+     --m-vh    visible height, the shell is exactly this high
+     --m-vtop  how far the system scrolled the page up (iOS)
+     --m-bottom  bottom inset of pages and sheets: the safe area, or nothing
+                 while the keyboard is open (it covers the home indicator) */
+  --m-kb: 0px;
+  --m-vh: 100%;
+  --m-vtop: 0px;
+  --m-bottom: var(--m-safe-bottom);
+
+  /* 9 motion */
+  --m-ease: cubic-bezier(0.2, 0, 0, 1);
+  --m-fast: 120ms;
+  --m-base: 200ms;
+  --m-slow: 300ms;
+}
+
+/* Android: a target is 48 by 48 dp (Material, the Accessibility Scanner of
+   Google Play), iOS asks for 44 pt. In a WebView one CSS px is one dp, so the
+   one size every control of the kit takes its minimum from is larger there.
+   Guards: e2e/mobile/touchziele.mobile.ts, mobile-tests/checks/layout.mjs. */
+html[data-shell='mobile'][data-os='android'] {
+  --m-touch: 48px;
+}
+
+/* tokens:dark */
+html[data-shell='mobile'] {
+  --m-canvas: #141414;
+  --m-surface: #1e1e1e;
+  --m-sheet: #202020;
+  --m-overlay: #363636;
+  --m-fill: rgba(255, 255, 255, 0.06);
+  --m-fill-2: rgba(255, 255, 255, 0.1);
+  --m-hair: rgba(255, 255, 255, 0.08);
+  --m-edge: rgba(255, 255, 255, 0.14);
+  --m-t1: #f3f4f6;
+  --m-t2: #d1d5db;
+  --m-t3: #9ca3af;
+  --m-accent: #a094f8;
+  --m-accent-press: #b1a6ff;
+  --m-on-accent: #111827;
+  --m-accent-edge: #a094f8;
+  --m-accent-text: #b1a6ff;
+  --m-accent-soft: rgba(160, 148, 248, 0.14);
+  --m-cloud: #a78bfa;
+  --m-cloud-edge: #7c3aed;
+  --m-cloud-soft: rgba(124, 58, 237, 0.18);
+  --m-ok: #34d399;
+  --m-tight: #38bdf8;
+  /* A calm grey, never a yellow (DESIGN.md 7.1, decided 08.10.2026). The app
+     has a standing rule against yellow notes (src/lib/hinweis.ts, guarded by
+     kein-gelb-in-der-oberflaeche): a note is calm grey or it is an error. */
+  --m-warn: #9ca3af;
+  --m-err: #f87171;
+  --m-scrim: rgba(0, 0, 0, 0.55);
+  --m-scroll-hint: rgba(0, 0, 0, 0.5);
+  /* Not in the DESIGN.md table, taken from the prototype (mock/index.html):
+     tinted grounds of Notice and Banner, and the three shadows. */
+  --m-err-soft: rgba(248, 113, 113, 0.12);
+  --m-warn-soft: rgba(255, 255, 255, 0.06);
+  --m-card-edge: transparent;
+  --m-segment: #363636;
+  --m-shadow-sheet: 0 -8px 32px rgba(0, 0, 0, 0.5);
+  --m-shadow-dialog: 0 20px 60px rgba(0, 0, 0, 0.5);
+  --m-shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.4);
+  /* Colours of a code block (ui/highlight-code.tsx). Every one reaches 4.5 to 1 on --m-surface. */
+  --m-code-comment: #9ca3af;
+  --m-code-punct: #d1d5db;
+  --m-code-keyword: #c4b5fd;
+  --m-code-string: #86efac;
+  --m-code-number: #f9a8d4;
+  --m-code-function: #7dd3fc;
+  --m-code-deleted: #fca5a5;
+}
+
+/* tokens:light */
+html[data-shell='mobile'].light {
+  --m-canvas: #f3f4f6;
+  --m-surface: #ffffff;
+  --m-sheet: #ffffff;
+  --m-overlay: #ffffff;
+  --m-fill: rgba(0, 0, 0, 0.05);
+  --m-fill-2: rgba(0, 0, 0, 0.08);
+  --m-hair: rgba(0, 0, 0, 0.1);
+  --m-edge: rgba(0, 0, 0, 0.16);
+  --m-t1: #111827;
+  --m-t2: #374151;
+  --m-t3: #4b5563;
+  --m-accent: #a094f8;
+  --m-accent-press: #b1a6ff;
+  --m-on-accent: #111827;
+  --m-accent-edge: #8b7cf0;
+  --m-accent-text: #6d28d9;
+  --m-accent-soft: rgba(124, 58, 237, 0.1);
+  --m-cloud: #6d28d9;
+  --m-cloud-edge: #7c3aed;
+  --m-cloud-soft: rgba(124, 58, 237, 0.1);
+  --m-ok: #047857;
+  --m-tight: #0369a1;
+  /* The calm grey of the light theme, see the note at the dark value. */
+  --m-warn: #4b5563;
+  --m-err: #b91c1c;
+  --m-scrim: rgba(17, 24, 39, 0.35);
+  --m-scroll-hint: rgba(17, 24, 39, 0.16);
+  --m-err-soft: rgba(220, 38, 38, 0.08);
+  --m-warn-soft: rgba(0, 0, 0, 0.05);
+  --m-card-edge: rgba(0, 0, 0, 0.1);
+  --m-segment: #ffffff;
+  --m-shadow-sheet: 0 -8px 32px rgba(0, 0, 0, 0.14);
+  --m-shadow-dialog: 0 20px 60px rgba(0, 0, 0, 0.18);
+  --m-shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.16);
+  --m-code-comment: #4b5563;
+  --m-code-punct: #374151;
+  --m-code-keyword: #6d28d9;
+  --m-code-string: #047857;
+  --m-code-number: #be185d;
+  --m-code-function: #0369a1;
+  --m-code-deleted: #b91c1c;
+}

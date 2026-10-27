@@ -26,7 +26,7 @@ const stored = () =>
 
 beforeEach(() => {
   useCreateStore.setState(useCreateStore.getInitialState(), true)
-  useCreateStore.setState({ videoModel: 'wan2.2_t2v_14B.safetensors' })
+  useCreateStore.setState({ videoModel: 'wan2.2_ti2v_5B_fp16.safetensors' })
   useCreateStore.getState().setImageModel('sd_turbo.safetensors', 'sd15')
   useCreateStore.setState(TUNED)
 })

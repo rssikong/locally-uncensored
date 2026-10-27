@@ -58,6 +58,13 @@ export function stripModelNoise(text: string, opts: StripOptions = {}): string {
   // so the orchestration sentence never reads as a real answer.
   t = t.replace(/(?:please wait[,;:]?\s*(?:while\s+)?i\s+(?:will\s+)?)?continue working autonomously[\s\S]*?finished and verified\.?/gi, '')
 
+  // An answer that is nothing but empty tag pairs. A model that cannot drive
+  // tools answered a search question with `<source></source>` and nothing else
+  // (SmolLM2 360M on a phone, 09.10.2026): the frame of an answer it never
+  // filled. Only when the WHOLE answer is that, so a tag somebody asked for,
+  // in prose or in a code block, is never touched.
+  if (/^(?:\s*<([a-z][a-z0-9_-]{0,31})>\s*<\/\1>\s*)+$/i.test(t)) t = ''
+
   if (opts.aggressive) {
     // Tool-call JSON the model emitted as CONTENT, PARSE-FREE. The structured
     // extractor relies on JSON.parse via repairJson — which FAILS when the

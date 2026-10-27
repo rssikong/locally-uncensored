@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex as TokioMutex;
 use tauri::{AppHandle, Emitter};
 use tracing::{error, info, warn};
+use crate::commands::remote_sealed::{self as sealed, SealedCaller, SealedHub};
 
 // ─── Constants ───
 
@@ -51,6 +52,12 @@ pub struct RemotePermissions {
     /// payloads that omit the field deserialize to `false`.
     #[serde(default)]
     pub shell: bool,
+    /// Create over the desktop: a paired phone makes images and videos with
+    /// this computer's local engines (`remote_create.rs`). OFF by default and
+    /// `#[serde(default)]` like `shell`, so a payload from before it existed
+    /// reads as off.
+    #[serde(default)]
+    pub create: bool,
 }
 
 /// RA-1: EVERYTHING off by default.
@@ -78,6 +85,7 @@ impl Default for RemotePermissions {
             downloads: false,
             process_control: false,
             shell: false,
+            create: false,
         }
     }
 }
@@ -87,7 +95,90 @@ pub struct PasscodeState {
     pub code: String,
     pub expires_at: u64,
     pub failed_attempts: HashMap<String, (u32, u64)>, // ip -> (count, cooldown_until)
+    /// Failed code attempts against the code that expires at `.1`, over all
+    /// senders and both ways in (sealed code handshake and the plain login).
+    /// At ten the code is replaced: in the home network sender addresses are
+    /// cheap.
+    pub code_failures: (u32, u64),
+    /// The QR or Dispatch panel at the desktop is open. A code exists only
+    /// then; closing the panel ends it.
+    pub window_open: bool,
+    /// Unix second the open panel counts until without being opened again.
+    pub window_until: u64,
 }
+
+/// How long the panel counts as open without a sign of life from the window.
+const CODE_WINDOW_SECS: u64 = 30 * 60;
+
+impl PasscodeState {
+    /// The panel opened: a fresh code unless the current one still holds.
+    pub(crate) fn open_window(&mut self, now: u64) {
+        self.window_open = true;
+        self.window_until = now + CODE_WINDOW_SECS;
+        if self.code.is_empty() || now >= self.expires_at {
+            self.renew(now);
+        }
+    }
+
+    /// The panel closed: no code any more.
+    fn close_window(&mut self) {
+        self.window_open = false;
+        self.window_until = 0;
+        self.code.clear();
+        self.expires_at = 0;
+        self.code_failures = (0, 0);
+    }
+
+    fn renew(&mut self, now: u64) {
+        // Device tests (`--features e2e-remote` and its environment): the
+        // code stays the one the test was given.
+        #[cfg(feature = "e2e-remote")]
+        if let Some(code) = crate::e2e_remote::fixed_code() {
+            self.code = code;
+            self.expires_at = now + PASSCODE_TTL_SECS;
+            self.code_failures = (0, self.expires_at);
+            return;
+        }
+        self.code = generate_passcode();
+        self.expires_at = now + PASSCODE_TTL_SECS;
+        self.code_failures = (0, self.expires_at);
+    }
+
+    /// Keeps the code current: an open panel gets a new code when the old
+    /// one ran out, a panel the window stopped renewing closes.
+    fn refresh(&mut self, now: u64) {
+        if self.window_open && now >= self.window_until {
+            self.close_window();
+        }
+        if self.window_open && now >= self.expires_at {
+            self.renew(now);
+        }
+    }
+
+    /// The code as it may be tried right now.
+    fn live(&mut self, now: u64) -> Option<&str> {
+        self.refresh(now);
+        (!self.code.is_empty() && now < self.expires_at).then_some(self.code.as_str())
+    }
+
+    /// One more failed attempt on the current code. True when that was the
+    /// tenth and the code was replaced.
+    fn count_failure(&mut self, now: u64) -> bool {
+        let this_code = self.expires_at;
+        if self.code_failures.1 != this_code {
+            self.code_failures = (0, this_code);
+        }
+        self.code_failures.0 += 1;
+        if self.code_failures.0 >= CODE_MAX_FAILURES {
+            self.renew(now);
+            return true;
+        }
+        false
+    }
+}
+
+/// Ten failed attempts on one code, over all senders and both ways in, end it.
+const CODE_MAX_FAILURES: u32 = 10;
 
 #[derive(Clone)]
 struct RemoteDesktop {
@@ -147,12 +238,43 @@ struct RemoteState {
     /// keeps the default (`DEFAULT_PAGE_TITLE`).
     page_title: Arc<TokioMutex<String>>,
     app_handle: RemoteDesktop,
+    /// The sealed channel (commands/remote_sealed.rs). `None` when the desktop
+    /// key could not be opened: Remote then works as before, without it.
+    sealed: Option<Arc<SealedHub>>,
+    /// Create over the desktop: the job table (`remote_create.rs`). Lives in
+    /// `RemoteServer` so the window's commands reach the same table.
+    create: Arc<crate::commands::remote_create::CreateHub>,
+    /// Shared chats (`remote_chats.rs`), in `RemoteServer` like `create`.
+    chats: Arc<crate::commands::remote_chats::ChatsHub>,
+}
+
+impl axum::extract::FromRef<RemoteState> for crate::commands::remote_chats::ChatsCtx {
+    fn from_ref(state: &RemoteState) -> Self {
+        crate::commands::remote_chats::ChatsCtx {
+            hub: state.chats.clone(),
+            create: state.create.clone(),
+            permissions: state.permissions.clone(),
+        }
+    }
+}
+
+impl axum::extract::FromRef<RemoteState> for crate::commands::remote_create::CreateCtx {
+    fn from_ref(state: &RemoteState) -> Self {
+        crate::commands::remote_create::CreateCtx {
+            hub: state.create.clone(),
+            permissions: state.permissions.clone(),
+        }
+    }
 }
 
 #[derive(Clone, Serialize, Debug)]
 pub struct ConnectedDevice {
     pub id: String,
+    /// The address shown (a proxy's X-Forwarded-For when there is one).
     pub ip: String,
+    /// The TCP peer: what the list is keyed on, a header cannot choose it.
+    #[serde(skip)]
+    pub peer: String,
     pub user_agent: String,
     pub last_seen: u64,
 }
@@ -228,65 +350,31 @@ fn validate_jwt(secret: &str, token: &str) -> Result<Claims, String> {
     Ok(data.claims)
 }
 
-fn chrono_now_secs() -> u64 {
+pub(crate) fn chrono_now_secs() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
 }
 
-/// The client IP this server is willing to believe.
+/// The client IP this server is willing to believe: the TCP peer, always.
 ///
-/// Bug #3: on LAN there is no reverse proxy, so both XFF and X-Real-IP are
-/// empty and every client collapsed into the "unknown" bucket — sharing one
-/// rate-limit window and appearing as the same row in Connected Devices.
+/// Bug #3: every client has its own address now, so rate limits and the
+/// Connected Devices rows no longer collapse into one "unknown" bucket.
 ///
-/// The exactly ONE reverse proxy that can ever sit in front of this server is
-/// cloudflared, and it runs on this machine and reaches us over loopback.
-/// Every other peer is talking to us directly, so a forwarding header from a
-/// non-loopback peer is a value the client typed itself. Trusting it there was
-/// not cosmetic: `handle_auth` deduplicates Connected Devices on this string,
-/// and a device row IS a session (auth_middleware only honours a token whose
-/// device is still listed). A second paired device that claimed the first
-/// one's address therefore took over its row — hiding itself from the desktop
-/// list AND ending the legitimate device's session in one request.
+/// This serves the LAN listener only. cloudflared points at the tunnel
+/// listener, which reads `CF-Connecting-IP` in its own handler, so nothing
+/// that reaches this listener is a proxy: a forwarding header here, even
+/// from loopback, is a value some program typed itself. Trusting it was not
+/// cosmetic: `handle_auth` deduplicates Connected Devices on this string, and
+/// a device row IS a session, so a claimed address took over another row.
 ///
-/// Even behind the tunnel the header is only half trusted: Cloudflare APPENDS
-/// the visitor to any `X-Forwarded-For` the visitor already sent, so the first
-/// hop is attacker-written and the LAST one is the proxy's. `CF-Connecting-IP`
-/// is a single value the edge overwrites, so it is preferred.
-///
-/// No peer address at all means we cannot tell whether a proxy is in front of
-/// us, so nothing is trusted.
-fn client_ip(headers: &HeaderMap, socket: Option<SocketAddr>) -> String {
-    let Some(addr) = socket else {
-        return "unknown".to_string();
-    };
-    if addr.ip().is_loopback() {
-        if let Some(ip) = headers.get("cf-connecting-ip")
-            .and_then(|v| v.to_str().ok())
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-        {
-            return ip.to_string()
-        }
-        if let Some(ip) = headers.get("x-forwarded-for")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|s| s.rsplit(',').next())
-            .map(|s| s.trim())
-            .filter(|s| !s.is_empty())
-        {
-            return ip.to_string()
-        }
-        if let Some(ip) = headers.get("x-real-ip")
-            .and_then(|v| v.to_str().ok())
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-        {
-            return ip.to_string()
-        }
+/// No peer address at all gives "unknown".
+fn client_ip(_headers: &HeaderMap, socket: Option<SocketAddr>) -> String {
+    match socket {
+        Some(addr) => addr.ip().to_string(),
+        None => "unknown".to_string(),
     }
-    addr.ip().to_string()
 }
 
 // ─── Auth middleware ───
@@ -299,7 +387,7 @@ fn client_ip(headers: &HeaderMap, socket: Option<SocketAddr>) -> String {
 /// ANY row in the list. Handlers that act on a specific device read this
 /// instead of the id in the body.
 #[derive(Clone)]
-struct CallerDevice(String);
+pub(crate) struct CallerDevice(pub(crate) String);
 
 async fn memory_revocation_middleware(
     AxumState(revoked): AxumState<Arc<CancellationToken>>,
@@ -307,11 +395,14 @@ async fn memory_revocation_middleware(
     next: Next,
 ) -> Response {
     let path = req.uri().path();
+    // `/remote-api/sealed` is the channel's door: its inner requests come
+    // back through this layer one by one and are blocked there.
     let protected = path.starts_with("/api/")
         || path.starts_with("/comfyui/")
         || path == "/ws"
         || (path.starts_with("/remote-api/")
-            && path != "/remote-api/auth" && path != "/remote-api/status");
+            && path != "/remote-api/auth" && path != "/remote-api/status"
+            && path != "/remote-api/sealed");
     if protected && revoked.is_cancelled() {
         return (StatusCode::CONFLICT,
             [("x-lu-remote-memory-revoked", "1")],
@@ -328,6 +419,26 @@ async fn auth_middleware(
 ) -> Response {
     let path = req.uri().path().to_string();
 
+    // An inner request of the sealed channel. The extension is set by the
+    // channel in this process after the frame opened (handle_sealed), never
+    // from anything on the wire, so the paired device stands in for the JWT.
+    // Its rights per device come first; the global switches follow in the
+    // handlers, which see the same caller.
+    if let Some(caller) = req.extensions().get::<SealedCaller>().cloned() {
+        req.headers_mut().remove(sealed::DEVICE_HEADER);
+        if path == "/ws" {
+            return StatusCode::NOT_FOUND.into_response();
+        }
+        if let Err(right) = sealed::path_allowed(&caller.rights, &path) {
+            return forbidden_right(right);
+        }
+        req.extensions_mut().insert(CallerDevice(caller.device_id.clone()));
+        return next.run(req).await;
+    }
+    // Only the channel may name a device. A header of that name from the
+    // network is dropped before anything can read it.
+    req.headers_mut().remove(sealed::DEVICE_HEADER);
+
     // Public routes:
     //   • /mobile                       — the self-contained landing page
     //   • /remote-api/auth               — where the client trades a passcode for a JWT
@@ -341,7 +452,8 @@ async fn auth_middleware(
         || path == "/ws"
         || (path.starts_with("/remote-api/")
             && path != "/remote-api/auth"
-            && path != "/remote-api/status");
+            && path != "/remote-api/status"
+            && path != "/remote-api/sealed");
     if !requires_auth {
         return next.run(req).await;
     }
@@ -469,9 +581,13 @@ struct AuthResponse {
 
 /// Register (or refresh) the row for a device that just paired.
 ///
-/// Dedup by IP: if this IP is already registered (reauth, refresh, regenerated
-/// passcode), update the existing entry in place instead of stacking a second
-/// ghost device. Also auto-prune entries that have been silent for more than
+/// Dedup by IP and User-Agent: the same client signing in again (reauth,
+/// refresh, regenerated passcode) updates its row in place instead of
+/// stacking a second ghost device. Two clients on one phone, the browser page
+/// and the app, share the IP but not the User-Agent: each keeps its own row,
+/// so the one signing in last no longer ends the other's session (401
+/// "Session ended"). At most [`MAX_ROWS_PER_IP`] rows per address, the oldest
+/// goes first. Also auto-prune entries that have been silent for more than
 /// the JWT TTL — the client's token would be invalid anyway.
 ///
 /// The key this collapses on has to be an address the CLIENT cannot choose;
@@ -483,18 +599,35 @@ fn upsert_device(
     devices: &mut Vec<ConnectedDevice>,
     device_id: String,
     ip: String,
+    peer: String,
     user_agent: String,
     now: u64,
 ) {
     devices.retain(|d| now.saturating_sub(d.last_seen) < JWT_TTL_SECS);
-    if let Some(existing) = devices.iter_mut().find(|d| d.ip == ip) {
+    if let Some(existing) = devices.iter_mut().find(|d| d.peer == peer && d.user_agent == user_agent) {
         existing.id = device_id;
-        existing.user_agent = user_agent;
+        existing.ip = ip;
         existing.last_seen = now;
-    } else {
-        devices.push(ConnectedDevice { id: device_id, ip, user_agent, last_seen: now });
+        return;
     }
+    // A client that sends a new User-Agent each time must not fill the list.
+    while devices.iter().filter(|d| d.peer == peer).count() >= MAX_ROWS_PER_IP {
+        let Some(oldest) = devices
+            .iter()
+            .enumerate()
+            .filter(|(_, d)| d.peer == peer)
+            .min_by_key(|(_, d)| d.last_seen)
+            .map(|(i, _)| i)
+        else {
+            break;
+        };
+        devices.remove(oldest);
+    }
+    devices.push(ConnectedDevice { id: device_id, ip, peer, user_agent, last_seen: now });
 }
+
+/// Clients one address may have signed in at once (browser page, app, ...).
+const MAX_ROWS_PER_IP: usize = 4;
 
 async fn handle_auth(
     AxumState(state): AxumState<RemoteState>,
@@ -510,7 +643,7 @@ async fn handle_auth(
     // tunnel every request shares cloudflared's loopback peer, so they share
     // one (stricter) bucket — acceptable. `ip` above stays XFF-aware for the
     // device label / JWT claim only.
-    let rate_key = addr.ip().to_string();
+    let rate_key = sealed::source_key(&addr.ip().to_string());
 
     let now = chrono_now_secs();
 
@@ -532,26 +665,31 @@ async fn handle_auth(
             }
         }
 
-        // Auto-regenerate expired passcode
-        if now >= pc.expires_at {
-            pc.code = generate_passcode();
-            pc.expires_at = now + PASSCODE_TTL_SECS;
-            println!("[Remote] Passcode auto-regenerated (expired)");
-        }
+        // A code exists only while the panel at the desktop shows it; an
+        // open panel gets a new one when the old one ran out.
+        let live = pc.live(now).is_some();
 
         // Verify passcode
-        if !passcode_matches(&body.passcode, &pc.code) {
+        let failed = if !passcode_matches(&body.passcode, &pc.code) { true } else { !live };
+        if failed {
             let entry = pc.failed_attempts.entry(rate_key.clone()).or_insert((0, 0));
             entry.0 += 1;
             if entry.0 >= MAX_FAILED_ATTEMPTS {
                 entry.1 = now + COOLDOWN_SECS;
             }
+            // Counts for the code too, as on the sealed code path.
+            if live && pc.count_failure(now) {
+                drop(pc);
+                notify_code_changed(&state);
+            }
             return (StatusCode::FORBIDDEN, "Invalid code").into_response();
         }
 
-        // Success: clear failed attempts
+        // Success: clear failed attempts, the code is used up.
         pc.failed_attempts.remove(&rate_key);
+        pc.renew(now);
     }
+    notify_code_changed(&state);
 
     let user_agent = headers.get(header::USER_AGENT)
         .and_then(|v| v.to_str().ok())
@@ -572,7 +710,7 @@ async fn handle_auth(
             drop(jwt_secret);
             let now = chrono_now_secs();
             let mut devices = state.connected_devices.lock().await;
-            upsert_device(&mut devices, device_id, ip.clone(), user_agent, now);
+            upsert_device(&mut devices, device_id, ip.clone(), addr.ip().to_string(), user_agent, now);
             drop(devices);
 
             // Bug #13: cookie lifetime must match the JWT TTL. Otherwise the
@@ -590,7 +728,10 @@ async fn handle_auth(
             }
             response
         }
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+        Err(e) => {
+            warn!(error = %e, "remote login token not made");
+            (StatusCode::INTERNAL_SERVER_ERROR, "The login failed on the computer.").into_response()
+        }
     }
 }
 
@@ -599,8 +740,27 @@ async fn handle_auth(
 /// `auth_required` unauthenticated, which is a nice fingerprinting handshake
 /// for anyone scanning the tunnel URL. Version and device count are now
 /// only visible to authenticated clients via `/remote-api/status/full`.
-async fn handle_status() -> Json<serde_json::Value> {
-    Json(serde_json::json!({ "status": "ok" }))
+///
+/// With the sealed channel it also names the protocol and its features, and,
+/// on this (LAN) listener only, what the typed code pairing needs: the
+/// desktop id, its X25519 key and its name (PROTOKOLL 11). The tunnel listener
+/// answers with `handle_status_tunnel`, which leaves those out.
+async fn handle_status(AxumState(state): AxumState<RemoteState>) -> Json<serde_json::Value> {
+    Json(lan_status_body(state.sealed.as_deref()))
+}
+
+fn lan_status_body(hub: Option<&SealedHub>) -> serde_json::Value {
+    match hub {
+        Some(hub) => hub.status_body(sealed::Listener::Lan),
+        None => serde_json::json!({ "status": "ok" }),
+    }
+}
+
+async fn handle_status_tunnel(AxumState(state): AxumState<RemoteState>) -> Response {
+    match &state.sealed {
+        Some(hub) => Json(hub.status_body(sealed::Listener::Tunnel)).into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
 }
 
 /// Authenticated status — version + connected-device count for the desktop UI
@@ -611,23 +771,88 @@ async fn handle_status() -> Json<serde_json::Value> {
 /// "Davids-MacBook" instead of an address. It is only here, behind the token:
 /// the public `/remote-api/status` stays a bare liveness ping, a machine name
 /// is exactly the kind of fingerprint that was taken out of it.
-async fn handle_status_full(AxumState(state): AxumState<RemoteState>) -> Json<serde_json::Value> {
+async fn handle_status_full(
+    AxumState(state): AxumState<RemoteState>,
+    sealed_caller: Option<axum::Extension<SealedCaller>>,
+) -> Json<serde_json::Value> {
+    let create = state.permissions.lock().await.create;
+    let sealed_caller = sealed_caller.map(|axum::Extension(c)| c);
+    let mut features = status_features(state.sealed.is_some(), sealed_caller.as_ref(), create);
+    // Stage 2 of Create (CREATE-V2.md): only next to stage 1's words, and only
+    // what the engine on this computer can do today.
+    // Inside the sealed channel only: the plain Wi-Fi way keeps 3.0.7's Create.
+    if sealed_caller.is_some() && features.iter().any(|f| f == "create-image") {
+        features.extend(state.create.stage_two_features(chrono_now_secs()));
+    }
+    // Shared chats (CHATS-V1.md): inside the channel, with the right `chat`,
+    // once the window has reported its list.
+    if sealed_caller.as_ref().is_some_and(|c| c.rights.chat) {
+        features.extend(state.chats.features());
+    }
     let devices = state.connected_devices.lock().await;
-    Json(status_full_body(&devices, &machine_name()))
+    let mut body = status_full_body(&devices, &machine_name(), &features);
+    // Inside the channel only: the Windows Firewall drops the Wi-Fi way, so a
+    // phone knows why the Wi-Fi does not answer (win_firewall.rs).
+    if sealed_caller.is_some() {
+        body["lan_blocked"] = serde_json::json!(super::win_firewall::lan_blocked());
+    }
+    Json(body)
+}
+
+/// What the authenticated status names for this caller.
+///
+/// - `sealed`: this desktop has the sealed channel.
+/// - `pending`: deferred answers, only inside the channel (PROTOKOLL 9).
+/// - `signin`: "Sign in with my computer", only inside the channel
+///   (PROTOKOLL 15).
+/// - `create-image`, `create-video`: the global switch `create` is on and, for
+///   a paired device, its own right `create` too (PROTOKOLL 12).
+///
+/// The unauthenticated status of both listeners never names Create: there the
+/// device is unknown, and the tunnel's status is visible at the Cloudflare
+/// edge (PROTOKOLL 17).
+fn status_features(sealed_available: bool, caller: Option<&SealedCaller>, create_switch: bool) -> Vec<String> {
+    let mut features: Vec<String> = match caller {
+        Some(_) => {
+            let mut f = SealedHub::features();
+            f.push(sealed::FEATURE_SIGNIN.to_string());
+            f
+        }
+        None if sealed_available => vec![crate::remote_seal::FEATURE_SEALED.to_string()],
+        None => Vec::new(),
+    };
+    let create = create_switch && caller.is_none_or(|c| c.lacks("create").is_none());
+    if create {
+        features.push("create-image".to_string());
+        features.push("create-video".to_string());
+    }
+    features
 }
 
 /// The body of the authenticated status. Fields are only ever added: clients
 /// in the field read `app`, `version`, `connected_devices`, `auth_required`.
 /// The phone app reads `hostname` and falls back to the address when it is
 /// empty or missing.
-fn status_full_body(devices: &[ConnectedDevice], hostname: &str) -> serde_json::Value {
+///
+/// `features` names what this desktop offers this caller beyond chat and the
+/// agent, so a phone can offer it without guessing from the version
+/// ([`status_features`]).
+fn status_full_body(devices: &[ConnectedDevice], hostname: &str, features: &[String]) -> serde_json::Value {
     serde_json::json!({
         "app": "LU",
         "version": crate::app_identity::APP_VERSION,
         "connected_devices": devices.len(),
         "auth_required": true,
         "hostname": presentable_host_name(hostname),
+        "features": features,
     })
+}
+
+/// The name of this computer as the sealed channel shows it (QR link,
+/// handshake answer, LAN status). Never empty.
+pub(crate) fn desktop_display_name() -> String {
+    let name = presentable_host_name(&machine_name());
+    if name.is_empty() { "LU desktop".to_string() } else { name }
 }
 
 /// The name the system gives this computer, empty when it has none.
@@ -651,13 +876,46 @@ mod status_full_tests {
 
     #[test]
     fn the_authenticated_status_keeps_its_old_fields_and_adds_the_machine_name() {
-        let body = status_full_body(&[], "Davids-MacBook.local");
+        let body = status_full_body(&[], "Davids-MacBook.local", &status_features(false, None, false));
         assert_eq!(body["app"], "LU");
         assert_eq!(body["version"], crate::app_identity::APP_VERSION);
         assert_eq!(body["connected_devices"], 0);
         assert_eq!(body["auth_required"], true);
         assert_eq!(body["hostname"], "Davids-MacBook");
-        assert_eq!(body.as_object().map(|o| o.len()), Some(5));
+        assert_eq!(body["features"], serde_json::json!([]));
+        assert_eq!(body.as_object().map(|o| o.len()), Some(6));
+    }
+
+    #[test]
+    fn the_status_names_create_only_while_it_is_allowed() {
+        let f = |sealed: bool, caller: Option<&SealedCaller>, create: bool| {
+            status_full_body(&[], "pc", &status_features(sealed, caller, create))["features"].clone()
+        };
+        // The plain LAN session: the global switch alone, `sealed` when the
+        // desktop has the channel.
+        assert_eq!(f(false, None, true), serde_json::json!(["create-image", "create-video"]));
+        assert_eq!(f(false, None, false), serde_json::json!([]));
+        assert_eq!(f(true, None, true), serde_json::json!(["sealed", "create-image", "create-video"]));
+        // Inside the channel: `sealed`, `pending` and `signin`, Create only with the
+        // switch AND the device's own right.
+        let mut rights = crate::commands::remote_sealed::DeviceRights { chat: true, agent: true, ..Default::default() };
+        let without = SealedCaller { device_id: "d".into(), rights, generation: 0 };
+        assert_eq!(f(true, Some(&without), true), serde_json::json!(["sealed", "pending", "signin"]));
+        rights.create = true;
+        let with = SealedCaller { device_id: "d".into(), rights, generation: 0 };
+        assert_eq!(f(true, Some(&with), true), serde_json::json!(["sealed", "pending", "signin", "create-image", "create-video"]));
+        assert_eq!(f(true, Some(&with), false), serde_json::json!(["sealed", "pending", "signin"]));
+    }
+
+    #[test]
+    fn the_log_gets_a_path_without_query_or_token() {
+        assert_eq!(loggable_path("/remote-api/create/jobs?token=abc"), "/remote-api/create/jobs");
+        assert_eq!(loggable_path("/mobile#t=secret"), "/mobile");
+        assert_eq!(loggable_path("/remote-api/pending/AAAAAAAAAAAAAAAAAAAAAA"), "/remote-api/pending/<token>");
+        assert_eq!(loggable_path("/remote-api/pending/x/y?z=1"), "/remote-api/pending/<token>");
+        assert_eq!(loggable_path(""), "/");
+        assert_eq!(loggable_path(&format!("/{}", "a".repeat(400))).chars().count(), 160);
+        assert!(!loggable_path("/a\nb").contains('\n'));
     }
 
     #[test]
@@ -672,8 +930,11 @@ mod status_full_tests {
 
     #[tokio::test]
     async fn the_public_status_still_says_nothing_about_the_machine() {
-        let Json(body) = handle_status().await;
-        assert_eq!(body, serde_json::json!({ "status": "ok" }));
+        // Without the sealed channel the ping stays bare. With it, the LAN
+        // listener adds what the typed code pairing needs (decision of
+        // 17.10.2026, PROTOKOLL 11); the tunnel listener never does, see
+        // commands/remote_sealed/tests.rs.
+        assert_eq!(lan_status_body(None), serde_json::json!({ "status": "ok" }));
     }
 
     #[test]
@@ -776,7 +1037,9 @@ fn gate_for(tool: &str) -> ToolGate {
         "file_read" | "file_write" | "file_list" | "file_search" | "screenshot" => {
             ToolGate::Needs("filesystem")
         }
-        "image_generate" | "process_list" => ToolGate::Needs("process_control"),
+        "process_list" => ToolGate::Needs("process_control"),
+        // Through the same job table as the Create routes (remote_create.rs).
+        "image_generate" | "video_generate" => ToolGate::Needs("create"),
         // Read-only and not about this machine's contents.
         "web_search" | "web_fetch" | "system_info" | "get_current_time" => ToolGate::Open,
         _ => ToolGate::Unknown,
@@ -788,7 +1051,8 @@ fn gate_for(tool: &str) -> ToolGate {
 /// remote client cannot reach into the desktop without explicit toggle:
 ///   - file_read / file_write   → requires `filesystem`
 ///   - shell_execute / code_execute → requires `shell` (default OFF, RCE-class)
-///   - image_generate / process_list → requires `process_control`
+///   - process_list → requires `process_control`
+///   - image_generate / video_generate → requires `create`
 ///   - web_search / web_fetch / system_info / get_current_time → no permission
 ///   - anything else            → refused (see `gate_for`)
 ///
@@ -800,33 +1064,31 @@ fn gate_for(tool: &str) -> ToolGate {
 /// server still logs the failure to stderr so devs can diagnose.
 async fn handle_agent_tool(
     AxumState(state): AxumState<RemoteState>,
+    sealed_caller: Option<axum::Extension<SealedCaller>>,
+    caller: Option<axum::Extension<CallerDevice>>,
     Json(body): Json<AgentToolPayload>,
 ) -> Response {
     use tauri::Manager;
     let tool_name = body.tool.clone();
+    let sealed_caller = sealed_caller.map(|axum::Extension(c)| c);
 
-    let Some(app_handle) = state.app_handle.handle() else {
-        return graceful_error("Desktop integration unavailable.");
-    };
-    let app_state = match app_handle.try_state::<crate::state::AppState>() {
-        Some(s) => s,
-        None => {
-            eprintln!("[Remote agent] AppState not registered — cannot dispatch tool {}", tool_name);
-            return graceful_error("AppState unavailable on the desktop side.");
-        }
-    };
+    let perms = effective_permissions(&state.permissions.lock().await.clone(), sealed_caller.as_ref());
 
-    let perms = state.permissions.lock().await.clone();
-
-    // Permission gate up-front. Returns a graceful 200 + {error,permission}
-    // so the mobile UI can render a single-line hint instead of "HTTP 403".
+    // Permission gate up-front, before anything of the desktop is touched.
+    // Returns a graceful 200 + {error,permission} so the mobile UI can render
+    // a single-line hint instead of "HTTP 403". A sealed device without the
+    // right gets the channel's 403 with the right's name (PROTOKOLL 12).
     match gate_for(&tool_name) {
         ToolGate::Open => {}
         ToolGate::Needs(perm) => {
+            if let Some(right) = sealed_caller.as_ref().and_then(|c| c.lacks(perm)) {
+                return forbidden_right(right);
+            }
             let on = match perm {
                 "shell" => perms.shell,
                 "filesystem" => perms.filesystem,
                 "process_control" => perms.process_control,
+                "create" => perms.create,
                 _ => false,
             };
             if !on {
@@ -841,6 +1103,40 @@ async fn handle_agent_tool(
             ));
         }
     }
+
+    // Media runs through the Create job table, not through a desktop command:
+    // the generation lives in the window (remote_create.rs).
+    if tool_name == "image_generate" || tool_name == "video_generate" {
+        let Some(axum::Extension(CallerDevice(owner))) = caller else {
+            return StatusCode::UNAUTHORIZED.into_response();
+        };
+        // An input image is an upload id of this phone; run_for_agent turns
+        // the job into image to image or image to video then.
+        let kind = if tool_name == "video_generate" {
+            crate::commands::remote_create::Kind::Video
+        } else {
+            crate::commands::remote_create::Kind::Image
+        };
+        // Over the sealed channel the call may be deferred (202 x-lu-pending)
+        // and given up by the phone: then its job ends with it. Over the
+        // plain LAN route a dropped request leaves the job running as before.
+        let out = crate::commands::remote_create::run_for_agent(
+            &state.create, &owner, sealed_caller.as_ref().map(|c| c.generation), kind, &body.args, sealed_caller.is_some(),
+        )
+        .await;
+        return Json(out).into_response();
+    }
+
+    let Some(app_handle) = state.app_handle.handle() else {
+        return graceful_error("Desktop integration unavailable.");
+    };
+    let app_state = match app_handle.try_state::<crate::state::AppState>() {
+        Some(s) => s,
+        None => {
+            eprintln!("[Remote agent] AppState not registered — cannot dispatch tool {}", tool_name);
+            return graceful_error("AppState unavailable on the desktop side.");
+        }
+    };
 
     // Per-chat workspace slug — threaded into every file tool so each
     // mobile chat gets its own isolated `~/agent-workspace/<slug>/` and
@@ -903,10 +1199,10 @@ async fn handle_agent_tool(
                 .and_then(|v| v.as_u64())
                 .map(|n| n as usize);
             if query.is_empty() { Err("web_search needs a non-empty `query` argument.".into()) }
-            // Remote clients carry no provider settings — None/None/None =
-            // 'auto' without keys, i.e. the free tiers (pre-2.5.3 behaviour),
-            // and the fourth None keeps the tiers' own User-Agent (D16).
-            else { crate::commands::search::web_search(query, count, None, None, None, None, app_state).await }
+            // Remote clients carry no provider settings: 'auto' without keys,
+            // i.e. the free tiers (Exa, You.com, SearXNG, DuckDuckGo,
+            // Wikipedia), each tier's own User-Agent (D16), no Exa key.
+            else { crate::commands::search::web_search(query, count, None, None, None, None, None, app_state).await }
         }
         "web_fetch" => {
             let url = body.args.get("url").and_then(|v| v.as_str()).unwrap_or("").to_string();
@@ -1014,15 +1310,6 @@ async fn handle_agent_tool(
         "process_list" => crate::commands::system::process_list(),
         "screenshot" => crate::commands::system::screenshot().await,
         "get_current_time" => crate::commands::system::get_current_time(),
-        "image_generate" => {
-            // Image generation requires the desktop Agent path — too much
-            // plumbing for the remote bridge. Return a clean structured
-            // observation rather than HTTP 500 so the mobile UI shows it
-            // as a single line, not a red HTTP error.
-            Ok(serde_json::json!({
-                "error": "image_generate is only available on the desktop app for now. Open the Create tab there."
-            }))
-        }
         other => Err(format!("Unknown tool: {}", other)),
     };
 
@@ -1179,6 +1466,26 @@ fn forbidden(reason: &str) -> Response {
     (StatusCode::FORBIDDEN, reason.to_string()).into_response()
 }
 
+/// A paired device without the right this needs (PROTOKOLL 12).
+fn forbidden_right(right: &str) -> Response {
+    (StatusCode::FORBIDDEN, Json(serde_json::json!({ "error": "forbidden", "right": right }))).into_response()
+}
+
+/// What a caller may do: the global switches, and for a sealed device also
+/// its own rights (files: filesystem + downloads, terminal: shell +
+/// process_control, create: create). A plain JWT session gets the global
+/// switches as before.
+fn effective_permissions(global: &RemotePermissions, caller: Option<&SealedCaller>) -> RemotePermissions {
+    let Some(c) = caller else { return global.clone() };
+    RemotePermissions {
+        filesystem: global.filesystem && c.lacks("filesystem").is_none(),
+        downloads: global.downloads && c.lacks("downloads").is_none(),
+        process_control: global.process_control && c.lacks("process_control").is_none(),
+        shell: global.shell && c.lacks("shell").is_none(),
+        create: global.create && c.lacks("create").is_none(),
+    }
+}
+
 /// Proxy requests to Ollama (localhost:11434)
 async fn proxy_ollama(
     AxumState(state): AxumState<RemoteState>,
@@ -1199,6 +1506,9 @@ async fn proxy_ollama(
     // state. Read-only endpoints (/api/tags, /api/chat, /api/show, etc.)
     // always remain open so an authenticated mobile can actually chat.
     if ollama_requires_downloads(&gate_path(&path)) {
+        if let Some(right) = req.extensions().get::<SealedCaller>().and_then(|c| c.lacks("downloads")) {
+            return forbidden_right(right);
+        }
         let perms = state.permissions.lock().await;
         if !perms.downloads {
             println!("[Remote] BLOCKED (downloads disabled): {} {}", req.method(), path);
@@ -1231,6 +1541,14 @@ async fn proxy_comfyui(
     let stripped = req.uri().path().strip_prefix("/comfyui").unwrap_or(req.uri().path());
     let stripped_owned = stripped.to_string();
 
+    // A sealed device needs its own rights first: terminal for ComfyUI at
+    // all, files for uploads and installs.
+    if let Some(c) = req.extensions().get::<SealedCaller>() {
+        let extra = comfy_extra_permission(&gate_path(&stripped_owned));
+        if let Some(right) = c.lacks("process_control").or_else(|| extra.and_then(|p| c.lacks(p))) {
+            return forbidden_right(right);
+        }
+    }
     // Baseline: accessing ComfyUI at all requires process_control
     {
         let perms = state.permissions.lock().await;
@@ -1264,7 +1582,7 @@ async fn proxy_to_target(target: &str, req: Request) -> Response {
         .timeout(std::time::Duration::from_secs(600))
         .build() {
         Ok(c) => c,
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, format!("Client init: {}", e)).into_response(),
+        Err(e) => return upstream_failed(StatusCode::INTERNAL_SERVER_ERROR, &e),
     };
 
     let mut builder = match method {
@@ -1301,11 +1619,18 @@ async fn proxy_to_target(target: &str, req: Request) -> Response {
                         (StatusCode::INTERNAL_SERVER_ERROR, "Response build error").into_response()
                     })
                 }
-                Err(e) => (StatusCode::BAD_GATEWAY, format!("Read error: {}", e)).into_response(),
+                Err(e) => upstream_failed(StatusCode::BAD_GATEWAY, &e),
             }
         }
-        Err(e) => (StatusCode::BAD_GATEWAY, format!("Proxy error: {}", e)).into_response(),
+        Err(e) => upstream_failed(StatusCode::BAD_GATEWAY, &e),
     }
+}
+
+/// A fixed sentence for the phone when an engine on this computer could not
+/// be reached or read; what went wrong (with its address) goes to the log.
+fn upstream_failed(status: StatusCode, e: &dyn std::fmt::Display) -> Response {
+    warn!(error = %e, "remote proxy upstream failed");
+    (status, "The engine on the computer could not be reached.").into_response()
 }
 
 // ─── #87: OpenAI-compatible bridge for the mobile client ───
@@ -1357,6 +1682,7 @@ fn openai_models_to_ollama_tags(v: &serde_json::Value) -> serde_json::Value {
         .and_then(|d| d.as_array())
         .or_else(|| v.get("models").and_then(|d| d.as_array()));
     let mut out = Vec::new();
+    MODELS_LISTED.store(true, std::sync::atomic::Ordering::Relaxed);
     if let Some(arr) = list {
         for m in arr {
             let id = m
@@ -1368,12 +1694,65 @@ fn openai_models_to_ollama_tags(v: &serde_json::Value) -> serde_json::Value {
             if id.is_empty() {
                 continue;
             }
+            // The built-in engine names a model by its file path. The phone
+            // shows the file name; /api/chat maps it back (`engine_model_id`).
+            let readable = readable_model_name(id);
+            let taken = out.iter().any(|o: &serde_json::Value| o["name"] == readable.as_str());
+            let name = if readable != id && !taken { readable } else { id.to_string() };
+            if name != id {
+                remember_model_name(&name, id);
+            }
             out.push(serde_json::json!({
-                "name": id, "model": id, "modified_at": "", "size": 0
+                "name": name, "model": name, "modified_at": "", "size": 0
             }));
         }
     }
     serde_json::json!({ "models": out })
+}
+
+/// A model id that is a file path (the built-in engine) as a name: the file
+/// name without its folders and without `.gguf`. Anything else unchanged
+/// (`qwen/qwen3-8b` of LM Studio stays as it is).
+fn readable_model_name(id: &str) -> String {
+    let looks_like_path = id.to_ascii_lowercase().ends_with(".gguf")
+        || id.starts_with('/')
+        || id.contains('\\')
+        || id.as_bytes().get(1) == Some(&b':');
+    if !looks_like_path {
+        return id.to_string();
+    }
+    let file = id.rsplit(['/', '\\']).next().unwrap_or(id);
+    let stem = if file.to_ascii_lowercase().ends_with(".gguf") { &file[..file.len() - 5] } else { file };
+    if stem.trim().is_empty() { id.to_string() } else { stem.to_string() }
+}
+
+/// Names handed out by /api/tags and the engine ids behind them.
+fn model_names() -> &'static std::sync::Mutex<HashMap<String, String>> {
+    static NAMES: std::sync::OnceLock<std::sync::Mutex<HashMap<String, String>>> = std::sync::OnceLock::new();
+    NAMES.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+/// /api/tags has been answered at least once in this process.
+static MODELS_LISTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn remember_model_name(name: &str, id: &str) {
+    let mut names = model_names().lock().unwrap_or_else(|e| e.into_inner());
+    if names.len() > 512 {
+        names.clear();
+    }
+    names.insert(name.to_string(), id.to_string());
+}
+
+/// The engine's id for a model the phone names: an id as it is, a name from
+/// /api/tags mapped back. `None` when the name is unknown here.
+fn engine_model_id(model: &str) -> Option<String> {
+    model_names().lock().unwrap_or_else(|e| e.into_inner()).get(model).cloned()
+}
+
+/// [`engine_model_id`] for the shared chats: the engine id behind a name the
+/// phone took from /api/tags, so the window can find the model in its list.
+pub(crate) fn engine_model_id_for(model: &str) -> Option<String> {
+    engine_model_id(model).filter(|id| id != model)
 }
 
 /// Is this relay target a backend on this machine or the LAN?
@@ -1563,9 +1942,7 @@ async fn proxy_openai_compat(state: &RemoteState, req: Request) -> Response {
         .build()
     {
         Ok(c) => c,
-        Err(e) => {
-            return (StatusCode::INTERNAL_SERVER_ERROR, format!("Client init: {}", e)).into_response()
-        }
+        Err(e) => return upstream_failed(StatusCode::INTERNAL_SERVER_ERROR, &e),
     };
 
     // Model list: /api/tags → GET {base}/models
@@ -1583,7 +1960,7 @@ async fn proxy_openai_compat(state: &RemoteState, req: Request) -> Response {
                     _ => Json(serde_json::json!({ "models": [] })).into_response(),
                 }
             }
-            Err(e) => (StatusCode::BAD_GATEWAY, format!("Proxy error: {}", e)).into_response(),
+            Err(e) => upstream_failed(StatusCode::BAD_GATEWAY, &e),
         };
     }
 
@@ -1598,7 +1975,27 @@ async fn proxy_openai_compat(state: &RemoteState, req: Request) -> Response {
             .get("stream")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
-        let oai_req = ollama_chat_req_to_openai(&ollama_req, is_lan_base(&base_final));
+        let mut oai_req = ollama_chat_req_to_openai(&ollama_req, is_lan_base(&base_final));
+        // A readable name from /api/tags goes back to the engine's own id.
+        // Not known yet (a chat without a list first): the list is read once.
+        if let Some(model) = oai_req.get("model").and_then(|m| m.as_str()).map(str::to_string) {
+            let mut id = engine_model_id(&model);
+            if id.is_none() && !MODELS_LISTED.load(std::sync::atomic::Ordering::Relaxed) {
+                let mut rb = client.get(format!("{}/models", base_final));
+                if !state.openai_key.is_empty() {
+                    rb = rb.bearer_auth(&state.openai_key);
+                }
+                if let Ok(resp) = rb.send().await {
+                    if let Ok(v) = resp.json::<serde_json::Value>().await {
+                        let _ = openai_models_to_ollama_tags(&v);
+                        id = engine_model_id(&model);
+                    }
+                }
+            }
+            if let Some(id) = id {
+                oai_req["model"] = serde_json::Value::String(id);
+            }
+        }
         let url = format!("{}/chat/completions", base_final);
         let mut rb = client.post(&url).json(&oai_req);
         if !state.openai_key.is_empty() {
@@ -1609,8 +2006,9 @@ async fn proxy_openai_compat(state: &RemoteState, req: Request) -> Response {
                 let status = StatusCode::from_u16(resp.status().as_u16())
                     .unwrap_or(StatusCode::BAD_GATEWAY);
                 if !status.is_success() {
-                    let txt = resp.text().await.unwrap_or_default();
-                    return (status, txt).into_response();
+                    // The engine's own words may name paths or addresses.
+                    warn!(status = status.as_u16(), "remote chat refused by the engine");
+                    return (status, "The engine on the computer refused the request.").into_response();
                 }
                 match resp.json::<serde_json::Value>().await {
                     Ok(v) => {
@@ -1627,10 +2025,10 @@ async fn proxy_openai_compat(state: &RemoteState, req: Request) -> Response {
                             Json(openai_resp_to_ollama_message(&v)).into_response()
                         }
                     }
-                    Err(e) => (StatusCode::BAD_GATEWAY, format!("Read error: {}", e)).into_response(),
+                    Err(e) => upstream_failed(StatusCode::BAD_GATEWAY, &e),
                 }
             }
-            Err(e) => (StatusCode::BAD_GATEWAY, format!("Proxy error: {}", e)).into_response(),
+            Err(e) => upstream_failed(StatusCode::BAD_GATEWAY, &e),
         };
     }
 
@@ -1664,6 +2062,27 @@ mod openai_bridge_tests {
         assert_eq!(models.len(), 2);
         assert_eq!(models[0]["name"], "qwen3:8b");
         assert_eq!(models[0]["model"], "qwen3:8b");
+    }
+
+    #[test]
+    fn an_engine_path_becomes_a_file_name_and_maps_back_for_chat() {
+        use super::{engine_model_id, readable_model_name};
+        let v = serde_json::json!({"data": [
+            {"id": "C:\\Users\\someone\\models\\Qwen3-8B-Q4_K_M.gguf"},
+            {"id": "/home/x/models/gemma-3-4b.GGUF"},
+            {"id": "qwen/qwen3-8b"},
+            {"id": "/other/place/gemma-3-4b.gguf"},
+        ]});
+        let out = openai_models_to_ollama_tags(&v);
+        let names: Vec<&str> = out["models"].as_array().unwrap().iter().map(|m| m["name"].as_str().unwrap()).collect();
+        // A second file with the same name keeps its full id rather than collide.
+        assert_eq!(names, ["Qwen3-8B-Q4_K_M", "gemma-3-4b", "qwen/qwen3-8b", "/other/place/gemma-3-4b.gguf"]);
+        assert_eq!(out["models"][0]["model"], "Qwen3-8B-Q4_K_M");
+        assert_eq!(engine_model_id("Qwen3-8B-Q4_K_M").as_deref(), Some("C:\\Users\\someone\\models\\Qwen3-8B-Q4_K_M.gguf"));
+        assert_eq!(engine_model_id("gemma-3-4b").as_deref(), Some("/home/x/models/gemma-3-4b.GGUF"));
+        assert_eq!(engine_model_id("qwen/qwen3-8b"), None, "a plain id needs no mapping");
+        assert_eq!(readable_model_name("llama3.1:8b"), "llama3.1:8b");
+        assert_eq!(readable_model_name("model.gguf"), "model");
     }
 
     #[test]
@@ -2158,9 +2577,7 @@ async fn handle_qr(AxumState(state): AxumState<RemoteState>) -> Json<QrResponse>
     let url = if let Some(ref turl) = tunnel_url {
         format!("{}/mobile", turl)
     } else {
-        let lan_ip = local_ip_address::local_ip()
-            .map(|ip| ip.to_string())
-            .unwrap_or_else(|_| "127.0.0.1".to_string());
+        let lan_ip = super::lan_address::lan_address();
         let port = 11435u16;
         format!("http://{}:{}/mobile", lan_ip, port)
     };
@@ -2322,9 +2739,12 @@ async fn handle_config(AxumState(state): AxumState<RemoteState>) -> Json<serde_j
 
 // ─── Permissions ───
 
-async fn handle_get_permissions(AxumState(state): AxumState<RemoteState>) -> Json<RemotePermissions> {
+async fn handle_get_permissions(
+    AxumState(state): AxumState<RemoteState>,
+    caller: Option<axum::Extension<SealedCaller>>,
+) -> Json<RemotePermissions> {
     let perms = state.permissions.lock().await;
-    Json(perms.clone())
+    Json(effective_permissions(&perms, caller.map(|axum::Extension(c)| c).as_ref()))
 }
 
 /// What a remote-supplied permissions update is allowed to change: nothing.
@@ -2346,6 +2766,7 @@ fn merge_remote_permissions(current: &RemotePermissions, body: RemotePermissions
 
 async fn handle_set_permissions(
     AxumState(state): AxumState<RemoteState>,
+    caller: Option<axum::Extension<SealedCaller>>,
     Json(body): Json<RemotePermissions>,
 ) -> Json<RemotePermissions> {
     let mut perms = state.permissions.lock().await;
@@ -2353,7 +2774,7 @@ async fn handle_set_permissions(
     *perms = merged;
     // Answer with what is actually in force, so a client that toggled
     // something can show the truth instead of its own optimistic guess.
-    Json(perms.clone())
+    Json(effective_permissions(&perms, caller.map(|axum::Extension(c)| c).as_ref()))
 }
 
 // ─── Server lifecycle (Tauri commands) ───
@@ -2457,6 +2878,12 @@ pub struct RemoteServer {
     pub dispatched_system_prompt: Arc<TokioMutex<String>>,
     /// GitHub #19: the tab name set in Settings, kept across server restarts.
     pub page_title: Arc<TokioMutex<String>>,
+    /// The loopback listener of the sealed channel is up (cloudflared may
+    /// point at it).
+    pub tunnel_listener: bool,
+    /// Create over the desktop: one job table for the routes and the window.
+    pub create: Arc<crate::commands::remote_create::CreateHub>,
+    pub chats: Arc<crate::commands::remote_chats::ChatsHub>,
 }
 
 impl RemoteServer {
@@ -2485,6 +2912,9 @@ impl RemoteServer {
                 code: String::new(),
                 expires_at: 0,
                 failed_attempts: HashMap::new(),
+                code_failures: (0, 0),
+                window_open: false,
+                window_until: 0,
             })),
             permissions: Arc::new(TokioMutex::new(RemotePermissions::default())),
             connected_devices: Arc::new(TokioMutex::new(Vec::new())),
@@ -2493,6 +2923,9 @@ impl RemoteServer {
             dispatched_model: Arc::new(TokioMutex::new(String::new())),
             dispatched_system_prompt: Arc::new(TokioMutex::new(String::new())),
             page_title: Arc::new(TokioMutex::new(String::new())),
+            tunnel_listener: false,
+            create: Arc::new(crate::commands::remote_create::CreateHub::default()),
+            chats: Arc::new(crate::commands::remote_chats::ChatsHub::default()),
         }
     }
 
@@ -2848,7 +3281,7 @@ async fn start_remote_server_inner(
         &crate::commands::engine_key::engine_ports(&state),
     );
     // Clone Arcs from std::sync::Mutex, then drop it before any .await
-    let (jwt_secret_arc, passcode_arc, permissions_arc, devices_arc, tunnel_url_arc, dispatched_model_arc, dispatched_system_prompt_arc, page_title_arc, memory_revoked, port, comfy_port, comfy_host, ollama_base) = {
+    let (jwt_secret_arc, passcode_arc, permissions_arc, devices_arc, tunnel_url_arc, dispatched_model_arc, dispatched_system_prompt_arc, page_title_arc, memory_revoked, port, comfy_port, comfy_host, ollama_base, create_hub, chats_hub) = {
         let mut remote = state.remote.lock().map_err(|e| e.to_string())?;
         if remote.handle.is_some() {
             return Err("Remote server already running".into());
@@ -2880,20 +3313,27 @@ async fn start_remote_server_inner(
             comfy_port,
             comfy_host,
             ollama_base,
+            remote.create.clone(),
+            remote.chats.clone(),
         )
     }; // std::sync::MutexGuard dropped here
+    // Shared chats talk to this window from now on.
+    chats_hub.set_host(Arc::new(crate::commands::remote_chats::TauriChatsHost::new(app.clone())));
+    // The job table talks to this window from now on.
+    create_hub.set_host(Arc::new(crate::commands::remote_create::TauriCreateHost::new(app.clone())));
+    let create_on = permissions_arc.lock().await.create;
+    create_hub.set_enabled(create_on, crate::commands::remote_create::now_secs());
 
-    // Generate new passcode + JWT secret. The secret is 32 bytes from a CSPRNG
-    // (256-bit) — the old `lu-<timestamp>-<u64>` form had a guessable prefix
-    // and only ~64 bits of entropy.
-    let passcode = generate_passcode();
+    // A new JWT secret. The secret is 32 bytes from a CSPRNG (256-bit); the
+    // old `lu-<timestamp>-<u64>` form had a guessable prefix and only ~64
+    // bits of entropy. No code yet: it comes with the QR or Dispatch panel
+    // (`remote_pairing_window`), so an unattended start offers none.
     let jwt_secret_str = {
         use rand::RngCore;
         let mut bytes = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut bytes);
         bytes.iter().map(|b| format!("{:02x}", b)).collect::<String>()
     };
-    let now = chrono_now_secs();
 
     // Update shared state (safe to .await now, no std::sync::MutexGuard held)
     {
@@ -2902,8 +3342,7 @@ async fn start_remote_server_inner(
     }
     {
         let mut pc = passcode_arc.lock().await;
-        pc.code = passcode.clone();
-        pc.expires_at = now + PASSCODE_TTL_SECS;
+        pc.close_window();
         pc.failed_attempts.clear();
     }
     // Fresh dispatch = fresh session. Clear any stale ConnectedDevice entries
@@ -2929,6 +3368,20 @@ async fn start_remote_server_inner(
     // is no window in which the panel shows something the server isn't doing.
     let permissions_readback = permissions_arc.clone();
 
+    // The sealed channel. Without it (keychain refused, unreadable key)
+    // Remote runs as before, LAN only.
+    let sealed_hub = match sealed::shared_hub(&app).await {
+        Ok(hub) => Some(hub),
+        Err(e) => {
+            warn!(error = %e, "sealed remote channel unavailable");
+            None
+        }
+    };
+    if let Some(hub) = &sealed_hub {
+        connect_create_to_sealed(hub, &create_hub);
+        connect_chats_to_sealed(hub, &chats_hub);
+    }
+
     let server_state = RemoteState {
         memory_revoked,
         jwt_secret: jwt_secret_arc,
@@ -2946,6 +3399,9 @@ async fn start_remote_server_inner(
         dispatched_model: dispatched_model_arc,
         dispatched_system_prompt: dispatched_system_prompt_arc,
         page_title: page_title_arc,
+        sealed: sealed_hub,
+        create: create_hub,
+        chats: chats_hub,
     };
 
     // Bind synchronously so port-in-use returns a clean error to the
@@ -2965,7 +3421,9 @@ async fn start_remote_server_inner(
     // is still publishing 127.0.0.1:11435 to the internet, and the moment we
     // bind, it is publishing US — silently, with the tunnel indicator off,
     // because this process never started it.
-    let swept = kill_orphaned_tunnels(port);
+    // The tunnel points at the tunnel listener since the sealed channel; an
+    // older build pointed it at the LAN port. Both are swept.
+    let swept = kill_orphaned_tunnels(port) + kill_orphaned_tunnels(sealed::TUNNEL_PORT);
     if swept > 0 {
         println!("[Tunnel] Killed {swept} orphaned cloudflared tunnel(s) on port {port}");
         warn!(count = swept, port = port, "orphaned cloudflared tunnel(s) killed before bind");
@@ -2986,17 +3444,49 @@ async fn start_remote_server_inner(
     // manual allow. Never blocks server startup.
     ensure_lan_firewall_rule(port);
 
+    // The tunnel listener: loopback only, status and the sealed door, nothing
+    // else (PROTOKOLL 10). Bound with the LAN listener so both share one task
+    // and one stop. Without the sealed channel there is nothing to serve.
+    let tunnel_listener = if server_state.sealed.is_some() {
+        match build_reusable_listener(SocketAddr::from(([127, 0, 0, 1], sealed::TUNNEL_PORT))) {
+            Ok(l) => Some(l),
+            Err(e) => {
+                warn!(error = %e, port = sealed::TUNNEL_PORT, "tunnel listener bind failed");
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let tunnel_ready = tunnel_listener.is_some();
+    let tunnel_state = server_state.clone();
+
     let handle = tokio::spawn(async move {
-        let app = build_router(server_state);
+        use std::future::IntoFuture;
+        let app = build_lan_router(server_state);
         // Bug #3: surface the direct TCP peer address via ConnectInfo so
         // handle_auth can distinguish LAN clients without a reverse proxy.
         // Bug: never panic here — release builds use `panic = abort`.
-        if let Err(e) = axum::serve(
+        let lan = axum::serve(
             listener,
             app.into_make_service_with_connect_info::<SocketAddr>(),
-        ).await {
+        ).into_future();
+        let tunnel = async move {
+            match tunnel_listener {
+                Some(l) => axum::serve(
+                    l,
+                    build_tunnel_router(tunnel_state).into_make_service_with_connect_info::<SocketAddr>(),
+                ).await,
+                None => Ok(()),
+            }
+        };
+        let (lan_result, tunnel_result) = tokio::join!(lan, tunnel);
+        if let Err(e) = lan_result {
             eprintln!("[Remote] axum::serve exited with error: {}", e);
             error!(error = %e, "remote axum serve exited with error");
+        }
+        if let Err(e) = tunnel_result {
+            error!(error = %e, "tunnel listener exited with error");
         }
     });
 
@@ -3004,6 +3494,7 @@ async fn start_remote_server_inner(
     {
         let mut remote = state.remote.lock().map_err(|e| e.to_string())?;
         remote.handle = Some(handle);
+        remote.tunnel_listener = tunnel_ready;
     }
 
     // #a user (Discord 2026-06-17, STILL "Error HTTP:503" on the phone after
@@ -3030,23 +3521,49 @@ async fn start_remote_server_inner(
         }
     }
 
-    let lan_ip = local_ip_address::local_ip()
-        .map(|ip| ip.to_string())
-        .unwrap_or_else(|_| "127.0.0.1".to_string());
+    // Device tests only (`--features e2e-remote` plus its environment).
+    #[cfg(feature = "e2e-remote")]
+    {
+        let (passcode, create) = {
+            let remote = state.remote.lock().map_err(|e| e.to_string())?;
+            (remote.passcode.clone(), remote.create.clone())
+        };
+        crate::e2e_remote::after_start(&app, &permissions_readback, passcode, &create, port).await;
+    }
+
+    let lan_ip = super::lan_address::lan_address();
+
+    // Windows can drop every packet from the Wi-Fi for this exe without
+    // asking (win_firewall.rs). Looked at in the background; the panel hears
+    // the answer as `remote-firewall`.
+    if cfg!(windows) {
+        let app = app.clone();
+        let ip = super::lan_address::lan_ip().map(|ip| ip.to_string());
+        tauri::async_runtime::spawn(async move {
+            use tauri::Emitter;
+            if let Ok(status) = tokio::task::spawn_blocking(move || super::win_firewall::check(ip.as_deref())).await {
+                if status.blocked {
+                    warn!(reason = ?status.reason, profile = ?status.profile, "windows firewall blocks remote on the wi-fi");
+                }
+                let _ = app.emit("remote-firewall", status);
+            }
+        });
+    }
 
     let permissions = permissions_readback.lock().await.clone();
 
     info!(port = port, "remote server started");
     Ok(serde_json::json!({
         "port": port,
-        "passcode": passcode,
-        "passcodeExpiresAt": now + PASSCODE_TTL_SECS,
+        "passcode": "",
+        "passcodeExpiresAt": 0,
         "lanUrl": format!("http://{}:{}", lan_ip, port),
         "mobileUrl": format!("http://{}:{}/mobile", lan_ip, port),
         // RA-1: effective permissions, so the UI is never out of sync with the
         // server it just started. `restart_remote_server` delegates here, so it
         // reports them too.
         "permissions": permissions,
+        "sealed": tunnel_ready,
     }))
 }
 
@@ -3095,11 +3612,16 @@ async fn stop_remote_server_inner(
     remote_state: &std::sync::Mutex<RemoteServer>,
     _operation: &tokio::sync::OwnedMutexGuard<()>,
 ) -> Result<(), String> {
-    let (handle, tunnel_child, tunnel_url_arc) = {
+    let (handle, tunnel_child, tunnel_url_arc, create_hub, passcode_arc) = {
         let mut remote = remote_state.lock().map_err(|e| e.to_string())?;
         remote.revoke_memory();
-        (remote.handle.take(), remote.tunnel_child.take(), remote.tunnel_url.clone())
+        remote.tunnel_listener = false;
+        (remote.handle.take(), remote.tunnel_child.take(), remote.tunnel_url.clone(), remote.create.clone(), remote.passcode.clone())
     };
+    passcode_arc.lock().await.close_window();
+    sealed::server_stopped().await;
+    // No phone can follow its jobs any more: end them, running one included.
+    create_hub.cancel_all(None, crate::commands::remote_create::now_secs());
 
     // Stop tunnel if running
     if let Some(child) = tunnel_child {
@@ -3109,6 +3631,7 @@ async fn stop_remote_server_inner(
         let mut turl = tunnel_url_arc.lock().await;
         *turl = None;
     }
+    sealed::tunnel_stopped().await;
 
     // Stop server
     if let Some(handle) = handle {
@@ -3145,13 +3668,12 @@ pub async fn remote_server_status(
     let now = chrono_now_secs();
     let (passcode, expires_at) = {
         let mut pc = passcode_arc.lock().await;
-        // Auto-regenerate expired passcode
-        if running && !pc.code.is_empty() && now >= pc.expires_at {
-            pc.code = generate_passcode();
-            pc.expires_at = now + PASSCODE_TTL_SECS;
-            println!("[Remote] Passcode auto-regenerated (expired)");
+        // A code only while the panel is open; it renews itself there.
+        let code = pc.live(now).map(str::to_string);
+        match code {
+            Some(code) => (code, pc.expires_at),
+            None => (String::new(), 0),
         }
-        (pc.code.clone(), pc.expires_at)
     };
 
     // RA-1: report the EFFECTIVE server permissions so the desktop panel reads
@@ -3161,9 +3683,7 @@ pub async fn remote_server_status(
     let permissions = permissions_arc.lock().await.clone();
 
     let tunnel_url = tunnel_url_arc.lock().await;
-    let lan_ip = local_ip_address::local_ip()
-        .map(|ip| ip.to_string())
-        .unwrap_or_else(|_| "127.0.0.1".to_string());
+    let lan_ip = super::lan_address::lan_address();
 
     Ok(serde_json::json!({
         "running": running,
@@ -3197,16 +3717,48 @@ pub async fn regenerate_remote_token(
         remote.passcode.clone()
     };
 
-    let new_passcode = generate_passcode();
-
-    {
-        let mut pc = passcode_arc.lock().await;
-        pc.code = new_passcode.clone();
-        pc.expires_at = chrono_now_secs() + PASSCODE_TTL_SECS;
-        // Intentionally keep pc.failed_attempts intact (Bug #2).
+    let now = chrono_now_secs();
+    let mut pc = passcode_arc.lock().await;
+    pc.refresh(now);
+    if !pc.window_open {
+        return Err("Open the QR panel to show a code.".into());
     }
+    // A new code, and the panel counts as open again. Intentionally keep
+    // pc.failed_attempts intact (Bug #2).
+    pc.open_window(now);
+    pc.renew(now);
+    Ok(pc.code.clone())
+}
 
-    Ok(new_passcode)
+/// The QR or Dispatch panel at the desktop opened or closed. A code (and
+/// the desktop's name in the LAN status) exists only while it is open; the
+/// answer carries the code to show.
+#[tauri::command]
+pub async fn remote_pairing_window(
+    app: AppHandle,
+    state: tauri::State<'_, crate::state::AppState>,
+    open: bool,
+) -> Result<serde_json::Value, String> {
+    let (running, passcode_arc) = {
+        let remote = state.remote.lock().map_err(|e| e.to_string())?;
+        (remote.handle.is_some(), remote.passcode.clone())
+    };
+    let open = open && running;
+    // A stopped server has dropped its window already (`server_stopped`).
+    if running {
+        if let Ok(hub) = sealed::shared_hub(&app).await {
+            hub.set_pairing_window(open);
+        }
+    }
+    let now = chrono_now_secs();
+    let mut pc = passcode_arc.lock().await;
+    if open {
+        pc.open_window(now);
+        Ok(serde_json::json!({ "passcode": pc.code, "passcodeExpiresAt": pc.expires_at }))
+    } else {
+        pc.close_window();
+        Ok(serde_json::json!({ "passcode": "", "passcodeExpiresAt": 0 }))
+    }
 }
 
 #[tauri::command]
@@ -3227,9 +3779,7 @@ pub async fn remote_qr_code(
     let url = if let Some(ref turl) = *tunnel_url {
         format!("{}/mobile", turl)
     } else {
-        let lan_ip = local_ip_address::local_ip()
-            .map(|ip| ip.to_string())
-            .unwrap_or_else(|_| "127.0.0.1".to_string());
+        let lan_ip = super::lan_address::lan_address();
         format!("http://{}:{}/mobile", lan_ip, port)
     };
     drop(tunnel_url);
@@ -3247,11 +3797,12 @@ pub async fn remote_qr_code(
 
     let qr_base64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &png_bytes);
 
-    let pc = passcode_arc.lock().await;
+    let mut pc = passcode_arc.lock().await;
+    let passcode = pc.live(chrono_now_secs()).unwrap_or_default().to_string();
     Ok(serde_json::json!({
         "qr_png_base64": qr_base64,
         "url": url,
-        "passcode": pc.code,
+        "passcode": passcode,
     }))
 }
 
@@ -3275,12 +3826,14 @@ pub async fn disconnect_remote_device(
     state: tauri::State<'_, crate::state::AppState>,
     deviceId: String,
 ) -> Result<(), String> {
-    let devices_arc = {
+    let (devices_arc, create_hub) = {
         let remote = state.remote.lock().map_err(|e| e.to_string())?;
-        remote.connected_devices.clone()
+        (remote.connected_devices.clone(), remote.create.clone())
     };
     let mut devices = devices_arc.lock().await;
     devices.retain(|d| d.id != deviceId);
+    // Its Create jobs end with it, its uploads and results are out of reach.
+    create_hub.forget_owner(&deviceId, crate::commands::remote_create::now_secs());
     Ok(())
 }
 
@@ -3289,12 +3842,17 @@ pub async fn set_remote_permissions(
     state: tauri::State<'_, crate::state::AppState>,
     permissions: RemotePermissions,
 ) -> Result<(), String> {
-    let perms_arc = {
+    let (perms_arc, create_hub) = {
         let remote = state.remote.lock().map_err(|e| e.to_string())?;
-        remote.permissions.clone()
+        (remote.permissions.clone(), remote.create.clone())
     }; // MutexGuard dropped here
-    let mut perms = perms_arc.lock().await;
-    *perms = permissions;
+    let create = permissions.create;
+    {
+        let mut perms = perms_arc.lock().await;
+        *perms = permissions;
+    }
+    // Off ends every open Create job at once, not only the next request.
+    create_hub.set_enabled(create, crate::commands::remote_create::now_secs());
     Ok(())
 }
 
@@ -3307,6 +3865,9 @@ fn get_cloudflared_path() -> std::path::PathBuf {
     dir.join(exe_name)
 }
 
+/// Over the internet only the sealed channel answers (E1, E3): the tunnel
+/// points at the tunnel listener, never at the LAN port with its plain routes
+/// and the /mobile page.
 #[tauri::command]
 pub async fn start_tunnel(
     state: tauri::State<'_, crate::state::AppState>,
@@ -3316,7 +3877,10 @@ pub async fn start_tunnel(
         if remote.handle.is_none() {
             return Err("Remote server not running. Start it first.".into());
         }
-        (remote.port, remote.tunnel_url.clone())
+        if !remote.tunnel_listener {
+            return Err("The encrypted internet channel is not available here, so the tunnel stays off.".into());
+        }
+        (sealed::TUNNEL_PORT, remote.tunnel_url.clone())
     };
 
     let cf_path = get_cloudflared_path();
@@ -3482,16 +4046,20 @@ pub async fn start_tunnel(
     // trycloudflare quick-tunnel PRINTS its public URL several seconds before
     // Cloudflare's edge↔origin path is actually ready to serve — so a phone
     // that scans the QR immediately gets a transient 503. Poll the public
-    // /mobile route (exactly what the QR points at) until it answers, before we
+    // status route (the one the tunnel listener serves) until it answers, before we
     // mark the URL ready. Bounded with a fallback: if it never becomes ready
     // within the budget we proceed anyway (old behaviour) rather than hang.
+    // The tunnel listener answers only under this address from now on.
+    if !url.is_empty() {
+        sealed::tunnel_expected(&url).await;
+    }
     if !url.is_empty() {
         if let Ok(client) = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(8))
             .no_proxy()
             .build()
         {
-            let probe = format!("{}/mobile", url);
+            let probe = format!("{}/remote-api/status", url);
             for _ in 0..20 { // ~20 × 600 ms ≈ 12 s readiness budget
                 match client.get(&probe).send().await {
                     Ok(resp) if resp.status().is_success() => break,
@@ -3536,6 +4104,9 @@ pub async fn start_tunnel(
         let mut turl = tunnel_url_arc.lock().await;
         *turl = Some(url.clone());
     }
+    // "Reach this computer from anywhere": tell the address directory. The
+    // announcer checks again that the address answers before it reports it.
+    sealed::tunnel_started(&url).await;
 
     Ok(url)
 }
@@ -3557,6 +4128,7 @@ pub async fn stop_tunnel(
         let mut turl = tunnel_url_arc.lock().await;
         *turl = None;
     }
+    sealed::tunnel_stopped().await;
 
     Ok(())
 }
@@ -3574,6 +4146,310 @@ pub async fn tunnel_status(
         "active": pid.is_some(),
         "url": turl.clone(),
     }))
+}
+
+// ─── Sealed channel (REMOTE-PROTOKOLL v2) ───
+//
+// The door is the same on both listeners: `POST /remote-api/sealed`. What is
+// inside a frame is opened, checked and answered in commands/remote_sealed.rs;
+// this side only supplies the code the desktop shows, keeps its counters and
+// runs an inner request through this very router, with the paired device as
+// a request extension instead of a JWT.
+
+/// Create belongs to a device: a device that is unpaired, or loses its right
+/// `create`, loses its jobs, its uploads and the way to its results with it.
+fn connect_create_to_sealed(hub: &Arc<SealedHub>, create: &Arc<crate::commands::remote_create::CreateHub>) {
+    let cut = create.clone();
+    hub.set_on_device_cut(Arc::new(move |device_id: &str| {
+        cut.forget_owner(device_id, crate::commands::remote_create::now_secs());
+    }));
+    // Asked before a job or an upload of a sealed device is entered. Weak:
+    // the hub already holds the job table through the cut above.
+    let weak = Arc::downgrade(hub);
+    create.set_owner_check(Arc::new(move |device_id: &str, generation: u64| {
+        weak.upgrade().is_some_and(|h| h.caller_current(device_id, generation))
+    }));
+}
+
+/// A shared chat's turn belongs to the device that sent it: unpaired, the
+/// turn stops; a right taken, the turn goes on without it.
+fn connect_chats_to_sealed(hub: &Arc<SealedHub>, chats: &Arc<crate::commands::remote_chats::ChatsHub>) {
+    let chats = chats.clone();
+    hub.set_on_rights_taken(Arc::new(move |device_id: &str, kept: Option<sealed::DeviceRights>| {
+        chats.device_changed(device_id, kept);
+    }));
+}
+
+/// The six digit code for a sealed code pairing, as long as it is shown and
+/// the sender is not locked out. Same lockout map as `/remote-api/auth`.
+async fn sealed_code_offer(passcode: &TokioMutex<PasscodeState>, rate_key: &str) -> sealed::CodeOffer {
+    let now = chrono_now_secs();
+    let mut pc = passcode.lock().await;
+    if let Some(&(count, cooldown_until)) = pc.failed_attempts.get(rate_key) {
+        if count >= MAX_FAILED_ATTEMPTS && now < cooldown_until {
+            return sealed::CodeOffer::Locked(cooldown_until - now);
+        }
+    }
+    match pc.live(now) {
+        Some(code) => sealed::CodeOffer::Shown(zeroize::Zeroizing::new(code.to_string())),
+        None => sealed::CodeOffer::Absent,
+    }
+}
+
+/// Book what the code path did: a failure counts for the sender (three, then
+/// a minute) and for the code (ten, then a new code); a code that opened a
+/// handshake is used up and replaced (PROTOKOLL 5.2).
+/// Returns true when the code was replaced.
+async fn sealed_code_used(passcode: &TokioMutex<PasscodeState>, rate_key: &str, used: sealed::CodeUse) -> bool {
+    let now = chrono_now_secs();
+    let mut pc = passcode.lock().await;
+    match used {
+        sealed::CodeUse::Consumed => {
+            pc.failed_attempts.remove(rate_key);
+            pc.renew(now);
+            true
+        }
+        sealed::CodeUse::Failed => {
+            let entry = pc.failed_attempts.entry(rate_key.to_string()).or_insert((0, 0));
+            if entry.0 >= MAX_FAILED_ATTEMPTS && now >= entry.1 {
+                *entry = (0, 0);
+            }
+            entry.0 += 1;
+            if entry.0 >= MAX_FAILED_ATTEMPTS {
+                entry.1 = now + COOLDOWN_SECS;
+            }
+            pc.count_failure(now)
+        }
+    }
+}
+
+/// The code on the desktop's panel changed: the window reads it again.
+fn notify_code_changed(state: &RemoteState) {
+    if let Some(app) = state.app_handle.handle() {
+        let _ = app.emit("remote-passcode-changed", serde_json::json!({}));
+    }
+}
+
+/// Run one inner request through the router, in this process.
+async fn dispatch_sealed(state: RemoteState, peer: SocketAddr, call: sealed::InnerCall) -> sealed::InnerAnswer {
+    use tower::ServiceExt;
+    let mut builder = Request::builder().method(call.method.as_str()).uri(call.path.as_str());
+    for (name, value) in &call.headers {
+        builder = builder.header(name.as_str(), value.as_str());
+    }
+    let Ok(mut req) = builder.body(Body::from(call.body)) else {
+        return sealed::InnerAnswer::json(400, serde_json::json!({ "error": "bad_inner" }));
+    };
+    req.extensions_mut().insert(call.caller);
+    req.extensions_mut().insert(ConnectInfo(peer));
+    let response = match build_router(state).oneshot(req).await {
+        Ok(r) => r,
+        Err(never) => match never {},
+    };
+    let status = response.status().as_u16();
+    let headers = response
+        .headers()
+        .iter()
+        .filter_map(|(k, v)| v.to_str().ok().map(|v| (k.as_str().to_string(), v.to_string())))
+        .collect();
+    match axum::body::to_bytes(response.into_body(), sealed::MAX_INNER_ANSWER).await {
+        Ok(body) => sealed::InnerAnswer { status, headers, body: body.to_vec() },
+        Err(_) => sealed::InnerAnswer::json(413, serde_json::json!({ "error": "too_large" })),
+    }
+}
+
+/// How long one sealed body may take to arrive.
+const SEALED_READ_SECS: u64 = 30;
+/// How long a sealed request waits for a reading slot.
+const SEALED_SLOT_WAIT_SECS: u64 = 5;
+
+fn sealed_response(outcome: sealed::SealedOutcome) -> Response {
+    let status = StatusCode::from_u16(outcome.status).unwrap_or(StatusCode::BAD_REQUEST);
+    let kind = if outcome.sealed { "application/octet-stream" } else { "application/json" };
+    let mut response = (status, [(header::CONTENT_TYPE, kind)], outcome.body).into_response();
+    if let Some(wait) = outcome.retry_after {
+        if let Ok(v) = wait.to_string().parse() {
+            response.headers_mut().insert(header::RETRY_AFTER, v);
+        }
+    }
+    response
+}
+
+/// Reads a sealed body without holding more than it may: a declared length
+/// over the limit is refused before reading, a first message stops at
+/// [`sealed::MAX_HS_INIT_BODY`], a data frame is read in full only once its
+/// session id names a session of this desktop.
+async fn read_sealed_body(hub: &SealedHub, headers: &HeaderMap, body: Body) -> Result<Vec<u8>, sealed::SealedOutcome> {
+    use futures_util::StreamExt;
+    let declared = headers
+        .get(header::CONTENT_LENGTH)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.trim().parse::<u64>().ok());
+    if declared.is_some_and(|n| n > sealed::MAX_SEALED_BODY as u64) {
+        return Err(SealedHub::refusal("too_large", None));
+    }
+    let read = async {
+        let mut stream = body.into_data_stream();
+        let mut buf: Vec<u8> = Vec::new();
+        let mut limit: Option<usize> = None;
+        loop {
+            let next = stream.next().await;
+            let done = next.is_none();
+            if let Some(chunk) = next {
+                let chunk = chunk.map_err(|_| SealedHub::refusal("bad_frame", None))?;
+                buf.extend_from_slice(&chunk);
+            }
+            if limit.is_none() {
+                match hub.plan_body(&buf, done) {
+                    Some(sealed::BodyPlan::Limit(n)) => {
+                        if declared.is_some_and(|d| d > n as u64) {
+                            return Err(SealedHub::refusal("too_large", None));
+                        }
+                        limit = Some(n);
+                    }
+                    Some(sealed::BodyPlan::Refuse(o)) => return Err(o),
+                    None => {}
+                }
+            }
+            if buf.len() > limit.unwrap_or(sealed::MAX_SEALED_BODY) {
+                return Err(SealedHub::refusal("too_large", None));
+            }
+            if done {
+                return Ok(buf);
+            }
+        }
+    };
+    match tokio::time::timeout(std::time::Duration::from_secs(SEALED_READ_SECS), read).await {
+        Ok(r) => r,
+        Err(_) => Err(SealedHub::refusal("bad_frame", None)),
+    }
+}
+
+async fn handle_sealed(
+    state: RemoteState,
+    listener: sealed::Listener,
+    source: String,
+    peer: SocketAddr,
+    headers: HeaderMap,
+    body: Body,
+) -> Response {
+    let Some(hub) = state.sealed.clone() else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    // A bounded number of bodies in memory per listener; the rest waits.
+    let slots = hub.slots(listener);
+    let _slot = match tokio::time::timeout(std::time::Duration::from_secs(SEALED_SLOT_WAIT_SECS), slots.acquire_owned()).await {
+        Ok(Ok(permit)) => permit,
+        _ => return sealed_response(SealedHub::refusal("rate_limited", Some(1))),
+    };
+    let body = match read_sealed_body(&hub, &headers, body).await {
+        Ok(b) => b,
+        Err(refused) => return sealed_response(refused),
+    };
+    let lan = listener == sealed::Listener::Lan;
+    let code = if lan {
+        sealed_code_offer(&state.passcode, &source).await
+    } else {
+        sealed::CodeOffer::Absent
+    };
+    let router_state = state.clone();
+    let outcome = hub
+        .handle(
+            sealed::SealedInput { listener, source: &source, body: &body, code },
+            move |call| dispatch_sealed(router_state, peer, call),
+        )
+        .await;
+    if lan {
+        if let Some(used) = outcome.code_use {
+            if sealed_code_used(&state.passcode, &source, used).await {
+                notify_code_changed(&state);
+            }
+        }
+    }
+    sealed_response(outcome)
+}
+
+/// LAN listener: the sender is the TCP peer. `CF-Connecting-IP` means
+/// nothing here.
+async fn handle_sealed_lan(
+    AxumState(state): AxumState<RemoteState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    body: Body,
+) -> Response {
+    handle_sealed(state, sealed::Listener::Lan, sealed::source_key(&addr.ip().to_string()), addr, headers, body).await
+}
+
+/// Tunnel listener: the TCP peer is always cloudflared on loopback, the
+/// sender is what the Cloudflare edge wrote into `CF-Connecting-IP`.
+async fn handle_sealed_tunnel(
+    AxumState(state): AxumState<RemoteState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    body: Body,
+) -> Response {
+    let source = headers
+        .get("cf-connecting-ip")
+        .and_then(|v| v.to_str().ok())
+        .map(str::trim)
+        .filter(|s| !s.is_empty() && s.len() <= 64)
+        .unwrap_or("local")
+        .to_string();
+    handle_sealed(state, sealed::Listener::Tunnel, source, addr, headers, body).await
+}
+
+/// The listener cloudflared points at. It knows two routes and nothing else:
+/// no `/mobile` page, no code login, no plain API over the internet (E3).
+fn build_tunnel_router(state: RemoteState) -> Router {
+    async fn not_found() -> StatusCode {
+        StatusCode::NOT_FOUND
+    }
+    Router::new()
+        .route("/remote-api/status", get(handle_status_tunnel))
+        .route("/remote-api/sealed", post(handle_sealed_tunnel))
+        .fallback(not_found)
+        .method_not_allowed_fallback(not_found)
+        .layer(middleware::from_fn_with_state(state.clone(), tunnel_gate))
+        .layer(middleware::from_fn(access_log))
+        .with_state(state)
+}
+
+/// A QR picture of `text` as base64 PNG.
+fn qr_png_base64(text: &str) -> Result<String, String> {
+    let qr = qrcode::QrCode::new(text.as_bytes()).map_err(|e| e.to_string())?;
+    let qr_image = qr.render::<image::Luma<u8>>()
+        .quiet_zone(true)
+        .min_dimensions(256, 256)
+        .build();
+    let mut png_bytes: Vec<u8> = Vec::new();
+    let mut cursor = std::io::Cursor::new(&mut png_bytes);
+    image::DynamicImage::ImageLuma8(qr_image).write_to(&mut cursor, image::ImageFormat::Png)
+        .map_err(|e| e.to_string())?;
+    Ok(base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &png_bytes))
+}
+
+/// QR v2 for the LU app: desktop id, key, a fresh ticket (5 minutes, once),
+/// the LAN address and, while the tunnel runs, the tunnel address. Only the
+/// picture leaves this command; the link with the ticket in it does not.
+#[tauri::command]
+pub async fn remote_pairing_qr(
+    app: AppHandle,
+    state: tauri::State<'_, crate::state::AppState>,
+) -> Result<serde_json::Value, String> {
+    let (running, port, tunnel_url_arc) = {
+        let remote = state.remote.lock().map_err(|e| e.to_string())?;
+        (remote.handle.is_some(), remote.port, remote.tunnel_url.clone())
+    };
+    if !running {
+        return Err("Remote server not running".into());
+    }
+    let hub = sealed::shared_hub(&app).await?;
+    let tunnel = tunnel_url_arc.lock().await.clone();
+    let lan = super::lan_address::lan_ip()
+        .map(|ip| format!("http://{}:{}", ip, port));
+    let (link, expires) = hub.pairing_link(lan, tunnel)?;
+    let png = qr_png_base64(&link)?;
+    Ok(serde_json::json!({ "qr_png_base64": png, "expiresAt": expires }))
 }
 
 // ─── Router builder ───
@@ -3600,7 +4476,41 @@ fn build_router(state: RemoteState) -> Router {
         .route("/remote-api/permissions", post(handle_set_permissions))
         .route("/remote-api/config", get(handle_config))
         .route("/remote-api/chat-event", post(handle_chat_event))
-        .route("/remote-api/agent-tool", post(handle_agent_tool));
+        .route("/remote-api/agent-tool", post(handle_agent_tool))
+        // The sealed channel's door on the LAN listener (PROTOKOLL 10). Not
+        // behind the JWT: the frame is its own proof.
+        .route("/remote-api/sealed", post(handle_sealed_lan))
+        // Create over the desktop (remote_create.rs). Behind auth_middleware
+        // like every other /remote-api/ route, and behind the permission
+        // `create` inside each handler.
+        .route("/remote-api/create/capabilities", get(crate::commands::remote_create::handle_capabilities))
+        .route(
+            "/remote-api/create/uploads",
+            post(crate::commands::remote_create::handle_upload)
+                .layer(axum::extract::DefaultBodyLimit::max(crate::commands::remote_create::MAX_UPLOAD_BYTES + 1)),
+        )
+        .route("/remote-api/create/jobs", post(crate::commands::remote_create::handle_create_job))
+        .route("/remote-api/create/jobs/{id}", get(crate::commands::remote_create::handle_get_job))
+        .route("/remote-api/create/jobs/{id}/cancel", post(crate::commands::remote_create::handle_cancel_job))
+        .route("/remote-api/create/results/{id}", get(crate::commands::remote_create::handle_result))
+        .route("/remote-api/create/gallery", get(crate::commands::remote_create::handle_gallery))
+        .route("/remote-api/create/gallery/{id}", get(crate::commands::remote_create::handle_gallery_item))
+        .route("/remote-api/create/gallery/{id}/thumb", get(crate::commands::remote_create::handle_gallery_thumb))
+        .route("/remote-api/create/gallery/{id}/file", get(crate::commands::remote_create::handle_gallery_file))
+        // Shared chats (remote_chats.rs, CHATS-V1.md): sealed channel only.
+        .route("/remote-api/chats", get(crate::commands::remote_chats::handle_list).post(crate::commands::remote_chats::handle_create))
+        .route("/remote-api/chats/{id}", get(crate::commands::remote_chats::handle_messages))
+        .route("/remote-api/chat-models", get(crate::commands::remote_chats::handle_models))
+        .route(
+            "/remote-api/chats/{id}/messages",
+            post(crate::commands::remote_chats::handle_send)
+                .layer(axum::extract::DefaultBodyLimit::max(crate::commands::remote_chats::MAX_CONTENT_BYTES * 2 + 64 * 1024)),
+        )
+        .route("/remote-api/chats/{id}/stream", get(crate::commands::remote_chats::handle_stream))
+        .route("/remote-api/chats/{id}/stop", post(crate::commands::remote_chats::handle_stop))
+        .route("/remote-api/chats/{id}/read", post(crate::commands::remote_chats::handle_read))
+        .route("/remote-api/approvals/{id}", post(crate::commands::remote_chats::handle_approval))
+        .route("/remote-api/tasks", get(crate::commands::remote_chats::handle_tasks));
 
     // Proxy routes
     let proxy_routes = Router::new()
@@ -3637,12 +4547,164 @@ fn build_router(state: RemoteState) -> Router {
         .with_state(state)
 }
 
+/// A request path as the log may hold it: no query, a deferred answer's
+/// token and anything after it replaced, at most 160 characters. Codes,
+/// tokens and keys travel in headers, bodies or the query, never here.
+pub(crate) fn loggable_path(raw: &str) -> String {
+    let path = raw.split(['?', '#']).next().unwrap_or("");
+    let path = match path.strip_prefix(crate::remote_seal::PENDING_PATH_PREFIX) {
+        Some(_) => format!("{}<token>", crate::remote_seal::PENDING_PATH_PREFIX),
+        None => path.to_string(),
+    };
+    let clean: String = path.chars().filter(|c| !c.is_control()).take(160).collect();
+    if clean.is_empty() { "/".to_string() } else { clean }
+}
+
+/// One line per request in the log: method, path without query, status and
+/// how long it took. The plain listeners log every request here; a request
+/// that came through the sealed channel is logged by the channel with its
+/// inner path (remote_sealed.rs), so it is skipped here.
+async fn access_log(req: Request, next: Next) -> Response {
+    if req.extensions().get::<SealedCaller>().is_some() {
+        return next.run(req).await;
+    }
+    let method = req.method().clone();
+    let path = loggable_path(req.uri().path());
+    let started = std::time::Instant::now();
+    let res = next.run(req).await;
+    tracing::info!(
+        channel = "plain",
+        method = %method,
+        path = %path,
+        status = res.status().as_u16(),
+        ms = started.elapsed().as_millis() as u64,
+        "remote request"
+    );
+    res
+}
+
+/// The router of the LAN listener: [`build_router`] behind [`lan_gate`].
+fn build_lan_router(state: RemoteState) -> Router {
+    build_router(state.clone()).layer(middleware::from_fn_with_state(state, lan_gate)).layer(middleware::from_fn(access_log))
+}
+
+/// Once a phone is paired or "anywhere" is on, the LAN listener knows only
+/// the status and the sealed door, like the tunnel listener. The browser page
+/// and the plain code login come back only when the desktop allows them for
+/// a while (`remote_set_legacy_access`). Without the sealed channel nothing
+/// changes. Inner requests of the channel never pass here.
+async fn lan_gate(AxumState(state): AxumState<RemoteState>, req: Request, next: Next) -> Response {
+    let path = req.uri().path();
+    let open_door = (path == "/remote-api/status" && req.method() == Method::GET)
+        || (path == "/remote-api/sealed" && req.method() == Method::POST);
+    // Against DNS rebinding: the plain ways answer only under an address,
+    // never under a name someone else controls. The two doors stay open
+    // under any name (studio.local, a router name): the channel checks both
+    // ends itself, and the status names nothing while no pairing is open.
+    if !open_door && !lan_host_allowed(req.headers().get(header::HOST).and_then(|v| v.to_str().ok())) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let allowed = open_door || state.sealed.as_ref().is_none_or(|hub| hub.lan_legacy_allowed());
+    if !allowed {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    next.run(req).await
+}
+
+/// The host part of a Host header, lower case, port and IPv6 brackets off.
+fn host_name(host: &str) -> String {
+    let host = host.trim().to_ascii_lowercase();
+    if let Some(rest) = host.strip_prefix('[') {
+        return rest.split(']').next().unwrap_or("").to_string();
+    }
+    match host.rsplit_once(':') {
+        Some((name, port)) if !name.contains(':') && port.bytes().all(|b| b.is_ascii_digit()) => name.to_string(),
+        _ => host,
+    }
+}
+
+/// LAN listener: an IP literal or `localhost`, or no Host at all (not a
+/// browser).
+fn lan_host_allowed(host: Option<&str>) -> bool {
+    let Some(host) = host else { return true };
+    let name = host_name(host);
+    name == "localhost" || name.parse::<std::net::IpAddr>().is_ok()
+}
+
+/// Tunnel listener: the own `*.trycloudflare.com` address while the tunnel
+/// runs, or the loopback address itself.
+fn tunnel_host_allowed(host: Option<&str>, expected: Option<&str>) -> bool {
+    let Some(host) = host else { return false };
+    let name = host_name(host);
+    if expected.is_some_and(|e| e == name) {
+        return true;
+    }
+    name.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback())
+}
+
+async fn tunnel_gate(AxumState(state): AxumState<RemoteState>, req: Request, next: Next) -> Response {
+    let expected = state.sealed.as_ref().and_then(|hub| hub.tunnel_host());
+    if !tunnel_host_allowed(req.headers().get(header::HOST).and_then(|v| v.to_str().ok()), expected.as_deref()) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    next.run(req).await
+}
+
 async fn redirect_to_mobile() -> Response {
     Response::builder()
         .status(StatusCode::FOUND)
         .header(header::LOCATION, "/mobile")
         .body(Body::empty())
         .unwrap_or_else(|_| StatusCode::FOUND.into_response())
+}
+
+/// Both listeners of a server with the sealed channel, for the tests in
+/// commands/remote_sealed/tests.rs. The LAN router is the real one, the
+/// tunnel router too; only the desktop window is missing.
+#[cfg(test)]
+pub(crate) struct SealedTestRig {
+    pub lan: Router,
+    pub tunnel: Router,
+    pub permissions: Arc<TokioMutex<RemotePermissions>>,
+    pub passcode: Arc<TokioMutex<PasscodeState>>,
+    /// The Create job table behind the routes, wired to the hub's forget
+    /// hook as in `start_remote_server_inner`.
+    pub create: Arc<crate::commands::remote_create::CreateHub>,
+    pub chats: Arc<crate::commands::remote_chats::ChatsHub>,
+}
+
+#[cfg(test)]
+pub(crate) fn sealed_test_rig(hub: Arc<SealedHub>, ollama_base: String) -> SealedTestRig {
+    let server = RemoteServer::new();
+    let state = RemoteState {
+        memory_revoked: server.memory_revoked.clone(),
+        jwt_secret: server.jwt_secret.clone(),
+        passcode: server.passcode.clone(),
+        ollama_base,
+        backend_kind: "ollama".into(),
+        openai_base: String::new(),
+        openai_key: String::new(),
+        comfy_port: 0,
+        comfy_host: "127.0.0.1".into(),
+        permissions: server.permissions.clone(),
+        connected_devices: server.connected_devices.clone(),
+        tunnel_url: server.tunnel_url.clone(),
+        dispatched_model: server.dispatched_model.clone(),
+        dispatched_system_prompt: server.dispatched_system_prompt.clone(),
+        page_title: server.page_title.clone(),
+        app_handle: RemoteDesktop::unavailable(),
+        sealed: Some(hub.clone()),
+        create: server.create.clone(), chats: server.chats.clone(),
+    };
+    connect_create_to_sealed(&hub, &server.create);
+    connect_chats_to_sealed(&hub, &server.chats);
+    SealedTestRig {
+        lan: build_lan_router(state.clone()),
+        tunnel: build_tunnel_router(state),
+        permissions: server.permissions.clone(),
+        passcode: server.passcode.clone(),
+        create: server.create.clone(), chats: server.chats.clone(),
+    }
 }
 
 #[cfg(test)]
@@ -3798,6 +4860,8 @@ mod memory_revocation_tests {
                 tunnel_url: server.tunnel_url.clone(), dispatched_model: server.dispatched_model.clone(),
                 dispatched_system_prompt: server.dispatched_system_prompt.clone(), page_title: server.page_title.clone(),
                 app_handle: RemoteDesktop::unavailable(),
+                sealed: None,
+                create: server.create.clone(), chats: server.chats.clone(),
             };
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let base = format!("http://{}", listener.local_addr().unwrap());
@@ -3863,6 +4927,8 @@ mod memory_revocation_tests {
             assert_eq!(client.get(format!("{base}/remote-api/config")).bearer_auth(token).send().await.unwrap().status(), StatusCode::CONFLICT);
             assert_eq!(client.post(format!("{base}/api/chat")).json(&payload).send().await.unwrap().status(), StatusCode::UNAUTHORIZED);
             // Pairing again is allowed, but must not reopen the revoked guard.
+            // The first login used its code up: the desktop shows it again.
+            { let mut pc = server.passcode.lock().await; pc.code = passcode.clone(); pc.expires_at = chrono_now_secs() + PASSCODE_TTL_SECS; }
             let paired_again: serde_json::Value = client.post(format!("{base}/remote-api/auth"))
                 .json(&serde_json::json!({"passcode":passcode})).send().await.unwrap().json().await.unwrap();
             let renewed = paired_again["token"].as_str().unwrap();
@@ -4198,7 +5264,7 @@ mod remote_path_tests {
         // the tool quietly running ungated.
         for tool in [
             "file_read", "file_write", "file_list", "file_search", "screenshot",
-            "shell_execute", "code_execute", "image_generate", "process_list",
+            "shell_execute", "code_execute", "image_generate", "video_generate", "process_list",
             "web_search", "web_fetch", "system_info", "get_current_time",
         ] {
             assert_ne!(gate_for(tool), ToolGate::Unknown, "{} has no gate", tool);
@@ -4218,6 +5284,222 @@ mod remote_path_tests {
         use super::{gate_for, ToolGate};
         assert_eq!(gate_for("shell_execute"), ToolGate::Needs("shell"));
         assert_eq!(gate_for("code_execute"), ToolGate::Needs("shell"));
+    }
+
+    #[test]
+    fn media_tools_need_create_and_not_process_control() {
+        use super::{gate_for, ToolGate};
+        assert_eq!(gate_for("image_generate"), ToolGate::Needs("create"));
+        assert_eq!(gate_for("video_generate"), ToolGate::Needs("create"));
+    }
+
+    /// The Create routes sit behind the sign in and behind `create`, wired
+    /// through the real router: no token is 401, a token without the
+    /// permission is 403 naming it, the permission on lets the route answer.
+    #[tokio::test]
+    async fn create_routes_are_behind_the_token_and_the_permission() {
+        use super::*;
+        use axum::http::StatusCode;
+        use std::net::SocketAddr;
+        let server = RemoteServer::new();
+        *server.jwt_secret.lock().await = uuid::Uuid::new_v4().to_string();
+        let token = generate_jwt(&server.jwt_secret.lock().await, "127.0.0.1", "dev-a", chrono_now_secs()).unwrap();
+        server.connected_devices.lock().await.push(ConnectedDevice {
+            id: "dev-a".into(), ip: "127.0.0.1".into(), peer: "127.0.0.1".into(), user_agent: "test".into(), last_seen: chrono_now_secs(),
+        });
+        let state = RemoteState {
+            memory_revoked: server.memory_revoked.clone(),
+            jwt_secret: server.jwt_secret.clone(), passcode: server.passcode.clone(),
+            ollama_base: "http://127.0.0.1:9".into(), backend_kind: "ollama".into(),
+            openai_base: String::new(), openai_key: String::new(),
+            comfy_port: 0, comfy_host: "127.0.0.1".into(),
+            permissions: server.permissions.clone(), connected_devices: server.connected_devices.clone(),
+            tunnel_url: server.tunnel_url.clone(), dispatched_model: server.dispatched_model.clone(),
+            dispatched_system_prompt: server.dispatched_system_prompt.clone(), page_title: server.page_title.clone(),
+            app_handle: RemoteDesktop::unavailable(),
+            sealed: None,
+            create: server.create.clone(), chats: server.chats.clone(),
+        };
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let router = build_router(state);
+        let task = tokio::spawn(async move {
+            axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>()).await.unwrap();
+        });
+        let c = reqwest::Client::builder().no_proxy().build().unwrap();
+        let url = format!("{base}/remote-api/create/jobs");
+        let job = serde_json::json!({"kind":"image","prompt":"a cat"});
+        assert_eq!(c.post(&url).json(&job).send().await.unwrap().status(), StatusCode::UNAUTHORIZED);
+        let denied = c.post(&url).bearer_auth(&token).json(&job).send().await.unwrap();
+        assert_eq!(denied.status(), StatusCode::FORBIDDEN);
+        let v: serde_json::Value = denied.json().await.unwrap();
+        assert_eq!(v["permission"], "create");
+        // The agent tool reports the same switch, as a graceful observation.
+        let tool = c.post(format!("{base}/remote-api/agent-tool")).bearer_auth(&token)
+            .json(&serde_json::json!({"tool":"image_generate","args":{"prompt":"a cat"}})).send().await.unwrap();
+        let v: serde_json::Value = tool.json().await.unwrap();
+        assert!(v["error"].is_string());
+        let status: serde_json::Value = c.get(format!("{base}/remote-api/status/full")).bearer_auth(&token).send().await.unwrap().json().await.unwrap();
+        assert_eq!(status["features"], serde_json::json!([]));
+
+        server.permissions.lock().await.create = true;
+        let accepted = c.post(&url).bearer_auth(&token).json(&job).send().await.unwrap();
+        assert_eq!(accepted.status(), StatusCode::ACCEPTED);
+        let v: serde_json::Value = accepted.json().await.unwrap();
+        assert_eq!(v["state"], "running");
+        let status: serde_json::Value = c.get(format!("{base}/remote-api/status/full")).bearer_auth(&token).send().await.unwrap().json().await.unwrap();
+        assert_eq!(status["features"], serde_json::json!(["create-image", "create-video"]));
+        assert!(status.get("lan_blocked").is_none(), "only inside the channel");
+        // Stage 2, the gallery and documents stay in the sealed channel: the
+        // plain Wi-Fi way keeps 3.0.7's Create.
+        let sealed_only = serde_json::json!({ "error": "sealed_only" });
+        for job in [
+            serde_json::json!({"kind":"upscale","input_id":"upl_x"}),
+            serde_json::json!({"kind":"edit","prompt":"red","input_ids":["upl_x"]}),
+            serde_json::json!({"kind":"removebg","input_id":"upl_x"}),
+            serde_json::json!({"kind":"music","prompt":"calm"}),
+            serde_json::json!({"kind":"image","prompt":"me","character":"chr_1"}),
+        ] {
+            let r = c.post(&url).bearer_auth(&token).json(&job).send().await.unwrap();
+            assert_eq!(r.status(), StatusCode::FORBIDDEN, "{job}");
+            assert_eq!(r.json::<serde_json::Value>().await.unwrap(), sealed_only);
+        }
+        for path in ["/remote-api/create/gallery", "/remote-api/create/gallery/gal_x", "/remote-api/create/gallery/gal_x/thumb", "/remote-api/create/gallery/gal_x/file"] {
+            let r = c.get(format!("{base}{path}")).bearer_auth(&token).send().await.unwrap();
+            assert_eq!(r.status(), StatusCode::FORBIDDEN, "{path}");
+            assert_eq!(r.json::<serde_json::Value>().await.unwrap(), sealed_only);
+        }
+        let pdf = c.post(format!("{base}/remote-api/create/uploads")).bearer_auth(&token).body("%PDF-1.4\n%%EOF\n").send().await.unwrap();
+        assert_eq!(pdf.status(), StatusCode::FORBIDDEN);
+        // A phone cannot grant itself the switch.
+        server.permissions.lock().await.create = false;
+        let raised: serde_json::Value = c.post(format!("{base}/remote-api/permissions")).bearer_auth(&token)
+            .json(&serde_json::json!({"filesystem":false,"downloads":false,"process_control":false,"shell":false,"create":true}))
+            .send().await.unwrap().json().await.unwrap();
+        assert_eq!(raised["create"], false);
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn the_engines_file_path_is_listed_as_a_name_and_chat_still_reaches_the_model() {
+        use super::*;
+        use axum::http::StatusCode;
+        use std::net::SocketAddr;
+        let engine_id = "C:\\Users\\someone\\LU\\models\\Engine-Fixture-7B-Q4.gguf";
+        let asked: Arc<TokioMutex<Vec<String>>> = Arc::new(TokioMutex::new(Vec::new()));
+        let seen = asked.clone();
+        let upstream_router = Router::new().fallback(any(move |req: Request| {
+            let seen = seen.clone();
+            async move {
+                if req.uri().path() == "/v1/models" {
+                    return Json(serde_json::json!({"data":[{"id": engine_id}]})).into_response();
+                }
+                let bytes = axum::body::to_bytes(req.into_body(), 65536).await.unwrap();
+                let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+                seen.lock().await.push(body["model"].as_str().unwrap_or("").to_string());
+                Json(serde_json::json!({"choices":[{"message":{"role":"assistant","content":"hi"}}]})).into_response()
+            }
+        }));
+        let upstream = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let upstream_base = format!("http://{}", upstream.local_addr().unwrap());
+        let upstream_task = tokio::spawn(async move { axum::serve(upstream, upstream_router).await.unwrap() });
+        let server = RemoteServer::new();
+        *server.jwt_secret.lock().await = uuid::Uuid::new_v4().to_string();
+        let token = generate_jwt(&server.jwt_secret.lock().await, "127.0.0.1", "dev-a", chrono_now_secs()).unwrap();
+        server.connected_devices.lock().await.push(ConnectedDevice {
+            id: "dev-a".into(), ip: "127.0.0.1".into(), peer: "127.0.0.1".into(), user_agent: "test".into(), last_seen: chrono_now_secs(),
+        });
+        let state = RemoteState {
+            memory_revoked: server.memory_revoked.clone(),
+            jwt_secret: server.jwt_secret.clone(), passcode: server.passcode.clone(),
+            ollama_base: upstream_base.clone(), backend_kind: "openai".into(),
+            openai_base: format!("{upstream_base}/v1"), openai_key: String::new(),
+            comfy_port: 0, comfy_host: "127.0.0.1".into(),
+            permissions: server.permissions.clone(), connected_devices: server.connected_devices.clone(),
+            tunnel_url: server.tunnel_url.clone(), dispatched_model: server.dispatched_model.clone(),
+            dispatched_system_prompt: server.dispatched_system_prompt.clone(), page_title: server.page_title.clone(),
+            app_handle: RemoteDesktop::unavailable(),
+            sealed: None,
+            create: server.create.clone(), chats: server.chats.clone(),
+        };
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let router = build_router(state);
+        let task = tokio::spawn(async move {
+            axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>()).await.unwrap();
+        });
+        let c = reqwest::Client::builder().no_proxy().build().unwrap();
+        let tags: serde_json::Value = c.get(format!("{base}/api/tags")).bearer_auth(&token).send().await.unwrap().json().await.unwrap();
+        assert_eq!(tags["models"][0]["name"], "Engine-Fixture-7B-Q4");
+        assert!(!tags.to_string().contains("Users"), "no folder of the computer in the list");
+        let chat = c.post(format!("{base}/api/chat")).bearer_auth(&token)
+            .json(&serde_json::json!({"model":"Engine-Fixture-7B-Q4","stream":false,"messages":[{"role":"user","content":"x"}]}))
+            .send().await.unwrap();
+        assert_eq!(chat.status(), StatusCode::OK);
+        assert_eq!(asked.lock().await.as_slice(), [engine_id.to_string()]);
+        // The id itself still works.
+        let chat = c.post(format!("{base}/api/chat")).bearer_auth(&token)
+            .json(&serde_json::json!({"model": engine_id,"stream":false,"messages":[{"role":"user","content":"x"}]}))
+            .send().await.unwrap();
+        assert_eq!(chat.status(), StatusCode::OK);
+        assert_eq!(asked.lock().await.last().unwrap(), engine_id);
+        task.abort();
+        upstream_task.abort();
+    }
+
+    #[tokio::test]
+    async fn pairing_the_page_from_the_same_phone_does_not_end_the_apps_session() {
+        use super::*;
+        use axum::http::StatusCode;
+        use std::net::SocketAddr;
+        let server = RemoteServer::new();
+        *server.jwt_secret.lock().await = uuid::Uuid::new_v4().to_string();
+        let state = RemoteState {
+            memory_revoked: server.memory_revoked.clone(),
+            jwt_secret: server.jwt_secret.clone(), passcode: server.passcode.clone(),
+            ollama_base: "http://127.0.0.1:9".into(), backend_kind: "ollama".into(),
+            openai_base: String::new(), openai_key: String::new(),
+            comfy_port: 0, comfy_host: "127.0.0.1".into(),
+            permissions: server.permissions.clone(), connected_devices: server.connected_devices.clone(),
+            tunnel_url: server.tunnel_url.clone(), dispatched_model: server.dispatched_model.clone(),
+            dispatched_system_prompt: server.dispatched_system_prompt.clone(), page_title: server.page_title.clone(),
+            app_handle: RemoteDesktop::unavailable(),
+            sealed: None,
+            create: server.create.clone(), chats: server.chats.clone(),
+        };
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let router = build_router(state);
+        let task = tokio::spawn(async move {
+            axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>()).await.unwrap();
+        });
+        let c = reqwest::Client::builder().no_proxy().build().unwrap();
+        let pair = |ua: &'static str| {
+            let c = c.clone();
+            let base = base.clone();
+            let passcode = server.passcode.clone();
+            async move {
+                let code = generate_passcode();
+                { let mut pc = passcode.lock().await; pc.code = code.clone(); pc.expires_at = chrono_now_secs() + PASSCODE_TTL_SECS; }
+                let v: serde_json::Value = c.post(format!("{base}/remote-api/auth")).header("user-agent", ua)
+                    .json(&serde_json::json!({"passcode": code})).send().await.unwrap().json().await.unwrap();
+                v["token"].as_str().unwrap().to_string()
+            }
+        };
+        let app = pair("LU-Mobile/3.0.7").await;
+        let page = pair("Mozilla/5.0 (iPhone) Safari").await;
+        for (who, token) in [("app", &app), ("page", &page)] {
+            let status = c.get(format!("{base}/remote-api/status/full")).bearer_auth(token).send().await.unwrap().status();
+            assert_eq!(status, StatusCode::OK, "{who} lost its session");
+        }
+        assert_eq!(server.connected_devices.lock().await.len(), 2);
+        // The app pairing again replaces only its own row: the old app token ends.
+        let app2 = pair("LU-Mobile/3.0.7").await;
+        assert_eq!(c.get(format!("{base}/remote-api/status/full")).bearer_auth(&app).send().await.unwrap().status(), StatusCode::UNAUTHORIZED);
+        for token in [&app2, &page] {
+            assert_eq!(c.get(format!("{base}/remote-api/status/full")).bearer_auth(token).send().await.unwrap().status(), StatusCode::OK);
+        }
+        task.abort();
     }
 
     #[test]
@@ -4246,6 +5528,14 @@ mod remote_path_tests {
         assert!(!p.downloads, "downloads must default to false");
         assert!(!p.process_control, "process_control must default to false");
         assert!(!p.shell, "shell must default to false");
+        assert!(!p.create, "create must default to false");
+    }
+
+    #[test]
+    fn remote_permissions_from_before_create_read_create_as_off() {
+        let p: super::RemotePermissions =
+            serde_json::from_str(r#"{"filesystem":true,"downloads":true,"process_control":true,"shell":true}"#).unwrap();
+        assert!(!p.create);
     }
 
     #[test]
@@ -4258,8 +5548,10 @@ mod remote_path_tests {
             downloads: false,
             process_control: true,
             shell: false,
+            create: true,
         })
         .unwrap();
+        assert_eq!(json["create"], serde_json::json!(true));
         assert_eq!(json["filesystem"], serde_json::json!(true));
         assert_eq!(json["downloads"], serde_json::json!(false));
         assert_eq!(json["process_control"], serde_json::json!(true));
@@ -4281,13 +5573,14 @@ mod remote_path_tests {
         // ladder, so a scope a device can set is a scope with no gate at all —
         // it would hand itself the workspace, the screenshots, the model
         // pull/delete, the engine start/stop and (once) arbitrary commands.
-        let current = super::RemotePermissions { filesystem: false, downloads: false, process_control: false, shell: false };
-        let body = super::RemotePermissions { filesystem: true, downloads: true, process_control: true, shell: true };
+        let current = super::RemotePermissions { filesystem: false, downloads: false, process_control: false, shell: false, create: false };
+        let body = super::RemotePermissions { filesystem: true, downloads: true, process_control: true, shell: true, create: true };
         let merged = super::merge_remote_permissions(&current, body);
         assert!(!merged.filesystem, "remote bridge must NOT be able to grant filesystem");
         assert!(!merged.downloads, "remote bridge must NOT be able to grant downloads");
         assert!(!merged.process_control, "remote bridge must NOT be able to grant process_control");
         assert!(!merged.shell, "remote bridge must NOT be able to grant shell");
+        assert!(!merged.create, "remote bridge must NOT be able to grant create");
     }
 
     #[test]
@@ -4296,13 +5589,14 @@ mod remote_path_tests {
         // clearing the boxes is not a decision the desktop made, and a second
         // paired phone must not be able to switch the first one's session off
         // either. All four scopes live on the desktop, in both directions.
-        let current = super::RemotePermissions { filesystem: true, downloads: false, process_control: true, shell: true };
-        let body = super::RemotePermissions { filesystem: false, downloads: true, process_control: false, shell: false };
+        let current = super::RemotePermissions { filesystem: true, downloads: false, process_control: true, shell: true, create: true };
+        let body = super::RemotePermissions { filesystem: false, downloads: true, process_control: false, shell: false, create: false };
         let merged = super::merge_remote_permissions(&current, body);
         assert!(merged.filesystem, "desktop-set filesystem must survive a remote update");
         assert!(!merged.downloads, "a scope the desktop left off must stay off");
         assert!(merged.process_control, "desktop-set process_control must survive a remote update");
         assert!(merged.shell, "desktop-set shell must survive a remote update");
+        assert!(merged.create, "desktop-set create must survive a remote update");
     }
 }
 
@@ -4352,31 +5646,18 @@ mod remote_hardening_tests {
     }
 
     #[test]
-    fn the_local_tunnel_is_the_only_trusted_proxy() {
-        // cloudflared runs on this machine and reaches us over loopback. That
-        // is the one peer whose forwarding headers describe someone else.
-        let h = headers(&[("x-forwarded-for", "203.0.113.9")]);
-        assert_eq!(client_ip(&h, peer("127.0.0.1:41234")), "203.0.113.9");
-    }
-
-    #[test]
-    fn a_prepended_forwarded_for_hop_loses_to_the_proxys_own() {
-        // Cloudflare APPENDS the visitor to whatever X-Forwarded-For the
-        // visitor already sent, so the first entry is the one the attacker
-        // wrote and the last is the edge's. Reading the first made the header
-        // forgeable again on the one path where it is trusted at all.
-        let h = headers(&[("x-forwarded-for", "10.0.0.1, 203.0.113.9")]);
-        assert_eq!(client_ip(&h, peer("127.0.0.1:41234")), "203.0.113.9");
-    }
-
-    #[test]
-    fn cf_connecting_ip_beats_a_forged_forwarded_for() {
-        // The edge overwrites CF-Connecting-IP instead of appending to it.
-        let h = headers(&[
-            ("cf-connecting-ip", "203.0.113.9"),
-            ("x-forwarded-for", "10.0.0.1"),
-        ]);
-        assert_eq!(client_ip(&h, peer("127.0.0.1:41234")), "203.0.113.9");
+    fn no_peer_on_the_lan_listener_can_name_another_address() {
+        // Not even loopback: cloudflared points at the tunnel listener, so a
+        // forwarding header here was written by whoever sent the request.
+        for h in [
+            headers(&[("x-forwarded-for", "203.0.113.9")]),
+            headers(&[("x-forwarded-for", "10.0.0.1, 203.0.113.9")]),
+            headers(&[("cf-connecting-ip", "203.0.113.9"), ("x-forwarded-for", "10.0.0.1")]),
+            headers(&[("x-real-ip", "203.0.113.9")]),
+        ] {
+            assert_eq!(client_ip(&h, peer("127.0.0.1:41234")), "127.0.0.1");
+            assert_eq!(client_ip(&h, peer("192.168.1.77:51000")), "192.168.1.77");
+        }
     }
 
     #[test]
@@ -4399,6 +5680,7 @@ mod remote_hardening_tests {
         ConnectedDevice {
             id: id.to_string(),
             ip: ip.to_string(),
+            peer: ip.to_string(),
             user_agent: "test".to_string(),
             last_seen,
         }
@@ -4408,7 +5690,7 @@ mod remote_hardening_tests {
     fn two_lan_devices_keep_two_rows() {
         let now = 1_700_000_000u64;
         let mut devices = vec![device("dev-a", "192.168.1.10", now)];
-        upsert_device(&mut devices, "dev-b".into(), "192.168.1.77".into(), "phone".into(), now);
+        upsert_device(&mut devices, "dev-b".into(), "192.168.1.77".into(), "192.168.1.77".into(), "phone".into(), now);
         assert_eq!(devices.len(), 2, "two distinct peers must not share a row");
         assert!(devices.iter().any(|d| d.id == "dev-a"));
         assert!(devices.iter().any(|d| d.id == "dev-b"));
@@ -4419,17 +5701,97 @@ mod remote_hardening_tests {
         // Reauth after a passcode regen must refresh the row, not stack a ghost.
         let now = 1_700_000_000u64;
         let mut devices = vec![device("dev-a", "192.168.1.10", now - 5)];
-        upsert_device(&mut devices, "dev-a2".into(), "192.168.1.10".into(), "phone".into(), now);
+        upsert_device(&mut devices, "dev-a2".into(), "192.168.1.10".into(), "192.168.1.10".into(), "test".into(), now);
         assert_eq!(devices.len(), 1);
         assert_eq!(devices[0].id, "dev-a2");
         assert_eq!(devices[0].last_seen, now);
     }
 
     #[test]
+    fn the_device_test_hook_is_not_in_a_build_without_its_feature() {
+        // Nothing turns `e2e-remote` on by default, and every use is gated, so
+        // a build without the feature compiles none of the hook in.
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let manifest = std::fs::read_to_string(root.join("Cargo.toml")).unwrap();
+        let features = manifest.split("[features]").nth(1).unwrap().split("\n[").next().unwrap();
+        assert!(features.contains("e2e-remote = []"));
+        assert!(!features.lines().any(|l| l.trim_start().starts_with("default") && l.contains("e2e-remote")));
+        // Every place that names the hook carries the feature gate on the line above.
+        let mut sources = Vec::new();
+        for dir in [root.join("src"), root.join("src/commands")] {
+            for entry in std::fs::read_dir(dir).unwrap().flatten() {
+                let path = entry.path();
+                if path.extension().is_some_and(|e| e == "rs") && path.file_name().is_some_and(|n| n != "e2e_remote.rs") {
+                    sources.push(path);
+                }
+            }
+        }
+        let mut uses = 0;
+        for path in sources {
+            let text = std::fs::read_to_string(&path).unwrap();
+            let lines: Vec<&str> = text.lines().collect();
+            for (i, line) in lines.iter().enumerate() {
+                let code = line.split("//").next().unwrap_or("");
+                let names_hook = ["e2e_remote", "e2e_tickets", "e2e_pairing_link"].iter().any(|n| code.contains(n));
+                if names_hook && !code.contains("feature = \"e2e-remote\"") && !code.contains("cfg!(") {
+                    // Inside this test the name is only a string.
+                    if code.contains("\"") {
+                        continue;
+                    }
+                    uses += 1;
+                    let gated = lines[..i].iter().rev().take(12).any(|l| l.contains("#[cfg(feature = \"e2e-remote\")]"));
+                    assert!(gated, "{}:{} names e2e_remote without #[cfg(feature = \"e2e-remote\")]", path.display(), i + 1);
+                }
+            }
+        }
+        assert!(uses >= 7, "the hook is wired in (module, command, code, start, tickets)");
+    }
+
+    #[test]
+    fn the_browser_page_and_the_app_on_one_phone_keep_their_own_sessions() {
+        // Same IP, two clients: pairing the second must not take the first's row.
+        let now = 1_700_000_000u64;
+        let ip = "192.168.1.10";
+        let mut devices = Vec::new();
+        upsert_device(&mut devices, "app".into(), ip.into(), ip.into(), "LU-Mobile/3.0.7".into(), now);
+        upsert_device(&mut devices, "page".into(), ip.into(), ip.into(), "Mozilla/5.0 (iPhone) Safari".into(), now + 1);
+        assert_eq!(devices.len(), 2);
+        assert!(devices.iter().any(|d| d.id == "app"), "the app's session survives the page's pairing");
+        // The page signing in again replaces only itself.
+        upsert_device(&mut devices, "page2".into(), ip.into(), ip.into(), "Mozilla/5.0 (iPhone) Safari".into(), now + 2);
+        assert_eq!(devices.len(), 2);
+        assert!(devices.iter().any(|d| d.id == "app") && devices.iter().any(|d| d.id == "page2"));
+        // A client with a new User-Agent each time cannot fill the list.
+        for n in 0..10 {
+            upsert_device(&mut devices, format!("x{n}"), ip.into(), ip.into(), format!("agent-{n}"), now + 10 + n);
+        }
+        assert_eq!(devices.iter().filter(|d| d.ip == ip).count(), MAX_ROWS_PER_IP);
+        assert!(devices.iter().any(|d| d.id == "x9"));
+    }
+
+    #[test]
+    fn the_list_is_keyed_on_the_tcp_peer_not_on_a_forwarded_header() {
+        let now = 1_700_000_000u64;
+        let mut devices = Vec::new();
+        // Two phones behind the same tunnel peer say different X-Forwarded-For:
+        // still one peer, so a header cannot make room or take a row.
+        upsert_device(&mut devices, "a".into(), "203.0.113.5".into(), "127.0.0.1".into(), "phone".into(), now);
+        upsert_device(&mut devices, "b".into(), "198.51.100.9".into(), "127.0.0.1".into(), "phone".into(), now + 1);
+        assert_eq!(devices.len(), 1);
+        assert_eq!((devices[0].id.as_str(), devices[0].ip.as_str()), ("b", "198.51.100.9"), "the address shown follows the header");
+        // Faked addresses in the header do not get past the rows per peer.
+        for n in 0..10 {
+            upsert_device(&mut devices, format!("x{n}"), format!("10.0.0.{n}"), "127.0.0.1".into(), format!("ua-{n}"), now + 2 + n);
+        }
+        assert_eq!(devices.iter().filter(|d| d.peer == "127.0.0.1").count(), MAX_ROWS_PER_IP);
+        assert!(serde_json::to_value(&devices[0]).unwrap().get("peer").is_none(), "the peer stays inside");
+    }
+
+    #[test]
     fn a_device_silent_past_the_token_lifetime_is_pruned() {
         let now = 1_700_000_000u64;
         let mut devices = vec![device("stale", "192.168.1.10", now - JWT_TTL_SECS - 1)];
-        upsert_device(&mut devices, "fresh".into(), "192.168.1.77".into(), "phone".into(), now);
+        upsert_device(&mut devices, "fresh".into(), "192.168.1.77".into(), "192.168.1.77".into(), "phone".into(), now);
         assert_eq!(devices.len(), 1);
         assert_eq!(devices[0].id, "fresh");
     }
@@ -5709,5 +7071,75 @@ mod engine_key_tests {
         assert_eq!(remote_backend_key("http://127.0.0.1:1234/v1", "lm".into(), &[8127]), "lm");
         assert_eq!(remote_backend_key("http://192.168.1.4:8127/v1", "lan".into(), &[8127]), "lan");
         assert_eq!(remote_backend_key("http://127.0.0.1:8127/v1", String::new(), &[]), "");
+    }
+}
+
+#[cfg(test)]
+mod code_window_tests {
+    use super::*;
+
+    fn empty() -> PasscodeState {
+        PasscodeState { code: String::new(), expires_at: 0, failed_attempts: HashMap::new(), code_failures: (0, 0), window_open: false, window_until: 0 }
+    }
+
+    #[test]
+    fn a_code_exists_only_while_the_panel_is_open() {
+        let now = 1_000_000;
+        let mut pc = empty();
+        assert!(pc.live(now).is_none(), "a code without the panel");
+        pc.open_window(now);
+        let code = pc.live(now).unwrap().to_string();
+        assert_eq!(code.len(), 6);
+        // Opening again keeps the shown code.
+        pc.open_window(now + 5);
+        assert_eq!(pc.live(now + 5), Some(code.as_str()));
+        // An open panel renews a code that ran out.
+        let later = now + PASSCODE_TTL_SECS + 1;
+        pc.open_window(later - 1);
+        assert!(pc.live(later).is_some());
+        pc.close_window();
+        assert!(pc.live(later).is_none());
+        assert!(pc.code.is_empty());
+    }
+
+    #[test]
+    fn a_panel_the_window_stopped_renewing_closes_by_itself() {
+        let now = 2_000_000;
+        let mut pc = empty();
+        pc.open_window(now);
+        assert!(pc.live(now + CODE_WINDOW_SECS - 1).is_some());
+        assert!(pc.live(now + CODE_WINDOW_SECS).is_none());
+        assert!(!pc.window_open);
+    }
+
+    #[test]
+    fn ten_failures_end_a_code() {
+        let now = 3_000_000;
+        let mut pc = empty();
+        pc.open_window(now);
+        let first = pc.code.clone();
+        for _ in 0..CODE_MAX_FAILURES - 1 {
+            assert!(!pc.count_failure(now));
+        }
+        assert_eq!(pc.code, first);
+        assert!(pc.count_failure(now));
+        assert_ne!(pc.code, first);
+        assert_eq!(pc.code_failures.0, 0);
+    }
+}
+
+#[cfg(test)]
+mod fixed_error_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn an_unreachable_engine_is_reported_without_its_address() {
+        // Port 9 (discard) on loopback: nothing answers.
+        let req = Request::builder().method("GET").uri("/api/tags").body(Body::empty()).unwrap();
+        let res = proxy_to_target("http://127.0.0.1:9/api/tags?secret=1", req).await;
+        assert_eq!(res.status(), StatusCode::BAD_GATEWAY);
+        let body = String::from_utf8(axum::body::to_bytes(res.into_body(), 4096).await.unwrap().to_vec()).unwrap();
+        assert_eq!(body, "The engine on the computer could not be reached.");
+        assert!(!body.contains("127.0.0.1") && !body.contains("secret"));
     }
 }

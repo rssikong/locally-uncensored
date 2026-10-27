@@ -21,11 +21,11 @@
  * Pure: reads the configs it is handed and changes nothing.
  */
 
-import type { ProviderConfig } from '../api/providers/types'
+import type { ProviderConfig, ProviderId } from '../api/providers/types'
 import { endpointKey } from './extra-model-ids'
 
 export interface IncomingBackend {
-  providerId: 'ollama' | 'openai' | 'anthropic' | 'lu-cloud'
+  providerId: ProviderId
   baseUrl: string
   managed?: boolean
 }

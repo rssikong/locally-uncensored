@@ -44,39 +44,103 @@ pub(crate) const ROCM_CHANNELS: &[&str] = &[
     "https://download.pytorch.org/whl/rocm6.4",
 ];
 
-/// AMD's own ROCm wheels for Windows. RESEARCHED, NOT PROVEN.
+/// AMD's own ROCm wheels for Windows. RESEARCHED, NOT PROVEN ON A CARD.
 ///
 /// pytorch.org really does publish Linux ROCm wheels only, and the comment
-/// above still holds for it. What changed is the conclusion drawn from that:
-/// AMD publishes win_amd64 ROCm wheels from its own indexes, and this is the
-/// one ComfyUI Desktop ships against, which is the closest thing to a field
-/// proof this path has. It is described in Comfy-Desktop's own
-/// `torch-index-stacks.md` as the only mechanism serving Windows ROCm wheels.
+/// above still holds for it. AMD publishes win_amd64 ROCm wheels from its own
+/// index, and ComfyUI's README names exactly this one in its section
+/// "AMD GPUs (Windows, ROCm 10.0)".
 ///
-/// MEASURED 2026-08-31, against the index listing itself: the highest
-/// win_amd64 torch it serves is 2.12.0+rocm7.14.0 (114,085,058 bytes, dated
-/// 2026-07-15), for cp310 through cp314. The earlier note here said
-/// 2.13.0+rocm7.14.0, which is wrong: that build exists in the index as
-/// linux_x86_64 cp312 only. Nothing breaks either way, because pip takes the
-/// highest wheel that fits the interpreter and platform, but the number was
-/// not what the index holds.
+/// 3.0.8 (kinghebes, RX 9070 XT, ComfyUI on the processor): until 3.0.7 this
+/// was `repo.amd.com/rocm/whl-multi-arch/`, which repo.amd.com now files under
+/// "Old releases" and which stops at torch 2.12.0+rocm7.14.1. The current
+/// index is `stable.repo.amd.com/rocm/whl-next/` (read 2026-10-20: torch
+/// 2.11 to 2.14 for win_amd64 cp310 to cp314, ROCm 10.0.0 and 10.1.0).
 ///
-/// We own no AMD card. Nobody here has watched this install finish, let alone
-/// render. That is why the plan built from it falls back to the processor
-/// wheels when the index does not answer, instead of doing what the pytorch.org
-/// ladders do and using the last entry regardless.
-pub(crate) const ROCM_WINDOWS_CHANNELS: &[&str] = &["https://repo.amd.com/rocm/whl-multi-arch/"];
+/// MEASURED 2026-10-20, against the index itself and without a card: `uv pip
+/// compile` with `--python-platform windows` resolves `AMD_WINDOWS_TORCH`,
+/// `AMD_WINDOWS_TORCHVISION` and `AMD_WINDOWS_TORCHAUDIO` below for gfx1100,
+/// 1101, 1102, 1103, 1150, 1151, 1200 and 1201 and for Python 3.10 to 3.14, to
+/// torch 2.13.0+rocm10.1.0, torchvision 0.28.0+rocm10.1.0 and torchaudio
+/// 2.11.0.3+rocm10.1.0. For one gfx1201 card that is about 1.5 GB of wheels
+/// (rocm-sdk-core 777 MB, rocm-sdk-device-gfx1201 314 MB, the two torch device
+/// packages 209 MB, rocm-sdk-libraries 119 MB, torch itself 116 MB).
+///
+/// We own no AMD card. Nobody here has watched this install render. That is
+/// why the plan falls back to the processor wheels when the index does not
+/// answer instead of handing out a dead channel.
+pub(crate) const ROCM_WINDOWS_CHANNELS: &[&str] = &["https://stable.repo.amd.com/rocm/whl-next/"];
+
+/// The torch series on AMD's Windows index, as a range and not a pin.
+///
+/// Why a range: an exact `==2.13.0+rocm10.0.0` (ComfyUI README's line) dies
+/// the day AMD retires that one build. Why THIS range: left alone, pip takes
+/// torch 2.14.0 and torchvision 0.28.0, because 0.29 only exists as an alpha
+/// there, and torchvision 0.28 is built against torch 2.13 (TheRock's own
+/// compatibility table: 2.13 goes with 0.28 and 2.11). Neither torchvision on
+/// that index pins torch, so nothing in pip stops the mismatch. ComfyUI's
+/// README pins the same pair.
+pub(crate) const AMD_WINDOWS_TORCH: &str = ">=2.13,<2.14";
+pub(crate) const AMD_WINDOWS_TORCHVISION: &str = ">=0.28,<0.29";
+pub(crate) const AMD_WINDOWS_TORCHAUDIO: &str = ">=2.11,<2.12";
 
 /// What pip installs when the index is a plain PyTorch channel.
 pub(crate) const TORCH_TRIO: &[&str] = &["torch", "torchvision", "torchaudio"];
 
-/// AMD's multi-arch index serves a slim `torch` plus one device package per
-/// gfx target, selected through an extra. Installing bare `torch` from it would
-/// produce an environment with no kernels for any card, so the extra is not
-/// optional here. `device-all` is what AMD documents and what Comfy-Desktop
-/// pins. RESEARCHED, NOT PROVEN, like the channel itself.
-pub(crate) const TORCH_TRIO_AMD_WINDOWS: &[&str] =
-    &["torch[device-all]", "torchvision", "torchaudio"];
+/// The gfx targets LU sends to AMD's Windows index: RDNA 3, 3.5 and 4, the
+/// families AMD builds the full stack for on Windows (TheRock RELEASES.md,
+/// "GFX target lookup table"). RDNA 2 has device packages there too, but
+/// 3.0.7 kept it on the processor build on purpose and nothing measured since
+/// changes that.
+pub(crate) const AMD_WINDOWS_TARGETS: &[&str] = &[
+    "gfx1100", "gfx1101", "gfx1102", "gfx1103", "gfx1150", "gfx1151", "gfx1152", "gfx1153",
+    "gfx1200", "gfx1201",
+];
+
+/// The pip requirements for AMD's Windows index, for these gfx targets.
+///
+/// The device extra is not optional: the index serves a slim `torch` plus one
+/// device package per gfx target, so bare `torch` installs an environment with
+/// no kernels for any card. torchvision has the same split since ROCm 10, and
+/// 3.0.7 installed it bare, so torchvision's own GPU kernels were missing.
+/// One extra per card instead of `device-all`, which downloads every target.
+pub(crate) fn amd_windows_packages(targets: &[&str]) -> Vec<String> {
+    let extras = targets
+        .iter()
+        .map(|t| format!("device-{t}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    vec![
+        format!("torch[{extras}]{AMD_WINDOWS_TORCH}"),
+        format!("torchvision[{extras}]{AMD_WINDOWS_TORCHVISION}"),
+        format!("torchaudio{AMD_WINDOWS_TORCHAUDIO}"),
+    ]
+}
+
+/// The bare package name of a pip requirement: no extras, no version range.
+/// "torch[device-gfx1201]>=2.13,<2.14" is "torch".
+pub(crate) fn requirement_name(req: &str) -> &str {
+    let end = req.find(['[', '<', '>', '=', '!', '~', ';', ' ']).unwrap_or(req.len());
+    &req[..end]
+}
+
+/// The version range of a pip requirement, "" when it has none.
+pub(crate) fn requirement_range(req: &str) -> &str {
+    let after_extras = match req.find(']') {
+        Some(i) => &req[i + 1..],
+        None => &req[requirement_name(req).len()..],
+    };
+    after_extras.trim()
+}
+
+/// Intel's channel on pytorch.org. ComfyUI's README names it for Arc cards on
+/// Windows and Linux.
+///
+/// MEASURED 2026-10-20, against the index: `uv pip compile` for torch,
+/// torchvision and torchaudio resolves to 2.14.1+xpu, 0.29.1+xpu and
+/// 2.11.0+xpu on win_amd64 and on Linux, Python 3.12. Never run on an Arc card
+/// here, which is why it rides `IndexOrCpu` like the AMD channel.
+pub(crate) const XPU_CHANNELS: &[&str] = &["https://download.pytorch.org/whl/xpu"];
 
 /// Blackwell and newer: CUDA 12.6 has no sm_120 kernels at all, so cu126 is
 /// not a fallback for these cards, it is a broken install. Only channels that
@@ -141,8 +205,9 @@ pub(crate) enum WheelPlan {
     IndexOrCpu {
         candidates: &'static [&'static str],
         /// What pip installs from that index. Not every channel serves the
-        /// same package names, so the plan carries them.
-        packages: &'static [&'static str],
+        /// same package names, so the plan carries them. Owned, because AMD's
+        /// device extra is built from the card the machine has.
+        packages: Vec<String>,
         note: String,
         /// The sentence the fallback shows when no candidate answered.
         cpu_note: String,
@@ -174,8 +239,95 @@ pub(crate) enum AmdCoverage {
     /// SUCCEEDS and the first kernel then dies.
     NoKernels,
     /// The name says AMD and nothing more. An APU that reports itself as
-    /// "AMD Radeon(TM) Graphics" lands here, and so does a workstation card.
+    /// "AMD Radeon(TM) Graphics" lands here.
     Unknown,
+}
+
+/// The gfx target behind an AMD adapter name, from the name alone.
+///
+/// The mapping is TheRock's "GFX target lookup table" (RELEASES.md, read
+/// 2026-10-20) plus the RX ranges the 3.0.7 code already read. Workstation
+/// cards ("Radeon PRO W7900", "Radeon AI PRO R9700") and the named APUs
+/// ("Radeon 890M", "Radeon 8060S") are read here too, which closes the gap the
+/// note on `radeon_rx_model` describes. A name that says "AMD Radeon(TM)
+/// Graphics" and nothing else stays `None`: that is the Raphael iGPU in every
+/// Ryzen 7000/9000 desktop CPU, kinghebes' 9900X3D included, and also a
+/// handful of other APUs nobody can tell apart by that name.
+pub(crate) fn amd_gfx_target(name: &str) -> Option<&'static str> {
+    let lower = name.to_lowercase();
+    if let Some(model) = radeon_rx_model(name) {
+        // "RX 7900M" is Navi 32 like the 7800 XT, not Navi 31.
+        let mobile = lower.contains(&format!("{model}m")) || lower.contains(&format!("{model} m "));
+        return match model {
+            9070..=9099 => Some("gfx1201"),
+            9000..=9069 => Some("gfx1200"),
+            7900..=7999 if mobile => Some("gfx1101"),
+            7900..=7999 => Some("gfx1100"),
+            7700..=7899 => Some("gfx1101"),
+            7000..=7699 => Some("gfx1102"),
+            6800..=6999 => Some("gfx1030"),
+            6700..=6799 => Some("gfx1031"),
+            6600..=6699 => Some("gfx1032"),
+            6400..=6599 => Some("gfx1034"),
+            5000..=5999 => Some("gfx1010"),
+            _ => None,
+        };
+    }
+    // Workstation and AI PRO cards: a letter and four digits as their own word.
+    for (prefix, table) in [
+        ('r', &[(9700u32, "gfx1201"), (9600, "gfx1201")][..]),
+        ('w', &[(7900, "gfx1100"), (7800, "gfx1100"), (7700, "gfx1101"), (7600, "gfx1102"),
+                (7500, "gfx1102"), (6800, "gfx1030"), (6600, "gfx1032")][..]),
+        ('v', &[(710, "gfx1101"), (620, "gfx1030")][..]),
+    ] {
+        if !lower.contains("pro") {
+            break;
+        }
+        for word in lower.split(|c: char| !c.is_ascii_alphanumeric()) {
+            let Some(rest) = word.strip_prefix(prefix) else { continue };
+            let Ok(n) = rest.parse::<u32>() else { continue };
+            if let Some((_, gfx)) = table.iter().find(|(m, _)| *m == n) {
+                return Some(gfx);
+            }
+        }
+    }
+    // APUs that carry their graphics name.
+    for (needle, gfx) in [
+        ("8060s", "gfx1151"), ("8050s", "gfx1151"), ("8040s", "gfx1151"),
+        ("890m", "gfx1150"), ("880m", "gfx1150"),
+        ("860m", "gfx1152"), ("840m", "gfx1152"), ("820m", "gfx1153"),
+        ("780m", "gfx1103"), ("760m", "gfx1103"), ("740m", "gfx1103"),
+        ("680m", "gfx1035"), ("660m", "gfx1035"),
+    ] {
+        if lower.split(|c: char| !c.is_ascii_alphanumeric()).any(|w| w == needle) {
+            return Some(gfx);
+        }
+    }
+    None
+}
+
+/// The gfx targets on this machine that AMD's Windows index serves, in the
+/// order the cards were listed, without repeats. Empty means no card here gets
+/// the ROCm build on Windows.
+pub(crate) fn amd_windows_targets(names: &[&str]) -> Vec<&'static str> {
+    let mut out: Vec<&'static str> = Vec::new();
+    for name in names {
+        if let Some(gfx) = amd_gfx_target(name) {
+            if AMD_WINDOWS_TARGETS.contains(&gfx) && !out.contains(&gfx) {
+                out.push(gfx);
+            }
+        }
+    }
+    out
+}
+
+/// An Intel card PyTorch's XPU build drives: the Arc family, discrete (A770,
+/// B580) and integrated (Meteor Lake and Lunar Lake report "Arc" too). UHD and
+/// Iris Xe are left alone.
+pub(crate) fn is_intel_arc(name: &str) -> bool {
+    name.to_lowercase()
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .any(|w| w == "arc")
 }
 
 /// The Radeon RX model number out of an adapter name, if it carries one.
@@ -257,6 +409,16 @@ fn radeon_rx_model(name: &str) -> Option<u32> {
 /// with hipBLASLt, composable_kernel and rocWMMA excluded from every gfx103X
 /// target, and AMD promises nothing for them.
 pub(crate) fn amd_coverage(name: &str, os: &str) -> AmdCoverage {
+    // 3.0.8: on Windows the verdict is the gfx target, because that is what
+    // the device extra is built from. A card whose target is served is
+    // supported there, whether its name carries "RX ####" or not.
+    if os == "windows" {
+        if let Some(gfx) = amd_gfx_target(name) {
+            if AMD_WINDOWS_TARGETS.contains(&gfx) {
+                return AmdCoverage::Supported;
+            }
+        }
+    }
     let Some(model) = radeon_rx_model(name) else {
         return AmdCoverage::Unknown;
     };
@@ -320,11 +482,19 @@ pub(crate) fn gpu_vendor_facts() -> (bool, bool, Vec<String>) {
     )
 }
 
-/// The torch plan for the ComfyUI environment.
-///
-/// NVIDIA wins on a box that has both cards: it is the one every ComfyUI
-/// feature is proven on. macOS never reaches this code, local media there is
-/// MLX and `install_comfyui` refuses before it starts.
+/// The Intel adapter names the same probe found. Kept apart from
+/// `gpu_vendor_facts` so its callers, the trainer among them, stay as they are.
+pub(crate) fn intel_gpu_names() -> Vec<String> {
+    crate::commands::gpu::detect_gpus()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|g| g.vendor == "intel")
+        .map(|g| g.name)
+        .collect()
+}
+
+/// The torch plan for the ComfyUI environment, for a machine without Intel.
+#[cfg(test)]
 pub(crate) fn comfy_wheel_plan(
     has_nvidia: bool,
     nvidia_cap: Option<(u32, u32)>,
@@ -332,8 +502,47 @@ pub(crate) fn comfy_wheel_plan(
     amd_names: &[&str],
     os: &str,
 ) -> WheelPlan {
+    comfy_wheel_plan_for(has_nvidia, nvidia_cap, has_amd, amd_names, &[], os)
+}
+
+/// The torch plan for the ComfyUI environment.
+///
+/// NVIDIA wins on a box that has both cards: it is the one every ComfyUI
+/// feature is proven on. An AMD card the ROCm build serves comes next, then an
+/// Intel Arc card, then whatever the AMD branch says about the rest. That
+/// order matters on a Ryzen desktop with an Arc card: its "AMD Radeon(TM)
+/// Graphics" iGPU is a card we cannot place, and it may not take the XPU build
+/// away from the Arc. macOS never reaches this code, local media there is MLX
+/// and `install_comfyui` refuses before it starts.
+pub(crate) fn comfy_wheel_plan_for(
+    has_nvidia: bool,
+    nvidia_cap: Option<(u32, u32)>,
+    has_amd: bool,
+    amd_names: &[&str],
+    intel_names: &[&str],
+    os: &str,
+) -> WheelPlan {
     if has_nvidia || nvidia_cap.is_some() {
         return nvidia_plan(nvidia_cap);
+    }
+    let amd_served = has_amd && amd_fleet_coverage(amd_names, os) == AmdCoverage::Supported;
+    let arc: Vec<&str> = intel_names.iter().copied().filter(|n| is_intel_arc(n)).collect();
+    if !amd_served && !arc.is_empty() && matches!(os, "windows" | "linux") {
+        return WheelPlan::IndexOrCpu {
+            candidates: XPU_CHANNELS,
+            packages: TORCH_TRIO.iter().map(|s| s.to_string()).collect(),
+            note: format!(
+                "Intel Arc GPU detected ({}). Installing the XPU build of PyTorch from \
+                 download.pytorch.org/whl/xpu, the channel ComfyUI's README names for Arc \
+                 cards. Not proven on our hardware: LU owns no Arc card. Arc needs a current \
+                 Intel graphics driver.",
+                arc.join(", "),
+            ),
+            cpu_note: "Intel's XPU channel on pytorch.org did not answer, so ComfyUI is being \
+                       installed with the processor build of PyTorch, which works but is slow. \
+                       Repair the environment later to try the XPU build again."
+                .to_string(),
+        };
     }
     if has_amd {
         let coverage = amd_fleet_coverage(amd_names, os);
@@ -357,15 +566,20 @@ pub(crate) fn comfy_wheel_plan(
             };
         }
         if os == "windows" && coverage == AmdCoverage::Supported {
+            let targets = amd_windows_targets(amd_names);
             return WheelPlan::IndexOrCpu {
                 candidates: ROCM_WINDOWS_CHANNELS,
-                packages: TORCH_TRIO_AMD_WINDOWS,
-                note: "AMD GPU detected. Installing AMD's own ROCm build of PyTorch for \
-                       Windows, from the index ComfyUI Desktop installs from. Researched, \
-                       not proven: LU owns no AMD card, so this path has never run on our \
-                       hardware. If the index does not answer, the processor build is \
-                       installed instead and this stays exactly as slow as it was before."
-                    .to_string(),
+                packages: amd_windows_packages(&targets),
+                note: format!(
+                    "AMD GPU detected ({}). Installing AMD's own ROCm build of PyTorch for \
+                     Windows (torch 2.13, ROCm 10, about 1.5 GB), from the index ComfyUI's \
+                     README names. It needs Windows 11 and a current AMD Software: Adrenalin \
+                     Edition driver. Researched, not proven: LU owns no AMD card, so this \
+                     path has never run on our hardware. If the index does not answer, the \
+                     processor build is installed instead and this stays exactly as slow as \
+                     it was before.",
+                    targets.join(", "),
+                ),
                 cpu_note: format!(
                     "AMD's Windows ROCm index did not answer. {}",
                     amd_without_rocm_note(os),
@@ -563,20 +777,100 @@ pub(crate) fn first_live_index_strict<'a>(
 /// PyPI wheels, which is what `pytorch_pip_args(None, ..)` installs. The note
 /// comes back with it because a plan that falls back to the processor has a
 /// different sentence to show than the one it started with.
-pub(crate) fn resolve_plan(plan: &WheelPlan) -> (Option<&'static str>, &'static [&'static str], String) {
+pub(crate) fn resolve_plan(plan: &WheelPlan) -> (Option<&'static str>, Vec<String>, String) {
+    resolve_plan_with(plan, index_serves_torch)
+}
+
+/// `resolve_plan` over an injected probe, so a test can drive both ends.
+pub(crate) fn resolve_plan_with(
+    plan: &WheelPlan,
+    mut alive: impl FnMut(&str) -> bool,
+) -> (Option<&'static str>, Vec<String>, String) {
+    let trio = || TORCH_TRIO.iter().map(|s| s.to_string()).collect::<Vec<_>>();
     match plan {
-        WheelPlan::Cpu { note } => (None, TORCH_TRIO, note.clone()),
-        WheelPlan::Index { candidates, note } => (
-            first_live_index(candidates, index_serves_torch),
-            TORCH_TRIO,
-            note.clone(),
-        ),
+        WheelPlan::Cpu { note } => (None, trio(), note.clone()),
+        WheelPlan::Index { candidates, note } => {
+            (first_live_index(candidates, &mut alive), trio(), note.clone())
+        }
         WheelPlan::IndexOrCpu { candidates, packages, note, cpu_note } => {
-            match first_live_index_strict(candidates, index_serves_torch) {
-                Some(url) => (Some(url), packages, note.clone()),
-                None => (None, TORCH_TRIO, cpu_note.clone()),
+            match first_live_index_strict(candidates, &mut alive) {
+                Some(url) => (Some(url), packages.clone(), note.clone()),
+                None => (None, trio(), cpu_note.clone()),
             }
         }
+    }
+}
+
+/// What a plan is, in one word, for the settings line and the status call.
+pub(crate) fn plan_kind(plan: &WheelPlan) -> &'static str {
+    match plan {
+        WheelPlan::Cpu { .. } => "cpu",
+        WheelPlan::Index { candidates, .. } | WheelPlan::IndexOrCpu { candidates, .. } => {
+            let first = candidates.first().copied().unwrap_or("");
+            if first.contains("/xpu") {
+                "xpu"
+            } else if first.contains("rocm") {
+                "rocm"
+            } else {
+                "cuda"
+            }
+        }
+    }
+}
+
+/// The plan for THIS machine, from the real probes, with no network call.
+/// What the settings show as "what LU installs here", and the same plan
+/// `plan_pytorch_install` resolves.
+pub(crate) fn comfy_wheel_plan_here() -> WheelPlan {
+    let (has_nvidia, has_amd, amd_names) = gpu_vendor_facts();
+    let intel = intel_gpu_names();
+    let cap = if has_nvidia { crate::commands::install::detect_nvidia_compute_cap() } else { None };
+    let amd_refs: Vec<&str> = amd_names.iter().map(String::as_str).collect();
+    let intel_refs: Vec<&str> = intel.iter().map(String::as_str).collect();
+    comfy_wheel_plan_for(has_nvidia, cap, has_amd, &amd_refs, &intel_refs, std::env::consts::OS)
+}
+
+/// The line the installer adds after the PyTorch download, when the build was
+/// meant for a card and torch then does not see one. `index` is the channel
+/// pip installed from (None: the processor build, nothing to check), `sees_gpu`
+/// what the probe said (None: it did not answer, so nothing is claimed).
+///
+/// The point is the AMD Windows case: the ROCm build installs cleanly on any
+/// driver, and only answers "no GPU" when AMD Software is too old. That is a
+/// fix the user can make in five minutes, and without this line it looks
+/// exactly like LU ignoring the card.
+pub(crate) fn post_install_gpu_line(index: Option<&str>, sees_gpu: Option<bool>, os: &str) -> Option<String> {
+    let index = index?;
+    if sees_gpu != Some(false) {
+        return None;
+    }
+    let why = if index.contains("rocm") && os == "windows" {
+        "AMD's ROCm build needs Windows 11 and a current AMD Software: Adrenalin Edition \
+         driver. Update the driver, restart the PC, then start ComfyUI again; the \
+         installed build stays and nothing needs to be reinstalled."
+    } else if index.contains("rocm") {
+        "Check that the amdgpu driver is loaded and that your user is in the render and \
+         video groups, then start ComfyUI again."
+    } else if index.contains("/xpu") {
+        "The XPU build needs a current Intel graphics driver. Update it, restart the PC, \
+         then start ComfyUI again."
+    } else {
+        "Update the NVIDIA driver, restart the PC, then start ComfyUI again."
+    };
+    Some(format!(
+        "PyTorch is installed, but it does not see your graphics card yet, so ComfyUI \
+         would run on the processor. {why}"
+    ))
+}
+
+/// Does LU install the ROCm build for an AMD card on this machine? The fact
+/// the Force GPU warning and the CPU banner need to say "repair" instead of
+/// "use a ComfyUI of your own".
+pub(crate) fn amd_rocm_served(amd_names: &[&str], os: &str) -> bool {
+    match os {
+        "linux" => amd_fleet_coverage(amd_names, os) != AmdCoverage::NoKernels,
+        "windows" => amd_fleet_coverage(amd_names, os) == AmdCoverage::Supported,
+        _ => false,
     }
 }
 
@@ -965,6 +1259,163 @@ mod tests {
             comfy_wheel_plan(false, None, false, &[], "windows"),
             WheelPlan::Cpu { .. },
         ));
+    }
+
+    // ── 3.0.8: AMD's current Windows index, per-card extras, Intel Arc ────
+
+    #[test]
+    fn every_card_name_lands_on_the_gfx_target_therock_lists_for_it() {
+        for (name, gfx) in [
+            ("AMD Radeon RX 9070 XT", "gfx1201"),
+            ("AMD Radeon RX 9070", "gfx1201"),
+            ("AMD Radeon RX 9070 GRE", "gfx1201"),
+            ("AMD Radeon RX 9060 XT", "gfx1200"),
+            ("AMD Radeon RX 7900 XTX", "gfx1100"),
+            ("AMD Radeon RX 7900 GRE", "gfx1100"),
+            ("AMD Radeon RX 7900M", "gfx1101"),
+            ("AMD Radeon RX 7800 XT", "gfx1101"),
+            ("AMD Radeon RX 7700 XT", "gfx1101"),
+            ("AMD Radeon RX 7600", "gfx1102"),
+            ("AMD Radeon RX 6800 XT", "gfx1030"),
+            ("AMD Radeon RX 6700 XT", "gfx1031"),
+            ("AMD Radeon RX 6600", "gfx1032"),
+            ("AMD Radeon RX 5700 XT", "gfx1010"),
+            ("AMD Radeon PRO W7900", "gfx1100"),
+            ("AMD Radeon Pro W7800", "gfx1100"),
+            ("AMD Radeon PRO W7700", "gfx1101"),
+            ("AMD Radeon AI PRO R9700", "gfx1201"),
+            ("AMD Radeon(TM) 8060S Graphics", "gfx1151"),
+            ("AMD Radeon(TM) 890M Graphics", "gfx1150"),
+            ("AMD Radeon 780M Graphics", "gfx1103"),
+            (RX_9070, "gfx1201"),
+        ] {
+            assert_eq!(amd_gfx_target(name), Some(gfx), "{name}");
+        }
+        // NEGATIVE CONTROL: a name with no model in it is never guessed.
+        for name in [APU, "AMD Radeon Graphics", "Intel(R) Arc(TM) A770 Graphics", "Matrox G7900"] {
+            assert_eq!(amd_gfx_target(name), None, "{name}");
+        }
+    }
+
+    #[test]
+    fn windows_amd_installs_one_device_extra_per_card_from_the_current_index() {
+        match comfy_wheel_plan(false, None, true, &["AMD Radeon RX 9070 XT"], "windows") {
+            WheelPlan::IndexOrCpu { candidates, packages, .. } => {
+                assert_eq!(candidates, &["https://stable.repo.amd.com/rocm/whl-next/"]);
+                assert_eq!(
+                    packages,
+                    vec![
+                        "torch[device-gfx1201]>=2.13,<2.14",
+                        "torchvision[device-gfx1201]>=0.28,<0.29",
+                        "torchaudio>=2.11,<2.12",
+                    ],
+                );
+            }
+            other => panic!("expected AMD's Windows index, got {other:?}"),
+        }
+        // Two different served cards: both extras, in one requirement each.
+        match comfy_wheel_plan(false, None, true, &["AMD Radeon RX 9070 XT", RX_7900, "AMD Radeon RX 9070"], "windows") {
+            WheelPlan::IndexOrCpu { packages, .. } => {
+                assert_eq!(packages[0], "torch[device-gfx1201,device-gfx1100]>=2.13,<2.14");
+                assert_eq!(packages[1], "torchvision[device-gfx1201,device-gfx1100]>=0.28,<0.29");
+            }
+            other => panic!("expected AMD's Windows index, got {other:?}"),
+        }
+        // A workstation card and a Strix Halo APU, which the RX-only reading
+        // of 3.0.7 left on the processor.
+        for name in ["AMD Radeon PRO W7900", "AMD Radeon AI PRO R9700", "AMD Radeon(TM) 8060S Graphics"] {
+            assert!(
+                matches!(comfy_wheel_plan(false, None, true, &[name], "windows"), WheelPlan::IndexOrCpu { .. }),
+                "{name}",
+            );
+        }
+        // NEGATIVE CONTROL: neither the retired index nor device-all, anywhere.
+        let all = format!("{:?}", comfy_wheel_plan(false, None, true, &[RX_7900], "windows"));
+        assert!(!all.contains("whl-multi-arch"), "{all}");
+        assert!(!all.contains("device-all"), "{all}");
+    }
+
+    #[test]
+    fn torch_and_torchvision_are_held_to_the_series_built_for_each_other() {
+        // Left alone, pip took torch 2.14.0 and torchvision 0.28.0 from that
+        // index (0.29 only exists as an alpha there), and 0.28 is built for 2.13.
+        assert_eq!(AMD_WINDOWS_TORCH, ">=2.13,<2.14");
+        assert_eq!(AMD_WINDOWS_TORCHVISION, ">=0.28,<0.29");
+        let p = amd_windows_packages(&["gfx1100"]);
+        assert!(p[0].starts_with("torch[") && p[0].ends_with(AMD_WINDOWS_TORCH), "{p:?}");
+        assert!(p[1].starts_with("torchvision[") && p[1].ends_with(AMD_WINDOWS_TORCHVISION), "{p:?}");
+        assert!(!p[2].contains('['), "torchaudio has no device extra: {p:?}");
+    }
+
+    #[test]
+    fn an_intel_arc_card_gets_the_xpu_build_and_uhd_graphics_does_not() {
+        for os in ["windows", "linux"] {
+            match comfy_wheel_plan_for(false, None, false, &[], &["Intel(R) Arc(TM) B580 Graphics"], os) {
+                WheelPlan::IndexOrCpu { candidates, packages, note, cpu_note } => {
+                    assert_eq!(candidates, XPU_CHANNELS, "{os}");
+                    assert_eq!(packages, TORCH_TRIO, "{os}");
+                    assert!(note.contains("XPU"), "{note}");
+                    assert!(cpu_note.contains("processor build"), "{cpu_note}");
+                }
+                other => panic!("{os}: an Arc card must get the XPU channel, got {other:?}"),
+            }
+        }
+        // A Ryzen desktop with an Arc card: the iGPU nobody can place may not
+        // take the XPU build away from the Arc.
+        assert!(matches!(
+            comfy_wheel_plan_for(false, None, true, &[APU], &["Intel(R) Arc(TM) A770 Graphics"], "linux"),
+            WheelPlan::IndexOrCpu { candidates, .. } if candidates == XPU_CHANNELS,
+        ));
+        // NEGATIVE CONTROLS: UHD and Iris Xe stay on the processor build, a
+        // served AMD card wins over the Arc, and NVIDIA wins over both.
+        assert!(matches!(
+            comfy_wheel_plan_for(false, None, false, &[], &["Intel(R) UHD Graphics 770", "Intel(R) Iris(R) Xe Graphics"], "windows"),
+            WheelPlan::Cpu { .. },
+        ));
+        assert!(matches!(
+            comfy_wheel_plan_for(false, None, true, &[RX_7900], &["Intel(R) Arc(TM) A770 Graphics"], "windows"),
+            WheelPlan::IndexOrCpu { candidates, .. } if candidates == ROCM_WINDOWS_CHANNELS,
+        ));
+        assert!(matches!(
+            comfy_wheel_plan_for(true, Some((8, 6)), false, &[], &["Intel(R) Arc(TM) A770 Graphics"], "windows"),
+            WheelPlan::Index { candidates, .. } if candidates[0].contains("/cu"),
+        ));
+    }
+
+    #[test]
+    fn the_plan_kind_names_the_build_the_settings_line_talks_about() {
+        assert_eq!(plan_kind(&comfy_wheel_plan(true, Some((8, 6)), false, &[], "windows")), "cuda");
+        assert_eq!(plan_kind(&comfy_wheel_plan(false, None, true, &[RX_9070], "windows")), "rocm");
+        assert_eq!(plan_kind(&comfy_wheel_plan(false, None, true, &[RX_9070], "linux")), "rocm");
+        assert_eq!(plan_kind(&comfy_wheel_plan_for(false, None, false, &[], &["Intel(R) Arc(TM) A770"], "linux")), "xpu");
+        assert_eq!(plan_kind(&comfy_wheel_plan(false, None, false, &[], "windows")), "cpu");
+    }
+
+    #[test]
+    fn amd_rocm_served_follows_the_plan_on_both_systems() {
+        assert!(amd_rocm_served(&[RX_9070], "windows"));
+        assert!(amd_rocm_served(&[RX_9070], "linux"));
+        // Linux keeps ROCm for a card it cannot place, as the plan does.
+        assert!(amd_rocm_served(&[APU], "linux"));
+        // NEGATIVE CONTROLS: the cards the plans leave on the processor.
+        assert!(!amd_rocm_served(&[RX_6700], "windows"));
+        assert!(!amd_rocm_served(&[RX_6700], "linux"));
+        assert!(!amd_rocm_served(&[APU], "windows"));
+        assert!(!amd_rocm_served(&[RX_9070], "macos"));
+    }
+
+    #[test]
+    fn a_gpu_build_that_sees_no_card_says_what_to_fix() {
+        let amd = post_install_gpu_line(Some(ROCM_WINDOWS_CHANNELS[0]), Some(false), "windows").unwrap();
+        assert!(amd.contains("Adrenalin"), "{amd}");
+        assert!(amd.contains("nothing needs to be reinstalled"), "{amd}");
+        let arc = post_install_gpu_line(Some(XPU_CHANNELS[0]), Some(false), "linux").unwrap();
+        assert!(arc.contains("Intel graphics driver"), "{arc}");
+        // NEGATIVE CONTROLS: a card that answers, a probe that did not, and
+        // the processor build are all left alone.
+        assert_eq!(post_install_gpu_line(Some(ROCM_WINDOWS_CHANNELS[0]), Some(true), "windows"), None);
+        assert_eq!(post_install_gpu_line(Some(ROCM_WINDOWS_CHANNELS[0]), None, "windows"), None);
+        assert_eq!(post_install_gpu_line(None, Some(false), "windows"), None);
     }
 
     #[test]

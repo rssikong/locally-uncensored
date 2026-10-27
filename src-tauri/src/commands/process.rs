@@ -476,10 +476,28 @@ pub fn decide_comfy_cpu_flag(
 /// `torch_gpu`: Some(false) = the venv's torch reports no usable GPU,
 /// Some(true) = it does, None = the probe did not answer and we say nothing
 /// rather than guess.
+// Only the tests read it, the app asks `force_gpu_warning_for`.
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn force_gpu_warning(
     mode: ComfyGpuMode,
     torch_gpu: Option<bool>,
     has_amd: bool,
+    os: &str,
+) -> Option<String> {
+    force_gpu_warning_for(mode, torch_gpu, has_amd, false, os)
+}
+
+/// `force_gpu_warning`, knowing whether LU installs the ROCm build for the AMD
+/// card on this machine (`amd_rocm_served`, torch_wheels). Where it does, the
+/// way out is Repair environment, and saying "use a ComfyUI of your own" there
+/// sends the user away from the fix LU has. That was kinghebes' case in 3.0.7:
+/// an RX 9070 XT, an environment with processor wheels, and a warning that told
+/// him no rebuild would help.
+pub(crate) fn force_gpu_warning_for(
+    mode: ComfyGpuMode,
+    torch_gpu: Option<bool>,
+    has_amd: bool,
+    amd_rocm_served: bool,
     os: &str,
 ) -> Option<String> {
     if mode != ComfyGpuMode::ForceGpu || torch_gpu != Some(false) {
@@ -491,6 +509,15 @@ pub(crate) fn force_gpu_warning(
                 environment reports no usable GPU, neither CUDA nor Intel XPU. ComfyUI \
                 will stop with \"Torch not compiled with CUDA enabled\" instead of rendering.";
     let fix = match (has_amd, os) {
+        (true, "windows") if amd_rocm_served => {
+            "Your card is AMD, and LU installs AMD's own ROCm build of PyTorch for it on \
+             Windows, but this ComfyUI environment holds processor wheels: it was built \
+             before LU could do that, or AMD's index did not answer then. Press Repair \
+             environment in Settings > ComfyUI. It rebuilds the environment with the ROCm \
+             build for your card (about 1.5 GB) and leaves models, outputs and custom nodes \
+             alone. Keep a current AMD Software: Adrenalin Edition driver, the ROCm build \
+             needs it."
+        }
         (true, "linux") => {
             "Your card is AMD and this environment holds CUDA-only wheels. Reinstall the \
              ComfyUI environment from Settings > ComfyUI: LU now installs the ROCm build \
@@ -512,11 +539,10 @@ pub(crate) fn force_gpu_warning(
              set ComfyUI GPU back to Auto and render on the processor."
         }
         _ => {
-            "Reinstall the ComfyUI environment from Settings > ComfyUI so PyTorch is \
-             rebuilt for the card LU detects, or set ComfyUI GPU back to Auto. An Intel \
-             Arc card needs the XPU build of PyTorch, which LU does not install: use \
-             ComfyUI's Intel portable build, or install PyTorch from \
-             download.pytorch.org/whl/xpu into this environment."
+            "Reinstall the ComfyUI environment from Settings > ComfyUI (Repair environment) \
+             so PyTorch is rebuilt for the card LU detects, or set ComfyUI GPU back to Auto. For an Intel Arc card LU now \
+             installs the XPU build of PyTorch (download.pytorch.org/whl/xpu) when it \
+             builds the environment."
         }
     };
     Some(format!("[LU] {head} {fix}"))
@@ -597,7 +623,7 @@ fn scan_for_comfyui(dir: &Path, depth: u32) -> Option<PathBuf> {
         }
         let full = entry.path();
         // Check if this directory IS ComfyUI
-        if name_str.eq_ignore_ascii_case("comfyui") && full.join("main.py").exists() {
+        if name_str.eq_ignore_ascii_case("comfyui") && is_comfyui_dir(&full) {
             return Some(full);
         }
         // Or holds it one level down under any name, the portable layout
@@ -1025,7 +1051,42 @@ fn desktop_app_working_dir_candidates() -> Vec<PathBuf> {
 /// `python_embeded` stays found as its sibling exactly as before.
 fn nested_comfyui_dir(dir: &Path) -> Option<PathBuf> {
     let inner = dir.join("ComfyUI");
-    inner.join("main.py").is_file().then_some(inner)
+    is_comfyui_dir(&inner).then_some(inner)
+}
+
+/// A folder ComfyUI starts from: `main.py` beside the `comfy` package.
+///
+/// `main.py` alone proved nothing (Discord 25.10.2026, Comfy Desktop): the
+/// Python that Comfy Desktop bundles carries `Lib\_pyrepl\main.py`, LU took
+/// that folder for ComfyUI, and every start "exited early" with code 0 while
+/// downloads and the trainer looked in `_pyrepl\models`.
+pub(crate) fn is_comfyui_dir(dir: &Path) -> bool {
+    dir.join("main.py").is_file() && dir.join("comfy").is_dir()
+}
+
+/// The installs of Comfy Desktop, the launcher that keeps several ComfyUI
+/// installs side by side: `%LOCALAPPDATA%\Comfy-Desktop\ComfyUI-Installs\<name>\ComfyUI`
+/// (the layout of the Discord report of 25.10.2026). Its program folder,
+/// `%LOCALAPPDATA%\Programs\Comfy Desktop`, holds no ComfyUI of its own.
+fn comfy_desktop_installs() -> Vec<PathBuf> {
+    let Ok(localappdata) = std::env::var("LOCALAPPDATA") else { return Vec::new() };
+    comfy_desktop_installs_in(&PathBuf::from(localappdata).join("Comfy-Desktop").join("ComfyUI-Installs"))
+}
+
+fn comfy_desktop_installs_in(installs: &Path) -> Vec<PathBuf> {
+    let Ok(list) = fs::read_dir(installs) else { return Vec::new() };
+    let mut out: Vec<PathBuf> = list
+        .flatten()
+        .map(|e| e.path())
+        .filter_map(|p| if is_comfyui_dir(&p) { Some(p) } else { nested_comfyui_dir(&p) })
+        .collect();
+    out.sort();
+    out
+}
+
+/// Inside Comfy Desktop's program folder (`...\Programs\Comfy Desktop`)?
+fn in_comfy_desktop_program(p: &Path) -> bool {
+    p.to_string_lossy().split(['\\', '/']).any(|seg| seg.eq_ignore_ascii_case("Comfy Desktop"))
 }
 
 /// Best-effort: turn whatever the user/auto-detector handed us into a
@@ -1037,7 +1098,7 @@ fn nested_comfyui_dir(dir: &Path) -> Option<PathBuf> {
 ///     we then look up the Working Directory via the probe order above.
 fn resolve_comfyui_path(input: &str) -> Option<String> {
     let p = Path::new(input);
-    if p.join("main.py").exists() {
+    if is_comfyui_dir(p) {
         return Some(input.to_string());
     }
     if let Some(inner) = nested_comfyui_dir(p) {
@@ -1045,9 +1106,14 @@ fn resolve_comfyui_path(input: &str) -> Option<String> {
     }
     if p.join("ComfyUI.exe").exists() {
         for candidate in desktop_app_working_dir_candidates() {
-            if candidate.join("main.py").exists() {
+            if is_comfyui_dir(&candidate) {
                 return Some(candidate.to_string_lossy().to_string());
             }
+        }
+    }
+    if in_comfy_desktop_program(p) {
+        if let Some(first) = comfy_desktop_installs().into_iter().next() {
+            return Some(first.to_string_lossy().to_string());
         }
     }
     None
@@ -1122,10 +1188,11 @@ pub fn find_comfyui_path() -> Option<String> {
         fixed.push(PathBuf::from("C:\\Program Files\\ComfyUI"));
         fixed.push(PathBuf::from("C:\\AI\\ComfyUI"));
         fixed.push(PathBuf::from("D:\\AI\\ComfyUI"));
+        fixed.extend(comfy_desktop_installs());
     }
 
     for p in &fixed {
-        if p.join("main.py").exists() {
+        if is_comfyui_dir(p) {
             return Some(p.to_string_lossy().to_string());
         }
     }
@@ -1243,7 +1310,7 @@ fn detect_all_comfyui_installs_sync() -> Vec<ComfyUIInstall> {
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     let push_if_new = |path: PathBuf, source: &str, out: &mut Vec<ComfyUIInstall>, seen: &mut std::collections::HashSet<String>| -> bool {
-        if !path.join("main.py").exists() {
+        if !is_comfyui_dir(&path) {
             return false;
         }
         // Canonicalise to dedupe symlinks / case-different paths on Windows
@@ -1311,6 +1378,9 @@ fn detect_all_comfyui_installs_sync() -> Vec<ComfyUIInstall> {
                     }
                 }
             }
+        }
+        for p in comfy_desktop_installs() {
+            fixed.push((p, "Comfy Desktop"));
         }
     }
     for (p, source) in fixed {
@@ -1640,7 +1710,9 @@ fn start_ollama_blocking(state: &AppState) -> Result<serde_json::Value, String> 
     // never across the detection call, which would freeze the Hardware
     // tab's set_gpu_selection/get_gpu_selection (same mutex) for however
     // long that subprocess I/O takes.
-    let gpu_selection = state.gpu_selection.lock().ok().map(|sel| sel.clone());
+    // 3.0.8 (A2): the chat role's card when one is set, the global pick
+    // otherwise (commands/gpu_roles.rs).
+    let gpu_selection = crate::commands::gpu_roles::effective_selection(state, crate::commands::gpu_roles::GpuRole::Chat);
     if let Some(sel) = gpu_selection {
         crate::commands::gpu::apply_gpu_env(&mut cmd, &sel);
     }
@@ -1739,7 +1811,7 @@ fn flash_attention_cached(state: &AppState, python: &str) -> bool {
 fn comfy_needs_cpu(
     python: &str,
     mode: ComfyGpuMode,
-    cache: Option<&Mutex<HashMap<String, bool>>>,
+    cache: Option<&Mutex<HashMap<String, Option<&'static str>>>>,
 ) -> ComfyCpuDecision {
     let baseline = needs_cpu_fallback();
     let torch_gpu = if mode == ComfyGpuMode::Auto && baseline && !python.is_empty() {
@@ -1770,14 +1842,23 @@ struct ComfyCpuDecision {
 /// Only DEFINITIVE results are cached; a timeout returns None and is retried next start.
 fn comfy_gpu_available_cached(
     python: &str,
-    cache: Option<&Mutex<HashMap<String, bool>>>,
+    cache: Option<&Mutex<HashMap<String, Option<&'static str>>>>,
 ) -> Option<bool> {
+    comfy_gpu_device_cached(python, cache).map(|d| d.is_some())
+}
+
+/// The same probe, keeping which device answered, so the start can tell a
+/// DirectML environment (needs `--directml`) from a CUDA/ROCm/XPU one.
+fn comfy_gpu_device_cached(
+    python: &str,
+    cache: Option<&Mutex<HashMap<String, Option<&'static str>>>>,
+) -> Option<Option<&'static str>> {
     if let Some(c) = cache {
         if let Some(v) = c.lock().unwrap().get(python).copied() {
             return Some(v);
         }
     }
-    match probe_comfy_gpu(python) {
+    match probe_comfy_device(python) {
         Some(v) => {
             if let Some(c) = cache {
                 c.lock().unwrap().insert(python.to_string(), v);
@@ -1791,6 +1872,40 @@ fn comfy_gpu_available_cached(
     }
 }
 
+/// The device flag ComfyUI needs beyond dropping `--cpu`, if any.
+///
+/// Only DirectML needs one: ComfyUI asks `torch.cuda` unless `--directml` is
+/// given, and a DirectML torch has no CUDA. Without the flag Auto read such an
+/// environment as "no GPU" and started it with `--cpu`. Never on a machine
+/// with an NVIDIA driver (baseline false), never under Force CPU.
+pub(crate) fn comfy_device_flag(
+    mode: ComfyGpuMode,
+    baseline_needs_cpu: bool,
+    device: Option<&str>,
+) -> Option<&'static str> {
+    if mode == ComfyGpuMode::ForceCpu || !baseline_needs_cpu {
+        return None;
+    }
+    (device == Some("directml")).then_some("--directml")
+}
+
+/// What the start asks before it builds the command line: the device flag, if
+/// one is needed. Probes only where it can matter (no NVIDIA driver, not Force
+/// CPU), from the same cache as the --cpu decision, so it costs no second
+/// torch import.
+fn comfy_launch_device_flag(
+    python: &str,
+    mode: ComfyGpuMode,
+    baseline_needs_cpu: bool,
+    cache: Option<&Mutex<HashMap<String, Option<&'static str>>>>,
+) -> Option<&'static str> {
+    if mode == ComfyGpuMode::ForceCpu || !baseline_needs_cpu || python.is_empty() {
+        return None;
+    }
+    let device = comfy_gpu_device_cached(python, cache).flatten();
+    comfy_device_flag(mode, baseline_needs_cpu, device)
+}
+
 /// What the probe asks torch. CUDA covers NVIDIA, ROCm and ZLUDA, which all
 /// answer through `torch.cuda`. Intel Arc answers through `torch.xpu`, which
 /// only exists in torch 2.4 and later, hence the `hasattr` guard.
@@ -1798,8 +1913,14 @@ fn comfy_gpu_available_cached(
 /// 3.0.7: the probe asked `torch.cuda` alone, so an Intel XPU torch read as
 /// "no GPU" and Auto started ComfyUI with --cpu on a working Arc card, while
 /// ComfyUI itself would have found the card without any flag.
-const COMFY_GPU_PROBE: &str = "import torch; print('cuda' if torch.cuda.is_available() else \
-     'xpu' if hasattr(torch, 'xpu') and torch.xpu.is_available() else 'none')";
+///
+/// 3.0.8: a torch-directml environment answers 'directml'. Its torch is a
+/// processor build with DirectML bolted on, so `torch.cuda` says no, and
+/// ComfyUI only reaches the card when it is started with `--directml`. Asked
+/// last and through `find_spec`, so it costs nothing on any other box.
+const COMFY_GPU_PROBE: &str = "import torch, importlib.util as u; print('cuda' if torch.cuda.is_available() else \
+     'xpu' if hasattr(torch, 'xpu') and torch.xpu.is_available() else \
+     'directml' if u.find_spec('torch_directml') else 'none')";
 
 /// The device the probe printed, or None when it named none. Reads the last
 /// line that says anything, because a torch import can print a warning first.
@@ -1807,6 +1928,7 @@ pub(crate) fn parse_comfy_gpu_probe(stdout: &str) -> Option<&'static str> {
     match stdout.lines().map(str::trim).rfind(|l| !l.is_empty())? {
         "cuda" => Some("cuda"),
         "xpu" => Some("xpu"),
+        "directml" => Some("directml"),
         _ => None,
     }
 }
@@ -1820,8 +1942,14 @@ pub(crate) fn parse_comfy_gpu_probe(stdout: &str) -> Option<&'static str> {
 /// nothing and reads as no GPU, as before. Some(true/false) = definitive,
 /// None = timeout / spawn fail.
 pub(crate) fn probe_comfy_gpu(python: &str) -> Option<bool> {
+    probe_comfy_device(python).map(|d| d.is_some())
+}
+
+/// The device the environment's torch offers: Some(Some("cuda" | "xpu" |
+/// "directml")), Some(None) for none, None when the probe did not answer.
+pub(crate) fn probe_comfy_device(python: &str) -> Option<Option<&'static str>> {
     if python.is_empty() {
-        return Some(false);
+        return Some(None);
     }
     let mut cmd = python_command(python);
     cmd.args(["-c", COMFY_GPU_PROBE])
@@ -1848,7 +1976,7 @@ pub(crate) fn probe_comfy_gpu(python: &str) -> Option<bool> {
                 }
                 let device = parse_comfy_gpu_probe(&out);
                 println!("[ComfyUI] GPU probe: torch reports {}", device.unwrap_or("no GPU"));
-                return Some(device.is_some());
+                return Some(device);
             }
             Ok(None) => std::thread::sleep(std::time::Duration::from_millis(200)),
             Err(_) => return None,
@@ -2027,11 +2155,13 @@ pub(crate) fn start_comfyui_blocking(state: &AppState) -> Result<serde_json::Val
     // in that mode: the answer costs a torch import once per python path and
     // buys the sentence that explains the crash that is about to happen.
     let force_gpu_note = if gpu_mode == ComfyGpuMode::ForceGpu {
-        let (_, has_amd) = crate::commands::torch_wheels::gpu_vendors_present();
-        force_gpu_warning(
+        let (_, has_amd, amd_names) = crate::commands::torch_wheels::gpu_vendor_facts();
+        let amd_refs: Vec<&str> = amd_names.iter().map(String::as_str).collect();
+        force_gpu_warning_for(
             gpu_mode,
             comfy_gpu_available_cached(&python, Some(&state.comfy_gpu_cache)),
             has_amd,
+            crate::commands::torch_wheels::amd_rocm_served(&amd_refs, std::env::consts::OS),
             std::env::consts::OS,
         )
     } else {
@@ -2051,6 +2181,11 @@ pub(crate) fn start_comfyui_blocking(state: &AppState) -> Result<serde_json::Val
         if let Some(reason) = cpu_flag_reason(gpu_mode, cpu_decision.baseline, cpu_decision.torch_gpu) {
             println!("[ComfyUI] {reason}");
         }
+    } else if let Some(flag) =
+        comfy_launch_device_flag(&python, gpu_mode, cpu_decision.baseline, Some(&state.comfy_gpu_cache))
+    {
+        comfy_args.push(flag);
+        println!("[ComfyUI] torch-directml found in this environment, starting ComfyUI with {flag}");
     }
     // Auto-enable Flash Attention when the package actually imports in THIS
     // python (2026-06-11: measured 4-5x faster WAN video sampling vs
@@ -2063,7 +2198,7 @@ pub(crate) fn start_comfyui_blocking(state: &AppState) -> Result<serde_json::Val
         comfy_args.push("--use-flash-attention");
         println!("[ComfyUI] flash-attn detected in {} — enabling Flash Attention", python);
     }
-    // The folder under Settings -> Model Storage, when it holds ComfyUI-shaped
+    // The folder under Settings -> Storage, when it holds ComfyUI-shaped
     // subfolders (GH #122). ComfyUI lists only what sits under its own models
     // tree, so its own extra-model-paths mechanism is the way a LoRA on
     // another drive becomes visible and loadable. Our own file, passed by
@@ -2115,7 +2250,10 @@ pub(crate) fn start_comfyui_blocking(state: &AppState) -> Result<serde_json::Val
     // never across the detection call, which would freeze the Hardware
     // tab's set_gpu_selection/get_gpu_selection (same mutex) for however
     // long that subprocess I/O takes.
-    let gpu_selection = state.gpu_selection.lock().ok().map(|sel| sel.clone());
+    // 3.0.8 (A2): the ComfyUI role's card when one is set, the global pick
+    // otherwise. With a role set, ComfyUI sees that one card only, so a video
+    // can never spill onto the chat's card.
+    let gpu_selection = crate::commands::gpu_roles::effective_selection(state, crate::commands::gpu_roles::GpuRole::Comfy);
     if let Some(sel) = gpu_selection {
         crate::commands::gpu::apply_gpu_env(&mut cmd, &sel);
     }
@@ -2776,8 +2914,35 @@ pub fn get_comfy_gpu_status(state: State<'_, AppState>) -> Result<serde_json::Va
     // user can act on: an AMD card on Linux wants a rebuilt environment, the
     // same card on Windows wants to be told no rebuild can help. Same probe the
     // hardware picker and the installers use.
-    let (_, has_amd) = crate::commands::torch_wheels::gpu_vendors_present();
-    Ok(serde_json::json!({ "mode": mode, "startedCpu": started_cpu, "hasAmd": has_amd }))
+    let (_, has_amd, amd_names) = crate::commands::torch_wheels::gpu_vendor_facts();
+    let amd_refs: Vec<&str> = amd_names.iter().map(String::as_str).collect();
+    let amd_rocm = crate::commands::torch_wheels::amd_rocm_served(&amd_refs, std::env::consts::OS);
+    Ok(serde_json::json!({ "mode": mode, "startedCpu": started_cpu, "hasAmd": has_amd, "amdRocmServed": amd_rocm }))
+}
+
+/// What LU installs into a ComfyUI environment on THIS machine, for the line
+/// under Settings > Hardware > ComfyUI GPU. No network: the plan as decided
+/// from the cards, before any index is asked. `kind` is cuda, rocm, xpu or
+/// cpu; `summary` is the plan's own sentence, the one the install prints.
+#[tauri::command]
+pub async fn comfy_torch_plan() -> Result<serde_json::Value, String> {
+    tokio::task::spawn_blocking(|| {
+        let plan = crate::commands::torch_wheels::comfy_wheel_plan_here();
+        let (index, summary) = match &plan {
+            crate::commands::torch_wheels::WheelPlan::Cpu { note } => (None, note.clone()),
+            crate::commands::torch_wheels::WheelPlan::Index { candidates, note }
+            | crate::commands::torch_wheels::WheelPlan::IndexOrCpu { candidates, note, .. } => {
+                (candidates.first().copied(), note.clone())
+            }
+        };
+        serde_json::json!({
+            "kind": crate::commands::torch_wheels::plan_kind(&plan),
+            "summary": summary,
+            "index": index,
+        })
+    })
+    .await
+    .map_err(|e| format!("comfy_torch_plan task: {e}"))
 }
 
 #[tauri::command]
@@ -2793,7 +2958,14 @@ pub fn set_comfyui_path(path: String, state: State<'_, AppState>) -> Result<serd
     // re-route in that case so the error doesn't look unfixable.
     let resolved = resolve_comfyui_path(&path)
         .ok_or_else(|| {
-            if Path::new(&path).join("ComfyUI.exe").exists() {
+            if Path::new(&path).join("main.py").is_file() {
+                // Discord 25.10.2026: Comfy Desktop's bundled Python has a
+                // main.py of its own (Lib\_pyrepl), and LU took it.
+                format!(
+                    "{} has a main.py, but it is not ComfyUI (there is no comfy folder next to it). Pick the folder that holds ComfyUI's main.py together with its comfy and models folders. With Comfy Desktop that is %LOCALAPPDATA%\\Comfy-Desktop\\ComfyUI-Installs\\<name>\\ComfyUI.",
+                    path
+                )
+            } else if Path::new(&path).join("ComfyUI.exe").exists() {
                 format!(
                     "Looks like the ComfyUI Desktop App binary folder ({}). LU needs the ComfyUI Working Directory (with main.py, models/, custom_nodes/) — by default `~\\Documents\\ComfyUI` or wherever you picked during install. Open the Desktop App once, check Settings → ComfyUI Working Directory, and paste that path here.",
                     path
@@ -3174,6 +3346,14 @@ pub fn auto_start_comfyui(state: &AppState) {
                 if let Some(reason) = cpu_flag_reason(auto_gpu_mode, auto_decision.baseline, auto_decision.torch_gpu) {
                     println!("[ComfyUI] Auto-start: {reason}");
                 }
+            } else if let Some(flag) = comfy_launch_device_flag(
+                &python,
+                auto_gpu_mode,
+                auto_decision.baseline,
+                Some(&state.comfy_gpu_cache),
+            ) {
+                comfy_args.push(flag);
+                println!("[ComfyUI] Auto-start: torch-directml found, starting with {flag}");
             }
             // Mirror start_comfyui: auto-enable Flash Attention (FA2) when it
             // actually imports in this python. Boot auto-start previously never
@@ -3320,6 +3500,12 @@ mod tests {
         std::fs::write(f, b"").unwrap();
     }
 
+    /// A ComfyUI as ComfyUI ships it: `main.py` beside the `comfy` package.
+    fn comfyui(root: &Path, rel: &str) {
+        file(root, &format!("{rel}/main.py"));
+        file(root, &format!("{rel}/comfy/__init__.py"));
+    }
+
     fn resolved(p: &Path) -> Option<PathBuf> {
         resolve_comfyui_path(&p.to_string_lossy()).map(PathBuf::from)
     }
@@ -3327,9 +3513,9 @@ mod tests {
     #[test]
     fn a_folder_with_main_py_is_taken_as_it_is() {
         let tmp = tempfile::tempdir().unwrap();
-        file(tmp.path(), "main.py");
+        comfyui(tmp.path(), ".");
         // Even with a ComfyUI subfolder below it: the direct hit wins.
-        file(tmp.path(), "ComfyUI/main.py");
+        comfyui(tmp.path(), "ComfyUI");
         assert_eq!(resolved(tmp.path()), Some(tmp.path().to_path_buf()));
     }
 
@@ -3337,7 +3523,7 @@ mod tests {
     fn the_portable_outer_folder_resolves_to_its_comfyui_and_keeps_python_embeded_beside_it() {
         let tmp = tempfile::tempdir().unwrap();
         let outer = tmp.path().join("ComfyUI_windows_portable");
-        file(&outer, "ComfyUI/main.py");
+        comfyui(&outer, "ComfyUI");
         file(&outer, "python_embeded/python.exe");
         let got = resolved(&outer).expect("the outer folder must resolve");
         assert_eq!(got, outer.join("ComfyUI"));
@@ -3348,7 +3534,7 @@ mod tests {
     fn a_renamed_outer_folder_resolves_too() {
         let tmp = tempfile::tempdir().unwrap();
         let outer = tmp.path().join("Bilder KI");
-        file(&outer, "ComfyUI/main.py");
+        comfyui(&outer, "ComfyUI");
         assert_eq!(resolved(&outer), Some(outer.join("ComfyUI")));
     }
 
@@ -3361,14 +3547,14 @@ mod tests {
         file(tmp.path(), "ComfyUI/README.md");
         assert_eq!(resolved(tmp.path()), None);
         // And main.py two levels down is not taken: only the portable layout.
-        file(tmp.path(), "x/ComfyUI/main.py");
+        comfyui(tmp.path(), "x/ComfyUI");
         assert_eq!(resolved(tmp.path()), None);
     }
 
     #[test]
     fn the_disk_search_finds_comfyui_inside_a_renamed_outer_folder() {
         let tmp = tempfile::tempdir().unwrap();
-        file(tmp.path(), "KI Kram/ComfyUI/main.py");
+        comfyui(tmp.path(), "KI Kram/ComfyUI");
         // Depth 1 only looks at the direct children of the root. Before 3.0.7
         // a child had to be NAMED ComfyUI, so "KI Kram" was missed here.
         assert_eq!(
@@ -3382,6 +3568,53 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         file(tmp.path(), "some-python-project/main.py");
         assert_eq!(scan_for_comfyui(tmp.path(), 3), None);
+    }
+
+    // ── Discord 25.10.2026: Comfy Desktop ────────────────────────────────
+    //
+    // LU ran "ComfyUI" from Comfy Desktop's bundled Python
+    // (`resources\bootstrap-python\Lib\_pyrepl`, which has a main.py), the
+    // start ended at once with exit 0, and the trainer looked for its base
+    // files in `_pyrepl\models`.
+
+    #[test]
+    fn a_main_py_without_the_comfy_package_is_not_comfyui() {
+        let tmp = tempfile::tempdir().unwrap();
+        let pyrepl = tmp.path().join("Comfy Desktop/resources/bootstrap-python/Lib/_pyrepl");
+        file(&pyrepl, "main.py");
+        file(&pyrepl, "__main__.py");
+        assert!(!is_comfyui_dir(&pyrepl));
+        assert_eq!(resolved(&pyrepl), None);
+        comfyui(tmp.path(), "ComfyUI");
+        assert!(is_comfyui_dir(&tmp.path().join("ComfyUI")));
+    }
+
+    #[test]
+    fn a_folder_named_comfyui_with_only_a_main_py_is_not_taken_by_the_disk_search() {
+        let tmp = tempfile::tempdir().unwrap();
+        file(tmp.path(), "old/ComfyUI/main.py");
+        assert_eq!(scan_for_comfyui(tmp.path(), 3), None);
+    }
+
+    #[test]
+    fn comfy_desktop_installs_are_found_under_comfyui_installs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let installs = tmp.path().join("Comfy-Desktop/ComfyUI-Installs");
+        comfyui(&installs, "ComfyUI/ComfyUI");
+        comfyui(&installs, "Second");
+        file(&installs, "Broken/ComfyUI/main.py");
+        assert_eq!(
+            comfy_desktop_installs_in(&installs),
+            vec![installs.join("ComfyUI").join("ComfyUI"), installs.join("Second")],
+        );
+        assert!(comfy_desktop_installs_in(&tmp.path().join("missing")).is_empty());
+    }
+
+    #[test]
+    fn a_path_in_the_comfy_desktop_program_folder_is_recognised() {
+        assert!(in_comfy_desktop_program(Path::new(r"C:\Users\m\AppData\Local\Programs\Comfy Desktop\resources")));
+        assert!(in_comfy_desktop_program(Path::new("/x/comfy desktop")));
+        assert!(!in_comfy_desktop_program(Path::new(r"C:\Users\m\AppData\Local\Comfy-Desktop\ComfyUI-Installs")));
     }
 
     // ── OI-1: "your working ComfyUI is a broken torso" ───────────────────
@@ -3954,6 +4187,49 @@ mod tests {
     #[test]
     fn probe_comfy_gpu_on_empty_python_is_definitive_false() {
         assert_eq!(probe_comfy_gpu(""), Some(false));
+    }
+
+    // ── 3.0.8: DirectML is found, and gets the flag it needs ─────────────
+
+    #[test]
+    fn the_probe_names_directml_last_and_cheaply() {
+        assert_eq!(parse_comfy_gpu_probe("directml\n"), Some("directml"));
+        let xpu = COMFY_GPU_PROBE.find("torch.xpu.is_available()").expect("xpu is asked");
+        let dml = COMFY_GPU_PROBE.find("find_spec('torch_directml')").expect("directml is asked");
+        assert!(xpu < dml, "a real CUDA/ROCm/XPU torch must win over a DirectML add-on: {COMFY_GPU_PROBE}");
+        // find_spec, not an import: the probe may not load DirectML just to ask.
+        assert!(!COMFY_GPU_PROBE.contains("import torch_directml"), "{COMFY_GPU_PROBE}");
+    }
+
+    #[test]
+    fn auto_starts_a_directml_environment_with_directml_and_not_with_cpu() {
+        let dml = parse_comfy_gpu_probe("directml");
+        // Auto, no NVIDIA driver: the environment has a GPU path, so no --cpu ...
+        assert!(!decide_comfy_cpu_flag(ComfyGpuMode::Auto, true, Some(dml.is_some())));
+        // ... and the one flag ComfyUI needs to take it.
+        assert_eq!(comfy_device_flag(ComfyGpuMode::Auto, true, dml), Some("--directml"));
+        assert_eq!(comfy_device_flag(ComfyGpuMode::ForceGpu, true, dml), Some("--directml"));
+        // NEGATIVE CONTROLS: Force CPU, an NVIDIA box, and every other device.
+        assert_eq!(comfy_device_flag(ComfyGpuMode::ForceCpu, true, dml), None);
+        assert_eq!(comfy_device_flag(ComfyGpuMode::Auto, false, dml), None);
+        for other in [Some("cuda"), Some("xpu"), None] {
+            assert_eq!(comfy_device_flag(ComfyGpuMode::Auto, true, other), None, "{other:?}");
+        }
+    }
+
+    #[test]
+    fn force_gpu_on_a_served_amd_card_points_at_repair_and_the_rest_stays() {
+        let served = force_gpu_warning_for(ComfyGpuMode::ForceGpu, Some(false), true, true, "windows").unwrap();
+        assert!(served.contains("Repair environment"), "{served}");
+        assert!(served.contains("ROCm build"), "{served}");
+        assert!(served.contains("driver"), "{served}");
+        assert!(!served.contains("ZLUDA"), "{served}");
+        // NEGATIVE CONTROL: a card LU does not serve keeps the 3.0.7 answer.
+        let unserved = force_gpu_warning_for(ComfyGpuMode::ForceGpu, Some(false), true, false, "windows").unwrap();
+        assert_eq!(Some(unserved.clone()), force_gpu_warning(ComfyGpuMode::ForceGpu, Some(false), true, "windows"));
+        assert!(unserved.contains("ZLUDA"), "{unserved}");
+        // and a working torch still gets no warning at all
+        assert_eq!(force_gpu_warning_for(ComfyGpuMode::ForceGpu, Some(true), true, true, "windows"), None);
     }
 
     // ── 3.0.7: Intel XPU counts as a GPU ─────────────────────────────────
@@ -4564,10 +4840,13 @@ mod orphan_safety_tests {
             ENGINE_RS.contains("tie_child_to_app_lifetime(child.id())"),
             "the bundled engine spawn must tie its child to the app lifetime"
         );
+        // A third since 3.0.8 (A14): the llama-server the refusal-removal
+        // tool checks a model with (`spawn_private_server`). Short lived, but
+        // it holds a whole model on the card while it runs, so it is tied too.
         assert_eq!(
             ties(ENGINE_RS),
-            2,
-            "engine.rs has two long lived spawns (chat + embeddings); both must be tied"
+            3,
+            "engine.rs has three llama-server spawns (chat, embeddings, the check); all must be tied"
         );
     }
 

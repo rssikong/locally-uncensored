@@ -1,0 +1,214 @@
+{
+ "name": "/settings/engine/advanced",
+ "art": "seite",
+ "quelle": "integ-306",
+ "route": "/settings/engine/advanced",
+ "strang": "models",
+ "code": "E13.8",
+ "lage": {
+  "route": "/settings/engine/advanced",
+  "screen": "m-settings-engine-advanced-screen",
+  "blaetter": [],
+  "dialog": [],
+  "reiter": null,
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back-under",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-engine-advanced-screen",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-engine-advanced-lead",
+   "tag": "p",
+   "rolle": "p",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    36
+   ]
+  },
+  {
+   "id": "m-settings-engine-advanced-flash",
+   "tag": "div",
+   "rolle": "radiogroup",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    358,
+    54
+   ]
+  },
+  {
+   "id": "m-settings-engine-advanced-flash-auto",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Auto",
+   "box": [
+    124,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-engine-advanced-flash-on",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "On",
+   "box": [
+    111,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-engine-advanced-flash-off",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Off",
+   "box": [
+    113,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-engine-advanced-cachek",
+   "tag": "div",
+   "rolle": "radiogroup",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    358,
+    54
+   ]
+  },
+  {
+   "id": "m-settings-engine-advanced-cachek-f16",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "f16",
+   "box": [
+    168,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-engine-advanced-cachek-q8_0",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "q8_0",
+   "box": [
+    182,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-engine-advanced-cachev",
+   "tag": "div",
+   "rolle": "radiogroup",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    358,
+    54
+   ]
+  },
+  {
+   "id": "m-settings-engine-advanced-cachev-f16",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "f16",
+   "box": [
+    168,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-engine-advanced-cachev-q8_0",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "q8_0",
+   "box": [
+    182,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-engine-advanced-cache-hint",
+   "tag": "p",
+   "rolle": "p",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    55
+   ]
+  }
+ ]
+}

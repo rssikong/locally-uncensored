@@ -151,6 +151,38 @@ describe('a group speaker change stops shrinking the context', () => {
   })
 })
 
+// 3.0.8 (A25): the VRAM plan raises a context nobody chose while one model's
+// card has room. That raise belongs to that model; what the swap carries over
+// is what the running engine was ASKED for.
+describe('a context the plan raised is not carried to the next model', () => {
+  function engineOnGemmaPlanRaised(asked: number) {
+    vi.mocked(backendCall).mockImplementation((async (cmd: string) => {
+      if (cmd === 'bundled_engine_status') {
+        return { running: true, healthy: true, ctx: 32768, ctxRequested: asked, model_path: GEMMA }
+      }
+      if (cmd === 'list_bundled_models') {
+        return { models: [
+          { name: 'gemma-3-4b-it-abliterated-Q4_K_M', path: GEMMA, ctx_train: 32768 },
+          { name: 'Hermes-3-Llama-3.2-3B.Q4_K_M', path: HERMES, ctx_train: 131072 },
+        ] }
+      }
+      return { status: 'started' }
+    }) as never)
+  }
+
+  it('swaps with the default when the 32K were the plan s own', async () => {
+    engineOnGemmaPlanRaised(8192)
+    await ensureBuiltinEngineAlive('openai::Hermes-3-Llama-3.2-3B.Q4_K_M')
+    expect(swapArgs()?.tuning?.ctx).toBe(8192)
+  })
+
+  it('keeps 32K when the agent mode asked for them', async () => {
+    engineOnGemmaPlanRaised(32768)
+    await ensureBuiltinEngineAlive('openai::Hermes-3-Llama-3.2-3B.Q4_K_M')
+    expect(swapArgs()?.tuning?.ctx).toBe(32768)
+  })
+})
+
 describe('the display re-reads the engine after every swap', () => {
   it('fires lu-context-reloaded so the header cannot keep a stale number', async () => {
     const seen = vi.fn()

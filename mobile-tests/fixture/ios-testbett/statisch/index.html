@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>LU Harness Testbett</title>
+<!--
+  Startseite der Wegwerf-App fuer den Selbsttest des iOS-Treibers. Sie zeigt,
+  was von aussen ankommt: Lebenslauf, Deeplinks, Speicherwarnungen. Die
+  Testseite mit den absichtlichen Fehlern (fixture/index.html) laedt der
+  Selbsttest per navigate() vom Mac in dieselbe WebView.
+-->
+<style>
+  :root { color-scheme: light dark; }
+  html { font: -apple-system-body; }
+  body { margin: 0; padding: calc(env(safe-area-inset-top, 0px) + 12px) 16px calc(env(safe-area-inset-bottom, 0px) + 12px); background: #fff; color: #111; font-family: -apple-system, sans-serif; }
+  @media (prefers-color-scheme: dark) { body { background: #111; color: #eee; } }
+  button, .knopf, input { min-height: 48px; min-width: 48px; font-size: 1rem; margin: 6px 0; }
+  .zeile { display: block; }
+  input { width: 100%; box-sizing: border-box; }
+  ul { padding-left: 18px; overflow-wrap: anywhere; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div id="start" data-testid="m-testbett-screen">
+  <h1>Testbett</h1>
+  <p id="ausgabe" role="status">ready</p>
+  <button id="zaehl" data-testid="m-testbett-count" class="zeile">Count up</button>
+  <label class="zeile" for="feld">Note</label>
+  <input id="feld" data-testid="m-testbett-note" type="text">
+  <a id="weiter" data-testid="m-testbett-next" class="zeile knopf" href="#zwei" style="line-height:48px">Next page</a>
+  <h2>Events</h2>
+  <ul id="protokoll"></ul>
+</div>
+<div id="zwei" data-testid="m-zwei-screen" hidden>
+  <h1>Second page</h1>
+  <p>Swipe from the left edge to go back.</p>
+</div>
+<script>
+  // Was von aussen ankam. Der Treiber liest diese Listen ueber evalJs.
+  window.__lebenslauf = []
+  window.__deeplinks = []
+  window.__speicherWarnungen = 0
+  const $ = (id) => document.getElementById(id)
+  const zeige = (t) => { const li = document.createElement('li'); li.textContent = t; $('protokoll').prepend(li) }
+  let n = 0
+  $('zaehl').addEventListener('click', () => { n++; $('ausgabe').textContent = 'count ' + n })
+  function route() { const zwei = location.hash === '#zwei'; $('zwei').hidden = !zwei; $('start').hidden = zwei }
+  addEventListener('hashchange', route); route()
+  document.addEventListener('visibilitychange', () => { window.__lebenslauf.push({ name: 'visibility:' + document.visibilityState, zeit: Date.now() }); zeige('visibility ' + document.visibilityState) })
+  const T = window.__TAURI__
+  if (T) {
+    // Naht fuer driver/ios.mjs lowMemory(): Die App loest die Speicherwarnung selbst aus.
+    window.__LU_TEST__ = {
+      speicherWarnung: () => T.core.invoke('plugin:luharness|simulate_memory_warning'),
+      lebenslaufLog: () => T.core.invoke('plugin:luharness|lifecycle_log'),
+      zurueckGeste: (an) => T.core.invoke('plugin:luharness|back_gesture', { an: an === undefined ? null : an }),
+    }
+    T.core.addPluginListener('luharness', 'lifecycle', (e) => {
+      window.__lebenslauf.push({ name: e.name, zeit: Date.now() })
+      if (e.name === 'didReceiveMemoryWarning') window.__speicherWarnungen++
+      zeige(e.name)
+    })
+    T.event.listen('deep-link://new-url', (e) => {
+      const urls = Array.isArray(e.payload) ? e.payload : [e.payload]
+      for (const u of urls) { window.__deeplinks.push(String(u)); zeige('deeplink ' + u) }
+    })
+  }
+</script>
+</body>
+</html>

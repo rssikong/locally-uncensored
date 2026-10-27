@@ -14,8 +14,9 @@
 #   2. Every Mach-O file runs on the oldest macOS LU supports (`minos` of its
 #      LC_BUILD_VERSION). A sidecar stamped with the build machine's OS
 #      refuses to start on every older Mac.
-#   3. The main program named in Info.plist and the llama-server sidecar are
-#      there and executable.
+#   3. The main program named in Info.plist and every sidecar of
+#      tauri.macos.conf.json (llama-server, llama-quantize) are there and
+#      executable.
 #   4. Contents/Resources holds every file `bundle.resources` in
 #      tauri.conf.json names. The app reads them at run time (Voice, the
 #      private Python), and a bundler that drops one still exits 0.
@@ -30,8 +31,9 @@
 #   scripts/verify-mac-bundle.sh <path/to/LU.app>
 #   scripts/verify-mac-bundle.sh --allow-stub-sidecar <path/to/LU.app>
 #
-# --allow-stub-sidecar accepts an EMPTY lu-llama-server. ci.yml's macos-gate
-# bundles with a zero-byte placeholder because it does not build llama.cpp.
+# --allow-stub-sidecar accepts EMPTY sidecars (lu-llama-server and, since
+# 3.0.8, lu-llama-quantize). ci.yml's macos-gate bundles zero-byte
+# placeholders because it does not build llama.cpp.
 # The release lane never passes it.
 #
 # MIN_MACOS overrides the minimum system (default: tauri.macos.conf.json).
@@ -117,20 +119,29 @@ else
   ok "main program Contents/MacOS/$main_exe"
 fi
 
-sidecar="$app/Contents/MacOS/$SIDECAR_NAME"
-if [ ! -e "$sidecar" ]; then
-  fail "the sidecar Contents/MacOS/$SIDECAR_NAME is missing; local chat would not start"
-elif [ ! -s "$sidecar" ]; then
-  if [ "$allow_stub" -eq 1 ]; then
-    ok "sidecar is the empty placeholder (--allow-stub-sidecar)"
+# Every sidecar tauri.macos.conf.json bundles, not only llama-server: since
+# 3.0.8 lu-llama-quantize ships too (A14, the refusal-removal tool), and a
+# release with an empty quantizer passed this check before.
+sidecars="$(conf tauri.macos.conf.json bundle.externalBin)" || sidecars=""
+printf '%s\n' "$sidecars" | grep -qx "bin/$SIDECAR_NAME" || fail "tauri.macos.conf.json does not bundle bin/$SIDECAR_NAME"
+while IFS= read -r entry; do
+  [ -n "$entry" ] || continue
+  name="${entry##*/}"
+  sidecar="$app/Contents/MacOS/$name"
+  if [ ! -e "$sidecar" ]; then
+    fail "the sidecar Contents/MacOS/$name is missing"
+  elif [ ! -s "$sidecar" ]; then
+    if [ "$allow_stub" -eq 1 ]; then
+      ok "sidecar $name is the empty placeholder (--allow-stub-sidecar)"
+    else
+      fail "the sidecar Contents/MacOS/$name is empty; this is the CI placeholder, not the real program"
+    fi
+  elif [ ! -x "$sidecar" ] || ! file -b "$sidecar" | grep -q '^Mach-O'; then
+    fail "the sidecar Contents/MacOS/$name is not a Mach-O executable"
   else
-    fail "the sidecar Contents/MacOS/$SIDECAR_NAME is empty; this is the CI placeholder, not llama-server"
+    ok "sidecar Contents/MacOS/$name"
   fi
-elif [ ! -x "$sidecar" ] || ! file -b "$sidecar" | grep -q '^Mach-O'; then
-  fail "the sidecar Contents/MacOS/$SIDECAR_NAME is not a Mach-O executable"
-else
-  ok "sidecar Contents/MacOS/$SIDECAR_NAME"
-fi
+done <<< "$sidecars"
 
 # ── 4: the resources the app reads at run time ─────────────────────────────
 # The list form of `bundle.resources` keeps each path relative to src-tauri

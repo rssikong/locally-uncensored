@@ -1,4 +1,5 @@
 import { Fragment, useState, type ReactNode } from 'react'
+import { parseSettingChange } from '../../api/mcp/settings-tools'
 import { AnimatePresence, motion } from 'framer-motion'
 import { AlertCircle, Check, ChevronDown, Wrench } from 'lucide-react'
 import type { AgentBlock, AgentToolCall } from '../../types/agent-mode'
@@ -63,11 +64,12 @@ export function ToolCallBand({ calls, notes, renderNote, pendingApprovalId, onAp
     )
   }
 
-  // Completed media calls stay visible outside the collapse/morph.
+  // Completed media calls stay visible outside the collapse/morph, and so
+  // does a settings change with its Undo (A11).
   const mediaCalls = calls.filter(
     (c) =>
       c.status === 'completed' &&
-      (comfyViewUrlFromResult(c.result) || localMediaUrlFromResult(c.result)),
+      (comfyViewUrlFromResult(c.result) || localMediaUrlFromResult(c.result) || !!parseSettingChange(c.result)),
   )
 
   // A lone call is not spam — render it plain, exactly like before.

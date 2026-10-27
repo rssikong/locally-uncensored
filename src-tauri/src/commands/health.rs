@@ -14,7 +14,9 @@
 use crate::state::AppState;
 use serde::Serialize;
 use std::time::Duration;
-use sysinfo::{Disks, System};
+#[cfg(desktop)]
+use sysinfo::Disks;
+use sysinfo::System;
 use tauri::State;
 
 #[cfg(target_os = "windows")]
@@ -310,6 +312,14 @@ fn collect_host_facts() -> HostFacts {
     // Free space on the drive that holds $HOME (or the closest mount
     // point sysinfo reports for it). Covers the "is the model dir
     // running out?" question without needing a separate probe.
+    //
+    // A phone has neither a HOME nor a disk list it may read (crate::disk),
+    // so there the app's own folder is measured through statvfs.
+    #[cfg(mobile)]
+    let disk_free_gb = crate::disk::available_bytes(&crate::os_paths::data_dir())
+        .map(|bytes| (bytes as f64) / 1_073_741_824.0)
+        .unwrap_or(0.0);
+    #[cfg(desktop)]
     let disk_free_gb = {
         let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
         let disks = Disks::new_with_refreshed_list();
@@ -454,6 +464,7 @@ pub async fn system_health(
         .map_err(|e| format!("host facts probe failed: {}", e))?;
 
     Ok(SystemHealthReport {
+        // The phone reports the version of its package, a desktop the version of the crate (app_identity::APP_VERSION).
         version: crate::app_identity::APP_VERSION.to_string(),
         host,
         ollama,

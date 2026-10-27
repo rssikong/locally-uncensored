@@ -12,6 +12,7 @@
 
 import { getProviderForModel, getProviderIdFromModel } from '../../api/providers'
 import { useModelStore } from '../../stores/modelStore'
+import { platformText } from '../platform-text'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { isThinkingCompatible } from '../model-compatibility'
 import { runInLane } from '../run-slot'
@@ -29,7 +30,7 @@ export interface ImproveAvailability {
   hint: string
 }
 
-const HINT_LOCAL = 'Your chat model rewrites your prompt for the model you picked. It runs on your machine.'
+const HINT_LOCAL = platformText('improveHintLocal')
 const HINT_CLOUD = 'Your chat model rewrites your prompt for the model you picked. Billed like a short chat message.'
 const HINT_CLOUD_HELPER = 'A small LU Cloud model rewrites your prompt for the model you picked. Billed like a short chat message.'
 

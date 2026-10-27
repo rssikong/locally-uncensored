@@ -473,7 +473,7 @@ pub async fn remove_custom_node(
             &folder,
             &|| movable(&path),
             &|| {
-                trash::delete(&path).map_err(|e| {
+                crate::commands::os_trash::system_trash(Path::new(&path)).map_err(|e| {
                     format!("Could not move {folder} to the trash: {e}. Nothing was deleted.")
                 })
             },
@@ -729,6 +729,6 @@ mod tests {
         for forbidden in ["remove_dir_all", "remove_file(", "remove_dir("] {
             assert!(!shipped.contains(forbidden), "custom_node_packs.rs deletes with {forbidden}");
         }
-        assert!(shipped.contains("trash::delete(&path)"));
+        assert!(shipped.contains("os_trash::system_trash(Path::new(&path))"));
     }
 }

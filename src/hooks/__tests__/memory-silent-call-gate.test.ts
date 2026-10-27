@@ -27,7 +27,8 @@ import { loadVectors } from '../../lib/memoryEmbedDB'
 // question is whether chatStream was reached and with which model.
 
 const chatStream = vi.fn()
-const addMemory = vi.fn(() => 'mem-1')
+// Second argument: the extractor marks its writes as automatic (A27).
+const addMemory = vi.fn((_memory: unknown, _opts?: { auto?: boolean }) => 'mem-1')
 const applyWriteDecision = vi.fn()
 
 let activeModel = 'qwen3:8b'
@@ -178,7 +179,7 @@ describe('project extraction isolation', () => {
     })())
     for (let i = 0; i < RATE_LIMIT; i++) await extractMemoriesFromPair('question', LONG_REPLY, 'conv-a', { scope: 'A', sourceKind: 'screen' })
     expect(addMemory).toHaveBeenCalledTimes(2)
-    expect(addMemory).toHaveBeenLastCalledWith(expect.objectContaining({ scope: 'A', source: 'conv-a', sourceKind: 'screen' }))
+    expect(addMemory).toHaveBeenLastCalledWith(expect.objectContaining({ scope: 'A', source: 'conv-a', sourceKind: 'screen' }), { auto: true })
   })
   it('writes extracted facts to the captured project even if the caller changes its options', async () => {
     activeModel = 'qwen3:8b'
@@ -193,7 +194,7 @@ describe('project extraction isolation', () => {
       await pending
     }
     expect(addMemory).toHaveBeenCalledTimes(1)
-    expect(addMemory).toHaveBeenCalledWith(expect.objectContaining({ scope: 'A', source: 'conv-a', sourceKind: 'voice' }))
+    expect(addMemory).toHaveBeenCalledWith(expect.objectContaining({ scope: 'A', source: 'conv-a', sourceKind: 'voice' }), { auto: true })
   })
   it('does not send sensitive or other-project titles to the extraction provider', async () => {
     activeModel = 'qwen3:8b'
@@ -312,7 +313,7 @@ describe('the budget the extraction asks for', () => {
     chatStream.mockImplementation(() => (async function* () { yield { content: lang, done: true } })())
     await threeTurns()
     expect(addMemory).toHaveBeenCalledTimes(1)
-    expect(addMemory).toHaveBeenCalledWith(expect.objectContaining({ content: padding }))
+    expect(addMemory).toHaveBeenCalledWith(expect.objectContaining({ content: padding }), { auto: true })
   })
 
   it('R5-25: a think block around the answer is not stored as a memory', async () => {
@@ -370,6 +371,6 @@ describe('a session digest', () => {
       yield { content: JSON.stringify({ shouldSave: true, memories: [{ type: 'user', title: 'Name', description: 'Name', content: 'The user is called David.', tags: [] }] }), done: true }
     })())
     await extractMemoriesFromPair('my name is David', LONG_REPLY, 'voice-1', { ...digest, scope: 'A' })
-    expect(addMemory).toHaveBeenCalledWith(expect.objectContaining({ source: 'voice-1', sourceKind: 'voice', scope: 'A' }))
+    expect(addMemory).toHaveBeenCalledWith(expect.objectContaining({ source: 'voice-1', sourceKind: 'voice', scope: 'A' }), { auto: true })
   })
 })

@@ -1,4 +1,4 @@
-import { useMemoryStore } from '../stores/memoryStore'
+import { useMemoryStore, type MemoryImportResult } from '../stores/memoryStore'
 import { useCloudAuthStore } from '../stores/cloudAuthStore'
 import { withMemorySyncSession, MemorySyncError, type SyncedMemoryRecord } from '../api/cloud/memory-sync'
 import { decodeSyncMemory } from './memory-sync-plan'
@@ -87,4 +87,37 @@ export async function finalizePreviousMemories(review: LegacyMemoryReview, confi
     await session.finalizeLegacy(review.previous, Object.fromEntries(review.current.map(row => [row.memory_id, row.revision])))
     session.assertCurrent(); guard(review)
   }, signal)
+}
+
+export interface PreviousMemoriesImport {
+  /** How many memories the previous cloud copy holds. 0: there is none. */
+  found: number
+  /** What the import did with them. Null when there was nothing to import. */
+  result: MemoryImportResult | null
+}
+
+/**
+ * UEBERNEHMEN: holt die alte Kopie und schickt sie durch denselben Import wie
+ * eine Datei (bekannte Erinnerungen bleiben, neue kommen dazu). In der Wolke
+ * wird nichts geschrieben und nichts entfernt, das bleibt Schritt 2 oben.
+ *
+ * Der Waechter ist derselbe wie beim Ansehen: wechselt zwischen dem Holen und
+ * dem Import das Konto oder die Sammlung, landet nichts in einer fremden
+ * Sammlung. Die uebernommenen Erinnerungen gehen mit dem naechsten
+ * Synchronisierungslauf in die heutige Ablage.
+ */
+export async function importPreviousMemories(owner: string, signal?: AbortSignal): Promise<PreviousMemoriesImport> {
+  const state = useMemoryStore.getState()
+  const captured = { owner, collectionRevision: state.memoryCollectionRevision, entries: state.entries }
+  guard(captured)
+  const previous = await withMemorySyncSession(owner, async session => {
+    session.assertCurrent()
+    const rows = await session.pullLegacy()
+    session.assertCurrent()
+    return rows
+  }, signal)
+  guard(captured)
+  if (previous.length === 0) return { found: 0, result: null }
+  const result = useMemoryStore.getState().importFromJSON(JSON.stringify({ entries: previous }))
+  return { found: previous.length, result }
 }

@@ -149,17 +149,19 @@ describe('das Feld am Ergebnis', () => {
 })
 
 describe('die Grossansicht', () => {
-  it('zeigt Prompt und Einstellungen eines Bildes aufgeklappt', () => {
+  // Discord (20.10.2026): zugeklappt wie unter der Buehne von
+  // Create; in Edit oeffnete jedes Bild aus der Galerie mit aufgeklapptem Prompt.
+  it('zeigt Prompt und Einstellungen eines Bildes zugeklappt', () => {
     render(<Lightbox item={ITEM()} onClose={() => {}} />)
     const details = screen.getByTestId('prompt-details') as HTMLDetailsElement
-    expect(details.open).toBe(true)
+    expect(details.open).toBe(false)
     expect(screen.getByText('Prompt and settings')).toBeTruthy()
     expect(screen.getByTestId('run-settings').textContent).toContain('4242')
   })
 
   it('und eines Videos', () => {
     render(<Lightbox item={ITEM({ type: 'video', intent: 'video', steps: 30 })} onClose={() => {}} />)
-    expect((screen.getByTestId('prompt-details') as HTMLDetailsElement).open).toBe(true)
+    expect((screen.getByTestId('prompt-details') as HTMLDetailsElement).open).toBe(false)
     expect(screen.getByTestId('run-settings').textContent).toContain('30')
   })
 })

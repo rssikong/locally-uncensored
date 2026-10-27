@@ -27,6 +27,9 @@ interface VoiceState {
    *  route's 429 "monthly credit budget exhausted") — shown by VoiceButton
    *  instead of silently dropping the take. Transient. */
   sttError: string | null;
+  /** A dictation take whose transcription failed is kept for another try
+   *  (lib/dictation-retry.ts). Only ever true on a phone. Transient. */
+  retryTakeReady: boolean;
 
   // Persisted settings
   /** UNUSED, kept only so a persisted store from an older build still parses.
@@ -66,7 +69,7 @@ interface VoiceState {
   loopStartMuted: boolean;
   /** Voice surface: a short quiet sound says that a session is listening. */
   loopStartSound: boolean;
-  /** Voice surface: the model may use tools. Off is a conversation only. */
+  /** Voice surface: the model may use the agent tools. Off, it talks and searches the web (GitHub #187). */
   loopAgent: boolean;
   /** Voice surface: where the tools may work. */
   loopScope: VoiceWorkScope;
@@ -88,6 +91,7 @@ interface VoiceState {
   setTtsAvailable: (available: boolean) => void;
   setTtsFallbackReason: (reason: string | null) => void;
   setSttError: (error: string | null) => void;
+  setRetryTakeReady: (ready: boolean) => void;
   setPiperVoice: (voice: string) => void;
   updateVoiceSettings: (
     settings: Partial<{
@@ -132,6 +136,7 @@ export const useVoiceStore = create<VoiceState>()(
       ttsAvailable: false,
       ttsFallbackReason: null,
       sttError: null,
+      retryTakeReady: false,
 
       // Persisted settings — voice OFF by default (2026-06-07:
       // "tts und stt standardmäßig AUS und nicht immer automatisch vorlesen").
@@ -164,6 +169,7 @@ export const useVoiceStore = create<VoiceState>()(
       setTtsAvailable: (available) => set({ ttsAvailable: available }),
       setTtsFallbackReason: (reason) => set({ ttsFallbackReason: reason }),
       setSttError: (error) => set({ sttError: error }),
+      setRetryTakeReady: (ready) => set({ retryTakeReady: ready }),
       setPiperVoice: (voice) => set({ piperVoice: voice }),
 
       updateVoiceSettings: (settings) => set((state) => ({ ...state, ...settings })),

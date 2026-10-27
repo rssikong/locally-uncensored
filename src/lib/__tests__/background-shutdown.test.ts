@@ -25,7 +25,7 @@ const unlisten = vi.fn()
 let tauriOn = false
 let windowVisible = false
 
-vi.mock('../../api/backend', () => ({
+vi.mock('../../api/in-tauri', () => ({
   isTauri: () => tauriOn,
 }))
 vi.mock('@tauri-apps/api/event', () => ({
@@ -246,10 +246,10 @@ describe('installBackgroundShutdown: Netzabbruch (Runde 2, Blocker 1: offline st
 
 describe('installBackgroundShutdown: Fenster schliessen (app:hidden IST onCloseRequested)', () => {
   /**
-   * main.rs sendet `app:hidden` an GENAU EINER Stelle: im `CloseRequested`-
+   * lib.rs sendet `app:hidden` an GENAU EINER Stelle: im `CloseRequested`-
    * Arm, direkt bevor es das Fenster in den Tray versteckt. Ein Horcher auf
    * dieses Ereignis ist also derselbe X-Klick, nicht ein zweiter, getrennter
-   * Moment, mit derselben Karenzzeit, die main.rs fuer den lokalen-Modelle-
+   * Moment, mit derselben Karenzzeit, die lib.rs fuer den lokalen-Modelle-
    * Offload nach demselben Klick schon anwendet.
    */
   it('reacts to app:hidden and, after the grace period, stops every running background task', async () => {

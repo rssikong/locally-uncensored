@@ -1,0 +1,216 @@
+{
+ "name": "/settings/providers",
+ "art": "seite",
+ "quelle": "integ-306",
+ "route": "/settings/providers",
+ "strang": "settings",
+ "code": "E12",
+ "lage": {
+  "route": "/settings/providers",
+  "screen": "m-settings-providers-screen",
+  "blaetter": [],
+  "dialog": [],
+  "reiter": null,
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back-under",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-providers-screen",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-providers-engine",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "On device engine Models that run on this phone",
+   "el": "E12.1",
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-settings-providers-cloud",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "LU Cloud Not signed in",
+   "el": "E12.1",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-providers-own",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    456
+   ]
+  },
+  {
+   "id": "m-settings-providers-row-openrouter",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "OpenRouter Not set up",
+   "el": "E12.1",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-providers-row-groq",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Groq Not set up",
+   "el": "E12.1",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-providers-row-together",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Together Not set up",
+   "el": "E12.1",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-providers-row-deepseek",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "DeepSeek Not set up",
+   "el": "E12.1",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-providers-row-mistral",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Mistral Not set up",
+   "el": "E12.1",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-providers-row-openai",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "OpenAI Not set up",
+   "el": "E12.1",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-providers-row-anthropic",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Anthropic Not set up",
+   "el": "E12.1",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-providers-row-custom",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Custom endpoint Not set up",
+   "el": "E12.1",
+   "box": [
+    356,
+    52
+   ]
+  }
+ ]
+}

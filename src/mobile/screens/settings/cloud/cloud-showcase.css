@@ -1,0 +1,263 @@
+/*
+ * The moving preview of the page LU Cloud (round 51). Exception to DESIGN.md
+ * 1.8 and 9 for this page only (decision D5): keyframes move transform and
+ * opacity and nothing else, every animation has an end, no gradient, no
+ * blur, no shadow. The guard __tests__/cloud-schaukasten.test.ts reads this file.
+ */
+
+.m-cs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s3);
+  margin-bottom: var(--m-s4);
+}
+
+.m-cs-card {
+  position: relative;
+  border: 1px solid var(--m-card-edge);
+  border-radius: var(--m-r-lg);
+  background: var(--m-surface);
+  padding: var(--m-s3);
+  overflow: hidden;
+}
+
+.m-cs-scene {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s2);
+  animation: m-cs-fade 200ms var(--m-ease) both;
+}
+
+.m-cs-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--m-s2);
+  font-size: var(--m-text-caption);
+  color: var(--m-t2);
+}
+
+.m-cs-name {
+  font-weight: 600;
+  color: var(--m-t1);
+}
+
+.m-cs-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--m-cloud);
+}
+
+.m-cs-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--m-cloud);
+  animation: m-cs-pulse 1.6s ease-in-out 3;
+}
+
+.m-cs-ask {
+  align-self: flex-end;
+  max-width: 85%;
+  padding: 6px 10px;
+  border-radius: var(--m-r-md);
+  background: var(--m-cloud-soft);
+  color: var(--m-t1);
+  font-size: var(--m-text-caption);
+  overflow-wrap: anywhere;
+}
+
+.m-cs-answer {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--m-text-caption);
+  color: var(--m-t2);
+}
+
+.m-cs-line {
+  animation: m-cs-line 400ms var(--m-ease) both;
+}
+.m-cs-line:nth-child(1) {
+  animation-delay: 300ms;
+}
+.m-cs-line:nth-child(2) {
+  animation-delay: 1000ms;
+}
+.m-cs-line:nth-child(3) {
+  animation-delay: 1700ms;
+}
+
+.m-cs-typing {
+  display: flex;
+  gap: 4px;
+}
+.m-cs-typing > i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--m-t3);
+  opacity: 0.4;
+  animation: m-cs-pulse 900ms ease-in-out 4;
+}
+.m-cs-typing > i:nth-child(2) {
+  animation-delay: 150ms;
+}
+.m-cs-typing > i:nth-child(3) {
+  animation-delay: 300ms;
+}
+
+.m-cs-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+.m-cs-grid > img,
+.m-cs-slot {
+  width: 100%;
+  aspect-ratio: 1;
+  max-height: 96px;
+  object-fit: cover;
+  border-radius: var(--m-r-sm);
+}
+
+.m-cs-slot {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  border: 1px dashed var(--m-cloud-edge);
+  background: var(--m-fill);
+}
+
+.m-cs-shine {
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  background: var(--m-cloud-soft);
+  transform: translateX(-100%);
+  animation: m-cs-shine 1.4s ease-in-out 2;
+}
+
+.m-cs-slot-word {
+  position: relative;
+  font-size: 0.6875rem;
+  color: var(--m-t2);
+  padding-bottom: 4px;
+}
+
+.m-cs-prompt {
+  color: var(--m-t3);
+}
+
+.m-cs-video {
+  overflow: hidden;
+  border-radius: var(--m-r-sm);
+  aspect-ratio: 16 / 9;
+  max-height: 120px;
+}
+.m-cs-video > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  animation: m-cs-zoom 4s linear both;
+}
+
+.m-cs-track {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--m-fill-2);
+  overflow: hidden;
+}
+.m-cs-track > b {
+  display: block;
+  height: 100%;
+  background: var(--m-cloud);
+  transform-origin: left center;
+  transform: scaleX(0.66);
+  animation: m-cs-track 4s linear both;
+}
+
+.m-cs-time {
+  color: var(--m-t3);
+  text-align: right;
+}
+
+/*
+ * Out of sight, app in the background, or before the first frame: nothing runs, the scene stands finished.
+ * Taken off rather than paused: a paused animation never ends, and whoever waits for it (a test, a measurement)
+ * would wait for ever. The next scene starts its own again.
+ */
+.m-cs[data-paused] * {
+  animation: none !important;
+}
+
+@keyframes m-cs-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes m-cs-line {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes m-cs-pulse {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes m-cs-shine {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+
+@keyframes m-cs-zoom {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.06);
+  }
+}
+
+@keyframes m-cs-track {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(0.66);
+  }
+}
+
+/* Reduced motion: no keyframes at all, every scene stands finished; the scenes change only by the segment. */
+@media (prefers-reduced-motion: reduce) {
+  .m-cs *,
+  .m-cs-scene {
+    animation: none !important;
+  }
+}
+.m-cs[data-still] * {
+  animation: none !important;
+}

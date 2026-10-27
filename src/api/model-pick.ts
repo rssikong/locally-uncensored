@@ -96,6 +96,9 @@ export async function pickModelForGeneration(
 
   const chosen = chooseFromUserSelection(names, createChoice, saved)
   if (chosen) return chosen
+  // One model that fits is no choice: the card came on top of the tool
+  // approval and asked a second time for nothing (A12 box run, A13).
+  if (names.length === 1) return names[0]
 
   const { useModelPickStore } = await import('../stores/modelPickStore')
   const choice = await useModelPickStore.getState().request(pickKind, names, names[0])

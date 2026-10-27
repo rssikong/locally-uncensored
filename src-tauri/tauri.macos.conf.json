@@ -18,6 +18,10 @@
     ]
   },
   "bundle": {
+    "externalBin": [
+      "bin/lu-llama-server",
+      "bin/lu-llama-quantize"
+    ],
     "macOS": {
       "minimumSystemVersion": "14.0"
     }

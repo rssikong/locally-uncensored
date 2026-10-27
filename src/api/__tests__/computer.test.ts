@@ -128,7 +128,8 @@ describe('computer use wrappers', () => {
 })
 
 describe('every computer command exists at every station', () => {
-  const main = read('src-tauri/src/main.rs')
+  // The handler list lives in lib.rs since the app became a library (main.rs is the desktop shell around it).
+  const main = read('src-tauri/src/lib.rs')
   const rust = read('src-tauri/src/commands/computer.rs')
   const backend = read('src/api/backend.ts')
   const mock = read('e2e/support/tauri-mock.ts')

@@ -81,9 +81,15 @@ fn child_path() -> Option<String> {
     }
 }
 
+/// The file name of Node on this platform.
+const NODE_EXE: &str = if cfg!(windows) { "node.exe" } else { "node" };
+
 /// `node --version` on that PATH, or None where there is no Node.
+///
+/// A foreign program: in a Linux AppImage the child must not inherit the
+/// bundle's library path (process_util::foreign_system_command).
 fn node_version(path: Option<&str>) -> Option<String> {
-    let mut cmd = std::process::Command::new(if cfg!(windows) { "node.exe" } else { "node" });
+    let mut cmd = crate::process_util::foreign_system_command(NODE_EXE);
     cmd.arg("--version");
     if let Some(p) = path {
         cmd.env("PATH", p);
@@ -97,20 +103,38 @@ fn node_version(path: Option<&str>) -> Option<String> {
 /// first. A Mac app started from the Finder gets the login shell's PATH, and
 /// nvm, fnm and asdf set theirs up in the interactive shell only: on such a
 /// Mac `node` works in the terminal and is not on that PATH (found on the
-/// owner's Mac with nvm, 17.10.2026).
+/// owner's Mac with nvm, 17.10.2026). A Linux app started from the menu is in
+/// the same place: `.bashrc` is where nvm and fnm put their lines, and a
+/// desktop session never reads it (A37, xxcoder on LMDE, 26.10.2026: REA said
+/// no Node, `node -v` in the terminal said 24.22).
 fn manager_node_dirs(home: &Path) -> Vec<PathBuf> {
     let mut versioned: Vec<PathBuf> = Vec::new();
-    for root in [
+    let mut roots = vec![
         home.join(".nvm/versions/node"),
+        home.join(".config/nvm/versions/node"),
         home.join(".local/state/fnm_multishells"),
         home.join(".fnm/node-versions"),
+        home.join(".local/share/fnm/node-versions"),
+        home.join("Library/Application Support/fnm/node-versions"),
         home.join(".asdf/installs/nodejs"),
-    ] {
+        home.join(".local/share/mise/installs/node"),
+        home.join(".nodenv/versions"),
+    ];
+    if let Ok(nvm_dir) = std::env::var("NVM_DIR") {
+        roots.insert(0, PathBuf::from(nvm_dir).join("versions/node"));
+    }
+    #[cfg(windows)]
+    if let Some(appdata) = std::env::var_os("APPDATA").map(PathBuf::from) {
+        // nvm-windows keeps node.exe in the version folder itself.
+        roots.push(appdata.join("nvm"));
+        roots.push(appdata.join("fnm/node-versions"));
+    }
+    for root in roots {
         if let Ok(entries) = std::fs::read_dir(&root) {
             for e in entries.flatten() {
                 let base = e.path();
-                for bin in [base.join("bin"), base.join("installation/bin")] {
-                    if bin.join("node").is_file() {
+                for bin in [base.join("bin"), base.join("installation/bin"), base.join("installation"), base.clone()] {
+                    if bin.join(NODE_EXE).is_file() && !versioned.contains(&bin) {
                         versioned.push(bin);
                     }
                 }
@@ -120,12 +144,61 @@ fn manager_node_dirs(home: &Path) -> Vec<PathBuf> {
     // Newest first, by the version in the folder name (v24.15.0 before v22.1.0).
     versioned.sort_by_key(|p| std::cmp::Reverse(version_key(p)));
     let mut dirs = versioned;
-    for fixed in [home.join(".volta/bin"), PathBuf::from("/opt/homebrew/bin"), PathBuf::from("/usr/local/bin")] {
-        if fixed.join("node").is_file() {
-            dirs.push(fixed);
+    let fixed = [
+        home.join(".volta/bin"),
+        PathBuf::from("/opt/homebrew/bin"),
+        PathBuf::from("/usr/local/bin"),
+        PathBuf::from("/home/linuxbrew/.linuxbrew/bin"),
+        home.join(".linuxbrew/bin"),
+        home.join(".local/bin"),
+        PathBuf::from("/snap/bin"),
+    ];
+    for dir in fixed.into_iter().chain(windows_node_dirs()) {
+        if dir.join(NODE_EXE).is_file() && !dirs.contains(&dir) {
+            dirs.push(dir);
         }
     }
     dirs
+}
+
+/// Where the Node.js installer and Volta put node.exe on Windows.
+#[cfg(windows)]
+fn windows_node_dirs() -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = ["ProgramFiles", "ProgramW6432", "ProgramFiles(x86)"]
+        .iter()
+        .filter_map(|var| std::env::var_os(var).map(|p| PathBuf::from(p).join("nodejs")))
+        .collect();
+    if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+        dirs.push(PathBuf::from(local).join("Volta/bin"));
+    }
+    dirs
+}
+
+#[cfg(not(windows))]
+fn windows_node_dirs() -> Vec<PathBuf> {
+    Vec::new()
+}
+
+/// `dir` in front of `path` (or of the app's own PATH), with the platform's
+/// separator: a colon on Windows broke every folder it joined.
+fn path_with(dir: &Path, path: Option<&str>) -> String {
+    let rest = path.map(str::to_string).unwrap_or_else(|| std::env::var("PATH").unwrap_or_default());
+    let mut all = vec![dir.to_path_buf()];
+    all.extend(std::env::split_paths(&rest));
+    std::env::join_paths(all).map(|p| p.to_string_lossy().into_owned()).unwrap_or(rest)
+}
+
+/// The PATH the user's login shell has, where the app's own lacks Node. Only
+/// asked on Linux, and only then: the Mac's PATH comes from `finder_path`
+/// already, and Windows has no login shell.
+#[cfg(all(unix, not(target_os = "macos")))]
+fn login_shell_path() -> Option<String> {
+    crate::finder_path::linux_login_path()
+}
+
+#[cfg(not(all(unix, not(target_os = "macos"))))]
+fn login_shell_path() -> Option<String> {
+    None
 }
 
 fn version_key(dir: &Path) -> (u32, u32, u32) {
@@ -141,18 +214,33 @@ fn version_key(dir: &Path) -> (u32, u32, u32) {
 /// The PATH and the Node REA starts with: the app's PATH where its Node
 /// fits, otherwise the newest fitting Node of a version manager put in front.
 fn path_and_node(path: Option<String>, home: &Path) -> (Option<String>, Option<String>) {
+    path_and_node_in(path, manager_node_dirs(home), login_shell_path)
+}
+
+/// [`path_and_node`] with the folders and the login shell passed in, so a test
+/// does not depend on the Node of the machine it runs on.
+fn path_and_node_in(
+    path: Option<String>,
+    dirs: Vec<PathBuf>,
+    login: impl FnOnce() -> Option<String>,
+) -> (Option<String>, Option<String>) {
     let on_path = node_version(path.as_deref());
     if on_path.as_deref().is_some_and(node_fits) {
         return (path, on_path);
     }
-    for dir in manager_node_dirs(home) {
-        let joined = match &path {
-            Some(p) => format!("{}:{p}", dir.display()),
-            None => format!("{}:{}", dir.display(), std::env::var("PATH").unwrap_or_default()),
-        };
+    for dir in dirs {
+        let joined = path_with(&dir, path.as_deref());
         let found = node_version(Some(&joined));
         if found.as_deref().is_some_and(node_fits) {
             return (Some(joined), found);
+        }
+    }
+    // Last, the login shell: a PATH set in ~/.profile (a Node in a folder
+    // of its own, a manager LU does not know) is there and nowhere else.
+    if let Some(login) = login() {
+        let found = node_version(Some(&login));
+        if found.as_deref().is_some_and(node_fits) {
+            return (Some(login), found);
         }
     }
     (path, on_path)
@@ -306,13 +394,68 @@ mod tests {
         for v in ["v22.1.0", "v24.15.0", "v20.18.0"] {
             let bin = home.join(".nvm/versions/node").join(v).join("bin");
             std::fs::create_dir_all(&bin).unwrap();
-            std::fs::write(bin.join("node"), b"").unwrap();
+            std::fs::write(bin.join(NODE_EXE), b"").unwrap();
         }
         // Only the version folders under this home: the fixed folders after
         // them (Homebrew, /usr/local/bin) belong to the machine running the test.
         let dirs: Vec<_> = manager_node_dirs(&home).into_iter().filter(|d| d.starts_with(&home)).collect();
         let names: Vec<String> = dirs.iter().map(|d| d.parent().unwrap().file_name().unwrap().to_string_lossy().into_owned()).collect();
         assert_eq!(names, ["v24.15.0", "v22.1.0", "v20.18.0"]);
+    }
+
+    /// A stand-in `node` that prints `version`, in a folder of its own.
+    #[cfg(unix)]
+    fn fake_node(version: &str) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let bin = temp().join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let node = bin.join("node");
+        std::fs::write(&node, format!("#!/bin/sh\necho {version}\n")).unwrap();
+        std::fs::set_permissions(&node, std::fs::Permissions::from_mode(0o755)).unwrap();
+        bin
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_node_only_the_login_shell_knows_is_found() {
+        // A37: started from the Linux menu the app's PATH has no Node, the
+        // terminal (and so the login shell) has one LU's folder list misses.
+        let bin = fake_node("v24.22.0");
+        let login = format!("{}:/usr/bin:/bin", bin.display());
+        let (path, node) = path_and_node_in(Some("/nonexistent-a37".into()), Vec::new(), || Some(login.clone()));
+        assert_eq!(node.as_deref(), Some("v24.22.0"));
+        assert_eq!(path.as_deref(), Some(login.as_str()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_found_folder_goes_in_front_of_the_path_with_the_platform_separator() {
+        let bin = fake_node("v22.19.0");
+        let (path, node) = path_and_node_in(Some("/nonexistent-a37".into()), vec![bin.clone()], || None);
+        assert_eq!(node.as_deref(), Some("v22.19.0"));
+        let parts: Vec<PathBuf> = std::env::split_paths(path.as_deref().unwrap()).collect();
+        assert_eq!(parts, [bin, PathBuf::from("/nonexistent-a37")]);
+    }
+
+    #[test]
+    fn the_separator_is_the_platforms_own() {
+        let joined = path_with(Path::new("first"), Some(&std::env::join_paths(["a", "b"]).unwrap().to_string_lossy()));
+        let parts: Vec<PathBuf> = std::env::split_paths(&joined).collect();
+        assert_eq!(parts, [PathBuf::from("first"), PathBuf::from("a"), PathBuf::from("b")]);
+    }
+
+    #[test]
+    fn the_newer_fnm_and_mise_folders_are_searched() {
+        let home = temp();
+        for (root, v) in [(".local/share/fnm/node-versions", "v24.22.0"), (".local/share/mise/installs/node", "22.20.0")] {
+            let base = home.join(root).join(v);
+            let bin = if root.contains("fnm") { base.join("installation/bin") } else { base.join("bin") };
+            std::fs::create_dir_all(&bin).unwrap();
+            std::fs::write(bin.join(NODE_EXE), b"").unwrap();
+        }
+        let dirs: Vec<_> = manager_node_dirs(&home).into_iter().filter(|d| d.starts_with(&home)).collect();
+        assert_eq!(dirs.len(), 2, "{dirs:?}");
+        assert!(dirs[0].to_string_lossy().contains("v24.22.0"), "newest first: {dirs:?}");
     }
 
     #[test]

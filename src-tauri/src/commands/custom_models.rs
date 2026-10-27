@@ -1,7 +1,7 @@
 //! The user's own model folder, handed to ComfyUI.
 //!
 //! GH #122 plus the Discord thread "Read me first":
-//! the folder under Settings → Model Storage was a download target and nothing
+//! the folder under Settings → Storage was a download target and nothing
 //! more. Chat GGUFs in it are read by `engine::scan_gguf_roots` now, but a
 //! `.safetensors` is a different problem: LU never scans image or video models
 //! off the disk at all. That inventory comes out of ComfyUI's own `/object_info`
@@ -94,11 +94,12 @@ pub(crate) fn build_extra_model_paths_yaml(root: &Path) -> Option<String> {
     if found.is_empty() {
         return None;
     }
-    let mut s = String::from(
-        "# Written by Locally Uncensored from Settings -> Model Storage.\n\
+    let mut s = format!(
+        "# Written by {product} from Settings -> Storage.\n\
          # Edit the folder in the app, not this file: LU rewrites it every time it\n\
          # starts ComfyUI.\n\
          lu_custom_models:\n",
+        product = crate::app_identity::PRODUCT_NAME
     );
     for (key, path) in found {
         s.push_str(&yaml_path_line(key, &path));
@@ -120,10 +121,16 @@ pub(crate) fn yaml_path_line(key: &str, path: &Path) -> String {
 /// Where the generated file lives: beside the app's own models dir, never
 /// inside the user's ComfyUI folder.
 pub(crate) fn extra_model_paths_file() -> Result<PathBuf, String> {
-    #[cfg(not(test))]
+    #[cfg(all(not(test), not(mobile)))]
     let base = dirs::data_dir().ok_or("Cannot resolve app data directory")?;
-    #[cfg(not(test))]
+    #[cfg(all(not(test), not(mobile)))]
     let dir = base.join(crate::app_identity::APP_DISPLAY_DIR);
+    // A phone has no ComfyUI and never starts one, so nothing calls this
+    // there. The arm keeps the display folder name out of the phone program:
+    // the file would land in the app's own data folder like everything else
+    // a phone stores (`os_paths::mobile_layout`).
+    #[cfg(all(not(test), mobile))]
+    let dir = crate::os_paths::data_dir();
     #[cfg(test)]
     let dir = crate::os_paths::test_storage::display_data_dir();
     std::fs::create_dir_all(&dir)
@@ -131,12 +138,12 @@ pub(crate) fn extra_model_paths_file() -> Result<PathBuf, String> {
     Ok(dir.join("lu_extra_model_paths.yaml"))
 }
 
-/// What `config.json` knows about the folder under Model Storage.
+/// What `config.json` knows about the folder under Storage.
 ///
 /// Three states, not two, and the difference between the first two is the one
 /// that costs a boot if it is dropped. `Missing` is a build that never wrote
 /// the key: the app data dir may still hold a good file from before, and the
-/// boot auto-start runs on its own thread (`main.rs`) before the frontend has
+/// boot auto-start runs on its own thread (`lib.rs`) before the frontend has
 /// pushed anything down. Rewriting from nothing there would take the folder
 /// away on exactly the first start after the update. `Cleared` is the user
 /// having emptied the field, and that one has to take the file away.
@@ -261,7 +268,7 @@ pub(crate) fn is_usable_root(root: &Path) -> bool {
 /// The kind rather than the message, for the reason `mobile_page.rs` gives:
 /// `ErrorKind` is language neutral and free, while the text is whatever
 /// FormatMessageW felt like saying. P3 pointed a folder LU may not read at
-/// Model Storage and was told the drive was disconnected or the path was
+/// Storage and was told the drive was disconnected or the path was
 /// missing. Both were false, and the true answer was one `ErrorKind` away.
 pub(crate) fn root_probe(root: &Path) -> Option<std::io::ErrorKind> {
     std::fs::read_dir(root).err().map(|e| e.kind())
@@ -309,6 +316,14 @@ pub(crate) fn sync_custom_model_paths_blocking(
     // Globales anfassen. Ohne diese Zeile kennt der ComfyUI-Start den Ordner
     // nicht, denn er lebt sonst nur im Frontend-Store.
     remember_root(dir.unwrap_or("").trim());
+    // Settings → Storage: with ComfyUI downloads going into this folder, every
+    // ComfyUI folder is made now, so ComfyUI is handed all of them on its next
+    // start and lists a download the moment it lands (commands/storage.rs).
+    if let Some(root) = crate::commands::storage::lu_choice().downloads_root {
+        if folder_status(&root) == "ok" && crate::commands::process::comfy_supported_here() {
+            let _ = crate::commands::storage::create_comfy_folders(&root);
+        }
+    }
     let file = extra_model_paths_file()?;
     // The Mac runs local media on MLX and never starts ComfyUI
     // (process::comfy_supported_here), so there is nobody to hand the folder

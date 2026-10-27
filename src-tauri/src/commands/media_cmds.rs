@@ -158,6 +158,7 @@ pub async fn mlx_loras_open_folder(app: AppHandle, args: Value) -> Result<Value,
     off_main(app, args, crate::commands::mlx_loras::mlx_loras_open_folder).await
 }
 
+#[cfg(desktop)]
 #[tauri::command]
 pub async fn mlx_lora_delete(app: AppHandle, args: Value) -> Result<Value, String> {
     off_main(app, args, crate::commands::mlx_loras::mlx_lora_delete).await
@@ -166,6 +167,7 @@ pub async fn mlx_lora_delete(app: AppHandle, args: Value) -> Result<Value, Strin
 // Delete in the gallery: one render of the Mac's engines goes to the Trash
 // (`commands::mlx_outputs`).
 
+#[cfg(desktop)]
 #[tauri::command]
 pub async fn mlx_output_trash(app: AppHandle, args: Value) -> Result<Value, String> {
     off_main(app, args, crate::commands::mlx_outputs::mlx_output_trash).await

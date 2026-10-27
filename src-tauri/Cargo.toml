@@ -1,10 +1,21 @@
 [package]
 name = "locally-uncensored"
-version = "3.0.7"
+version = "3.0.8"
 description = "Private, local AI chat & image/video generation"
 authors = ["purpledoubled"]
 edition = "2021"
 license = "AGPL-3.0-only"
+# Never published to crates.io. Also what lets cargo deny accept the path
+# dependency on plugins/lu-native (allow-wildcard-paths, deny.toml).
+publish = false
+
+# The app is a library with a thin desktop executable around it (src/main.rs).
+# Android loads the cdylib, iOS links the staticlib, the desktop binary and the
+# tests use the rlib. The name differs from the package on purpose: a library
+# and a binary with one name collide on their debug files under Windows.
+[lib]
+name = "locally_uncensored_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
 
 [features]
 # Test-only: let LU_NO_KEYCHAIN / ~/.lu-no-keychain bypass the OS keychain during
@@ -12,25 +23,60 @@ license = "AGPL-3.0-only"
 # default), so a release binary always uses the OS vault regardless of env vars or
 # marker files. Build test artifacts with: tauri build --features insecure-test-keychain
 insecure-test-keychain = []
+# Test-only: device tests against a real desktop (src/e2e_remote.rs). With
+# LU_E2E_REMOTE_CODE set the desktop starts Remote in the Wi-Fi, fixes the
+# code, writes the pairing link to LU_E2E_REMOTE_LINK_FILE and accepts every
+# phone with all rights. NEVER in a default or a shipped build:
+#   tauri build --debug --features e2e-remote
+e2e-remote = []
+# The in-process engine (commands/engine_inproc.rs) is always part of the
+# Android and iOS builds: a phone cannot start the llama-server sidecar the
+# desktop uses. This feature builds the SAME file into a macOS build as well,
+# so that the Metal path of the iPhone can be exercised on a Mac, which has
+# the same chip family and the same Metal backend (MOBILE-ZIEL.md section 5).
+# It changes nothing about how the desktop app serves models. Never part of a
+# shipped desktop build. Run with:
+#   cargo test --features inproc-engine inproc -- --nocapture
+inproc-engine = ["dep:llama-cpp-2", "dep:llama-cpp-sys-2", "dep:encoding_rs"]
+# Acceptance builds only: makes the WebView of a RELEASE build inspectable, so
+# the test harness (scripts/mobile/ios/ios-harness.mjs, WebKit Remote
+# Inspector) can drive a release package in the simulator. On iOS wry then
+# calls setInspectable(true) and sets the private key developerExtrasEnabled,
+# on Android it opens the WebView debug socket. Because of both it must NEVER
+# be part of a store build, and it is in no default. The native layer
+# (plugins/lu-native) reads the same feature: only then does it accept
+# `simulate_memory_warning` and test servers on private addresses. Build with:
+#   scripts/mobile/ios/bauen.sh release abnahme
+# Guard: src/lib/__tests__/mobile-ios-fallen.test.ts
+abnahme = ["tauri/devtools", "tauri-plugin-lu-native/abnahme"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["devtools", "tray-icon", "image-png"] }
+# `devtools` and `tray-icon` are NOT here on purpose, they sit in the
+# desktop-only block below. `tray-icon` does not compile for a phone
+# (`tauri::tray` does not exist there). `devtools` compiles, and that is the
+# problem: on Android it makes wry call
+# WebView.setWebContentsDebuggingEnabled(true) in a RELEASE build too, and the
+# app then publishes the socket @webview_devtools_remote_<pid>. Anything that
+# reaches it drives the whole WebView: read the chat, read the session, call
+# every command. Debug builds keep the inspector through debug_assertions.
+# Guard: src/lib/__tests__/release-opens-no-debug-socket.test.ts
+tauri = { version = "2", features = ["image-png"] }
 tauri-plugin-shell = "2"
-tauri-plugin-updater = "2"
 # The same signature check the updater plugin runs, for the one download the
 # plugin cannot do for us: the AppImage LU installs into the home folder when
 # it was repackaged by somebody else (commands/self_migrate.rs). Already in
 # Cargo.lock as a dependency of the plugin, so this adds no crate to the build.
 minisign-verify = "0.2"
-tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
-reqwest = { version = "0.12", features = ["stream", "blocking", "json", "multipart"] }
-zip = "2"
+# reqwest is declared per target further down, because the TLS stack differs:
+# the desktop keeps the system one (reqwest's defaults, unchanged), the phones
+# use rustls.
+zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
 dirs = "6"
 # Python interpreter discovery for the in-process MLX media engine
 # (os_paths::find_python, mlx.rs::locate_python_311).
@@ -38,9 +84,6 @@ which = "6"
 regex = "1"
 glob = "0.3"
 sysinfo = "0.33"
-# Gallery delete moves the render to the Recycle Bin / Trash instead of
-# erasing it (Discord 2026-09-25: deleted renders stayed in ComfyUI/output).
-trash = "5"
 walkdir = "2"
 hostname = "0.4"
 whoami = "1"
@@ -53,11 +96,14 @@ uuid = { version = "1", features = ["v4", "serde"] }
 tokio-util = "0.7"
 urlencoding = "2"
 url = "2"
-rfd = "0.15"
 # Remote Access
 axum = { version = "0.8", features = ["ws"] }
 tokio-tungstenite = "0.26"
 tower-http = { version = "0.6", features = ["cors", "fs"] }
+# The sealed remote channel runs an inner request through the router in this
+# process (commands/remote.rs, `dispatch_sealed`). tower 0.5 with "util" is
+# already in the build through axum, so naming it adds no crate.
+tower = { version = "0.5", default-features = false, features = ["util"] }
 jsonwebtoken = "9"
 qrcode = "0.14"
 # "jpeg" is for the screenshots of computer use (commands/computer): a JPEG of
@@ -74,13 +120,26 @@ tar = "0.4"
 # flate2 serves the voice loop and the unpacking of a fetched page. One line,
 # a key may not stand twice.
 flate2 = "1"
+# End-to-end sealed remote channel (src/remote_seal.rs), shared by desktop and
+# phone. ring and zeroize are already in Cargo.lock on every target
+# (jsonwebtoken and rustls pull ring, several crates pull zeroize): naming them
+# adds no crate. ring gives Ed25519, HKDF, SHA-256 and ChaCha20-Poly1305.
+# snow is the Noise protocol framework (Apache-2.0/MIT); it runs on ring for
+# cipher, hash and randomness. ring cannot keep a static X25519 key, so the
+# X25519 step comes from curve25519-dalek (BSD-3-Clause, dalek-cryptography),
+# the same crate and call snow's own resolver uses. No default features: the
+# AES and ChaCha crates of snow's default resolver are not built.
+ring = "0.17"
+zeroize = "1"
+snow = { version = "0.10", default-features = false, features = ["ring-resolver"] }
+curve25519-dalek = { version = "4.1.3", default-features = false, features = ["zeroize"] }
 # Unpacking a fetched page (commands/web_body.rs): a server may pack its answer
 # with gzip, deflate, brotli or zstd whether the request asks for it or not.
 # All three are in the build already (png brings flate2, tauri-utils brings
 # brotli, zip brings zstd), with exactly these features, so naming them adds
 # no crate and no feature to any target.
 brotli = { version = "8", default-features = false, features = ["std"] }
-zstd = { version = "0.13", default-features = false }
+zstd = { version = "0.14.3", default-features = false }
 local-ip-address = "0.6"
 socket2 = "0.5"
 # Structured tracing — used for the JSON-log mode behind `LU_LOG_FORMAT=json`
@@ -98,6 +157,39 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 # tracing-subscriber 0.3 (it re-exports `MakeWriter` from it); `max_log_files`
 # needs >= 0.2.3.
 tracing-appender = "0.2"
+# GH #183: reads the extra_model_paths.yaml files ComfyUI itself reads
+# (commands/comfy_user_paths.rs). Was a dev-dependency for the tests of
+# custom_models.rs; same locked version.
+serde_yaml = "0.9.34"
+# web_fetch (commands/search.rs) reads a page the way Firefox Reader View
+# does: a port of Mozilla Readability (MIT). 0.17 on purpose: it builds on
+# dom_query 0.27, which wry already brings, so no second copy of html5ever.
+dom_smoothie = "0.17"
+# The native layer of the phones: secure storage, share and save, device
+# facts, lifecycle, deep links, the Remote transport, background downloads
+# (plugins/lu-native, mobile-docs/NATIVE-SCHICHT.md). It is only REGISTERED on
+# Android and iOS (lib.rs). It is a dependency of every target because the
+# code that translates between its download list and the app's own
+# (commands/download_mobile.rs) is tested on the desktop.
+tauri-plugin-lu-native = { path = "plugins/lu-native" }
+
+# ── Desktop only ─────────────────────────────────────────────────────────────
+# Nothing in this block exists on a phone. Checked for aarch64-apple-ios-sim
+# (mobile-docs/IOS-MACHBARKEIT.md 7.1 and 7.2): `tauri::tray` is missing, the
+# single-instance crate is empty there, `rfd` and `trash` do not compile, and
+# the updater has nothing to install because updates come through the store.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri = { version = "2", features = ["devtools", "tray-icon"] }
+tauri-plugin-updater = "2"
+tauri-plugin-single-instance = "2"
+# Native open and save dialogs.
+rfd = "0.15"
+# Gallery delete moves the render to the Recycle Bin / Trash instead of
+# erasing it (Discord 2026-09-25: deleted renders stayed in ComfyUI/output).
+trash = "5"
+# Exactly the line every platform had before the split: reqwest's defaults,
+# which means the system TLS stack.
+reqwest = { version = "0.12", features = ["stream", "blocking", "json", "multipart"] }
 # Astra computer use (commands/computer). enigo (MIT) simulates mouse and
 # keyboard on all three systems; on Linux only its pure Rust X11 backend, so
 # the build needs no libxdo and no Wayland libraries. It does link
@@ -108,10 +200,84 @@ enigo = { version = "0.6", default-features = false, features = ["x11rb"] }
 # on purpose: 2.4 asks for tauri 2.12 and would move the whole app with it.
 tauri-plugin-global-shortcut = ">=2.3, <2.4"
 
-# GH #183: reads the extra_model_paths.yaml files ComfyUI itself reads
-# (commands/comfy_user_paths.rs). Was a dev-dependency for the tests of
-# custom_models.rs; same locked version.
-serde_yaml = "0.9.34"
+# ── Android and iOS ──────────────────────────────────────────────────────────
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+# rustls on both phones. On Android there is no choice (openssl-sys does not
+# cross-compile for aarch64-linux-android); iOS could use the system stack,
+# but one TLS implementation for both keeps the two builds behaving alike.
+# The rest is reqwest's default feature set minus the TLS part.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "charset", "http2", "stream", "blocking", "json", "multipart"] }
+# The in-process engine: llama.cpp compiled into the app, behind the same
+# HTTP surface the desktop sidecar has (commands/engine_inproc.rs).
+#
+# Both crates are pinned with `=` and they must carry the SAME version.
+# llama-cpp-2 asks for llama-cpp-sys-2 with a caret range, and 0.1.154 does
+# not compile against the 0.1.159 a fresh resolve picks (wrong argument counts
+# in llama_rs_fit_params and llama_sampler_init_dry). Naming the sys crate here
+# is what holds it in place.
+# Guard: src/lib/__tests__/mobile-bau-fallen.test.ts
+#
+# default-features off drops `openmp` and `android-shared-stdcxx`. `common`
+# carries the chat templates. There is no `metal` feature to set: on Apple
+# targets llama-cpp-sys-2 always builds Metal in, and the switch between card
+# and processor is a runtime one (n_gpu_layers).
+llama-cpp-2 = { version = "=0.1.154", default-features = false, features = ["common"] }
+llama-cpp-sys-2 = { version = "=0.1.154", default-features = false, features = ["common"] }
+# Streaming UTF-8 decoder for the token-by-token output: one character can
+# span two tokens. The same crate llama-cpp-2 uses for it.
+encoding_rs = "0.8"
+# lu://oauth/callback and lu://remote: the intent filters of the Android
+# manifest and the URL scheme of the iOS Info.plist are written by this
+# plugin's build script from tauri.android.conf.json and tauri.ios.conf.json.
+# Pinned: 2.6 asks for tauri 2.12, the app is on 2.10.
+# Guard: src/lib/__tests__/android-manifest-security.test.ts
+tauri-plugin-deep-link = "=2.4.10"
+
+# ── Android only ─────────────────────────────────────────────────────────────
+[target.'cfg(target_os = "android")'.dependencies]
+# libc++ linked statically into the app library, so the APK needs no
+# libc++_shared.so next to it. The feature only acts on Android.
+llama-cpp-2 = { version = "=0.1.154", default-features = false, features = ["common", "static-stdcxx"] }
+# stdout does not exist on Android. Log lines go to logcat under the tag "LU".
+tracing-android = "0.2"
+
+# ── macOS, only with the feature `inproc-engine` ─────────────────────────────
+# The same three crates as on the phones, optional, for the Metal test on a
+# Mac. See the feature above.
+[target.'cfg(target_os = "macos")'.dependencies]
+llama-cpp-2 = { version = "=0.1.154", default-features = false, features = ["common"], optional = true }
+llama-cpp-sys-2 = { version = "=0.1.154", default-features = false, features = ["common"], optional = true }
+encoding_rs = { version = "0.8", optional = true }
+# Which app a window belongs to, for computer use. Both are already in
+# Cargo.lock through tauri and xcap (MIT). libc, which computer use also names
+# on macOS, is declared once for every unix below, with its exact pin.
+objc2-app-kit = { version = "0.3", default-features = false, features = ["NSRunningApplication", "libc"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["NSString", "NSURL", "NSArray", "NSData", "NSDictionary", "NSError", "NSIndexSet"] }
+
+# Remove Background on a Mac (commands/mlx_cutout): the subject mask comes
+# from the Vision framework of macOS 14, so the cutout needs no model and no
+# Python. objc2 is in Cargo.lock already; objc2-vision is new and, like its
+# siblings, Zlib OR Apache-2.0 OR MIT. objc2-core-video reads the mask buffer
+# and is in Cargo.lock through xcap.
+objc2 = "0.6"
+objc2-vision = { version = "0.3", default-features = false, features = ["std", "VNRequestHandler", "VNRequest", "VNObservation", "VNGenerateForegroundInstanceMaskRequest", "objc2-core-video", "objc2-image-io"] }
+objc2-core-video = { version = "0.3", default-features = false, features = ["std", "CVBase", "CVBuffer", "CVImageBuffer", "CVPixelBuffer", "CVReturn"] }
+objc2-image-io = { version = "0.3", default-features = false, features = ["std", "CGImageProperties"] }
+
+# ── Every unix ───────────────────────────────────────────────────────────────
+# statvfs for the free-space check (src/disk.rs). Only the phones use it in
+# production, where sysinfo's disk list reads the wrong file system inside the
+# app sandbox and refused every download on the old Android branch. It is
+# declared for every unix so the desktop test run executes the same function.
+# The crate is in every build already (tokio, sysinfo and others pull it in).
+#
+# The exact version is the point. sysinfo 0.33.1 stops compiling for iOS with
+# libc 0.2.190 (`unresolved import libc::mach_task_self`), and the lock file
+# is shared by every target, so this pin is what keeps a `cargo update` from
+# pulling the newer libc in. Raise it together with sysinfo, never alone.
+# Guard: src/lib/__tests__/mobile-bau-fallen.test.ts
+[target.'cfg(unix)'.dependencies]
+libc = "=0.2.183"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_System_JobObjects", "Win32_System_Threading", "Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_UI_WindowsAndMessaging", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse", "Win32_Graphics_Gdi", "Win32_Graphics_Dwm"] }
@@ -145,23 +311,6 @@ x11rb = { version = "0.13", features = ["randr"] }
 # The web view on Linux, already in Cargo.lock through tauri and wry. Only for
 # answering its microphone requests (src/linux_media.rs, GitHub #162).
 webkit2gtk = "=2.0.2"
-
-# Which app a window belongs to, for computer use. All four are already in
-# Cargo.lock through tauri and xcap (MIT, and libc MIT OR Apache-2.0).
-[target.'cfg(target_os = "macos")'.dependencies]
-objc2-app-kit = { version = "0.3", default-features = false, features = ["NSRunningApplication", "libc"] }
-objc2-foundation = { version = "0.3", default-features = false, features = ["NSString", "NSURL", "NSArray", "NSData", "NSDictionary", "NSError", "NSIndexSet"] }
-libc = "0.2"
-
-# Remove Background on a Mac (commands/mlx_cutout): the subject mask comes
-# from the Vision framework of macOS 14, so the cutout needs no model and no
-# Python. objc2 is in Cargo.lock already; objc2-vision is new and, like its
-# siblings, Zlib OR Apache-2.0 OR MIT. objc2-core-video reads the mask buffer
-# and is in Cargo.lock through xcap.
-objc2 = "0.6"
-objc2-vision = { version = "0.3", default-features = false, features = ["std", "VNRequestHandler", "VNRequest", "VNObservation", "VNGenerateForegroundInstanceMaskRequest", "objc2-core-video", "objc2-image-io"] }
-objc2-core-video = { version = "0.3", default-features = false, features = ["std", "CVBase", "CVBuffer", "CVImageBuffer", "CVPixelBuffer", "CVReturn"] }
-objc2-image-io = { version = "0.3", default-features = false, features = ["std", "CGImageProperties"] }
 
 [profile.release]
 panic = "abort"

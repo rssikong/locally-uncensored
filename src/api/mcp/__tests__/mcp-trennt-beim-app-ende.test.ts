@@ -281,7 +281,7 @@ describe('die bewusste Entscheidung ist im Code festgehalten', () => {
   })
 
   it('NICHT an onCloseRequested — das X versteckt in die Tray, es beendet nicht', () => {
-    // main.rs:549 ruft api.prevent_close() und versteckt das Fenster. Ein
+    // lib.rs ruft api.prevent_close() und versteckt das Fenster. Ein
     // Teardown an dieser Stelle würde jeden verbundenen Server killen, sobald
     // der Nutzer das Fenster schließt und die App weiterlaufen soll. Wer das
     // später "nachrüstet", soll hier auflaufen.

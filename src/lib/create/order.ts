@@ -113,6 +113,7 @@ export interface OrderRun {
   spent?: number
   interrupted?: boolean
   stoppedLate?: boolean
+  lostTrack?: boolean
   refunded?: boolean
   error?: string
 }
@@ -800,7 +801,7 @@ export interface ExecuteDeps extends RunDeps, Pick<CreateDeps, 'uploadInput' | '
   newRequestId: () => string
 }
 
-function timeoutFor(run: OrderRun): number {
+export function timeoutFor(run: OrderRun): number {
   if (run.engine === 'step') return 125 * 60_000
   return run.kind === 'video' || run.intent === 'character' ? 45 * 60_000 : 15 * 60_000
 }
@@ -913,6 +914,7 @@ function replaceRun(order: Order, n: number, index: number, patch: Partial<Order
 
 export const INTERRUPTED_ERROR = 'Interrupted by a reload.'
 export const STOPPED_LATE_ERROR = 'Stopped too late: it was already rendering.'
+export const LOST_TRACK_ERROR = 'Still with LU Cloud: its answer did not arrive yet.'
 export const INTERRUPTED_NOTE =
   'Interrupted by a reload. Finished items stay; an item that was rendering may still finish in your gallery.'
 
@@ -962,12 +964,12 @@ export function settleInterrupted(order: Order, n: number, index: number, job: C
   if (job.status === 'succeeded' && (job.result_url || run.intent === 'character')) {
     next = replaceRun(order, n, index, {
       status: 'done', jobId, resultUrl: job.result_url ?? undefined, spent: job.cost_units,
-      error: undefined, refunded: undefined, interrupted: undefined, stoppedLate: undefined,
+      error: undefined, refunded: undefined, interrupted: undefined, stoppedLate: undefined, lostTrack: undefined,
     })
   } else if (job.status === 'canceled') {
-    next = replaceRun(order, n, index, { status: 'failed', jobId, refunded: true, spent: 0, error: 'Stopped.', interrupted: undefined, stoppedLate: undefined })
+    next = replaceRun(order, n, index, { status: 'failed', jobId, refunded: true, spent: 0, error: 'Stopped.', interrupted: undefined, stoppedLate: undefined, lostTrack: undefined })
   } else if (job.status === 'failed' || job.status === 'succeeded') {
-    next = replaceRun(order, n, index, { status: 'failed', jobId, refunded: true, spent: 0, error: failedJobText(job), interrupted: undefined, stoppedLate: undefined })
+    next = replaceRun(order, n, index, { status: 'failed', jobId, refunded: true, spent: 0, error: failedJobText(job), interrupted: undefined, stoppedLate: undefined, lostTrack: undefined })
   } else {
     return order
   }
@@ -983,6 +985,15 @@ export function settleInterrupted(order: Order, n: number, index: number, job: C
       note: finished
         ? `You stopped this order after item ${n} had started rendering. It finished and was charged; items that had not started were not run and not charged.`
         : `You stopped this order. Item ${n} did not finish and was refunded; items that had not started were not run and not charged.`,
+    }
+  }
+  if (run.lostTrack) {
+    return {
+      ...next,
+      state: 'stopped',
+      note: finished
+        ? `Item ${n} has finished on LU Cloud after all and was charged.`
+        : `Item ${n} did not finish on LU Cloud and was refunded.`,
     }
   }
   return {
@@ -1057,7 +1068,7 @@ export async function executeOrder(start: Order, deps: ExecuteDeps): Promise<Ord
         if (failure.kind === 'aborted') {
           const jobId = order.items.find((i) => i.n === item.n)!.runs[index].jobId
           let refunded = !polling && !!jobId
-          if (jobId && polling) {
+          if (jobId) {
             try {
               const res = await deps.cancelJob(jobId) as { refunded?: boolean } | undefined
               refunded = res?.refunded !== false
@@ -1075,6 +1086,15 @@ export async function executeOrder(start: Order, deps: ExecuteDeps): Promise<Ord
             note: jobId && !refunded
               ? `Item ${item.n} was already rendering and cannot be recalled. It is charged if it finishes. Items that had not started were not charged.`
               : 'Stopped. Items that had not started were not charged.',
+          })
+          return order
+        }
+        const sentId = order.items.find((i) => i.n === item.n)!.runs[index].jobId
+        if (polling && sentId) {
+          emit({
+            ...replaceRun(order, item.n, index, { status: 'failed', refunded: false, error: LOST_TRACK_ERROR, interrupted: true, lostTrack: true }),
+            state: 'stopped',
+            note: `Item ${item.n} is with LU Cloud, but its answer did not arrive (${failure.text ?? 'no reply'}). LU keeps checking; it is charged only if it finishes.`,
           })
           return order
         }

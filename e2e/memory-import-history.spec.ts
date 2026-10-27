@@ -16,7 +16,7 @@ test('JSON export and reimport keep superseded facts out of AI context after rel
   const chunks: Buffer[] = []
   for await (const chunk of stream) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
   const exported = Buffer.concat(chunks)
-  await page.getByRole('button', { name: 'Clear', exact: true }).click()
+  await page.getByRole('button', { name: 'Delete all', exact: true }).click()
   await page.getByRole('button', { name: 'Sure?', exact: true }).click()
   await expect(page.getByText('Current memory', { exact: true })).toHaveCount(0)
   await input.setInputFiles({ name: 'roundtrip.json', mimeType: 'application/json', buffer: exported })

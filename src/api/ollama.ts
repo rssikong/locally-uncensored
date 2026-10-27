@@ -701,8 +701,15 @@ export async function unloadAllModels(options?: OllamaCallOptions): Promise<Unlo
  */
 export async function checkConnection(timeoutMs?: number): Promise<boolean> {
   try {
-    await localFetch(ollamaUrl("/tags"), timeoutMs ? { timeoutMs } : undefined)
-    return true
+    // The STATUS decides, not the absence of a throw. In the packaged app
+    // localFetch does not throw when nothing answers: the proxy fails, the
+    // direct fetch fails, and it hands back a synthetic `Response` with status
+    // 500 carrying the error text (api/backend.ts). Awaiting it and returning
+    // true therefore said "Ollama is there" on every machine without Ollama,
+    // and every caller that trusted it walked into the next error instead
+    // (Document Chat tried `ollama pull` against nothing).
+    const res = await localFetch(ollamaUrl("/tags"), timeoutMs ? { timeoutMs } : undefined)
+    return res.ok
   } catch {
     return false
   }

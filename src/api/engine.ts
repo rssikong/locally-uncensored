@@ -11,7 +11,8 @@
  * `backendCall` maps camelCase args → snake_case Rust params (Tauri).
  */
 
-import { backendCall, isLinux } from './backend'
+import { backendCall } from './backend'
+import { pathsFoldCase } from '../lib/capabilities'
 import { syncBuiltinEnginePort } from './builtin-ensure'
 import { trackEngineSwap } from './engine-swap-gate'
 import { prefixModelName } from './providers/model-name'
@@ -57,6 +58,13 @@ export interface BundledModel {
    * installed, which is what the offer to add it is decided on. Absent on an
    * older backend. */
   imagePart?: boolean
+  /** LU made this file with its refusal-removal tool (`general.description`
+   * of the GGUF). Absent on an older backend. */
+  refusalsRemoved?: boolean
+  /** The Hugging Face repo of the original weights, as the GGUF header (or
+   * LU's short list) names it. The tool's button shows only where there is
+   * one. Absent or null when nothing points anywhere. */
+  sourceRepo?: string | null
 }
 
 /** What a start / swap answers. `port` is the port the engine ACTUALLY came
@@ -104,6 +112,16 @@ export interface EngineStatus {
   /** Why the loaded model came up without its image part, as the sentence the
    * user is shown (engine.rs). Null when it has its part or has none. */
   imageNote?: string | null
+  /** How the model fits the card and the RAM, with numbers (3.0.8, A25,
+   *  Rust vram_plan.rs). Null when everything fits with room. */
+  memoryNote?: string | null
+  /** The buttons under `memoryNote` ("Context 16K", "KV q8_0"). */
+  fitActions?: import('../lib/engine-fit').FitAction[] | null
+  /** MoE layers whose experts stay on the processor (`--n-cpu-moe`). */
+  cpuMoe?: number | null
+  /** The context the start asked for; `ctx` is what the VRAM plan gave a
+   *  context nobody chose (3.0.8, A25). */
+  ctxRequested?: number | null
 }
 
 /** Loopback base URL of the managed embeddings server (P5). Mirrors the Rust
@@ -115,8 +133,19 @@ export interface EngineStatus {
 export const ENGINE_PORT = 8127
 
 export const EMBED_PORT = 8128
+
+/** The port the embeddings server really holds. On a phone it walks to
+ *  another one when 8128 is taken (engine.rs, embed_port_candidates; iOS
+ *  check of package 17, N-1), and every start and status answer names it. A
+ *  desktop always answers 8128. */
+let embedPort = EMBED_PORT
+
+function syncEmbedPort(port: unknown): void {
+  if (typeof port === 'number' && Number.isInteger(port) && port > 0 && port < 65536) embedPort = port
+}
+
 export function embedBaseUrl(): string {
-  return `http://127.0.0.1:${EMBED_PORT}/v1`
+  return `http://127.0.0.1:${embedPort}/v1`
 }
 
 // name → absolute GGUF path, populated by listBundledModels(). Lets callers
@@ -219,8 +248,10 @@ export async function swapBundledModel(modelPath: string, tuning?: BuiltinEngine
 
 /** Start the built-in embeddings server (P5) with a specific embedding GGUF.
  * Idempotent for the same model. Runs on EMBED_PORT, separate from chat. */
-export function startBundledEmbed(modelPath: string) {
-  return backendCall('start_bundled_embed', { modelPath })
+export async function startBundledEmbed(modelPath: string) {
+  const res = await backendCall<{ port?: unknown } | null>('start_bundled_embed', { modelPath })
+  syncEmbedPort(res?.port)
+  return res
 }
 
 /** Stop the managed embeddings server if one is running. */
@@ -229,8 +260,11 @@ export function stopBundledEmbed() {
 }
 
 /** Embeddings-server health + which model is loaded on which port. */
-export function bundledEmbedStatus() {
-  return backendCall<EngineStatus>('bundled_embed_status')
+export async function bundledEmbedStatus() {
+  const status = await backendCall<EngineStatus>('bundled_embed_status')
+  // Only a running server says where it is; a stopped one answers the default.
+  if (status?.running) syncEmbedPort(status.port)
+  return status
 }
 
 // Embedding-model GGUFs: never offered in the chat dropdown, and the
@@ -243,7 +277,7 @@ export function isEmbeddingGgufName(name: string): boolean {
 }
 
 // Coalesce concurrent RAG calls into one status-probe/restart.
-let embedEnsureInflight: Promise<void> | null = null
+let embedEnsureInflight: Promise<string | null> | null = null
 
 /**
  * Revive the bundled embeddings server after a VRAM offload stopped it —
@@ -252,24 +286,31 @@ let embedEnsureInflight: Promise<void> | null = null
  * reload (the chat half lives in `builtin-ensure.ts`); RAG awaits it before
  * hitting :8128. Best-effort: a real start failure surfaces on the embeddings
  * request itself with the server's honest error.
+ *
+ * Resolves to the words of the failure when a start was tried and failed,
+ * else null. The phone needs them: "address already in use" is not "no free
+ * memory", and only the words tell the two apart (iOS check of package 17, N-1).
  */
-export async function ensureBundledEmbedAlive(): Promise<void> {
+export async function ensureBundledEmbedAlive(): Promise<string | null> {
   if (embedEnsureInflight) return embedEnsureInflight
   embedEnsureInflight = (async () => {
     try {
       const status = await bundledEmbedStatus()
-      if (status?.healthy) return
+      if (status?.healthy) return null
       const models = await listBundledModels()
       const embed = models.find((m) => isEmbeddingGgufName(m.name))
       if (embed) await startBundledEmbed(embed.path)
-    } catch {
+      return null
+    } catch (err) {
       /* best-effort — embedViaBuiltin reports the real error */
+      return err instanceof Error ? err.message : typeof err === 'string' ? err : String(err)
     } finally {
       embedEnsureInflight = null
     }
   })()
   return embedEnsureInflight
 }
+
 
 /**
  * Can the bundled lane actually embed right now.
@@ -312,7 +353,7 @@ export interface ScannedDir {
 }
 
 // The folders the LAST listing walked, app dir first. Kept here rather than
-// returned, so no call site has to change to ignore it; Model Storage is the
+// returned, so no call site has to change to ignore it; Storage is the
 // one surface that asks.
 let lastDirs: ScannedDir[] = []
 
@@ -329,10 +370,10 @@ export function lastScanDirs(): ScannedDir[] {
  *  and macOS and NOT on Linux: `/mnt/Models` and `/mnt/models` really are two
  *  folders on ext4, and folding them here would let this answer a question
  *  about one folder with the verdict about the other. */
-function samePath(a: string, b: string): boolean {
+export function samePath(a: string, b: string): boolean {
   // The mirror of Rust's `!cfg!(target_os = "linux")` in bundled_scan_dirs,
   // spelled the same way round so the two cannot drift apart.
-  const fold = !isLinux()
+  const fold = pathsFoldCase()
   const key = (p: string) => {
     const normalised = String(p ?? '').replace(/\\/g, '/').replace(/\/+$/, '')
     return fold ? normalised.toLowerCase() : normalised
@@ -393,7 +434,7 @@ export async function listImportableModels(): Promise<ImportCandidate[]> {
 }
 
 /**
- * The LU Engine folder set under Model Storage, or null for the app's own
+ * The LU Engine folder set under Storage, or null for the app's own
  * models dir. The import links there, so the cross drive error's advice (set
  * that folder on the drive of the file) is a way out that works.
  */
@@ -426,7 +467,7 @@ export function ggufPickProblem(path: string): string | null {
     return 'This is the image part of a vision model, not the model. Pick the model file next to it; LU brings the image part along.'
   }
   if (SPLIT_GGUF.test(leaf)) {
-    return 'This model is split into several files. Put all parts into the LU Engine folder (Settings, AI Backends, Model Storage) and LU lists it from there.'
+    return 'This model is split into several files. Put all parts into the LU Engine folder (Settings, AI Backends, Storage) and LU lists it from there.'
   }
   return null
 }
@@ -480,6 +521,8 @@ export function bundledToAIModels(models: BundledModel[]): CloudModel[] {
     // Whether the image part is on disk, which is not the same question: a
     // model loaded without its part has it installed and cannot see.
     ...(typeof m.imagePart === 'boolean' ? { imagePartInstalled: m.imagePart } : {}),
+    ...(m.refusalsRemoved ? { refusalsRemoved: true } : {}),
+    ...(m.sourceRepo ? { sourceRepo: m.sourceRepo } : {}),
   }))
 }
 

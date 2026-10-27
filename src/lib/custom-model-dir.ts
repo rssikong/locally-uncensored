@@ -1,5 +1,5 @@
 /**
- * The folder under Settings → Model Storage, handed to ComfyUI.
+ * The folder under Settings → Storage, handed to ComfyUI.
  *
  * GH #122 and the Discord thread "Read me first" are one
  * folder apart: a chat GGUF in a folder of your own, and a LoRA in one. The

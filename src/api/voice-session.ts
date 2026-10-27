@@ -24,6 +24,7 @@ import { beginAgentRun, endAgentRun, renderWorkspaceSection } from './agent-cont
 import type { AgentRunContext } from './agent-context'
 import { resolveWorkspace } from './agents/workspace-resolve'
 import { toolRegistry } from './mcp'
+import { isSettingsToolName } from '../lib/settings-tool-names'
 import type { MCPToolDefinition } from './mcp/types'
 import { resolveVoiceBrain, describeVoiceBrain, takesTheEngineFrom, VoiceBrainError } from './voice-brain'
 import type { VoiceBrain } from './voice-brain'
@@ -101,7 +102,7 @@ const KEY_CHECK_MS = 60_000
 export const VOICE_ENGINE_IDLE_MS = 5 * 60 * 1000
 
 export const NO_TOOLS_NOTICE = 'This model cannot use tools, so this session is conversation only.'
-export const AGENT_OFF_NOTICE = 'The agent is off, so this session is conversation only.'
+export const AGENT_OFF_NOTICE = 'The agent is off, so this session talks and looks things up on the web, without files, commands or the screen.'
 export const WHOLE_COMPUTER_DECLINED_NOTICE = 'Files stay in the workspace folder: the whole computer was not allowed.'
 export const WHOLE_COMPUTER_APP_ONLY_NOTICE = 'Files stay in the workspace folder: the whole computer needs the desktop app.'
 
@@ -344,7 +345,8 @@ function selectTools(brain: VoiceBrain, conversationId: string, run: AgentRunCon
   let defs = gatePlanTool(
     toolRegistry.getAvailableTools(categories),
     planToolAllowed({ mode: null, userText: '', todos: [] }),
-  ).filter((tool) => TOOL_NAME.test(tool.name) && voiceToolLevel(tool.name, toolRegistry, permissions(), run) !== 'blocked')
+  // Nobody sees a card while speaking: no settings changes by voice (A11).
+  ).filter((tool) => TOOL_NAME.test(tool.name) && !isSettingsToolName(tool.name) && voiceToolLevel(tool.name, toolRegistry, permissions(), run) !== 'blocked')
   if (!defs.some((tool) => tool.name === COMPUTER_TASK_TOOL_NAME) && categories[COMPUTER_TASK_TOOL.category] !== 'blocked') {
     defs.push(COMPUTER_TASK_TOOL)
   }

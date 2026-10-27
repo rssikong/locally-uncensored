@@ -318,6 +318,7 @@ fn capture_screen_to(_tmp: &std::path::Path) -> Result<(), String> {
 /// that path in its header as the working directory, and every file op after it
 /// answered "pick it again to allow it", which the user had just done. The
 /// reason was produced, discarded here, and never reached anybody.
+#[cfg(desktop)]
 #[tauri::command]
 pub async fn pick_folder(
     default_path: Option<String>,
@@ -336,6 +337,17 @@ pub async fn pick_folder(
         }
     }
     Ok(picked.map(|p| p.to_string_lossy().to_string()))
+}
+
+/// A phone has no folder picker, and no folder outside the app to pick.
+#[cfg(mobile)]
+#[tauri::command]
+pub async fn pick_folder(
+    default_path: Option<String>,
+    as_workspace: Option<bool>,
+) -> Result<Option<String>, String> {
+    let _ = (default_path, as_workspace);
+    Err(crate::commands::filesystem::NO_FILE_DIALOG.to_string())
 }
 
 /// Exit the app. Used by the "full quit" of the command palette and by the

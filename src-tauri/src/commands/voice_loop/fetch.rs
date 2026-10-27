@@ -71,7 +71,7 @@ impl FetchError {
 
 pub fn http_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
-        .user_agent(format!("LocallyUncensored/{}", crate::app_identity::APP_VERSION))
+        .user_agent(crate::app_identity::outgoing_agent_for(crate::app_identity::APP_VERSION))
         .redirect(reqwest::redirect::Policy::limited(10))
         .connect_timeout(Duration::from_secs(30))
         // Bounds a stalled transfer and not the size of the file.

@@ -1,0 +1,12 @@
+[package]
+name = "tauri-plugin-luharness"
+version = "0.1.0"
+description = "Testnaehte fuer den iOS-Treiber: Speicherwarnung, Lebenslauf, Zurueck-Geste"
+edition = "2021"
+links = "tauri-plugin-luharness"
+
+[dependencies]
+tauri = { version = "2" }
+
+[build-dependencies]
+tauri-plugin = { version = "2", features = ["build"] }

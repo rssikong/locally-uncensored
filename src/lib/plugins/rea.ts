@@ -70,7 +70,10 @@ export function reaFetch(): Promise<ReaStatus> {
 
 /** Why REA cannot start with this status, or null when it can. */
 export function reaNotStartable(status: ReaStatus): string | null {
-  if (!status.node) return `REA needs Node.js (${status.nodeRange}), and none was found. Install it from nodejs.org, then switch REA on again.`
+  // Where LU looked, so "node -v works in my terminal" has an answer (A37):
+  // a Linux app started from the menu does not read ~/.bashrc, where nvm and
+  // fnm put their lines.
+  if (!status.node) return `REA needs Node.js (${status.nodeRange}), and none was found: not on the PATH LU was started with, not in the folders of nvm, fnm, Volta, asdf, mise or nodenv, and not in your login shell. If node -v works in a terminal, start LU from that terminal once, or install Node.js from nodejs.org. Then switch REA on again.`
   if (!status.nodeOk) return `REA needs Node.js ${status.nodeRange}; this computer has ${status.node}. Update Node.js, then switch REA on again.`
   if (!status.ready || !status.tarball) return 'The REA package is not on this computer yet, or it was changed. Switch REA on again to fetch the official one.'
   return null

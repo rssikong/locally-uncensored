@@ -360,13 +360,15 @@ pub(crate) fn resolve(root: &Path, name: &str) -> Result<PathBuf, String> {
     Ok(real)
 }
 
-/// The strength a run takes: what Create's number field lets through (-10 to
-/// 10 on a grid of 0.01), and 1 for something that is not a number.
+/// The strength a run takes: what Create's number field lets through (-20 to
+/// 20 on a grid of 0.01, lib/lora-strength.ts), and 1 for something that is
+/// not a number. mflux and the video engines scale the LoRA by it as it is,
+/// a negative value included.
 pub(crate) fn strength(asked: f32) -> f32 {
     if !asked.is_finite() {
         return 1.0;
     }
-    (asked.clamp(-10.0, 10.0) * 100.0).round() / 100.0
+    (asked.clamp(-20.0, 20.0) * 100.0).round() / 100.0
 }
 
 fn ensure_root() -> Result<PathBuf, String> {
@@ -414,6 +416,8 @@ pub fn mlx_loras_open_folder(_state: &AppState, _args: &Value) -> CmdResult {
 /// as a render does (`mlx_outputs.rs`): a LoRA is a download of hundreds of
 /// megabytes or a file the user trained, and a misclick must stay
 /// recoverable.
+// Desktop only, like the command and like `mlx_outputs`: the `trash` crate does not compile for a phone.
+#[cfg(desktop)]
 pub fn mlx_lora_delete(_state: &AppState, args: &Value) -> CmdResult {
     let name = args.get("name").and_then(|v| v.as_str()).ok_or_else(|| crate::commands::bad_request("missing name"))?;
     let root = loras_root();
@@ -423,6 +427,7 @@ pub fn mlx_lora_delete(_state: &AppState, args: &Value) -> CmdResult {
 
 /// Resolve `name` and hand the file to `bin`. Where the Trash refuses, the
 /// file stays and the user reads why: it is never deleted for good instead.
+#[cfg(any(desktop, test))]
 fn delete(root: &Path, name: &str, bin: impl FnOnce(&Path) -> Result<(), String>) -> Result<(), String> {
     let file = resolve(root, name).map_err(crate::commands::bad_request)?;
     bin(&file).map_err(|e| crate::commands::internal(format!("Could not move {} to the Trash: {e}", stem(name))))
@@ -846,11 +851,14 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn a_strength_is_a_number_between_minus_ten_and_ten() {
+    fn a_strength_is_a_number_between_minus_twenty_and_twenty() {
         assert_eq!(strength(0.8), 0.8);
         assert_eq!(strength(-4.0), -4.0);
-        assert_eq!(strength(25.0), 10.0);
-        assert_eq!(strength(-25.0), -10.0);
+        assert_eq!(strength(15.0), 15.0);
+        assert_eq!(strength(-12.5), -12.5);
+        assert_eq!(strength(20.0), 20.0);
+        assert_eq!(strength(25.0), 20.0);
+        assert_eq!(strength(-25.0), -20.0);
         assert_eq!(strength(0.456), 0.46);
         assert_eq!(strength(f32::NAN), 1.0);
         assert_eq!(strength(f32::INFINITY), 1.0);

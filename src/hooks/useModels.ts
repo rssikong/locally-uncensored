@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo } from 'react'
 import { listModels, pullModel as pullModelApi, pullModelTauri, deleteModel as deleteModelApi } from '../api/ollama'
-import { isTauri, isMacOS, backendCall } from '../api/backend'
+import { isTauri, backendCall } from '../api/backend'
+import { hasComfy, singleModelSlot } from '../lib/capabilities'
 import {
   inventoryOwesRetry, refetchWhenComfyReady, type ComfyReadyStatus,
 } from '../lib/comfy-ready-retry'
@@ -13,8 +14,8 @@ import {
 import { parseNDJSONStream } from '../api/stream'
 import { log } from '../lib/logger'
 import { cloudModelRow } from '../lib/cloud-model-row'
-import { runEngineResume, engineResumeIsOwed, spendEngineResume } from '../lib/engine-resume-policy'
-import { engineStartIsWorthRetrying } from '../lib/engine-start-failure'
+import { engineResumeIsOwed, spendEngineResume } from '../lib/engine-resume-policy'
+import { applyEngineThinking, preloadChatModel } from '../lib/engine-view'
 import { commandIsUnavailable } from '../lib/engine-command-availability'
 import { dropDuplicateLuEngineRows, dropStandbyRowsServedByLuEngine, LU_ENGINE_GROUP, zeileZumEinklappen } from '../lib/lu-engine-rows'
 import { isLmStudioEntry, isBuiltinEngineEntry, type InstalledModelLike } from '../lib/lmstudio-match'
@@ -33,7 +34,7 @@ import { useSettingsStore } from '../stores/settingsStore'
 import { getEnabledProviders, prefixModelName, getProviderIdFromModel, isOpenAISlotModel } from '../api/providers'
 import {
   listBundledModels, bundledToAIModels, activateBuiltinModel, isManagedBuiltinActive,
-  bundledEngineStatus, bundledEmbedStatus, startBundledEmbed,
+  bundledEmbedStatus, startBundledEmbed,
   isEmbeddingGgufName as isEmbeddingModel,
 } from '../api/engine'
 import type { BundledModel } from '../api/engine'
@@ -57,7 +58,6 @@ import { fileFormat } from '../lib/model-file-format'
 // until they re-picked the model by hand. Bounded on purpose, because the
 // other failure (a model this box genuinely cannot load) must not turn into an
 // endless restart loop. The policy lives in lib/engine-resume-policy.
-const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
 async function resumeBuiltinEngines(bundled: BundledModel[]) {
   // The embeddings server is a different process on a different port with a
@@ -65,42 +65,19 @@ async function resumeBuiltinEngines(bundled: BundledModel[]) {
   // attempts. Waiting its turn is how a slow chat start used to take
   // Document-Chat down with it (review S3).
   const embedResumed = resumeEmbedServer(bundled)
-  // Der letzte Wurf, damit ein aufgegebener Wiederanlauf denselben Satz sagen
-  // kann wie jeder andere Fehlstart. Vorher stand er nur im Logbuch, und der
-  // Nutzer sass vor einem Chat, der ohne ein Wort nicht antwortete.
-  let letzterFehler: unknown = null
-  const outcome = await runEngineResume({
-    status: () => bundledEngineStatus(),
-    eligible: () => {
-      const { activeModel } = useModelStore.getState()
-      return (
-        !!activeModel &&
-        getProviderIdFromModel(activeModel) === 'openai' &&
-        bundled.some((m) => prefixModelName('openai', m.name) === activeModel)
-      )
-    },
-    activate: () => activateBuiltinModel(useModelStore.getState().activeModel as string),
-    // Only a start that DIED is worth repeating. A health-budget timeout means
-    // the engine is still loading, and repeating it spends the whole budget
-    // again (up to ten minutes on a big GGUF) plus another ComfyUI cache drop
-    // and another Ollama eviction (review S3).
-    worthRetrying: engineStartIsWorthRetrying,
-    sleep: wait,
-    onError: (attempt, err) => {
-      letzterFehler = err
-      log.warn('[useModels] LU Engine resume failed', { attempt, err })
-    },
+  // The chat engine itself: lib/engine-view.ts is the ONE place that loads the
+  // chosen model ahead of the first message, at start (here) and when a chat
+  // is opened on a phone. On a desktop it runs the bounded resume that used
+  // to stand in this function, unchanged: only an engine that reports
+  // running:false is started, a start that died is repeated up to three
+  // times (lib/engine-resume-policy), and a resume that gave up says so on
+  // the standing line above the composer. On a phone it asks first whether
+  // the model fits into memory.
+  await preloadChatModel('start', {
+    installed: (activeModel) =>
+      getProviderIdFromModel(activeModel) === 'openai' &&
+      bundled.some((m) => prefixModelName('openai', m.name) === activeModel),
   })
-  log.info('[useModels] LU Engine resume', outcome)
-  // Aufgegeben heisst: die App hat es versucht, der Motor laeuft nicht, und
-  // niemand hat es angestossen. Genau dann gehoert der Satz auf die stehende
-  // Zeile ueber dem Eingabefeld, wortgleich mit dem Fehlstart aus dem Waehler
-  // (api/lu-engine-switch), samt dem Satz, den llama-server selbst geschickt
-  // hat.
-  if (outcome.outcome === 'gave-up' && letzterFehler) {
-    const gewaehlt = useModelStore.getState().activeModel
-    if (gewaehlt) announceLuEngineStartFailure(gewaehlt, letzterFehler, false)
-  }
   await embedResumed
 }
 
@@ -121,7 +98,7 @@ let comfyRetryRunning = false
  */
 function armComfyInventoryRetry(refetch: () => Promise<void>): void {
   if (comfyRetryRunning) return
-  if (isMacOS()) return
+  if (!hasComfy()) return
   comfyRetryRunning = true
   useModelStore.getState().beginInventoryRefresh()
   void refetchWhenComfyReady({
@@ -160,6 +137,10 @@ export function __resetComfyInventoryRetryForTests(): void {
 let embedResumeLaeuft = false
 
 async function resumeEmbedServer(bundled: BundledModel[]) {
+  // One model slot (lib/model-slot.ts): on a phone the embedder is loaded by
+  // Document Chat when it needs it, never by a model refresh. Started here it
+  // would sit in memory beside the chat model without anyone having asked.
+  if (singleModelSlot()) return
   if (embedResumeLaeuft) return
   embedResumeLaeuft = true
   try {
@@ -316,7 +297,7 @@ export function useModels() {
       // A14 (2.6.8): asked whether or not the LU Engine is the active chat
       // backend. It used to be asked only while it was, so on the owner's Mac with
       // Ollama in front, the GGUF in his own model folder existed on disk,
-      // Model Storage promised in writing that the folder is read, and the
+      // Storage promised in writing that the folder is read, and the
       // file appeared nowhere. The command answering at all IS the presence
       // check for the engine: it is a Tauri command with no bridge route, so
       // the web and remote-bridge builds, which have no sidecar to start,
@@ -373,7 +354,9 @@ export function useModels() {
       const mayResume = backendAnswered && !inDerCloud && engineResumeIsOwed()
       if (mayResume) spendEngineResume()
       if (bundledRaw) {
-        const bundled = bundledToAIModels(bundledRaw).filter(m => !isEmbeddingModel(m.name))
+        // What the engine said about its own rows survives a fresh list: the
+        // thinking switch shows only for a model it works on (lib/engine-view).
+        const bundled = applyEngineThinking(bundledToAIModels(bundledRaw).filter(m => !isEmbeddingModel(m.name)))
         // One file, one row: with the folder pointed at ~/.lmstudio/models,
         // LM Studio lists the model over its own API and the folder walk finds
         // the same file. The row that is already serving the chat wins.
@@ -450,8 +433,8 @@ export function useModels() {
       // Hard rule: Mac local media is MLX-only — ComfyUI never auto-starts
       // there (process.rs::auto_start_comfyui), so skip the probe outright
       // instead of a doomed connection check on every model-list refresh.
-      const comfyOk = !isMacOS() && (await checkComfyConnection())
-      if (!isMacOS() && !comfyOk) comfyAnswered = false
+      const comfyOk = hasComfy() && (await checkComfyConnection())
+      if (hasComfy() && !comfyOk) comfyAnswered = false
       if (comfyOk) {
         // Settled, not all: a folder ComfyUI cannot read costs that one lane,
         // never the whole list. The old code lost both to a single throw.

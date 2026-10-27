@@ -338,7 +338,7 @@ export function ComfyStep({ skin, fleet, step, setStep }: ComfyStepProps) {
       {comfyFound?.found && comfyFound.complete !== false && !isRunning(comfyInstall) && (
         <div className={`p-3 rounded-lg border ${isDark ? 'bg-green-500/10 border-green-500/20' : 'bg-green-50 border-green-200'}`}>
           <div className="flex items-center gap-2 justify-center">
-            <Check size={14} className="text-green-400" />
+            <Check size={14} className="text-green-600 dark:text-green-400" />
             <span className="text-[0.7rem] font-medium">ComfyUI detected</span>
           </div>
           <p className={`text-[0.55rem] font-mono mt-1 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>{comfyFound.path}</p>
@@ -619,7 +619,7 @@ export function ComfyStep({ skin, fleet, step, setStep }: ComfyStepProps) {
       {comfyReady && (
         <div className={`p-3 rounded-lg border ${isDark ? 'bg-green-500/10 border-green-500/20' : 'bg-green-50 border-green-200'}`}>
           <div className="flex items-center gap-2 justify-center">
-            <Check size={14} className="text-green-400" />
+            <Check size={14} className="text-green-600 dark:text-green-400" />
             <span className="text-[0.7rem] font-medium">ComfyUI is ready</span>
           </div>
         </div>

@@ -5,6 +5,7 @@
  * calling. Ollama models need explicit compatibility checks.
  */
 
+import { isCompatProviderId } from '../api/providers/compat-id'
 import { getProviderIdFromModel } from '../api/providers'
 import type { ProviderId } from '../api/providers/types'
 
@@ -27,7 +28,9 @@ import type { ProviderId } from '../api/providers/types'
 const NATIVE_TOOL_PROVIDERS: readonly string[] = ['openai', 'anthropic', 'lu-cloud']
 
 export function isNativeToolProvider(providerId: string): boolean {
-  return NATIVE_TOOL_PROVIDERS.includes(providerId)
+  // An extra OpenAI-compatible slot (`openai-<slug>`) is a hosted API with
+  // the user's own key, and speaks the same tool schema as the shared slot.
+  return NATIVE_TOOL_PROVIDERS.includes(providerId) || isCompatProviderId(providerId)
 }
 
 const AGENT_COMPATIBLE = [

@@ -523,6 +523,37 @@ test('mac local: Edit with Qwen-Image 2.1 hands the picked image and the prompt 
   expect(await comfyCalls(page)).toHaveLength(0)
 })
 
+// Discord feature request "Native HiRes Upscale in the EDIT" (3.0.8): the
+// switch is in Edit too, and the edited picture goes back in for the second
+// pass at the larger size, as a picture made in Create does.
+test('mac local: Native HiRes in Edit runs the edited picture again at the larger size', async ({ page }) => {
+  await bootLocalCreate(page, QWEN_MAC)
+  await page.getByRole('radio', { name: 'Edit / Image to Image', exact: true }).click()
+  await page.locator('input[type="file"]').first().setInputFiles({ name: 'car.png', mimeType: 'image/png', buffer: ONE_PIXEL_PNG })
+  await expect(page.getByRole('img', { name: 'source' })).toBeVisible({ timeout: 15_000 })
+  await openDrawer(page)
+  const hires = drawer(page).getByRole('button', { name: /Native HiRes/ })
+  await expect(hires).toBeVisible()
+  await hires.click()
+  await expect(drawer(page).getByText('A second pass over the edited picture at a larger size')).toBeVisible()
+  if (process.env.LU_SHOTS) await page.screenshot({ path: `${process.env.LU_SHOTS}/mac-edit-hires-drawer.png` })
+  await page.keyboard.press('Escape')
+
+  await page.locator('textarea').first().fill('make the car blue')
+  await page.getByRole('button', { name: /^Create$/ }).last().click()
+  await expect.poll(() => generates(page), { timeout: 30_000 }).toBe(2)
+  const gens = (await mlxCalls(page)).filter((c) => c.cmd === 'mlx_generate')
+  // First the edit of the picked picture, as without HiRes.
+  expect(gens[0].raw.images).toEqual(['/tmp/lu-e2e/videos/start-images/e2e-start.png'])
+  expect(gens[0].raw.resolution).toBe(1056)
+  // Then the edited picture (768 x 512 from the engine) at 1.5 times its size.
+  expect(gens[1].raw.images).toHaveLength(1)
+  expect([gens[1].width, gens[1].height]).toEqual([1152, 768])
+  expect(gens[1].prompt).toBe('make the car blue')
+  await expect(page.locator('img[src^="data:image/png"]').first()).toBeVisible({ timeout: 30_000 })
+  expect(await comfyCalls(page)).toHaveLength(0)
+})
+
 test('mac local: an edit with a reference sends both images, the edited one first, and its size', async ({ page }) => {
   await bootLocalCreate(page, QWEN_MAC)
   await page.getByRole('radio', { name: 'Edit / Image to Image', exact: true }).click()

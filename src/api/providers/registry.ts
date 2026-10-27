@@ -10,6 +10,8 @@ import { OllamaProvider } from './ollama-provider'
 import { OpenAIProvider } from './openai-provider'
 import { AnthropicProvider } from './anthropic-provider'
 import { LuCloudProvider } from './lu-cloud-provider'
+import { CompatSlotProvider } from './compat-slot-provider'
+import { isCompatProviderId } from './compat-id'
 import { useProviderStore } from '../../stores/providerStore'
 import { cachedClient } from './client-cache'
 import { openaiEntryOfModel } from './model-name'
@@ -24,6 +26,9 @@ export { getProviderIdFromModel, prefixModelName, displayModelName, openaiEntryO
  * Create a provider client from config.
  */
 function createClient(config: ProviderConfig): ProviderClient {
+  // An extra OpenAI-compatible slot (`openai-<slug>`): not one of the four
+  // fixed cases below, and deliberately decided before them.
+  if (isCompatProviderId(config.id)) return new CompatSlotProvider(config)
   switch (config.id) {
     case 'ollama':
       return new OllamaProvider(config)

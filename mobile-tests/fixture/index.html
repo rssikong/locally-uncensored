@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>LU Harness Fixture</title>
+<!--
+  Testseite mit absichtlichen Fehlern. Sie ist die bekannte Wahrheit fuer den
+  Selbsttest: Jeder Fehler hier muss von inventory, sweep, layout und copy
+  gefunden werden. Die Liste steht in selbsttest.mjs (ERWARTET).
+-->
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 16px/1.4 sans-serif; margin: 0; padding: 12px 12px 90px; background: #fff; color: #111; }
+  @media (prefers-color-scheme: dark) { body { background: #111; color: #eee; } }
+  button, .knopf { min-height: 48px; min-width: 48px; font-size: 1rem; margin: 4px 0; }
+  .klein { min-height: 0; min-width: 0; width: 24px; height: 24px; padding: 0; }
+  .breit { width: 600px; background: #c33; color: #fff; }
+  .kurz { width: 110px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .zeile { display: block; margin: 6px 0; }
+  .unten { position: fixed; left: 0; right: 0; bottom: 0; padding: 8px; background: #888; }
+  .unten input { width: 80%; height: 44px; font-size: 1rem; }
+  #dialog { position: fixed; inset: 20% 10%; background: #246; color: #fff; padding: 16px; }
+  .zeiger { cursor: pointer; display: inline-block; min-height: 48px; min-width: 120px; background: #ddd; color: #000; }
+  .schalter { display: inline-block; min-width: 60px; min-height: 48px; background: #ccc; color: #000; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div id="start" data-testid="m-start-screen">
+  <h1>Fixture</h1>
+  <p id="ausgabe" role="status"></p>
+
+  <button id="ok" data-testid="m-start-save" class="zeile">Save</button>
+  <button id="tot" data-testid="m-start-dead" class="zeile">Dead button</button>
+  <button id="kaputt" data-testid="m-start-broken" class="zeile">Broken</button>
+  <button id="netz" data-testid="m-start-load" class="zeile">Load list</button>
+  <button id="dlg" data-testid="m-start-about" class="zeile">About</button>
+
+  <button id="icon" class="klein"><svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/></svg></button>
+  <a id="minilink" href="#x" style="display:inline-block;width:20px;height:20px">x</a>
+
+  <button id="bezahlt" data-testid="m-start-generate" class="zeile">Generate image</button>
+  <button id="weg" class="zeile">Delete account</button>
+  <button id="markiert" data-m-risk="paid" class="zeile">Make it</button>
+
+  <label class="zeile" for="feld">Your name</label>
+  <input id="feld" data-testid="m-start-name" type="text" style="height:44px;width:200px;font-size:1rem">
+
+  <label class="zeile" style="min-height:48px;display:flex;align-items:center"><input id="haken" type="checkbox"> Remember me on this device</label>
+
+  <div id="schalter" class="schalter zeile" role="switch" aria-checked="false" aria-label="Dark mode" tabindex="0">off</div>
+
+  <select id="wahl" aria-label="Language" style="height:48px;font-size:1rem"><option>English</option><option>Deutsch</option></select>
+
+  <div id="zeiger" class="zeiger zeile">Tap area</div>
+
+  <a id="weiter" data-testid="m-start-next" class="zeile knopf" href="#zwei" style="display:block;line-height:48px">Next page</a>
+
+  <div class="breit zeile">This box is 600 px wide and overflows the screen.</div>
+  <div class="kurz zeile" id="kurz">This sentence is far too long for its box.</div>
+
+  <p id="copy">Click here to open the folder in your terminal. Press Ctrl+K to search. Make sure Ollama, LM Studio or ComfyUI is running. Right-click or hover for more. You can <b>drag</b> and drop files here. A dash&mdash;like this &ndash; is not allowed.</p>
+  <p id="sauber">Tap the button to start a chat on your phone.</p>
+</div>
+
+<div id="zwei" data-testid="m-zwei-screen" hidden>
+  <h1>Second page</h1>
+  <button id="zurueckknopf" class="zeile">Second page button</button>
+</div>
+
+<div id="dialog" role="dialog" aria-label="About this app" hidden>
+  <p>Dialog text</p>
+  <button id="dlgzu">Close</button>
+</div>
+
+<div class="unten"><input id="unten" type="text" placeholder="Message" aria-label="Message"></div>
+
+<script>
+  window.__ereignisse = []
+  window.__bezahlt = false
+  window.__zerstoert = false
+  for (const t of ['touchstart', 'touchend', 'pointerdown', 'pointerup', 'click', 'keydown', 'input'])
+    document.addEventListener(t, (e) => window.__ereignisse.push({
+      typ: t, ziel: e.target.id || e.target.tagName, vertraut: e.isTrusted,
+      zeiger: e.pointerType || null, taste: e.key || null, daten: e.data || null,
+    }), true)
+  const $ = (id) => document.getElementById(id)
+  const ausgabe = (t) => { $('ausgabe').textContent = t }
+  $('ok').addEventListener('click', () => ausgabe('Saved at ' + Date.now()))
+  $('kaputt').addEventListener('click', () => { throw new Error('Absichtlicher Fehler der Fixture') })
+  $('netz').addEventListener('click', () => { fetch('/gibt-es-nicht').then((r) => r.text()) })
+  $('dlg').addEventListener('click', () => { $('dialog').hidden = false })
+  $('dlgzu').addEventListener('click', () => { $('dialog').hidden = true })
+  $('bezahlt').addEventListener('click', () => { window.__bezahlt = true; fetch('/bezahlt'); ausgabe('PAID CALL') })
+  $('markiert').addEventListener('click', () => { window.__bezahlt = true; fetch('/bezahlt'); ausgabe('PAID CALL') })
+  $('weg').addEventListener('click', () => { window.__zerstoert = true; fetch('/zerstoert'); ausgabe('DELETED') })
+  $('icon').addEventListener('click', () => ausgabe('icon'))
+  $('zeiger').addEventListener('click', () => ausgabe('area tapped'))
+  $('zurueckknopf').addEventListener('click', () => { $('zurueckknopf').textContent = 'Tapped' })
+  $('schalter').addEventListener('click', (e) => {
+    const an = e.currentTarget.getAttribute('aria-checked') !== 'true'
+    e.currentTarget.setAttribute('aria-checked', String(an)); e.currentTarget.textContent = an ? 'on' : 'off'
+  })
+  function route() {
+    const zwei = location.hash === '#zwei'
+    $('zwei').hidden = !zwei; $('start').hidden = zwei
+  }
+  addEventListener('hashchange', route); route()
+</script>
+</body>
+</html>

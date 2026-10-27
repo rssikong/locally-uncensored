@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  LU Mobile, iOS. Die Tauri-CLI mischt diese Datei bei jedem Bau in
+  gen/apple/locally-uncensored_iOS/Info.plist. Version und Baunummer stehen
+  NICHT hier, die kommen aus tauri.conf.json und tauri.ios.conf.json.
+  Alle Texte sind Nutzertexte: Englisch, ohne Gedankenstriche.
+
+  Diese Datei gilt fuer JEDEN Bau und nennt deshalb nichts, was nur ein Bau
+  mit Fernzugriff hat (Schalter remoteDesktop des Store-Presets). Was der
+  Fernzugriff braucht, steht in Info.ios.fernzugriff.plist und kommt nur in
+  einen Bau, dessen Preset ihn hat (scripts/mobile/ios/preset-plist.mjs).
+  Apple verlangt, dass ein Berechtigungstext zu einer Funktion des Baus gehoert.
+-->
+<plist version="1.0">
+<dict>
+    <!-- Diktat und Sprachchat. Auf dem Handy laeuft Sprache ueber LU Cloud, das sagt der Text. -->
+    <key>NSMicrophoneUsageDescription</key>
+    <string>LU records your voice when you start dictation or voice chat. The recording is sent to LU Cloud to be turned into text.</string>
+
+    <!-- Die Dateiauswahl bietet "Foto aufnehmen" an. Ohne diesen Text beendet iOS die App beim Zugriff.
+         Ein Bau mit Fernzugriff nennt dazu den QR-Code der Kopplung (Info.ios.fernzugriff.plist). -->
+    <key>NSCameraUsageDescription</key>
+    <string>LU uses the camera when you choose to take a photo for a chat or an image request.</string>
+
+    <!-- Erzeugte Bilder und Videos in Fotos sichern, auch ueber "Bild sichern" im Teilen-Blatt. -->
+    <key>NSPhotoLibraryAddUsageDescription</key>
+    <string>LU saves images and videos to your photo library when you choose to save them.</string>
+
+    <!-- Kein Text fuer das lokale Netz in dieser Datei: ohne Fernzugriff spricht die App kein
+         Geraet im WLAN an (die Engine laeuft auf 127.0.0.1, dafuer fragt iOS nicht).
+         Der Schluessel steht in Info.ios.fernzugriff.plist. -->
+
+    <!-- Enge Ausnahme: http zu lokalen Zielen (Engine auf 127.0.0.1, mit Fernzugriff das
+         Desktop-LU im WLAN). Kein NSAllowsArbitraryLoads. Alles andere bleibt bei https. -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
+
+    <!-- Die App nutzt nur Standardverschluesselung (TLS des Systems und von rustls, Schluesselbund).
+         Das erspart die Exportfrage bei jedem Upload. David bestaetigt das einmal im Konto. -->
+    <key>ITSAppUsesNonExemptEncryption</key>
+    <false/>
+
+    <!-- Dateifreigabe: macht den Ordner Documents der App in der Dateien-App
+         sichtbar und aenderbar, damit ein eigenes GGUF hinein und ein Export
+         heraus kann. Dort liegt nichts Internes: Modelle, Chats, Schluessel und
+         Logs stehen unter Library/Application Support (os_paths), am
+         08.10.2026 im Simulator nachgesehen (Documents leer). -->
+    <key>UIFileSharingEnabled</key>
+    <true/>
+    <key>LSSupportsOpeningDocumentsInPlace</key>
+    <true/>
+
+    <!-- Hoch- und Querformat (MOBILE-ZIEL Punkt 5). Kein UIRequiresFullScreen:
+         das iPad darf die App in geteilter Ansicht zeigen, dafuer muessen dort alle vier
+         Ausrichtungen erlaubt sein. Apple hat UIRequiresFullScreen in iOS 26 abgekuendigt. -->
+    <key>UISupportedInterfaceOrientations</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
+    <key>UISupportedInterfaceOrientations~ipad</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationPortraitUpsideDown</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
+
+    <!-- Startbild. Das Tauri-Projekt bringt LaunchScreen.storyboard mit und setzt diesen Schluessel
+         schon. Er steht hier nur, damit ein Verlust beim Neuerzeugen des Projekts auffaellt. -->
+    <key>UILaunchStoryboardName</key>
+    <string>LaunchScreen</string>
+
+    <!-- Schema lu:// (lu://oauth/... und lu://remote?...). Quelle der Wahrheit ist DIESE Datei:
+         die CLI mischt sie bei jedem Bau ein. tauri-plugin-deep-link schreibt denselben
+         Schluessel aus plugins.deep-link.mobile, aber nur, wenn cargo sein Bauskript neu
+         ausfuehrt. Nach einem Zuruecksetzen von gen/apple fehlte der Eintrag deshalb im
+         Paket (iOS-Abnahme 09.10.2026: simctl openurl scheiterte mit Fehler 115).
+         Das Plugin ersetzt den Schluessel als Ganzes und schreibt je Eintrag von
+         plugins.deep-link.mobile einen Eintrag. iOS kennt bei einem eigenen Schema keinen Host:
+         jede Adresse lu://... oeffnet die App, und die Seite verwirft alles ausser oauth und
+         remote (parseDeepLink). Deshalb nennt tauri.ios.conf.json das Schema EINMAL, ohne Host,
+         und hier steht dieselbe Form, damit ein Bau die eingecheckte Info.plist nicht aendert.
+         Bis Runde 6 standen zwei gleiche Eintraege da (einer je Host).
+         scripts/mobile/ios/pruefe-paket.sh bricht jeden Bau ab, dem das Schema fehlt oder der
+         es mehr als einmal traegt. -->
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>lu</string>
+            </array>
+            <key>CFBundleURLName</key>
+            <string>lu</string>
+        </dict>
+    </array>
+
+    <!--
+    ===== Bewusst NICHT gesetzt. Nur bei Bedarf einkommentieren. =====
+
+    Fotoauswahl: Der System-Picker (PHPicker hinter <input type="file">) braucht keine Erlaubnis.
+    Nur noetig, wenn die App die Mediathek selbst liest.
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>LU reads the photos you pick so you can attach them to a chat or an image request.</string>
+
+    Hintergrundmodi. Hintergrund-Downloads ueber URLSession brauchen KEINEN Eintrag.
+    "audio" nur, wenn Vorlesen bei gesperrtem Geraet weiterlaufen soll (nicht vorgesehen).
+    "processing" plus BGTaskSchedulerPermittedIdentifiers nur fuer BGContinuedProcessingTask (iOS 26).
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>audio</string>
+    </array>
+    -->
+</dict>
+</plist>

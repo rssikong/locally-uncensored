@@ -1,0 +1,236 @@
+{
+ "name": "/settings/about",
+ "art": "seite",
+ "quelle": "integ-306",
+ "route": "/settings/about",
+ "strang": "settings",
+ "code": "E20",
+ "lage": {
+  "route": "/settings/about",
+  "screen": "m-settings-about-screen",
+  "blaetter": [],
+  "dialog": [],
+  "reiter": null,
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back-under",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-about-screen",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-about-version",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Version 3.0.7 (Android), tap to copy",
+   "el": "E20.4",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-about-version-value",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    117,
+    17
+   ]
+  },
+  {
+   "id": "m-settings-about-build",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-about-build-value",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    67,
+    18
+   ]
+  },
+  {
+   "id": "m-settings-about-whats-new",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "What is new",
+   "el": "E20.1",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-about-licenses",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Licenses",
+   "el": "E20.2",
+   "box": [
+    356,
+    52
+   ]
+  },
+  {
+   "id": "m-settings-about-website",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Website Opens lu-labs.ai in your browser",
+   "risiko": "leaves-app",
+   "el": "E20.3",
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-settings-about-source",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Source code Opens github.com in your browser",
+   "risiko": "leaves-app",
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-settings-about-contact-group",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    270
+   ]
+  },
+  {
+   "id": "m-settings-about-contact",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Contact support hello@lu-labs.ai",
+   "risiko": "leaves-app",
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-settings-about-contact-copy",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Copy address For any mail app or messenger",
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-settings-about-privacy",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Privacy policy Opens lu-labs.ai in your browser",
+   "risiko": "leaves-app",
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-settings-about-terms",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Terms of use Opens lu-labs.ai in your browser",
+   "risiko": "leaves-app",
+   "box": [
+    356,
+    57
+   ]
+  }
+ ]
+}

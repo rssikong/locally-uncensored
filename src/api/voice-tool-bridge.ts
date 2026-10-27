@@ -74,6 +74,7 @@ export function voiceToolLevel(
     categoryLevel: permissions.categories[tool.category], override: permissions.overrides[name],
     codexMode: run.mode, execConfirm: run.execApproval?.confirmExec,
     readOnlyRun: run.readOnlyShellTurn,
+    external: tool.source === 'external',
   })
   // A tool with its own gate asks per action itself; a card here would ask twice.
   if (level === 'auto' && !autonomous && MUTATING_TOOLS.has(name) && !SELF_GATED_TOOLS.has(name)) return 'confirm'

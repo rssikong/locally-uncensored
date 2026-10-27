@@ -10,6 +10,7 @@ import {
 } from '../../stores/benchmarkStore'
 import { displayModelName } from '../../api/providers/registry'
 import { useBenchmark } from '../../hooks/useBenchmark'
+import { saveOrShare } from '../../lib/save-or-share'
 
 export function BenchmarkView() {
   const { setView } = useUIStore()
@@ -50,12 +51,10 @@ export function BenchmarkView() {
 
   const exportReport = () => {
     const md = toMarkdownReport(results, new Date().toISOString().slice(0, 16).replace('T', ' '))
-    const url = URL.createObjectURL(new Blob([md], { type: 'text/markdown' }))
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'lu-benchmark.md'
-    a.click()
-    URL.revokeObjectURL(url)
+    // Desktop and browser: a download, as before. Phone: the share sheet.
+    void saveOrShare({ filename: 'lu-benchmark.md', mime: 'text/markdown', text: md }, { via: 'anchor' }).then((outcome) => {
+      if (outcome.status === 'error') useBenchmarkStore.getState().setError(`Export failed. ${outcome.error}`)
+    })
   }
 
   return (

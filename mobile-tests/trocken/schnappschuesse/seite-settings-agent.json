@@ -1,0 +1,411 @@
+{
+ "name": "/settings/agent",
+ "art": "seite",
+ "quelle": "integ-306",
+ "route": "/settings/agent",
+ "strang": "agent",
+ "code": "E8",
+ "lage": {
+  "route": "/settings/agent",
+  "screen": "m-settings-agent-screen",
+  "blaetter": [],
+  "dialog": [],
+  "reiter": null,
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back-under",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-agent-screen",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-agent-groups",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    358,
+    537
+   ]
+  },
+  {
+   "id": "m-agent-perm-web-row",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    356,
+    133
+   ]
+  },
+  {
+   "id": "m-agent-perm-web",
+   "tag": "div",
+   "rolle": "radiogroup",
+   "sichtbar": true,
+   "bedienbar": false,
+   "el": "E8.1",
+   "box": [
+    324,
+    54
+   ]
+  },
+  {
+   "id": "m-agent-perm-web-blocked",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Blocked",
+   "box": [
+    123,
+    48
+   ]
+  },
+  {
+   "id": "m-agent-perm-web-confirm",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Ask",
+   "box": [
+    92,
+    48
+   ]
+  },
+  {
+   "id": "m-agent-perm-web-auto",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Auto",
+   "box": [
+    99,
+    48
+   ]
+  },
+  {
+   "id": "m-agent-perm-files-row",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    356,
+    134
+   ]
+  },
+  {
+   "id": "m-agent-perm-files",
+   "tag": "div",
+   "rolle": "radiogroup",
+   "sichtbar": true,
+   "bedienbar": false,
+   "el": "E8.1",
+   "box": [
+    324,
+    54
+   ]
+  },
+  {
+   "id": "m-agent-perm-files-blocked",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Blocked",
+   "box": [
+    123,
+    48
+   ]
+  },
+  {
+   "id": "m-agent-perm-files-confirm",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Ask",
+   "box": [
+    92,
+    48
+   ]
+  },
+  {
+   "id": "m-agent-perm-files-auto",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Auto",
+   "box": [
+    99,
+    48
+   ]
+  },
+  {
+   "id": "m-agent-perm-workflows-row",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    356,
+    134
+   ]
+  },
+  {
+   "id": "m-agent-perm-workflows",
+   "tag": "div",
+   "rolle": "radiogroup",
+   "sichtbar": true,
+   "bedienbar": false,
+   "el": "E8.1",
+   "box": [
+    324,
+    54
+   ]
+  },
+  {
+   "id": "m-agent-perm-workflows-blocked",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Blocked",
+   "box": [
+    123,
+    48
+   ]
+  },
+  {
+   "id": "m-agent-perm-workflows-confirm",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Ask",
+   "box": [
+    92,
+    48
+   ]
+  },
+  {
+   "id": "m-agent-perm-workflows-auto",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Auto",
+   "box": [
+    99,
+    48
+   ]
+  },
+  {
+   "id": "m-agent-perm-subagents-row",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    356,
+    134
+   ]
+  },
+  {
+   "id": "m-agent-perm-subagents",
+   "tag": "div",
+   "rolle": "radiogroup",
+   "sichtbar": true,
+   "bedienbar": false,
+   "el": "E8.1",
+   "box": [
+    324,
+    54
+   ]
+  },
+  {
+   "id": "m-agent-perm-subagents-blocked",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Blocked",
+   "box": [
+    123,
+    48
+   ]
+  },
+  {
+   "id": "m-agent-perm-subagents-confirm",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Ask",
+   "box": [
+    92,
+    48
+   ]
+  },
+  {
+   "id": "m-agent-perm-subagents-auto",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Auto",
+   "box": [
+    99,
+    48
+   ]
+  },
+  {
+   "id": "m-agent-memory",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Memory What LU learns and keeps is set on the Memory page.",
+   "el": "E8.1",
+   "box": [
+    356,
+    76
+   ]
+  },
+  {
+   "id": "m-agent-sub-calls-row",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    356,
+    127
+   ]
+  },
+  {
+   "id": "m-agent-sub-calls",
+   "tag": "input",
+   "rolle": "textbox",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Sub agent tool calls",
+   "el": "E8.2",
+   "box": [
+    72,
+    48
+   ]
+  },
+  {
+   "id": "m-agent-sub-steps-row",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    356,
+    128
+   ]
+  },
+  {
+   "id": "m-agent-sub-steps",
+   "tag": "input",
+   "rolle": "textbox",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Sub agent steps",
+   "el": "E8.3",
+   "box": [
+    72,
+    48
+   ]
+  },
+  {
+   "id": "m-agent-intro",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Show the Agent mode intro again The intro already shows next time.",
+   "el": "E8.4",
+   "deaktiviert": true,
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-agent-reset",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Reset permissions",
+   "risiko": "destructive",
+   "el": "E8.5",
+   "box": [
+    358,
+    48
+   ]
+  }
+ ]
+}

@@ -18,7 +18,7 @@
 //!     starts the server with `--base-directory`.
 //!   * `--base-directory` does the same for anybody starting ComfyUI by hand.
 //!   * An `extra_model_paths.yaml` adds roots that are nowhere near `main.py`.
-//!     LU writes one itself for the Model Storage folder (see custom_models.rs).
+//!     LU writes one itself for the Storage folder (see custom_models.rs).
 //!   * A second install on the box is the classic one (2026-07-27).
 //!
 //! In every one of those the download lands in a tree nothing scans, the picker

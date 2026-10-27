@@ -45,10 +45,15 @@ export function RuntimeFolderSetting() {
 
   useEffect(() => {
     let alive = true
-    void runtimeFolderStatus()
-      .then((s) => { if (alive) setStatus(s) })
-      .catch((e) => { if (alive) setError(errorText(e)) })
-    return () => { alive = false }
+    const load = () => {
+      void runtimeFolderStatus()
+        .then((s) => { if (alive) setStatus(s) })
+        .catch((e) => { if (alive) setError(errorText(e)) })
+    }
+    load()
+    // The Storage folder row above chooses this folder too.
+    window.addEventListener('lu-storage-changed', load)
+    return () => { alive = false; window.removeEventListener('lu-storage-changed', load) }
   }, [])
 
   const chosen = status?.chosen ?? null

@@ -82,9 +82,17 @@ function idbRequest<T>(req: IDBRequest<T>): Promise<T> {
   })
 }
 
+/** Counts every write to the vector store in this session, for the backup's
+ *  change check (lib/rag-backup.ts). Same rule as ragChunksRevision. */
+let revision = 0
+export function memoryVectorsRevision(): number {
+  return revision
+}
+
 /** Save (or overwrite) the embedding for a memory entry. No-op without IDB. */
 export async function saveVector(id: string, record: MemoryVectorRecord, isCurrent: () => boolean = () => true): Promise<void> {
   if (!hasIDB()) return
+  revision += 1
   const store = await tx("readwrite")
   // Check after opening the transaction, without yielding before the write.
   // A delete or edit may have happened while the database was opening.
@@ -112,6 +120,7 @@ export async function loadVectors(ids: string[]): Promise<Map<string, MemoryVect
 /** Delete the embedding for a memory entry. No-op without IDB. */
 export async function deleteVector(id: string): Promise<void> {
   if (!hasIDB()) return
+  revision += 1
   const store = await tx("readwrite")
   await idbRequest(store.delete(id))
 }
@@ -119,6 +128,7 @@ export async function deleteVector(id: string): Promise<void> {
 /** Delete every memory embedding (e.g. when clearing all memories). */
 export async function clearAll(): Promise<void> {
   if (!hasIDB()) return
+  revision += 1
   const store = await tx("readwrite")
   await idbRequest(store.clear())
 }
@@ -163,6 +173,7 @@ export async function importAll(snapshot: Record<string, MemoryVectorRecord>): P
   if (!hasIDB()) return 0
   const ids = Object.keys(snapshot || {})
   if (ids.length === 0) return 0
+  revision += 1
   const store = await tx("readwrite")
   let restored = 0
   for (const id of ids) {

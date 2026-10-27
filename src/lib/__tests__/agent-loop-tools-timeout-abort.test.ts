@@ -29,6 +29,13 @@ import type { AgentWorkflow } from '../../types/agent-workflows'
 
 const LOCAL_MODEL = 'qwen3:8b'
 
+// Die ganze Datei braucht allein unter 0,1 s. Im Gesamtlauf unter Maschinenlast
+// fielen einzelne Faelle in die 5-s-Grenze von vitest, weil ihre Takte
+// (setTimeout 0) nicht drankamen. Die Grenze je Fall ist hier nicht der
+// Pruefgegenstand: was "schnell" heisst, messen die Faelle selbst (unter 500 ms
+// zwischen Abbruch und Ende), und das bleibt, wie es ist.
+vi.setConfig({ testTimeout: 20_000 })
+
 function makeRun(conversationId: string): AgentRunContext {
   return {
     token: 'run', chatId: null, conversationId, workspace: null,

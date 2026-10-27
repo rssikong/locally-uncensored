@@ -71,7 +71,7 @@ export interface CommandContext {
   /** Cloud-Modus blendet Voice/Models/Benchmark aus (`Header.tsx:301`), die Palette
    *  darf dann nicht dorthin führen. */
   readonly localViewsAvailable: boolean
-  /** Der zweite Tray-Eintrag (`src-tauri/src/main.rs:502`) über dieselbe
+  /** Der zweite Tray-Eintrag (`src-tauri/src/lib.rs`) über dieselbe
    *  Backend-Aktion wie der Updater (`stores/updateStore.ts:338`).
    *  `null` außerhalb von Tauri — dort gibt es die Aktion nicht, und ein
    *  Eintrag ohne Aktion dahinter wäre eine Attrappe. */

@@ -923,6 +923,20 @@ jobs:
           done
           [ "$missing" -eq 0 ] || exit 1
           echo "OK: every staged sidecar companion is present inside the built AppImage ($extracted_llama_dir)"
+          # GH #191: .DirIcon and the .desktop file at the AppImage's root are
+          # symlinks, and they must be RELATIVE. The bundler before
+          # @tauri-apps/cli 2.11.4 wrote the build machine's absolute path
+          # into them, which dangles once the image is mounted, and AppImage
+          # installers such as AppManager refuse the whole file over it.
+          for link in "$workdir/squashfs-root/.DirIcon" "$workdir"/squashfs-root/*.desktop; do
+            [ -L "$link" ] || continue
+            target="$(readlink "$link")"
+            case "$target" in
+              /*) echo "FAIL: $(basename "$link") points at the absolute path $target (GH #191)" >&2; exit 1 ;;
+            esac
+            [ -e "$link" ] || { echo "FAIL: $(basename "$link") -> $target does not resolve inside the AppImage (GH #191)" >&2; exit 1; }
+          done
+          echo "OK: .DirIcon and the .desktop link are relative and resolve (GH #191)"
 
       # SKEPTIKER-LINUX-WEB-K1.md: the AppImage check above proves nothing
       # about the .deb, a completely different bundler (dpkg-deb, not
@@ -1724,6 +1738,76 @@ jobs:
           if (later.length) console.log('NOTE: not attached yet: ' + later.join(', ') + '. Do not flip this release to Latest before they are.')
           console.log('OK: darwin-aarch64 -> ' + file + ', every attached platform kept its key, .dmg attached')
           NODE
+
+  # Software bill of materials and checksums, attached to the release once the
+  # installers are. Three CycloneDX files, one per ecosystem that ends up on a
+  # user's machine: the npm packages bundled into the front end (no
+  # devDependencies), the Rust crates of the desktop binary (no build-only
+  # crates), and the Python packages the voice sidecar installs from its lock.
+  # SHA256SUMS.txt covers every asset on the release at that moment, the SBOMs
+  # included, so `sha256sum -c SHA256SUMS.txt --ignore-missing` checks a
+  # download. An asset added by hand later (the Android APK) is not in it;
+  # rerun this job with workflow_dispatch after such an upload. Not in a dry
+  # run of either kind: there is no release to attach to. Mac may be skipped
+  # or have failed; the sums then cover what is there, and a rerun replaces
+  # the files (--clobber).
+  sbom-and-checksums:
+    needs: [build-tauri, build-tauri-macos]
+    if: ${{ always() && !inputs.mac_dry_run && !inputs.dry_run && needs.build-tauri.result == 'success' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RELEASE_TAG: ${{ github.event.release.tag_name || github.event.inputs.tag }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.event.release.tag_name || github.event.inputs.tag }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Setup Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.12'
+
+      - name: Install cargo-cyclonedx
+        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
+        with:
+          tool: cargo-cyclonedx@0.5.9
+
+      - name: Generate the SBOMs (CycloneDX JSON)
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/sbom"; mkdir -p "$out"
+          v="${RELEASE_TAG#v}"
+          npx --yes @cyclonedx/cyclonedx-npm@6.0.1 --package-lock-only --omit dev \
+            --output-format JSON --output-file "$out/locally-uncensored-$v-npm.cdx.json"
+          (cd src-tauri && cargo cyclonedx --format json --spec-version 1.5 --no-build-deps \
+            --override-filename sbom-rust.cdx)
+          mv src-tauri/sbom-rust.cdx.json "$out/locally-uncensored-$v-rust.cdx.json"
+          python -m pip install --quiet cyclonedx-bom==7.1.0
+          cyclonedx-py requirements src-tauri/resources/voice_loop/requirements.txt \
+            --of JSON -o "$out/locally-uncensored-$v-voice-python.cdx.json"
+          for f in "$out"/*.cdx.json; do
+            node -e 'const d=JSON.parse(require("fs").readFileSync(process.argv[1]));if(!d.bomFormat||!(d.components||[]).length){console.error("FAIL: empty SBOM "+process.argv[1]);process.exit(1)}console.log(process.argv[1]+": "+d.components.length+" components")' "$f"
+          done
+          gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --clobber "$out"/*.cdx.json
+
+      - name: SHA256SUMS.txt over every release asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/assets"; rm -rf "$dir"; mkdir -p "$dir"
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir "$dir"
+          rm -f "$dir/SHA256SUMS.txt"
+          (cd "$dir" && sha256sum -- * | sort -k2 > "$RUNNER_TEMP/SHA256SUMS.txt")
+          cat "$RUNNER_TEMP/SHA256SUMS.txt"
+          gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --clobber "$RUNNER_TEMP/SHA256SUMS.txt"
 
   # The promise above, made real for every trigger. Runs after the binaries are
   # attached, so a release published as a full release is put back before

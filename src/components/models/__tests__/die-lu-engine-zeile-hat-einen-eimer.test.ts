@@ -14,7 +14,7 @@ import path from 'node:path'
 const MANAGER = fs.readFileSync(path.join(__dirname, '..', 'ModelManager.tsx'), 'utf8')
 const ENGINE_API = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'api', 'engine.ts'), 'utf8')
 const RUST = fs.readFileSync(path.join(__dirname, '..', '..', '..', '..', 'src-tauri', 'src', 'commands', 'engine.rs'), 'utf8')
-const MAIN = fs.readFileSync(path.join(__dirname, '..', '..', '..', '..', 'src-tauri', 'src', 'main.rs'), 'utf8')
+const MAIN = fs.readFileSync(path.join(__dirname, '..', '..', '..', '..', 'src-tauri', 'src', 'lib.rs'), 'utf8')
 const slice = (src: string, from: string, to: string) => {
   const a = src.indexOf(from)
   const b = src.indexOf(to, a)
@@ -48,7 +48,7 @@ describe('an LU Engine row can be deleted', () => {
     expect(info).toContain('size: model.size')
   })
 
-  it('the delete goes through the backend with the Model Storage folders, like the listing', () => {
+  it('the delete goes through the backend with the Storage folders, like the listing', () => {
     const api = slice(ENGINE_API, 'export async function deleteBundledModel', 'export function stopBundledEngine')
     expect(api).toContain("backendCall<{ deleted?: number; bytes?: number }>('delete_bundled_model'")
     expect(api).toContain('extraDirs: customModelDirs()')

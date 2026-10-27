@@ -1,0 +1,525 @@
+/* Styles of the strand "agent" (C5, C8 to C13, E6 to E10 and the three slots
+   in C2). Only tokens, text in rem, spacing in px. They live here until the
+   scaffold takes them into styles/ (wish in
+   mobile-docs/geruest-wuensche/agent.md). */
+
+/* ---------- text between groups ---------- */
+.m-app .m-ag-text {
+  margin: 0;
+  padding: 0 var(--m-s5) var(--m-s3);
+  font-size: var(--m-text-caption);
+  line-height: 1.45;
+  color: var(--m-t3);
+  overflow-wrap: anywhere;
+}
+.m-app .m-ag-text--top {
+  padding-top: var(--m-s3);
+}
+.m-app .m-ag-block {
+  padding: 0 var(--m-gutter) var(--m-s3);
+}
+.m-app .m-ag-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s2);
+  padding: var(--m-s2) var(--m-gutter) var(--m-s4);
+}
+
+/* ---------- a block that opens and closes ---------- */
+.m-app .m-ag-fold {
+  min-width: 0;
+}
+.m-app .m-ag-fold-head {
+  width: 100%;
+  min-height: var(--m-touch);
+  display: flex;
+  align-items: center;
+  gap: var(--m-s2);
+  padding: var(--m-s1) 0;
+  text-align: left;
+  color: var(--m-t2);
+  font-size: var(--m-text-control);
+  line-height: 1.3;
+}
+.m-app .m-ag-fold-head > svg {
+  flex: none;
+  color: var(--m-t3);
+}
+.m-app .m-ag-fold-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.m-app .m-ag-fold-title small {
+  display: block;
+  font-size: var(--m-text-caption);
+  color: var(--m-t3);
+}
+.m-app .m-ag-fold-meta {
+  flex: none;
+  font-family: var(--m-font-mono);
+  font-size: var(--m-text-mono);
+  color: var(--m-t3);
+}
+.m-app .m-ag-fold-chev {
+  flex: none;
+  transition: transform var(--m-fast) var(--m-ease);
+}
+.m-app .m-ag-fold-head[aria-expanded='true'] .m-ag-fold-chev {
+  transform: rotate(180deg);
+}
+.m-app .m-ag-fold-body {
+  padding: var(--m-s1) 0 var(--m-s3) var(--m-s3);
+  border-left: 2px solid var(--m-hair);
+  margin-left: 9px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s2);
+  min-width: 0;
+}
+.m-app .m-ag-fold[data-state='failed'] .m-ag-fold-head > svg:first-child,
+.m-app .m-ag-fold[data-state='denied'] .m-ag-fold-head > svg:first-child {
+  color: var(--m-err);
+}
+.m-app .m-ag-fold[data-state='done'] .m-ag-fold-head > svg:first-child {
+  color: var(--m-ok);
+}
+
+/* ---------- mono text: tool input and result, summaries ---------- */
+.m-app .m-ag-pre {
+  margin: 0;
+  padding: var(--m-s3);
+  max-height: 16rem;
+  overflow: auto;
+  border-radius: var(--m-r-md);
+  background: var(--m-fill);
+  font-family: var(--m-font-mono);
+  font-size: var(--m-text-mono);
+  line-height: 1.5;
+  color: var(--m-t2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  -webkit-user-select: text;
+  user-select: text;
+}
+.m-app .m-ag-pre--plain {
+  font-family: var(--m-font);
+  font-size: var(--m-text-control);
+}
+.m-app .m-ag-kv {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.m-app .m-ag-kv > span:first-child {
+  font-size: var(--m-text-label);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--m-t3);
+}
+.m-app .m-ag-thought {
+  font-size: var(--m-text-control);
+  line-height: 1.5;
+  color: var(--m-t3);
+  font-style: italic;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.m-app .m-ag-error {
+  color: var(--m-err);
+  font-size: var(--m-text-caption);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- lines in the notice area of the chat (goal, loop, plan) ---------- */
+.m-app .m-ag-line {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--m-s2);
+  padding: 0 var(--m-gutter);
+  min-height: var(--m-touch);
+  border-bottom: 1px solid var(--m-hair);
+  background: var(--m-canvas);
+  font-size: var(--m-text-caption);
+  line-height: 1.35;
+  color: var(--m-t2);
+}
+.m-app .m-ag-line > svg {
+  flex: none;
+  color: var(--m-accent-text);
+}
+.m-app .m-ag-line-text {
+  flex: 1 1 8rem;
+  min-width: 0;
+  padding: var(--m-s2) 0;
+  overflow-wrap: anywhere;
+}
+.m-app .m-ag-line-text b {
+  font-weight: 600;
+  color: var(--m-t1);
+}
+.m-app .m-ag-line-btn {
+  flex: none;
+  margin-left: auto;
+  min-height: var(--m-touch);
+  min-width: var(--m-touch);
+  padding: 0 var(--m-s2);
+  font-size: var(--m-text-caption);
+  font-weight: 600;
+  color: var(--m-accent-text);
+}
+.m-app .m-ag-line-wide {
+  flex: 1 1 100%;
+  width: 100%;
+  min-height: var(--m-touch);
+  display: flex;
+  align-items: center;
+  gap: var(--m-s2);
+  text-align: left;
+  color: inherit;
+  font-size: inherit;
+}
+.m-app .m-ag-line-wide > svg {
+  flex: none;
+  color: var(--m-accent-text);
+}
+.m-app .m-ag-plan {
+  flex: 1 1 100%;
+  list-style: none;
+  margin: 0;
+  padding: 0 0 var(--m-s3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s2);
+  max-height: 40vh;
+  overflow: auto;
+}
+.m-app .m-ag-plan li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--m-s2);
+  overflow-wrap: anywhere;
+}
+.m-app .m-ag-plan li > svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--m-t3);
+}
+.m-app .m-ag-plan li[data-status='completed'] {
+  color: var(--m-t3);
+  text-decoration: line-through;
+}
+.m-app .m-ag-plan li[data-status='completed'] > svg {
+  color: var(--m-ok);
+}
+.m-app .m-ag-plan li[data-status='in_progress'] {
+  color: var(--m-t1);
+  font-weight: 600;
+}
+.m-app .m-ag-plan li[data-status='in_progress'] > svg {
+  color: var(--m-accent-text);
+}
+
+/* ---------- sheets ---------- */
+.m-app .m-ag-sheet-text {
+  margin: 0;
+  padding: 0 var(--m-s5) var(--m-s3);
+  font-size: var(--m-text-control);
+  line-height: 1.45;
+  color: var(--m-t2);
+  overflow-wrap: anywhere;
+}
+.m-app .m-ag-seg-row {
+  padding: var(--m-s3) var(--m-s4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s2);
+  border-top: 1px solid var(--m-hair);
+}
+.m-app .m-ag-seg-row:first-child {
+  border-top: 0;
+}
+.m-app .m-ag-seg-title {
+  font-size: var(--m-text-body);
+  line-height: 1.3;
+  color: var(--m-t1);
+  overflow-wrap: anywhere;
+}
+.m-app .m-ag-seg-sub {
+  font-size: var(--m-text-caption);
+  line-height: 1.4;
+  color: var(--m-t3);
+  overflow-wrap: anywhere;
+}
+.m-app .m-ag-approve-what {
+  padding: 0 var(--m-s5) var(--m-s3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s1);
+}
+.m-app .m-ag-approve-what strong {
+  font-size: var(--m-text-title);
+  line-height: 1.3;
+  color: var(--m-t1);
+  overflow-wrap: anywhere;
+}
+.m-app .m-ag-approve-what span {
+  font-size: var(--m-text-control);
+  color: var(--m-t2);
+  overflow-wrap: anywhere;
+}
+.m-app .m-ag-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s2);
+  width: 100%;
+}
+.m-app .m-ag-fold-top {
+  display: flex;
+  align-items: center;
+  gap: var(--m-s1);
+  min-width: 0;
+}
+.m-app .m-ag-fold-top > .m-ag-fold-head {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+}
+.m-app .m-ag-fold-top > :not(.m-ag-fold-head) {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* ---------- items of a list that are more than one row ---------- */
+.m-app .m-ag-item {
+  padding: var(--m-s2) var(--m-s4);
+  border-top: 1px solid var(--m-hair);
+  min-width: 0;
+}
+.m-app .m-ag-item:first-child {
+  border-top: 0;
+}
+.m-app .m-ag-item--pad {
+  padding-top: var(--m-s3);
+  padding-bottom: var(--m-s3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s2);
+}
+.m-app .m-ag-item-title {
+  font-size: var(--m-text-body);
+  line-height: 1.3;
+  color: var(--m-t1);
+  overflow-wrap: anywhere;
+}
+.m-app .m-ag-passage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s1);
+  min-width: 0;
+}
+.m-app .m-ag-passage > span:first-child {
+  font-family: var(--m-font-mono);
+  font-size: var(--m-text-mono);
+  color: var(--m-accent-text);
+}
+.m-app .m-ag-foot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s2);
+  width: 100%;
+}
+
+/* ---------- Compare (C9) ---------- */
+.m-app .m-ag-cmp {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--m-s3);
+  padding: 0 var(--m-gutter) var(--m-s4);
+  min-width: 0;
+}
+.m-app .m-ag-cmp-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s3);
+  min-width: 0;
+}
+.m-app .m-ag-cmp[data-view='a'] .m-ag-cmp-col[data-side='b'],
+.m-app .m-ag-cmp[data-view='b'] .m-ag-cmp-col[data-side='a'] {
+  display: none;
+}
+.m-app .m-ag-cmp-head {
+  display: none;
+  font-size: var(--m-text-label);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--m-t3);
+  overflow-wrap: anywhere;
+}
+@media (orientation: landscape) and (min-width: 560px) {
+  .m-app .m-ag-cmp {
+    grid-template-columns: 1fr 1fr;
+  }
+  .m-app .m-ag-cmp[data-view] .m-ag-cmp-col[data-side] {
+    display: flex;
+  }
+  .m-app .m-ag-cmp-head {
+    display: block;
+  }
+  .m-app .m-ag-cmp-switch {
+    display: none;
+  }
+}
+.m-app .m-ag-cmp-switch {
+  padding: 0 var(--m-gutter) var(--m-s3);
+}
+.m-app .m-ag-cmp-models {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s2);
+  padding: 0 var(--m-gutter) var(--m-s3);
+}
+.m-app .m-ag-cmp-model {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--m-s2);
+  min-width: 0;
+}
+.m-app .m-ag-cmp-model > span:first-child {
+  flex: none;
+  min-width: 4.5rem;
+  font-size: var(--m-text-caption);
+  font-weight: 600;
+  color: var(--m-t2);
+}
+.m-app .m-ag-cmp-model > :last-child {
+  flex: 1 1 10rem;
+  min-width: 0;
+}
+.m-app .m-ag-ask {
+  align-self: flex-end;
+  max-width: 88%;
+  padding: var(--m-s2) var(--m-s3);
+  border-radius: var(--m-r-lg);
+  background: var(--m-fill-2);
+  color: var(--m-t1);
+  font-size: var(--m-text-body);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.m-app .m-ag-answer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s2);
+  min-width: 0;
+}
+.m-app .m-ag-answer-text {
+  color: var(--m-t1);
+  font-size: var(--m-text-body);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* ---------- Preview (C11) ---------- */
+.m-app .m-ag-pv {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.m-app .m-ag-pv-bar {
+  flex: none;
+  padding: var(--m-s2) var(--m-gutter);
+}
+.m-app .m-ag-pv-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 12rem;
+  overflow: hidden;
+  background: #fff;
+}
+.m-app .m-ag-pv-stage iframe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border: 0;
+  background: #fff;
+  transform-origin: 0 0;
+}
+
+/* ---------- workflow builder (E10) ---------- */
+.m-app .m-ag-step {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--m-s1);
+  padding: var(--m-s1) var(--m-s2) var(--m-s1) var(--m-s4);
+  border-top: 1px solid var(--m-hair);
+  min-width: 0;
+}
+.m-app .m-ag-step:first-child {
+  border-top: 0;
+}
+.m-app .m-ag-step-main {
+  flex: 1 1 12rem;
+  min-width: 0;
+  min-height: var(--m-row);
+  display: flex;
+  align-items: flex-start;
+  gap: var(--m-s3);
+  padding: var(--m-s2) 0;
+  text-align: left;
+  color: inherit;
+}
+.m-app .m-ag-step-no {
+  flex: none;
+  min-width: 1.5rem;
+  color: var(--m-t3);
+  padding-top: 2px;
+}
+.m-app .m-ag-step-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-wrap: anywhere;
+}
+.m-app .m-ag-step-tools {
+  flex: none;
+  display: flex;
+  margin-left: auto;
+}
+
+/* E9: a saved key is a line, never the key itself, with its actions under it. */
+.m-app .m-ag-keyline {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--m-s2);
+  margin: 0;
+  font-size: var(--m-text-body);
+  line-height: 1.4;
+  color: var(--m-t1);
+  overflow-wrap: anywhere;
+}
+.m-app .m-ag-keyline > span {
+  min-width: 0;
+  flex: 1;
+}
+.m-app .m-ag-keyactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--m-s2);
+}

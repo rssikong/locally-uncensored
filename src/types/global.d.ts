@@ -13,6 +13,10 @@ declare global {
     __TAURI_INTERNALS__?: unknown
     /** Tauri v1 runtime bridge / v2 `withGlobalTauri` alias. */
     __TAURI__?: unknown
+    /** What the app binary was built for ("macos", "ios", ...). Set by the
+     *  Rust side before the page runs (src-tauri/src/host_kind.rs), read
+     *  through `nativeHost()` in lib/device-kind.ts. Absent in a browser. */
+    __LU_HOST__?: unknown
   }
 }
 

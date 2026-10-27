@@ -1,0 +1,17 @@
+diff --git a/src/lib/__tests__/keine-deutschen-saetze-in-der-oberflaeche.test.ts b/src/lib/__tests__/keine-deutschen-saetze-in-der-oberflaeche.test.ts
+index 4ae186df..6200451b 100644
+--- a/src/lib/__tests__/keine-deutschen-saetze-in-der-oberflaeche.test.ts
++++ b/src/lib/__tests__/keine-deutschen-saetze-in-der-oberflaeche.test.ts
+@@ -66,6 +66,12 @@ const DEUTSCH_MIT_GRUND: Record<string, string> = {
+   'lib/create/media-wish.ts': 'Deutsche Medienwuensche, gegen die getippte Saetze gelesen werden (aus dem Web gespiegelt).',
+   'lib/create/chat-control.ts': 'Muster, gegen die der Schlusstext eines Modells gelesen wird, auch der deutsche (aus dem Web gespiegelt). Nichts davon wird angezeigt.',
+   'lib/explicit-search.ts': 'Deutsche Suchauftraege, gegen die getippte Saetze gelesen werden.',
++  // Fork: erzeugte Uebersetzungstabelle. Sie traegt den Originalsatz
++  // "Fertig, dein Bild ist oben. / Done, your image is above." als Schluessel,
++  // weil genau dieser Satz auf Chinesisch abgebildet wird; angezeigt wird die
++  // Uebersetzung, nicht der Schluessel. Deutsche Schluessel werden ausserdem
++  // vom Extraktor und von `i18n-apply.mjs` verworfen.
++  'lib/i18n/zh-CN.ts': 'Erzeugte Uebersetzungstabelle: Schluessel sind Originaltexte, angezeigt wird Chinesisch.',
+ }
+ 
+ /** Jede .ts und .tsx unter den Ordnern, ohne die Testbaeume. */

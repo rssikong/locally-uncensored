@@ -4,6 +4,18 @@ import { applyEdits, editsFromArgs } from '../../lib/surgical-edit'
 import { findStagedForPath, stagedReadResult, stagedListingNote } from '../../lib/staged-overlay'
 import { codexReadCtx, type CodexFsCtx, type CodexFileRead } from './workspace-fs'
 import type { ToolArgs } from '../../api/mcp/types'
+import type { StagedReview } from '../../lib/staged-apply'
+
+/** What the model hears after a blocking review. */
+export function reviewResult(review: StagedReview, path: string, kind: 'write' | 'edit'): string {
+  switch (review.outcome) {
+    case 'applied': return kind === 'write' ? `Wrote ${path}. The user approved the change and it is on disk now.` : `Edited ${path}. The user approved the change and it is on disk now.`
+    case 'rejected': return `The user declined this change. ${path} was not written.`
+    case 'replaced': return `A later write to ${path} in this turn replaced this one; that one is reviewed instead.`
+    case 'failed': return `The approved change to ${path} could not be written: ${review.reason}`
+    case 'stopped': return `The run was stopped before the change to ${path} was reviewed. Nothing was written.`
+  }
+}
 
 /**
  * Die Warteschlange der noch nicht geschriebenen Aenderungen — und ALLES, was
@@ -55,6 +67,13 @@ export interface StagedWriterDeps {
   workDir: string
   workspaceSlug: string
   readFile: (path: string, ctx: CodexFsCtx) => Promise<CodexFileRead>
+  /**
+   * Set for a turn from the paired phone (shared chats): the write waits for
+   * its review (once/chat/deny on the phone, or Apply/Reject at the desktop)
+   * and the model hears what really happened. Without it the write is staged
+   * and the run goes on, as at the desktop.
+   */
+  waitForReview?: (changeId: string, path: string) => Promise<StagedReview>
 }
 
 export interface StagedWriter {
@@ -84,7 +103,7 @@ function resolveStagedPath(path: string, workDir: string): string {
 }
 
 export function createStagedWriter(deps: StagedWriterDeps): StagedWriter {
-  const { convId, workDir, workspaceSlug, readFile } = deps
+  const { convId, workDir, workspaceSlug, readFile, waitForReview } = deps
 
   // Multi-File Stage-and-Approve (B10). When the user has codex
   // stage mode on, file_write calls don't hit the disk — they
@@ -127,7 +146,7 @@ export function createStagedWriter(deps: StagedWriterDeps): StagedWriter {
       }
     }
     const diff = computeUnifiedDiff(path, oldContent, newContent)
-    useStagedChangesStore.getState().stage(convId, {
+    const stagedId = useStagedChangesStore.getState().stage(convId, {
       path,
       resolvedPath,
       // Capture the workspace root so Apply (which runs after the loop's
@@ -139,6 +158,7 @@ export function createStagedWriter(deps: StagedWriterDeps): StagedWriter {
       newContent,
       diff,
     })
+    if (waitForReview) return reviewResult(await waitForReview(stagedId, path), path, 'write')
     return `Staged for review: ${path}. The user will apply or reject the change before it lands on disk.`
   }
 
@@ -186,7 +206,7 @@ export function createStagedWriter(deps: StagedWriterDeps): StagedWriter {
     // Diff and oldContent stay anchored on the DISK state, so the user
     // reviews (and apply writes) disk → final, not staged → staged.
     const diff = computeUnifiedDiff(path, diskContent, newContent)
-    useStagedChangesStore.getState().stage(convId, {
+    const stagedId = useStagedChangesStore.getState().stage(convId, {
       path,
       resolvedPath,
       workingDirectory: workDir && workDir !== '.' ? workDir : undefined,
@@ -194,6 +214,7 @@ export function createStagedWriter(deps: StagedWriterDeps): StagedWriter {
       newContent,
       diff,
     })
+    if (waitForReview) return reviewResult(await waitForReview(stagedId, path), path, 'edit')
     return `Staged for review: ${path} (surgical edit). The user will apply or reject the change before it lands on disk.`
   }
 

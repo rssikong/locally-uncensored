@@ -1,0 +1,53 @@
+name: CodeQL
+
+# Static analysis of the code we write ourselves: the React/TypeScript front
+# end, the Rust crate in src-tauri, the Python sidecars under
+# src-tauri/resources and the workflows in this folder. Results land in the
+# repository's Security tab (Code scanning). All four languages are scanned
+# without a build (`build-mode: none`), so this needs no sidecar stubs, no
+# GTK and no secrets.
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  schedule:
+    # Mondays 04:17 UTC: new queries reach unchanged code too.
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Pinned to full commit SHAs like every other workflow here (see ci.yml).
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript, rust, python, actions]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+          config-file: ./.github/codeql/codeql-config.yml
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          category: /language:${{ matrix.language }}

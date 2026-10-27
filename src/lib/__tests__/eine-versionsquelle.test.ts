@@ -13,7 +13,7 @@
  * Now there is one source per side: crate::app_identity::APP_VERSION in Rust
  * and src/lib/app-version.ts in the interface, both fed by the files a bump
  * changes, and those files are held equal here. The log file additionally
- * stamps every line with the version that wrote it (main.rs, VersionedTime),
+ * stamps every line with the version that wrote it (lib.rs, VersionedTime),
  * because a daily log file holds the lines of the run before an update too,
  * and those are exactly the "3.0.5" lines the user read.
  *
@@ -77,7 +77,10 @@ describe('one version, one source', () => {
   it('no platform overlay of the Tauri config sets a version of its own', () => {
     // An overlay wins over the base on its platform: a stale "version" in
     // tauri.windows.conf.json would make only the Windows build report it.
-    for (const f of readdirSync(join(ROOT, 'src-tauri')).filter((n) => /^tauri\..+\.conf\.json$/.test(n))) {
+    // The two phone overlays carry the version of the phone package on
+    // purpose (scripts/mobile/release/version-setzen.sh, src-tauri/src/phone_version.rs).
+    const PHONE = ['tauri.ios.conf.json', 'tauri.android.conf.json']
+    for (const f of readdirSync(join(ROOT, 'src-tauri')).filter((n) => /^tauri\..+\.conf\.json$/.test(n) && !PHONE.includes(n))) {
       expect(JSON.parse(read(`src-tauri/${f}`)).version, f).toBeUndefined()
     }
   })
@@ -88,7 +91,10 @@ describe('one version, one source', () => {
     for (const f of files) {
       const rel = relative(ROOT, f)
       const text = readFileSync(f, 'utf8')
-      if (rel !== 'src-tauri/src/app_identity.rs' && text.includes('CARGO_PKG_VERSION')) offenders.push(`${rel}: CARGO_PKG_VERSION`)
+      // phone_version.rs is the build script's reader of the phone package's
+      // version; a desktop build hands it the crate version as the fallback.
+      const ownSource = rel === 'src-tauri/src/app_identity.rs' || rel === 'src-tauri/src/phone_version.rs'
+      if (!ownSource && text.includes('CARGO_PKG_VERSION')) offenders.push(`${rel}: CARGO_PKG_VERSION`)
       if (/package_info\(\)\s*\.version/.test(text)) offenders.push(`${rel}: package_info().version`)
     }
     expect(offenders, 'use crate::app_identity::APP_VERSION').toEqual([])
@@ -104,8 +110,8 @@ describe('one version, one source', () => {
       const text = readFileSync(f, 'utf8')
       if (rel !== 'src/lib/app-version.ts' && /from\s+['"](\.\.\/)+package\.json['"]/.test(text)) offenders.push(`${rel}: imports package.json`)
       if (/@tauri-apps\/api\/app['"]/.test(text) && /\bgetVersion\b/.test(text)) offenders.push(`${rel}: getVersion()`)
-      // The release notes are a list of past versions by design.
-      if (rel === 'src/lib/release-notes.ts') continue
+      // The release notes are a list of past versions by design, the phone's as well.
+      if (rel === 'src/lib/release-notes.ts' || rel === 'src/mobile/strings/release-notes.ts') continue
       for (const m of text.matchAll(typedIn)) {
         const n = Number(m[1])
         if (n >= 2 && n <= major) offenders.push(`${rel}: ${m[0]}`)
@@ -118,7 +124,8 @@ describe('one version, one source', () => {
     // A daily log file keeps the lines of the run before an update. Only the
     // start line named a version, so every line after it read as "the app",
     // whichever app it was.
-    const main = read('src-tauri/src/main.rs')
+    // lib.rs since the phone line (main.rs only calls run()).
+    const main = read('src-tauri/src/lib.rs')
     const init = main.slice(main.indexOf('fn init_tracing()'))
     const fileLayer = init.slice(0, init.indexOf('if json_mode'))
     expect(fileLayer).toContain('.with_timer(VersionedTime')

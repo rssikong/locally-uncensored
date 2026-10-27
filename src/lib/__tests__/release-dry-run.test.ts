@@ -343,8 +343,40 @@ describe('release-dry-run.mjs rewrite-updater, executed', () => {
   })
 
   it('no checked-in overlay does that today', () => {
+    // The two phone files take the updater out of a phone build with `null`:
+    // no desktop build reads them and `null` names no address.
+    const phone = ['tauri.android.conf.json', 'tauri.ios.conf.json']
     for (const name of readdirSync(resolve(root, 'src-tauri')).filter((n) => /^tauri\..+\.conf\.json$/.test(n))) {
-      expect(JSON.parse(read(`src-tauri/${name}`)).plugins?.updater, name).toBeUndefined()
+      const updater = JSON.parse(read(`src-tauri/${name}`)).plugins?.updater
+      if (phone.includes(name)) expect(updater, name).toBeNull()
+      else expect(updater, name).toBeUndefined()
+    }
+  })
+
+  it('a phone file that names an updater of its own is refused like any other overlay', () => {
+    const box = sandbox()
+    try {
+      writeFileSync(join(box.dir, 'pub'), THROWAWAY_PUBKEY)
+      writeFileSync(join(box.dir, 'src-tauri/tauri.android.conf.json'), JSON.stringify({ plugins: { updater: { endpoints: [PUBLIC_ENDPOINT] } } }))
+      const result = box.run(['rewrite-updater', join(box.dir, 'pub'), join(box.dir, 'receipt.json')])
+      expect(result.code).toBe(1)
+      expect(result.out).toContain('tauri.android.conf.json sets plugins.updater')
+      expect(box.conf()).toEqual(CHECKED_IN)
+    } finally {
+      box.done()
+    }
+  })
+
+  it('a desktop overlay that takes the updater out with null is refused', () => {
+    const box = sandbox()
+    try {
+      writeFileSync(join(box.dir, 'pub'), THROWAWAY_PUBKEY)
+      writeFileSync(join(box.dir, 'src-tauri/tauri.windows.conf.json'), JSON.stringify({ plugins: { updater: null } }))
+      const result = box.run(['rewrite-updater', join(box.dir, 'pub'), join(box.dir, 'receipt.json')])
+      expect(result.code).toBe(1)
+      expect(result.out).toContain('tauri.windows.conf.json sets plugins.updater')
+    } finally {
+      box.done()
     }
   })
 })

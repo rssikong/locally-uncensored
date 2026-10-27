@@ -35,6 +35,7 @@ import { detectFileKind } from './file-magic'
 import { formatBytes } from './formatters'
 import { log } from './logger'
 import { sha256OfBlob } from './sha256-stream'
+import { platformText } from './platform-text'
 
 /** How many files one message may carry. */
 export const MAX_CHAT_FILES = 3
@@ -84,6 +85,43 @@ export function fileTooLargeMessage(name: string): string {
 export interface ChatFileInput {
   attachment: FileAttachment
   file?: File
+  /** One sentence for the user when the file could not be read the way it should be. Not stored. */
+  notice?: string
+}
+
+/** Reads the text of a PDF or a Word file. Handed in by the phone, which has the reader of the documents of a chat. */
+export type DocumentReader = (file: File) => Promise<string>
+
+export interface PrepareOptions {
+  readDocument?: DocumentReader
+}
+
+/** A document the reader above can open. */
+const DOCUMENT_NAME = /\.(pdf|docx)$/i
+
+/** Longest wait for the text of a document before the file counts as unreadable. */
+export const DOCUMENT_READ_MS = 30_000
+
+/** What the model reads for a document whose text could not be had. It never gets the bytes of it. */
+export const UNREADABLE_DOCUMENT_SUMMARY =
+  'The text of this document could not be read. It may be scanned pictures, protected or damaged. You do not know what it says: tell the user that, and do not guess.'
+
+export function unreadableDocumentNotice(name: string): string {
+  return `The text of "${cleanFileName(name)}" could not be read. The model only gets its name.`
+}
+
+/** Pure: the text of a document as the model reads it, in the budget of a text file. Null when there is nothing to read. */
+export function describeDocumentText(raw: string, label: string): string | null {
+  const text = raw
+    .replace(/[ \t\u00a0]+/g, ' ')
+    .replace(/ ?\n ?/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+  if (text.length === 0) return null
+  const excerpt = text.slice(0, TEXT_HOLD_CHARS)
+  return excerpt.length === text.length
+    ? `The whole text of the ${label}:\n${excerpt}`
+    : `The ${label} is longer than this excerpt. The first ${excerpt.length} characters of its text:\n${excerpt}`
 }
 
 /**
@@ -261,7 +299,7 @@ async function sha256Hex(buffer: ArrayBuffer): Promise<string> {
  * before reading a byte of it. A small file is read once; a large one only
  * at its start, and its hash is taken slice by slice.
  */
-export async function prepareChatFile(file: File): Promise<ChatFileInput> {
+export async function prepareChatFile(file: File, options: PrepareOptions = {}): Promise<ChatFileInput> {
   if (file.size > MAX_CHAT_FILE_BYTES) throw new Error(fileTooLargeMessage(file.name))
   const name = cleanFileName(file.name)
   let head: Uint8Array
@@ -279,7 +317,28 @@ export async function prepareChatFile(file: File): Promise<ChatFileInput> {
     throw new Error(`"${name}" could not be read.`)
   }
   const size = file.size <= WHOLE_READ_BYTES ? head.byteLength : file.size
-  const { kind, summary, binary, textChars, includedChars } = describeFileBytes(head, name, size)
+  const described = describeFileBytes(head, name, size)
+  const { kind, summary, binary, textChars, includedChars } = described
+  // A PDF or a Word file is read the way the documents of a chat are read. Its bytes are no summary: a
+  // compressed PDF was handed to the model as a hex dump, and the answer came from nothing (round 23, N15).
+  if (options.readDocument && size > 0 && (DOCUMENT_NAME.test(name) || kind === 'PDF document')) {
+    let text: string | null = null
+    try {
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const limit = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('timeout')), DOCUMENT_READ_MS)
+      })
+      try {
+        text = describeDocumentText(await Promise.race([options.readDocument(file), limit]), /\.docx$/i.test(name) ? 'Word document' : 'PDF')
+      } finally {
+        clearTimeout(timer)
+      }
+    } catch (err) {
+      log.warn('[chat-files] the text of a document could not be read', { err: String(err) })
+    }
+    if (text) return { attachment: { name, size, kind, sha256, summary: text }, file }
+    return { attachment: { name, size, kind, sha256, summary: UNREADABLE_DOCUMENT_SUMMARY }, file, notice: unreadableDocumentNotice(name) }
+  }
   return {
     attachment: {
       name, size, kind, sha256, summary,
@@ -320,16 +379,25 @@ export function fileBlock(file: FileAttachment, surface: 'chat' | 'workspace'): 
   ]
   // A binary in the working folder: the facts and the path. The tools read
   // the bytes; a dump of them here would only cost context.
+  // Discord feature request, 03.10.2026: "load binary files (such as ROMs)
+  // directly". The working folder path is what LU's own file and shell tools
+  // take; a tool of a plugin (REA's open_binary) runs in its own folder and
+  // needs the full path.
+  const full = file.absolutePath ? `Full path on this computer: ${file.absolutePath}` : null
   if (file.workspacePath && binary) {
     return [
       ...facts,
       `Path in your working folder: ${file.workspacePath}`,
-      'This is a binary file, so its bytes are not shown here. Inspect it with your file and shell tools on that path, for example a hex dump or a short Python script. Do not run the file or open it as a program unless the user asks you to.',
+      ...(full ? [full] : []),
+      `This is a binary file, so its bytes are not shown here. Inspect it with your file and shell tools on that path, for example a hex dump or a short Python script${full ? ', or hand the full path to a reverse engineering tool that opens a file by its path' : ''}. Do not run the file or open it as a program unless the user asks you to.`,
       `[End of attached file: ${file.name}]`,
     ].join('\n')
   }
-  const where = file.workspacePath
-    ? `Path in your working folder: ${file.workspacePath}\nUse your file and shell tools on that path for anything this summary does not answer.`
+  // The sentence differs on a phone (no shell there); the full path, when
+  // there is one, stands right under the working folder path.
+  const inWorkspace = file.workspacePath ? platformText('attachedFileInWorkspace', { path: file.workspacePath }) : null
+  const where = inWorkspace
+    ? (full ? inWorkspace.replace('\n', `\n${full}\n`) : inWorkspace)
     : surface === 'workspace'
       ? 'The file could not be copied into your working folder. Only this summary is available.'
       : binary
@@ -342,6 +410,19 @@ export function fileBlock(file: FileAttachment, surface: 'chat' | 'workspace'): 
     file.summary,
     `[End of attached file: ${file.name}]`,
   ].join('\n')
+}
+
+/**
+ * The text a turn's tools are picked from (lib/tool-selection): what was
+ * typed, plus one line per binary in the working folder. The REA plugin's
+ * tools are picked by the words of a turn (lib/plugins/rea-tools), and a ROM
+ * dropped in with "what is this?" named none of them, so the file tools and
+ * REA's opening tools stayed out of a turn that had a binary to open.
+ */
+export function toolRoutingText(typed: string, files: readonly FileAttachment[] | undefined): string {
+  const binaries = (files ?? []).filter((f) => f.workspacePath && isBinaryAttachment(f))
+  if (binaries.length === 0) return typed
+  return [typed, ...binaries.map((f) => `inspect the attached binary file ${f.name} (${f.kind})`)].join('\n')
 }
 
 /** What the user typed when a message carries nothing but files. */
@@ -400,6 +481,11 @@ export function numberedFileName(name: string, n: number): string {
   return dot > 0 ? `${name.slice(0, dot)} (${n})${name.slice(dot)}` : `${name} (${n})`
 }
 
+/** `/home/x`, `C:\x`, `C:/x` or a network share: a path that names its drive. */
+function isAbsolutePath(path: string): boolean {
+  return path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path) || path.startsWith('\\\\')
+}
+
 /** Where the working folder of a run is, in the words the fs commands take. */
 export interface ChatFileWorkspace {
   chatId: string
@@ -408,19 +494,23 @@ export interface ChatFileWorkspace {
 
 const TAKEN = /already exists/i
 
-async function uploadFile(file: File, workspace: ChatFileWorkspace): Promise<string> {
+async function uploadFile(file: File, workspace: ChatFileWorkspace): Promise<{ path: string; absolute?: string }> {
   const name = cleanFileName(file.name)
   for (let n = 0; n < 50; n++) {
     const path = numberedFileName(name, n)
     try {
       let offset = 0
+      let saved: unknown = null
       do {
         const chunk = new Uint8Array(await file.slice(offset, offset + UPLOAD_CHUNK_BYTES).arrayBuffer())
         const last = offset + chunk.length >= file.size
-        await backendCall('fs_write_bytes', { path, base64: toBase64(chunk), offset, last, ...workspace })
+        saved = await backendCall('fs_write_bytes', { path, base64: toBase64(chunk), offset, last, ...workspace })
         offset += chunk.length
       } while (offset < file.size)
-      return path
+      // The last chunk answers with the full path it renamed the file to.
+      const answered = saved && typeof saved === 'object' ? (saved as { path?: unknown }).path : undefined
+      const absolute = typeof answered === 'string' && isAbsolutePath(answered) ? answered : undefined
+      return { path, ...(absolute ? { absolute } : {}) }
     } catch (err) {
       // The folder may be the user's real project. A name that is taken there
       // is never overwritten; the attachment gets the next free one.
@@ -453,7 +543,8 @@ export async function placeChatFiles(
       continue
     }
     try {
-      files.push({ ...attachment, workspacePath: await uploadFile(file, workspace) })
+      const placed = await uploadFile(file, workspace)
+      files.push({ ...attachment, workspacePath: placed.path, ...(placed.absolute ? { absolutePath: placed.absolute } : {}) })
     } catch (err) {
       log.warn('[chat-files] the attachment could not be copied into the working folder', { err: String(err) })
       failed.push(attachment.name)

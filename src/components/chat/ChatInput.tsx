@@ -17,8 +17,12 @@ import { isThinkingCompatible, isVisionCompatible, declaredVision } from '../../
 import { clampEffort, effortChoices, effortLabel, nextEffort, DEFAULT_EFFORT } from '../../lib/effort'
 import type { AgentToolCall } from '../../types/agent-mode'
 import type { ImageAttachment } from '../../types/chat'
+import { loadChatDrafts, newChatKey, storeChatDrafts, type ChatDrafts } from '../../lib/chat-drafts'
 import { MAX_CHAT_IMAGES, prepareChatImages } from '../../lib/chat-image-input'
-import { FILE_ONLY_TEXT, MAX_CHAT_FILES, TOO_MANY_FILES_MESSAGE, binarySummaryOnlyMessage, prepareChatFile, type ChatFileInput } from '../../lib/chat-files'
+import { blindModelNotice } from '../../lib/chat-attachment-input'
+import { chatToolsReach } from '../../lib/chat-tools-reach'
+import { isMlxImageHost } from '../../api/mlx-image'
+import { FILE_ONLY_TEXT, MAX_CHAT_FILES, TOO_MANY_FILES_MESSAGE, binarySummaryOnlyMessage, isBinaryAttachment, prepareChatFile, type ChatFileInput } from '../../lib/chat-files'
 import { fileExtension } from '../../lib/file-magic'
 import { ChatFileChip } from './ChatFileChip'
 import { COMPOSER_MAX_W } from './composer-width'
@@ -89,6 +93,11 @@ interface Props {
    * the moment one is attached (3.0.7, Discord: "attach a ROM").
    */
   filesReachTools?: boolean
+  /**
+   * Which composer this is, for the draft typed before a chat exists
+   * (lib/chat-drafts.ts): Chat and Code each keep their own.
+   */
+  draftScope?: string
 }
 
 /**
@@ -133,16 +142,26 @@ interface SendLock {
   message: string
 }
 
-export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, pendingApproval, onApprove, onReject, disabled, modelReady, slashCommands, composerModel, composerActions, composerAbove, filesReachTools = false }: Props) {
-  const [input, setInput] = useState('')
-  const [images, setImages] = useState<ImageAttachment[]>([])
+export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, pendingApproval, onApprove, onReject, disabled, modelReady, slashCommands, composerModel, composerActions, composerAbove, filesReachTools = false, draftScope = 'chat' }: Props) {
+  // What this composer held when its view closed last (lib/chat-drafts.ts):
+  // the draft of the open chat goes straight into the field, the rest into
+  // `entwuerfe` below. Read once, on mount.
+  const [beimOeffnen] = useState(() => {
+    const alle = loadChatDrafts()
+    const offen = useChatStore.getState().activeConversationId ?? newChatKey(draftScope)
+    const eigener = alle[offen]
+    delete alle[offen]
+    return { alle, eigener }
+  })
+  const [input, setInput] = useState(beimOeffnen.eigener?.text ?? '')
+  const [images, setImages] = useState<ImageAttachment[]>(beimOeffnen.eigener?.bilder ?? [])
   // Files of any other kind (3.0.5). Each entry is a description plus the
   // handle to the bytes; nothing of the file itself is held here.
-  const [files, setFiles] = useState<ChatFileInput[]>([])
+  const [files, setFiles] = useState<ChatFileInput[]>(beimOeffnen.eigener?.dateien ?? [])
   // Create in chat: with the switch on, a clip or a sound track is an input
   // for an order. It never goes to the model and never into the chat store;
   // the bytes stay here until the message is sent.
-  const [media, setMedia] = useState<PendingMedia[]>([])
+  const [media, setMedia] = useState<PendingMedia[]>(beimOeffnen.eigener?.media ?? [])
   const mediaRef = useRef<PendingMedia[]>([])
   mediaRef.current = media
   const [isDragOver, setIsDragOver] = useState(false)
@@ -211,8 +230,22 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
     const stop = () => { job.epoch++; unsubscribe() }
     return stop
   }, [])
-  const [entwuerfe, setEntwuerfe] = useState<Record<string, { text: string; bilder: ImageAttachment[]; dateien: ChatFileInput[] }>>({})
+  const [entwuerfe, setEntwuerfe] = useState<ChatDrafts>(beimOeffnen.alle)
   const [letztesGespraech, setLetztesGespraech] = useState(conversationId)
+  // Leaving for Create, Models or Settings unmounts this composer. Everything
+  // it holds goes to lib/chat-drafts.ts then, the open chat's draft included,
+  // and comes back on the next mount (3.0.8). The ref only carries the last
+  // committed values to the cleanup; it is written in an effect, never in
+  // render.
+  const ablage = useRef({ entwuerfe, input, images, files, media, conversationId, draftScope })
+  useEffect(() => {
+    ablage.current = { entwuerfe, input, images, files, media, conversationId, draftScope }
+  })
+  useEffect(() => () => {
+    const a = ablage.current
+    const offen = a.conversationId ?? newChatKey(a.draftScope)
+    storeChatDrafts({ ...a.entwuerfe, [offen]: { text: a.input, bilder: a.images, dateien: a.files, media: a.media } })
+  }, [])
   if (letztesGespraech !== conversationId) {
     const vorher = letztesGespraech
     setLetztesGespraech(conversationId)
@@ -501,19 +534,29 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
       speicher.dismiss('model-cannot-see-images')
       return
     }
-    speicher.show(
-      'model-cannot-see-images',
-      "This model can't read images. Switch to a vision model (Gemma 4, LLaVA, Qwen-VL) to use the attachment.",
-    )
-  }, [images.length, activeModel, canSeeImages, createOn])
+    // A12: a model with tools still hands the picture to image_generate /
+    // video_generate locally (lib/chat-attachment-input); a Mac's image
+    // engine and cloud mode take none from the chat.
+    const handsToImageTool = !cloudMode && !isMlxImageHost()
+      && chatToolsReach(activeModel, useModelStore.getState().models)
+    speicher.show('model-cannot-see-images', blindModelNotice(handsToImageTool))
+  }, [images.length, activeModel, canSeeImages, createOn, cloudMode])
 
   const removeImage = (index: number) => {
     setImages(prev => prev.filter((_, i) => i !== index))
   }
 
+  // "Models cannot read binary files" is about the draft of a plain chat. With
+  // its binaries taken off the draft, or Agent or Code taking the file into the
+  // working folder, it no longer says what will happen, so it goes.
   const removeFile = (index: number) => {
-    setFiles(prev => prev.filter((_, i) => i !== index))
+    const left = files.filter((_, i) => i !== index)
+    setFiles(left)
+    if (!left.some(({ attachment }) => isBinaryAttachment(attachment))) useChatNoticeStore.getState().dismiss('binary-summary-only')
   }
+  useEffect(() => {
+    if (filesReachTools) useChatNoticeStore.getState().dismiss('binary-summary-only')
+  }, [filesReachTools])
 
   // Write a dictation transcript (interim or final) into the input as
   // base + transcript; the layout effect above sizes the field. NEVER sends,
@@ -793,7 +836,7 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
                   >
                     <X size={8} />
                   </button>
-                  <span className="absolute bottom-0 left-0 right-0 bg-black/60 text-[0.45rem] text-gray-300 text-center rounded-b-lg truncate px-0.5">
+                  <span className="lu-on-dark absolute bottom-0 left-0 right-0 bg-black/60 text-[0.45rem] text-gray-300 text-center rounded-b-lg truncate px-0.5">
                     {img.name}
                   </span>
                 </div>
@@ -803,6 +846,7 @@ export function ChatInput({ onSend, onStop, isGenerating, waitingForLocalLane, p
                   key={`${attachment.sha256}-${i}`}
                   file={attachment}
                   testId="composer-file-chip"
+                  reachesTools={filesReachTools}
                   onRemove={() => removeFile(i)}
                 />
               ))}

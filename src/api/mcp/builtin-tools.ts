@@ -7,6 +7,8 @@ import type {
 } from '../../types/bridge'
 import type { ToolRegistry } from './tool-registry'
 import { reserveCreateTools } from './create-tools'
+import { registerSettingsTools } from './settings-tools'
+import { SETTINGS_TOOL_NAMES } from '../../lib/settings-tool-names'
 import { v4 as uuid } from 'uuid'
 import { backendCall, isTauri } from '../backend'
 import { getActiveChatId, getActiveConversationId, getActiveWorkspace, isChatArtifactMode, captureChatArtifact, isReadOnlyShellTurn } from '../agent-context'
@@ -29,13 +31,26 @@ import { isMlxEnhancer } from '../../lib/image-engines'
 import { listMlxLoras } from '../mlx-loras'
 import { askedLoraNames, loraFamily, macToolLoras, type ToolLora } from '../../lib/mac-tool-loras'
 import { getVideoStatus, listVideoModels, generateVideo as generateMlxVideo, getVideoProgress, cancelVideo, mlxVideoStartImage, type VideoModel } from '../mlx-video'
-import { pathToFileUrl } from '../../lib/local-media-url'
+import { fileUrlToPath, pathToFileUrl } from '../../lib/local-media-url'
+import { chatChoicesLine, chatResultMedia, resolveChatInputRef, withChatChoices } from '../../lib/chat-media-refs'
+import { attachmentLabel, chatImageAttachments, stagedAttachmentName } from '../../lib/chat-attachment-input'
 import { searchUserAgentArg } from '../../lib/search-user-agent'
+import { webSearchResultText } from '../../lib/search-providers'
 import { RETIRED_MUTATING_NAMES } from '../../lib/retired-tools'
+import { fileSavedText, shownToolPath } from '../../lib/phone-file-path'
+import { isMobile } from '../../lib/device-kind'
+import { FETCH_OFFLINE_TOOL_RESULT, SEARCH_OFFLINE_TOOL_RESULT, deviceSaysOffline, searchFailedOffline } from '../../lib/search-offline'
+import {
+  retiredToolRunsOnThisDevice, toolDefinitionForThisDevice, toolExistsOnThisDevice, workflowsForThisDevice,
+} from '../../lib/mobile-tools'
 import { resolveMlxModel, defaultMlxImageModel } from '../../lib/mlx-model-match'
 import type { Runner } from '../agents/test-runner'
 import type { VramHandoffArgs } from '../vram-handoff'
+import { renderStallLimitMs } from '../../lib/tool-timeout'
+import { macEditSide } from '../../lib/image-engines'
+import { aspectFrame, aspectRatioReject, parseAspectRatio } from '../../lib/aspect-frame'
 import { CHARACTER_ARG_SCHEMA, characterImageArgs, characterVideoArgs, type CharacterChatDeps } from '../../lib/character-chat'
+import { blockMessageFor, checkPromptSafety } from '../../lib/render/safety'
 
 /**
  * Helper: current chat id (+ folder workspace) as a fragment to spread into
@@ -172,8 +187,9 @@ const SHARED_MEDIA_SETTINGS: Record<string, JSONSchemaProp> = {
   sampler: { type: 'string', description: 'Sampler name, must be one this model supports.' },
   scheduler: { type: 'string', description: 'Scheduler name, must be one this model supports.' },
   seed: { type: 'number', description: 'Seed; omit or -1 for random.' },
-  width: { type: 'number', description: 'Output width in px.' },
-  height: { type: 'number', description: 'Output height in px.' },
+  width: { type: 'number', description: 'Output width in px, 64 to 4096.' },
+  height: { type: 'number', description: 'Output height in px, 64 to 4096.' },
+  aspectRatio: { type: 'string', description: 'Shape instead of width/height, e.g. "16:9", "9:16", "1:1".' },
   negativePrompt: { type: 'string', description: 'Things to avoid.' },
 }
 
@@ -227,9 +243,9 @@ const BUILTIN_TOOLS: MCPToolDefinition[] = [
   {
     name: 'web_search',
     description:
-      'Search the web via the configured provider (Brave, Tavily, or auto). Returns a ranked list of {title, url, snippet}. '
+      'Search the web. Returns a ranked list of {title, url, snippet}. '
       + 'Snippets are teasers, not answers: PREFER web_fetch on the promising URLs for the real content. '
-      + 'DO NOT run more than 3 similar queries per turn, refine instead of re-searching.',
+      + 'Search as often as the task needs, but never repeat an identical query: refine the words instead.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -244,7 +260,7 @@ const BUILTIN_TOOLS: MCPToolDefinition[] = [
   {
     name: 'web_fetch',
     description:
-      'Fetch a single URL and return its readable text (up to ~24 000 chars), scripts, styles and page furniture stripped. '
+      'Fetch a single URL and return its readable text (up to ~40 000 chars), the article without menus, scripts and page furniture. '
       + 'PREFER this over web_search when you already know the target URL. '
       + 'NEVER call it with localhost, a private IP or file://, those are refused. '
       + 'On an empty or 4xx response try a different URL, not the same one again.',
@@ -252,7 +268,7 @@ const BUILTIN_TOOLS: MCPToolDefinition[] = [
       type: 'object',
       properties: {
         url: { type: 'string', description: 'Full URL including protocol (http:// or https://)' },
-        maxLength: { type: 'number', description: 'Max chars to return (default: 24000)' },
+        maxLength: { type: 'number', description: 'Max chars to return (default: 40000)' },
       },
       required: ['url'],
     },
@@ -444,26 +460,25 @@ const BUILTIN_TOOLS: MCPToolDefinition[] = [
   {
     name: 'image_generate',
     description:
-      'Generate an image from a text prompt via the local image pipeline (Apple MLX on macOS; ComfyUI elsewhere, auto-detected). Blocks up to 5 minutes. '
-      + 'USE for "draw me", "make an image of", "generate a picture". '
-      + 'Pass `inputImage` (a filename from an earlier image_generate result) for image-to-image — restyle / edit an existing image at the given `denoise` strength; omit it for text-to-image. '
-      + 'First installed image model is auto-selected (or pass `model`). '
-      + 'EXPECT A PAUSE on non-Mac (ComfyUI) single-GPU machines: LU may briefly unload the chat model from VRAM to fit the image model, then reload it after — typically a 30-90s swap. This avoids out-of-memory errors; your conversation is fully preserved across the swap. '
-      + 'Rate-limit yourself to 1 call per turn — generations serialize internally so parallel calls will queue, not speed up. '
-      + 'Fine-tune through the optional `settings` object; a value beyond the model\'s real limit is REJECTED with the actual limit, never silently changed.',
+      'Make one picture on this computer (Apple MLX on a Mac, ComfyUI elsewhere). '
+      + 'USE for "draw", "make an image of", and to change a picture: pass it as `inputImage`. '
+      + '`inputImage` takes "attachment N" for a picture the user attached, or the file name of a picture an earlier call made in this chat. Never invent a file name; an unknown one is refused with the list of pictures this chat has. '
+      + 'It cannot remove a background, upscale, erase, extend a clip or make sound: tell the user those are in the Create tab. '
+      + 'Takes up to the image timeout in Settings (20 minutes unless changed); the chat model may pause while the image model loads. One call per turn. '
+      + 'Optional `settings` (size, aspectRatio, steps, LoRA): a value beyond the model\'s limit is refused with the limit.',
     inputSchema: {
       type: 'object',
       properties: {
-        prompt: { type: 'string', description: 'Positive text description of the desired image' },
+        prompt: { type: 'string', description: 'What the picture shows, in English (image models read English), whatever language the user writes in. For an edit: the whole picture as it should look after the change.' },
         negativePrompt: { type: 'string', description: 'Things to avoid (blurry, deformed, etc.)' },
         model: { type: 'string', description: 'Optional image model filename to use. Omit to auto-select the first installed image model.' },
-        inputImage: { type: 'string', description: 'Optional. Filename of a previously generated image (from an earlier image_generate result) to use as the base for image-to-image. Omit for text-to-image.' },
-        denoise: { type: 'number', description: 'Image-to-image strength 0.05–1.0 (default 0.6). Lower keeps more of the input image, higher follows the prompt more. Only used together with inputImage.' },
+        inputImage: { type: 'string', description: 'Optional picture to change: "attachment N", or the file name of a picture made earlier in this chat. Omit for a new picture from text.' },
+        denoise: { type: 'number', description: 'With inputImage only, and only when the user asks for a light or strong change: how much changes, 0.05 to 0.95. Omit it otherwise (default 0.75).' },
         character: CHARACTER_ARG_SCHEMA,
         settings: mediaSettingsSchema({
           denoise: { type: 'number', description: 'Image-to-image strength 0.05 to 1.0 (only with inputImage).' },
           lora: { type: ['string', 'array'], items: { type: 'string' }, description: 'LoRA filename, or an ARRAY of filenames to stack several (chained in order). Matched against the installed LoRAs, extension optional; an unknown name is rejected with the installed list.' },
-          loraStrength: { type: ['number', 'array'], items: { type: 'number' }, description: 'LoRA strength, usually 0 to 2, accepted from -10 to 10. One number applies to every LoRA; an array gives one strength per LoRA in the same order.' },
+          loraStrength: { type: ['number', 'array'], items: { type: 'number' }, description: 'LoRA strength, usually 0 to 2, accepted from -20 to 20. One number applies to every LoRA; an array gives one strength per LoRA in the same order.' },
           vae: { type: 'string', description: 'Override VAE filename.' },
         }),
       },
@@ -475,23 +490,21 @@ const BUILTIN_TOOLS: MCPToolDefinition[] = [
   {
     name: 'video_generate',
     description:
-      'Generate a short video clip from a text prompt via the local video pipeline (Apple MLX on macOS; Wan / Hunyuan / AnimateDiff via ComfyUI elsewhere, auto-detected). Local video is slow — this can block up to 60 minutes. '
-      + 'USE for "make a video of", "animate", "generate a clip". '
-      + 'For a specific length pass `seconds` (e.g. seconds=4 for a 4-second clip) — prefer this over raw frames. Image-to-video (SVD) effectively tops out around 3-4 seconds; text-to-video can run longer. '
-      + 'Pass `inputImage` (a filename from an earlier image_generate result) to animate a still image — image-to-video, which auto-selects an installed I2V model such as SVD; omit it for text-to-video. First installed video model is auto-selected (or pass `model`). '
-      + 'Write ONE clear prompt and call this ONCE per turn — video generation is slow and ComfyUI queues parallel calls rather than speeding up. '
-      + 'EXPECT A PAUSE: LU will briefly unload the chat model from VRAM to fit the (large) video model, then reload it after — typically a 30-90s swap, longer on a cold ComfyUI start. This prevents out-of-memory errors; your conversation is preserved across the swap. '
-      + 'Fine-tune through the optional `settings` object; a value beyond the model\'s real limit is REJECTED with the actual limit, never silently changed.',
+      'Make one short clip on this computer (Apple MLX on a Mac, Wan / Hunyuan / LTX / SVD via ComfyUI elsewhere). '
+      + 'USE for "make a video of", and to animate a picture: pass it as `inputImage` ("attachment N", or the file name of a picture made earlier in this chat; never invent one). '
+      + 'Pass `seconds` for the length. inputImage must be a still picture: a clip cannot be continued or edited here. '
+      + 'Local video is slow: it takes up to the video timeout in Settings (60 minutes unless changed) and the chat model pauses meanwhile. Write ONE clear prompt and call once per turn. '
+      + 'Optional `settings`: a value beyond the model\'s limit is refused with the limit.',
     inputSchema: {
       type: 'object',
       properties: {
-        prompt: { type: 'string', description: 'Positive text description of the desired video / motion' },
+        prompt: { type: 'string', description: 'What happens in the clip, in English (video models read English), whatever language the user writes in.' },
         negativePrompt: { type: 'string', description: 'Things to avoid (static, blurry, deformed, etc.)' },
         model: { type: 'string', description: 'Optional video model filename to use. Omit to auto-select the first installed video model.' },
         seconds: { type: 'number', description: 'Desired clip length in seconds (e.g. 4). PREFER this over frames for "an N second video". Image-to-video (SVD) effectively maxes near 3-4s; text-to-video can be longer.' },
         frames: { type: 'number', description: 'Advanced: exact frame count (rejected if beyond the model max; e.g. ~81 for Wan, ~25 for SVD). Prefer `seconds`. Omit for the model default.' },
         fps: { type: 'number', description: 'Frames per second of the output clip (e.g. 16). Omit for the model default.' },
-        inputImage: { type: 'string', description: 'Optional. Filename of a previously generated image to animate (image-to-video). Requires an installed I2V model such as SVD. Omit for text-to-video.' },
+        inputImage: { type: 'string', description: 'Optional still picture to animate: "attachment N", or the file name of a picture made earlier in this chat. Omit for a clip from text.' },
         character: CHARACTER_ARG_SCHEMA,
         settings: mediaSettingsSchema({
           seconds: { type: 'number', description: 'Clip length in seconds (preferred length control).' },
@@ -544,38 +557,34 @@ async function executeWebSearch(args: ToolArgs): Promise<string> {
   if (bad) return bad
   const { useSettingsStore } = await import('../../stores/settingsStore')
   const searchSettings = useSettingsStore.getState().settings
+  const query = argString(args, 'query')
+  // Provider and the Brave and Tavily keys come through one door (lib/search-keys.ts): the plain
+  // settings field on the desktop, the keychain on a phone, and no key at all
+  // when the user chose the free search.
+  const { resolveSearchCall } = await import('../../lib/search-keys')
+  // Phone only: without a network the search is not asked at all, and the model gets the one sentence that says
+  // so instead of the text of the system and the advice to add a key (lib/search-offline.ts).
+  const phone = isMobile()
+  if (phone && deviceSaysOffline()) return SEARCH_OFFLINE_TOOL_RESULT
+  const searchCall = await resolveSearchCall()
   const data = await backendCall<WebSearchResult>('web_search', {
-    query: argString(args, 'query'),
+    query,
     count: args.maxResults || 5,
-    provider: searchSettings.searchProvider || 'auto',
-    braveApiKey: searchSettings.braveApiKey || '',
-    tavilyApiKey: searchSettings.tavilyApiKey || '',
+    provider: searchCall.provider,
+    braveApiKey: searchCall.braveApiKey,
+    tavilyApiKey: searchCall.tavilyApiKey,
+    exaApiKey: (searchSettings.exaApiKey || '').trim(),
     // D16: empty = each free tier keeps its own User-Agent.
     userAgent: searchUserAgentArg(searchSettings.searchUserAgent),
   })
-  if (Array.isArray(data.results) && data.results.length > 0) {
-    const lines = data.results
-      .map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}\n   ${r.snippet}`)
-      .join('\n\n')
-    // When the configured paid provider failed we still return free-tier
-    // results, but say why the configured one didn't answer — a silently
-    // swallowed bad API key would look like "search is broken".
-    const note = typeof data.providerError === 'string' && data.providerError
-      ? `\n\n[Note: configured search provider failed — ${data.providerError}. Results above are from the free fallback (${data.provider || 'fallback'}).]`
-      : ''
-    return lines + note
-  }
-  if (typeof data.error === 'string' && data.error) {
-    const extra = typeof data.providerError === 'string' && data.providerError ? ` (${data.providerError})` : ''
-    // Auflage 2.1 (lu-301/bau/review-offload2.md): this text used to read
-    // "Web search failed: ..." without the "Error:" prefix `executeToolStep`
-    // checks for, so a search failure inside a `tool` workflow step counted
-    // as `status: 'completed'` and the run carried on with a failure message
-    // as if it were a real result, exactly the silent, GPU-idle-in-seconds
-    // run the box measured for "Research Topic".
-    return `Error: Web search failed: ${data.error}${extra}`
-  }
-  return JSON.stringify(data)
+  // Phone only: the device said it was online and every search still failed to leave it (a WebView can hold on to
+  // an old answer about the network).
+  if (phone && searchFailedOffline(data)) return SEARCH_OFFLINE_TOOL_RESULT
+  // The text the model reads, and the one sentence it gets when every tier
+  // failed: lib/search-providers.ts. A failure starts with "Error:", so a
+  // `tool` workflow step counts it as failed (Auflage 2.1,
+  // lu-301/bau/review-offload2.md), never as a result.
+  return webSearchResultText(data, query)
 }
 
 /** The body limit of `web_fetch`, as in src-tauri/src/commands/web_reach.rs (`MAX_BODY`). */
@@ -629,14 +638,17 @@ export const WEB_PAGE_IS_DATA =
 async function executeWebFetch(args: ToolArgs): Promise<string> {
   const url = argString(args, 'url')
   if (!url) return 'Error: No URL provided'
+  // Phone only, as for the search above. An address on this device or in the home network needs no internet.
+  if (isMobile() && deviceSaysOffline() && !/^https?:\/\/(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|\[::1\])/i.test(url)) return FETCH_OFFLINE_TOOL_RESULT
 
   // D16: the User-Agent from Settings, empty = the agent's own.
   const { useSettingsStore } = await import('../../stores/settingsStore')
   const userAgent = searchUserAgentArg(useSettingsStore.getState().settings.searchUserAgent)
 
-  // Preferred path: use the Rust `web_fetch` command which strips HTML
-  // aggressively (<script>/<style>/<nav>/<footer> gone, paragraphs kept)
-  // and caps at ~24 000 chars. The old path only gave the model the first
+  // Preferred path: the Rust `web_fetch` command reads the page on this
+  // computer with Readability (menus, scripts, footers gone, paragraphs kept),
+  // caps it at ~40 000 chars, and asks Exa's reader when the site refuses the
+  // read or builds the page with JavaScript (3.0.8). The old path only gave the model the first
   // ~4 000 chars of a half-cleaned body — that's why the agent kept
   // complaining it "only sees the header" of the page.
   try {
@@ -663,10 +675,14 @@ async function executeWebFetch(args: ToolArgs): Promise<string> {
     if (data.title) parts.push(`Title: ${data.title}`)
     parts.push(`URL: ${data.url}`)
     parts.push(`Status: ${data.status}`)
+    // The local read was refused or found no text, and Exa's reader read the
+    // page (search.rs, `web_fetch_with`). Said, so nobody wonders where the
+    // text came from.
+    if (data.via === 'exa') parts.push(`Read via Exa: ${data.localProblem || 'the page could not be read directly'}.`)
     parts.push(WEB_PAGE_IS_DATA)
     parts.push('')
     parts.push(data.text)
-    if (data.truncated) parts.push('\n…(truncated to 24 000 chars)')
+    if (data.truncated) parts.push('\n…(truncated to 40 000 chars)')
     return parts.join('\n')
   } catch (e) {
     // Inside the app the Rust command is always there, so what it threw IS the
@@ -684,7 +700,7 @@ async function executeWebFetch(args: ToolArgs): Promise<string> {
     // not exist: the dev server's proxy + htmlToText, read up to the same
     // limit the Rust side has.
     try {
-      const maxLength = argNumber(args, 'maxLength') || 24000
+      const maxLength = argNumber(args, 'maxLength') || 40000
       const html = await fetchPageWithoutBackend(url)
       const text = htmlToText(html)
       if (text.length > maxLength) return text.substring(0, maxLength) + '\n\n[...truncated]'
@@ -778,8 +794,10 @@ async function executeFileWrite(args: ToolArgs, run?: AgentRunContext): Promise<
   // path to `agent-workspace/default/`. 'unchanged' means the bytes already
   // matched (EOL/BOM-normalized), so nothing was rewritten — tell the model so
   // it doesn't loop trying to "apply" a change that is already in place.
-  if (data.status === 'saved' && data.path) return `File saved: ${data.path}`
-  if (data.status === 'unchanged' && data.path) return `File already up to date, no changes written: ${data.path}`
+  // On a phone the path is the private folder of the app: the result names
+  // the file inside the folder of the chat instead (lib/phone-file-path.ts).
+  if (data.status === 'saved' && data.path) return fileSavedText(data.path)
+  if (data.status === 'unchanged' && data.path) return `File already up to date, no changes written: ${shownToolPath(data.path)}`
   return JSON.stringify(data)
 }
 
@@ -840,8 +858,8 @@ async function executeFileEdit(args: ToolArgs, run?: AgentRunContext): Promise<s
   const w = await backendCall<FsWriteResult>('fs_write', { path, content: res.content, ...chatCtx(run) })
   const n = res.replacements ?? 1
   const note = res.fuzzyCount ? ` ${res.fuzzyCount === 1 ? 'One edit' : `${res.fuzzyCount} edits`} matched with indentation ignored; re-read before editing the same lines again.` : ''
-  if (w.status === 'saved' && w.path) return `Edited ${w.path} (${n} replacement${n === 1 ? '' : 's'}).${note}`
-  if (w.status === 'unchanged' && w.path) return `No change written to ${w.path} (content already matched).`
+  if (w.status === 'saved' && w.path) return `Edited ${shownToolPath(w.path)} (${n} replacement${n === 1 ? '' : 's'}).${note}`
+  if (w.status === 'unchanged' && w.path) return `No change written to ${shownToolPath(w.path)} (content already matched).`
   return JSON.stringify(w)
 }
 
@@ -866,7 +884,7 @@ async function executeFileList(args: ToolArgs, run?: AgentRunContext): Promise<s
     // and named none, the step showed no result (3.0.4 box run).
     if (!data.entries.length) return 'The folder is empty.'
     return data.entries
-      .map((e) => `${e.isDir ? '[DIR]' : ''} ${e.name} (${formatBytes(e.size)})  ${e.path}`)
+      .map((e) => `${e.isDir ? '[DIR]' : ''} ${e.name} (${formatBytes(e.size)})  ${shownToolPath(e.path)}`)
       .join('\n')
   }
   return JSON.stringify(data)
@@ -886,7 +904,7 @@ async function executeFileSearch(args: ToolArgs, run?: AgentRunContext): Promise
     return data.results
       .map((r) => {
         const matches = r.matches?.map((m) => `  L${m.line}: ${m.text}`).join('\n') || ''
-        return `${r.file}\n${matches}`
+        return `${shownToolPath(r.file)}\n${matches}`
       })
       .join('\n\n')
   }
@@ -1450,7 +1468,12 @@ async function executeScreenshot(): Promise<string> {
   return JSON.stringify(data)
 }
 
-async function executeImageGenerate(args: ToolArgs, run?: AgentRunContext): Promise<string> {
+/** The owner a generation is booked under (AgentRunContext.generationOwner). */
+function generationOwnerOf(run?: AgentRunContext): string | null {
+  return run?.generationOwner ?? run?.conversationId ?? null
+}
+
+async function executeImageGenerate(args: ToolArgs, run?: AgentRunContext, signal?: AbortSignal): Promise<string> {
   // Feature EE (v2.5.0): the whole generation flow now goes through the VRAM
   // hand-off orchestrator. It resolves the image model (args.model or first
   // installed), decides whether the resident local text model has to be evicted
@@ -1463,6 +1486,13 @@ async function executeImageGenerate(args: ToolArgs, run?: AgentRunContext): Prom
   if (!rawPrompt) return 'Error: No prompt provided for image generation.'
   const prompt = String(rawPrompt)
   const merged = mergeMediaArgs(args)
+  // A13: the call's own Stop and timeout. Before, neither reached the Mac
+  // engines at all, and on ComfyUI a Stop at the model picker still started
+  // the render once the picker gave up waiting.
+  const stop = signal ?? run?.abortSignal
+  if (stop?.aborted) return 'Image generation cancelled.'
+  const sizeRej = mediaSizeReject(merged)
+  if (sizeRej) return sizeRej
 
   // Hard rule: on macOS, local image generation is Apple MLX only — ComfyUI
   // never runs there (see isMlxImageHost() / useCreate.ts's MLX image
@@ -1471,42 +1501,56 @@ async function executeImageGenerate(args: ToolArgs, run?: AgentRunContext): Prom
   // A character on a Mac: the same lib/character-chat rules with the Mac's
   // engines behind them (macCharacterChatDeps), the LoRA then goes to mflux.
   if (isMlxImageHost()) {
+    // A picture of the chat (attachment, earlier result) becomes a file on
+    // disk first: the Mac engines read their inputs from there.
+    const staged = await stageChatInputOnMac(merged, run)
+    if (staged) return `Image generation failed: ${staged}`
     const character = characterArg(args)
     if (character) {
-      const withChar = await characterImageArgs(character, merged, await macCharacterChatDeps())
+      const withChar = await characterImageArgs(character, merged, await macCharacterChatDeps(stop))
       if (typeof withChar === 'string') return withChar
       Object.assign(merged, withChar)
       delete merged.character
-      return executeImageGenerateMlx(String(merged.prompt ?? prompt), merged)
+      const blocked = localRenderBlocked({ ...merged, prompt: String(merged.prompt ?? prompt) })
+      if (blocked) return blocked
+      return executeImageGenerateMlx(String(merged.prompt ?? prompt), merged, stop)
     }
-    return executeImageGenerateMlx(prompt, merged)
+    const blocked = localRenderBlocked({ ...merged, prompt })
+    if (blocked) return blocked
+    return executeImageGenerateMlx(prompt, merged, stop)
   }
+
+  // A picture attached in the chat goes to ComfyUI's input folder first.
+  const staged = await stageChatAttachment(merged, run, stop)
+  if (staged) return staged === 'cancelled' ? 'Image generation cancelled.' : `Image generation failed: ${staged}`
+  if (stop?.aborted) return 'Image generation cancelled.'
 
   // A character brings its model, LoRA and trigger word (lib/character-chat).
   // The model is set, so the picker gate below lets it through.
   const character = characterArg(args)
   if (character) {
-    const withChar = await characterImageArgs(character, merged, await characterChatDeps(run))
+    const withChar = await characterImageArgs(character, merged, await characterChatDeps(run, stop))
     if (typeof withChar === 'string') return withChar
     Object.assign(merged, withChar)
     delete merged.character
   }
+  const blocked = localRenderBlocked({ prompt, ...merged })
+  if (blocked) return blocked
+  const editRej = await denoiseIgnoresInput(merged)
+  if (editRej) return editRej
 
-  // Model-Picker gate (v2.5.3): BEFORE the VRAM swap, let the user pick the
-  // ComfyUI model in the tool call (or silently use the saved preference).
-  // Returns null when an explicit model arg exists / nothing is installed /
-  // ComfyUI is unreachable — the existing pipeline then behaves as before.
-  const { pickModelForGeneration } = await import('../model-pick')
-  const picked = await pickModelForGeneration('image', merged)
-  if (picked) merged.model = picked
+  // Model-Picker gate (v2.5.3): the user picks the ComfyUI model in the tool
+  // call, or the Create choice / saved preference is used. It runs inside the
+  // hand-off now, after ComfyUI is up (A13), and the call's signal ends it.
   const { vramHandoffGenerate } = await import('../vram-handoff')
   // Blocker 4 (review-lanes.md): thread the owning conversation through so
   // requestGenerationCancel(convId) can tell this generation apart from one
   // a DIFFERENT conversation's agent started.
-  return vramHandoffGenerate('image', merged, run?.conversationId ?? null)
+  const out = await vramHandoffGenerate('image', merged, generationOwnerOf(run), { signal: stop, pickModel: true })
+  return withChatChoices(out, await chatMessages(run))
 }
 
-async function executeVideoGenerate(args: ToolArgs, run?: AgentRunContext): Promise<string> {
+async function executeVideoGenerate(args: ToolArgs, run?: AgentRunContext, signal?: AbortSignal): Promise<string> {
   // Feature EE (v2.5.0): text-to-video via the same hand-off orchestrator.
   // Picks the first installed video model (or args.model), detects the video
   // backend (Wan / AnimateDiff), evicts the local text model from VRAM if it
@@ -1519,6 +1563,10 @@ async function executeVideoGenerate(args: ToolArgs, run?: AgentRunContext): Prom
   // input_image alias, and falls back to the last generated image — so the
   // "animate the image you just made" chain works even with a sloppy call.
   const merged = mergeMediaArgs(args)
+  const stop = signal ?? run?.abortSignal
+  if (stop?.aborted) return 'Video generation cancelled.'
+  const sizeRej = mediaSizeReject(merged)
+  if (sizeRej) return sizeRej
 
   // Hard rule: on macOS, local video generation is Apple MLX only — ComfyUI
   // never runs there. Route around vram-handoff entirely (no VRAM juggling —
@@ -1526,36 +1574,224 @@ async function executeVideoGenerate(args: ToolArgs, run?: AgentRunContext): Prom
   // its own subprocess).
   if (isMlxImageHost()) {
     const prompt = String(args.prompt ?? args.description ?? '').trim() || 'gentle, subtle natural motion'
+    const staged = await stageChatInputOnMac(merged, run)
+    if (staged) return `Video generation failed: ${staged}`
     // A character: its picture on mflux first, the clip from it on MLX.
     const character = characterArg(args)
     if (character) {
-      const withChar = await characterVideoArgs(character, { ...merged, prompt }, await macCharacterChatDeps())
+      const withChar = await characterVideoArgs(character, { ...merged, prompt }, await macCharacterChatDeps(stop))
       if (typeof withChar === 'string') return withChar
       Object.assign(merged, withChar)
       delete merged.character
     }
-    return executeVideoGenerateMlx(prompt, merged)
+    const blocked = localRenderBlocked({ ...merged, prompt })
+    if (blocked) return blocked
+    return executeVideoGenerateMlx(prompt, merged, stop)
   }
+
+  // A picture attached in the chat: the start image, in ComfyUI's input folder.
+  const staged = await stageChatAttachment(merged, run, stop)
+  if (staged) return staged === 'cancelled' ? 'Video generation cancelled.' : `Video generation failed: ${staged}`
+  if (stop?.aborted) return 'Video generation cancelled.'
 
   // A character: the same chain as Create, its image first, the clip from it
   // (lib/character-chat). The image is in place before the picker gate, so
   // the gate offers models that take a start image.
   const character = characterArg(args)
   if (character) {
-    const withChar = await characterVideoArgs(character, merged, await characterChatDeps(run))
+    const withChar = await characterVideoArgs(character, merged, await characterChatDeps(run, stop))
     if (typeof withChar === 'string') return withChar
     Object.assign(merged, withChar)
     delete merged.character
   }
+  const blockedVideo = localRenderBlocked(merged)
+  if (blockedVideo) return blockedVideo
 
   // Model-Picker gate (v2.5.3) — see executeImageGenerate. T2V and I2V keep
   // separate saved preferences (disjoint capability sets).
-  const { pickModelForGeneration } = await import('../model-pick')
-  const picked = await pickModelForGeneration('video', merged)
-  if (picked) merged.model = picked
   const { vramHandoffGenerate } = await import('../vram-handoff')
   // Blocker 4 (review-lanes.md): see executeImageGenerate above.
-  return vramHandoffGenerate('video', merged, run?.conversationId ?? null)
+  const out = await vramHandoffGenerate('video', merged, generationOwnerOf(run), { signal: stop, pickModel: true })
+  return withChatChoices(out, await chatMessages(run))
+}
+
+/** The messages of the chat this call belongs to (empty outside a chat). */
+async function chatMessages(run?: AgentRunContext): Promise<ChatMessages> {
+  const { useChatStore } = await import('../../stores/chatStore')
+  const convId = getActiveConversationId(run)
+  const conv = convId ? useChatStore.getState().conversations.find((c) => c.id === convId) : undefined
+  return conv?.messages ?? []
+}
+type ChatMessages = Parameters<typeof resolveChatInputRef>[1]
+
+/** The key `inputImage` came under: small models send the aliases too. */
+function inputImageKey(a: Record<string, unknown>): string | undefined {
+  return ['inputImage', 'input_image', 'image'].find((k) => typeof a[k] === 'string' && a[k])
+}
+
+function setInputImage(a: Record<string, unknown>, value: string): void {
+  delete a.input_image
+  delete a.image
+  a.inputImage = value
+}
+
+/**
+ * `inputImage` as ComfyUI can read it (A12, A13). An attachment of the chat
+ * is uploaded to ComfyUI's input folder; an earlier result of the chat goes
+ * on as its own /view address (subfolder and folder kept); a clip is refused.
+ * A name in no list here is left to resolveInputImage, which also finds a
+ * gallery file the user named. Returns the line for model and user when the
+ * reference cannot work, null otherwise.
+ */
+export async function stageChatAttachment(merged: VramHandoffArgs, run?: AgentRunContext, signal?: AbortSignal): Promise<string | null> {
+  const a = merged as Record<string, unknown>
+  const key = inputImageKey(a)
+  if (!key) return null
+  const messages = await chatMessages(run)
+  const ref = resolveChatInputRef(String(a[key]), messages)
+  switch (ref.kind) {
+    case 'error': return ref.error
+    case 'result': setInputImage(a, ref.media.url); return null
+    case 'url': setInputImage(a, ref.url); return null
+    case 'unknown': setInputImage(a, ref.name); return null
+    case 'path': return `ComfyUI cannot read "${ref.path}" from disk. ${chatChoicesLine(chatImageAttachments(messages), chatResultMedia(messages))}`
+  }
+  const entry = ref.entry
+  const convId = getActiveConversationId(run)
+  const { comfyUpForUpload } = await import('../vram-handoff')
+  const notUp = await comfyUpForUpload(signal ?? run?.abortSignal)
+  if (notUp) return notUp
+  try {
+    const [{ originalAttachment, attachmentBlob, referenceId }, { uploadImage }] = await Promise.all([
+      import('../../lib/chat-attachments'), import('../comfyui'),
+    ])
+    const original = await originalAttachment(entry)
+    const tag = referenceId(entry.data) ?? `${entry.number}x${(convId ?? 'chat').replace(/\W+/g, '')}`
+    const file = new File([attachmentBlob(original.data, entry.mimeType)], stagedAttachmentName(entry, tag), { type: entry.mimeType })
+    setInputImage(a, await uploadImage(file))
+    return null
+  } catch (e) {
+    return `could not hand ${attachmentLabel(entry.number)} ("${entry.name}") to ComfyUI: ${e instanceof Error ? e.message : String(e)}`
+  }
+}
+
+/** The prompt block for the two local render tools.
+ *
+ *  Create's own buttons and the cloud tool (`create_order`) already ran it;
+ *  these two did not, so on the local engines the block rested on the chat
+ *  model refusing. A model whose refusals were removed (A14) would not, so the
+ *  rule from the concept holds here too: the check reads the prompt, never
+ *  the model. Every string argument goes in, after the character's words were
+ *  merged, the same way the cloud path checks every free-text option. */
+export function localRenderBlocked(args: Record<string, unknown>): string | null {
+  const text = Object.values(args).filter((v): v is string => typeof v === 'string').join(' ')
+  const verdict = checkPromptSafety(text)
+  return verdict.blocked ? `Error: ${blockMessageFor(verdict.reason)}` : null
+}
+
+/**
+ * The same on a Mac (A13): the engines read a start image or the image of an
+ * edit from disk, so every reference ends as an absolute path. Before, the
+ * Mac branch skipped this entirely: "attachment 1" reached Rust as it was
+ * ("init_image not found"), and a result's bare file name too.
+ */
+export async function stageChatInputOnMac(merged: VramHandoffArgs, run?: AgentRunContext): Promise<string | null> {
+  const a = merged as Record<string, unknown>
+  const key = inputImageKey(a)
+  if (!key) return null
+  const messages = await chatMessages(run)
+  const ref = resolveChatInputRef(String(a[key]), messages)
+  const choices = () => chatChoicesLine(chatImageAttachments(messages), chatResultMedia(messages))
+  try {
+    const { stageStartImage } = await import('../mlx-video')
+    switch (ref.kind) {
+      case 'error': return ref.error
+      case 'path': setInputImage(a, ref.path); return null
+      case 'unknown': return `There is no picture "${ref.name}" in this chat. ${choices()}`
+      case 'url': return `"${ref.url}" is a ComfyUI address, and this Mac makes pictures without ComfyUI. ${choices()}`
+      case 'result': {
+        const path = fileUrlToPath(ref.media.url)
+        if (path) { setInputImage(a, path); return null }
+        const { dataUrlToBlob } = await import('../../lib/render/data-url')
+        if (ref.media.url.startsWith('data:')) { setInputImage(a, await stageStartImage(dataUrlToBlob(ref.media.url))); return null }
+        return `"${ref.media.name}" is not on this Mac any more. ${choices()}`
+      }
+      case 'attachment': {
+        const { originalAttachment, attachmentBlob } = await import('../../lib/chat-attachments')
+        const original = await originalAttachment(ref.entry)
+        setInputImage(a, await stageStartImage(attachmentBlob(original.data, ref.entry.mimeType)))
+        return null
+      }
+    }
+  } catch (e) {
+    return `could not read the input picture on this Mac: ${e instanceof Error ? e.message : String(e)}`
+  }
+}
+
+/** Size, shape and length a call names, refused out of range instead of
+ *  clamped (the descriptions promise exactly that). Null when they are fine. */
+function mediaSizeReject(merged: VramHandoffArgs): string | null {
+  const a = merged as Record<string, unknown>
+  for (const key of ['width', 'height'] as const) {
+    const v = a[key]
+    if (v == null) continue
+    const n = typeof v === 'number' ? v : Number(v)
+    if (!Number.isFinite(n) || n < 64 || n > 4096) return `Cannot generate: ${key} must be a number from 64 to 4096 pixels (you passed ${JSON.stringify(v)}). Omit it for the model's own size.`
+    a[key] = Math.round(n)
+  }
+  if (a.aspectRatio == null && a.aspect_ratio != null) a.aspectRatio = a.aspect_ratio
+  delete a.aspect_ratio
+  const ratioRej = aspectRatioReject(a.aspectRatio)
+  if (ratioRej) return ratioRej
+  // A clip's length: out of these bounds resolveClip used to clamp quietly.
+  const bounds: Record<string, [number, number, string]> = {
+    seconds: [0.5, 60, 'seconds'], fps: [1, 60, 'frames per second'], frames: [1, 2000, 'frames'],
+  }
+  for (const [key, [min, max, what]] of Object.entries(bounds)) {
+    const v = a[key]
+    if (v == null) continue
+    const n = typeof v === 'number' ? v : Number(v)
+    if (!Number.isFinite(n) || n < min || n > max) return `Cannot generate: ${key} must be from ${min} to ${max} ${what} (you passed ${JSON.stringify(v)}). Omit it for the model's default.`
+    a[key] = n
+  }
+  const batch = a.batchSize ?? a.batch_size
+  if (batch != null && Number(batch) !== 1) return 'Cannot generate: one call makes one picture. Call the tool again for another one.'
+  return null
+}
+
+/**
+ * denoise 1.0 starts from noise: every model but the two edit families then
+ * builds the picture from the prompt alone and drops the input without a
+ * word (dynamic-workflow `isI2I`). Refused with the range that works (A13).
+ */
+async function denoiseIgnoresInput(merged: VramHandoffArgs): Promise<string | null> {
+  if (typeof merged.inputImage !== 'string' || !merged.inputImage) return null
+  const d = typeof merged.denoise === 'number' ? merged.denoise : Number(merged.denoise)
+  if (!Number.isFinite(d) || d < 1) return null
+  const model = typeof merged.model === 'string' ? merged.model : ''
+  if (/qwen.?image.?(2\.1|edit)/i.test(model)) return null
+  return 'Cannot generate: denoise 1.0 throws the input picture away on this model, so the result would not be an edit of it. Use a denoise from 0.05 to 0.95 (0.6 keeps the layout, 0.85 changes more), or omit it.'
+}
+
+/**
+ * Create over the desktop (lib/remote-create-runner.ts): one image or clip a
+ * paired phone asked for, through the same path as the chat tools above. The
+ * run carries its own conversation id, so `requestGenerationCancel(id)` ends
+ * exactly this generation and nothing the desktop user started.
+ */
+export function generateMediaForRemote(kind: 'image' | 'video', args: ToolArgs, conversationId: string): Promise<string> {
+  const run: AgentRunContext = {
+    token: conversationId,
+    startedAt: Date.now(),
+    chatId: null,
+    conversationId,
+    workspace: null,
+    artifactMode: false,
+    readOnlyShellTurn: false,
+    mode: null,
+    artifacts: [],
+  }
+  return kind === 'image' ? executeImageGenerate(args, run) : executeVideoGenerate(args, run)
 }
 
 /** The `character` argument, trimmed, or '' when the call has none. */
@@ -1565,14 +1801,14 @@ function characterArg(args: ToolArgs): string {
 
 /** What the character chain needs in the chat: the local list, the image
  *  models, and one image through the same hand-off as image_generate. */
-async function characterChatDeps(run?: AgentRunContext): Promise<CharacterChatDeps> {
+async function characterChatDeps(run?: AgentRunContext, signal?: AbortSignal): Promise<CharacterChatDeps> {
   const [{ listLocalCharacters }, comfy, { vramHandoffGenerate }, { isMediaFailureResult }] = await Promise.all([
     import('../../lib/characters'), import('../comfyui'), import('../vram-handoff'), import('../../lib/media-result'),
   ])
   return {
     characters: () => listLocalCharacters(),
     imageModels: () => comfy.getImageModels(),
-    renderImage: (a) => vramHandoffGenerate('image', a, run?.conversationId ?? null),
+    renderImage: (a) => vramHandoffGenerate('image', a, generationOwnerOf(run), { signal }),
     failed: isMediaFailureResult,
     takesStartImage: comfy.isI2VModel,
   }
@@ -1582,7 +1818,7 @@ async function characterChatDeps(run?: AgentRunContext): Promise<CharacterChatDe
  *  folder, its installed image models by family, one image on mflux, and
  *  which installed video model starts from an image (its catalogue). The
  *  image line carries the whole path, which the video takes as its start. */
-async function macCharacterChatDeps(): Promise<CharacterChatDeps> {
+async function macCharacterChatDeps(signal?: AbortSignal): Promise<CharacterChatDeps> {
   const [{ listLocalCharacters }, { isMediaFailureResult }] = await Promise.all([
     import('../../lib/characters'), import('../../lib/media-result'),
   ])
@@ -1591,7 +1827,7 @@ async function macCharacterChatDeps(): Promise<CharacterChatDeps> {
     characters: () => listLocalCharacters(),
     imageModels: async () => (await listMlxImageModels()).filter((m) => m.installed).map((m) => ({ name: m.name, type: mlxModelType(m) })),
     renderImage: async (a) => {
-      const out = await executeImageGenerateMlx(String(a.prompt ?? ''), a)
+      const out = await executeImageGenerateMlx(String(a.prompt ?? ''), a, signal)
       const url = out.split('\n')[1] ?? ''
       if (!out.startsWith('Image generated:') || !url.startsWith('file:')) return out
       const path = decodeURIComponent(new URL(url).pathname)
@@ -1608,9 +1844,6 @@ async function macCharacterChatDeps(): Promise<CharacterChatDeps> {
 // ── macOS MLX generation (hard rule: local image/video on Mac is MLX only,
 // never ComfyUI — see api/mlx-image.ts / api/mlx-video.ts module docs) ────
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms))
-}
 
 /**
  * macOS image_generate — hard rule: local image on Mac is MLX only, never
@@ -1621,7 +1854,7 @@ function sleep(ms: number): Promise<void> {
  * renders it inline; only the url is a local blob: URL instead of a ComfyUI
  * /view URL.
  */
-async function executeImageGenerateMlx(prompt: string, merged: VramHandoffArgs): Promise<string> {
+async function executeImageGenerateMlx(prompt: string, merged: VramHandoffArgs, signal?: AbortSignal): Promise<string> {
   let installed: MlxImageModel[]
   try {
     // A prompt enhancer and an upscaler are in the same catalogue and make no
@@ -1634,6 +1867,8 @@ async function executeImageGenerateMlx(prompt: string, merged: VramHandoffArgs):
     return 'Error: No local image model is installed yet. The on-device image engine needs a one-time setup before local generation works.'
   }
   const requested = typeof merged.model === 'string' && merged.model ? merged.model : undefined
+  // The input picture, already a path on disk (stageChatInputOnMac).
+  const editPath = typeof merged.inputImage === 'string' && merged.inputImage ? merged.inputImage : undefined
   // `lora` / `loraStrength`: by the names of the Mac's LoRA folder, as the
   // tool's contract has them on Windows (lib/mac-tool-loras). A character
   // brings the model family it was trained for.
@@ -1664,7 +1899,18 @@ async function executeImageGenerateMlx(prompt: string, merged: VramHandoffArgs):
     // and closes an import cycle through the tool registry.
     const { useCreateStore } = await import('../../stores/createStore')
     const fitting = family ? installed.filter((m) => mlxModelType(m) === family.family) : []
-    model = fitting[0] ?? defaultMlxImageModel(installed, useCreateStore.getState().imageModel)!
+    // A13: with an input picture the default is a model that edits; the
+    // engine refuses an image on any other, and without one the input used
+    // to be dropped in silence.
+    const editing = editPath ? installed.filter((m) => (m.editImages ?? 0) > 0) : []
+    model = fitting[0] ?? (editPath ? defaultMlxImageModel(editing, useCreateStore.getState().imageModel) : undefined)
+      ?? defaultMlxImageModel(installed, useCreateStore.getState().imageModel)!
+  }
+  if (editPath && !((model.editImages ?? 0) > 0)) {
+    const editing = installed.filter((m) => (m.editImages ?? 0) > 0).map((m) => m.name)
+    return editing.length
+      ? `Error: ${model.name} makes pictures from text only and cannot change an input picture. Use a model that edits: ${editing.join(', ')}, or leave the model out.`
+      : 'Error: No installed model on this Mac edits pictures, so the input picture cannot be used. Install Qwen-Image 2.1 in the Model Manager, or call without inputImage for a new picture from text.'
   }
   if (family && mlxModelType(model) !== family.family) {
     return `Error: This LoRA was trained for ${family.label}, and ${model.name} is not a ${family.label} model. Install a ${family.label} model in the Model Manager or leave the model out.`
@@ -1673,17 +1919,44 @@ async function executeImageGenerateMlx(prompt: string, merged: VramHandoffArgs):
     return `Error: ${model.name} takes no LoRA on this Mac. Pick a model of the second image engine, such as Z-Image Turbo or Qwen-Image 2.1.`
   }
 
+  const denoise = typeof merged.denoise === 'number' ? merged.denoise : Number(merged.denoise)
+  if (editPath && merged.denoise != null && !(Number.isFinite(denoise) && denoise >= 0.05 && denoise <= 1)) {
+    return `Cannot generate: denoise must be from 0.05 to 1.0 (you passed ${JSON.stringify(merged.denoise)}).`
+  }
+  // The edit's canvas as Create works it out for one image: the pixel budget
+  // of the asked size (1024 square when none), off the side the engine moves.
+  const ratio = parseAspectRatio((merged as Record<string, unknown>).aspectRatio)
+  const framed = ratio != null && merged.width == null && merged.height == null ? aspectFrame(ratio, 1024, 1024) : null
+  const width = typeof merged.width === 'number' ? merged.width : framed?.width
+  const height = typeof merged.height === 'number' ? merged.height : framed?.height
+  const { qwenEditResolution } = await import('../dynamic-workflow')
+  const edit = editPath
+    ? {
+        images: [editPath],
+        resolution: macEditSide(qwenEditResolution(width ?? 1024, height ?? 1024)),
+        // Create's own default is 1: the instruction model starts from noise
+        // and keeps the picture through its image input. A denoise the model
+        // passed is taken as the edit's strength.
+        strength: Number.isFinite(denoise) ? denoise : 1,
+      }
+    : { width, height }
+
+  if (signal?.aborted) return 'Image generation cancelled.'
+  // A Mac has one memory pool: the chat model leaves for the render and comes
+  // back after it, as in Create (useCreate freeMacMemoryForRender).
+  const { evictChatBackendsForRender, restoreChatBackendsAfterRender } = await import('../vram-handoff')
+  const eviction = await evictChatBackendsForRender().catch(() => null)
   try {
     const { dataUrl, localPath } = await generateMlxImageDataUrl({
       prompt,
       model: model.id,
       steps: typeof merged.steps === 'number' ? merged.steps : undefined,
       seed: typeof merged.seed === 'number' ? merged.seed : undefined,
-      width: typeof merged.width === 'number' ? merged.width : undefined,
-      height: typeof merged.height === 'number' ? merged.height : undefined,
       negativePrompt: typeof merged.negativePrompt === 'string' ? merged.negativePrompt : undefined,
+      ...edit,
       ...(loras.length ? { loras } : {}),
-    })
+    }, { signal })
+    if (signal?.aborted) return 'Image generation cancelled.'
     // B3: the result string is PERSISTED with the conversation, so what goes on
     // this line has to outlive the window. The Rust side already wrote the PNG
     // to disk before handing back the bytes, so the path is both stable and
@@ -1699,7 +1972,10 @@ async function executeImageGenerateMlx(prompt: string, merged: VramHandoffArgs):
     const filename = `mlx-${Date.now()}.png`
     return `Image generated: ${filename} (prompt: "${prompt}")\n${dataUrl}`
   } catch (e) {
+    if (signal?.aborted) return 'Image generation cancelled.'
     return `Image generation failed: ${e instanceof Error ? e.message : String(e)}`
+  } finally {
+    if (eviction) void restoreChatBackendsAfterRender(eviction).catch(() => {})
   }
 }
 
@@ -1712,7 +1988,7 @@ async function executeImageGenerateMlx(prompt: string, merged: VramHandoffArgs):
  * "init_image not found: ...", the same honest-rejection shape this codebase
  * uses for every other unsupported value, rather than silently ignoring it.
  */
-async function executeVideoGenerateMlx(prompt: string, merged: VramHandoffArgs): Promise<string> {
+async function executeVideoGenerateMlx(prompt: string, merged: VramHandoffArgs, signal?: AbortSignal): Promise<string> {
   let status: Awaited<ReturnType<typeof getVideoStatus>>
   try {
     status = await getVideoStatus()
@@ -1758,6 +2034,31 @@ async function executeVideoGenerateMlx(prompt: string, merged: VramHandoffArgs):
   }
   const negative = model.negativePrompt && typeof merged.negativePrompt === 'string' ? merged.negativePrompt : undefined
 
+  const a = merged as Record<string, unknown>
+  if (a.aspectRatio != null || a.width != null || a.height != null) {
+    return 'Cannot generate: the video engine on this Mac renders each model at its own size; aspectRatio, width and height are not available here. Omit them.'
+  }
+  if (signal?.aborted) return 'Video generation cancelled.'
+  const { evictChatBackendsForRender, restoreChatBackendsAfterRender } = await import('../vram-handoff')
+  const eviction = await evictChatBackendsForRender().catch(() => null)
+  try {
+    return await runMlxVideoJob(prompt, model, { seconds, fps, negative, inputImage, seed: typeof merged.seed === 'number' ? merged.seed : undefined }, signal)
+  } finally {
+    if (eviction) void restoreChatBackendsAfterRender(eviction).catch(() => {})
+  }
+}
+
+/** One clip on the Mac's video engine, until it is there, fails, the call is
+ *  stopped, or the budget of the settings is spent. Stop and the budget end
+ *  the engine's process (video_cancel); before A13 a Stop let it run on for
+ *  up to an hour, and every next clip was refused as "already running". */
+async function runMlxVideoJob(
+  prompt: string,
+  model: VideoModel,
+  o: { seconds?: number; fps?: number; negative?: string; inputImage?: string; seed?: number },
+  signal?: AbortSignal,
+): Promise<string> {
+  const { seconds, fps, negative, inputImage } = o
   let job: Awaited<ReturnType<typeof generateMlxVideo>>
   try {
     job = await generateMlxVideo({
@@ -1765,7 +2066,7 @@ async function executeVideoGenerateMlx(prompt: string, merged: VramHandoffArgs):
       prompt,
       seconds,
       fps,
-      seed: typeof merged.seed === 'number' ? merged.seed : undefined,
+      seed: o.seed,
       initImage: inputImage,
       negativePrompt: negative,
     })
@@ -1774,13 +2075,26 @@ async function executeVideoGenerateMlx(prompt: string, merged: VramHandoffArgs):
   }
 
   // Local video on Apple Silicon is genuinely slow — a few seconds of footage
-  // can take 30-50 min on wan_2. Give it a full hour before giving up, and on
-  // timeout actually KILL the mlx-video subprocess (video_cancel → kill_tree),
-  // otherwise it keeps churning in the background and pins the machine long
-  // after the tool has already reported failure.
-  const deadline = Date.now() + 60 * 60 * 1000
+  // can take 30-50 min on wan_2. The budget is the one set in Settings (an
+  // hour unless changed), the same number the tool call's own cap is built
+  // from (lib/tool-timeout), and on its end the mlx-video subprocess is
+  // KILLED (video_cancel → kill_tree), otherwise it keeps churning in the
+  // background and pins the machine long after the tool reported failure.
+  const { useSettingsStore } = await import('../../stores/settingsStore')
+  const budgetMs = renderStallLimitMs('video', useSettingsStore.getState().settings)
+  const deadline = Date.now() + budgetMs
+  const stopped = async () => {
+    try { await cancelVideo() } catch { /* already finished/gone */ }
+    return 'Video generation cancelled.'
+  }
   while (Date.now() < deadline) {
-    await sleep(2000)
+    if (signal?.aborted) return stopped()
+    await new Promise<void>((r) => {
+      const t = setTimeout(done, 2000)
+      function done() { clearTimeout(t); signal?.removeEventListener('abort', done); r() }
+      signal?.addEventListener('abort', done)
+    })
+    if (signal?.aborted) return stopped()
     let prog: Awaited<ReturnType<typeof getVideoProgress>>
     try {
       prog = await getVideoProgress()
@@ -1800,7 +2114,8 @@ async function executeVideoGenerateMlx(prompt: string, merged: VramHandoffArgs):
     }
   }
   try { await cancelVideo() } catch { /* already finished/gone */ }
-  return 'Video generation timed out after 60 minutes; the generation was stopped.'
+  const minutes = Math.round(budgetMs / 60_000)
+  return `Video generation timed out after ${minutes} minutes; the generation was stopped. The budget is "Video generation timeout" in Settings.`
 }
 
 async function executeTodoWrite(args: ToolArgs, run?: AgentRunContext): Promise<string> {
@@ -1836,10 +2151,11 @@ async function executeRunWorkflow(args: ToolArgs, run?: AgentRunContext, abort?:
   if (!workflowName) return 'Error: No workflow name provided'
   if (_workflowDepth >= 5) return 'Error: Maximum workflow nesting depth (5) exceeded'
 
-  const store = useAgentWorkflowStore.getState()
-  const workflow = store.workflows.find(w => w.name.toLowerCase() === workflowName.toLowerCase())
+  // On a phone only the workflows on the mobile list exist (lib/mobile-tools.ts).
+  const offered = workflowsForThisDevice(useAgentWorkflowStore.getState().workflows)
+  const workflow = offered.find(w => w.name.toLowerCase() === workflowName.toLowerCase())
   if (!workflow) {
-    const available = store.workflows.map(w => w.name).join(', ')
+    const available = offered.map(w => w.name).join(', ')
     return `Error: Workflow "${workflowName}" not found. Available: ${available}`
   }
 
@@ -2081,9 +2397,14 @@ const EXECUTOR_MAP: Record<
 
 export function registerBuiltinTools(registry: ToolRegistry) {
   for (const tool of BUILTIN_TOOLS) {
+    // THE mobile filter. A tool that is not registered is in no catalog, no
+    // prompt roster, no sub agent, no workflow step and no parser list, so
+    // this one line covers every reader of the registry (lib/mobile-tools.ts
+    // names the tools and why). On a desktop every tool passes, unchanged.
+    if (!toolExistsOnThisDevice(tool.name)) continue
     const executor = EXECUTOR_MAP[tool.name]
     if (executor) {
-      registry.registerBuiltin(tool, executor)
+      registry.registerBuiltin(toolDefinitionForThisDevice(tool), executor)
     }
   }
   // M7 / Audit W-T2: der Redirect für zurückgezogene Namen wird hier ANGEMELDET,
@@ -2097,6 +2418,10 @@ export function registerBuiltinTools(registry: ToolRegistry) {
   // the chat switches them on for a turn (hooks/useChat.ts). They live in
   // create-tools.ts: they are not part of the agent's catalogue above.
   reserveCreateTools(registry)
+  // App settings from the chat (A11). Registered, but offered only to a turn
+  // about settings and only where the card is drawn (settings-tools.ts).
+  // Not on a phone (lib/mobile-tools.ts, MOBILE_UNBUILT_TOOLS).
+  if (SETTINGS_TOOL_NAMES.every(toolExistsOnThisDevice)) registerSettingsTools(registry)
 }
 
 // ── Retired tools (2.6.6 merge, plan E5) ────────────────────────
@@ -2173,6 +2498,9 @@ export async function runRetiredTool(
 ): Promise<string | null> {
   const exec = RETIRED_EXECUTORS[name]
   if (!exec) return null
+  // On a phone the old names must not be a back door to the shell: all but
+  // the clock answer as a name that was never ours.
+  if (!retiredToolRunsOnThisDevice(name)) return null
   // The read-only gate lives on shell_execute's command classifier; a retired
   // mutating name would walk straight past it via this redirect.
   if (isReadOnlyShellTurn(run) && RETIRED_MUTATING_NAMES.has(name)) {

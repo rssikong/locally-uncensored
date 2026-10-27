@@ -1,0 +1,301 @@
+{
+ "name": "/cloud",
+ "art": "seite",
+ "quelle": "integ-306",
+ "route": "/cloud",
+ "strang": "settings",
+ "code": "E3",
+ "lage": {
+  "route": "/cloud",
+  "screen": "m-cloud-screen",
+  "blaetter": [],
+  "dialog": [],
+  "reiter": null,
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back-under",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-cloud-screen",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-cloud-state",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "signed-out",
+   "box": [
+    390,
+    1082
+   ]
+  },
+  {
+   "id": "m-cloud-count",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    197
+   ]
+  },
+  {
+   "id": "m-cloud-count-total",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    50,
+    40
+   ]
+  },
+  {
+   "id": "m-cloud-count-split",
+   "tag": "ul",
+   "rolle": "ul",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    358,
+    28
+   ]
+  },
+  {
+   "id": "m-cloud-measured",
+   "tag": "li",
+   "rolle": "li",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    336,
+    27
+   ]
+  },
+  {
+   "id": "m-cloud-showcase",
+   "tag": "section",
+   "rolle": "group",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    235
+   ]
+  },
+  {
+   "id": "m-cloud-showcase-pick",
+   "tag": "div",
+   "rolle": "radiogroup",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    358,
+    54
+   ]
+  },
+  {
+   "id": "m-cloud-showcase-chat",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Chat",
+   "box": [
+    110,
+    48
+   ]
+  },
+  {
+   "id": "m-cloud-showcase-image",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Image",
+   "box": [
+    120,
+    48
+   ]
+  },
+  {
+   "id": "m-cloud-showcase-video",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Video",
+   "box": [
+    118,
+    48
+   ]
+  },
+  {
+   "id": "m-cloud-benefits",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    105
+   ]
+  },
+  {
+   "id": "m-cloud-plans",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "risiko": "paid",
+   "box": [
+    390,
+    384
+   ]
+  },
+  {
+   "id": "m-cloud-plan-hosted",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Hosted, 19 EUR per month. Chat, Create and voice with the monthly credit budget.",
+   "risiko": "paid",
+   "box": [
+    356,
+    112
+   ]
+  },
+  {
+   "id": "m-cloud-plan-hosted-pro",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Pro, 49 EUR per month. More credits each month for regular image and video work.",
+   "risiko": "paid",
+   "box": [
+    356,
+    112
+   ]
+  },
+  {
+   "id": "m-cloud-plan-hosted-max",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Max, 99 EUR per month. The largest budget, for daily heavy use. Opens lu-labs.ai",
+   "risiko": "paid",
+   "box": [
+    356,
+    94
+   ]
+  },
+  {
+   "id": "m-cloud-not-now",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Not now",
+   "el": "E3.5",
+   "box": [
+    358,
+    48
+   ]
+  },
+  {
+   "id": "m-cloud-get",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Get LU Cloud",
+   "el": "E3.1",
+   "box": [
+    358,
+    48
+   ]
+  },
+  {
+   "id": "m-cloud-from-price",
+   "tag": "p",
+   "rolle": "p",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    358,
+    18
+   ]
+  },
+  {
+   "id": "m-cloud-signin",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Sign in",
+   "el": "E3.2",
+   "box": [
+    358,
+    48
+   ]
+  }
+ ]
+}

@@ -20,6 +20,7 @@ export function cloudModelRow(pm: ProviderModel): CloudModel {
     flash: pm.flash,
     unfiltered: pm.unfiltered,
     unrestricted: pm.unrestricted,
+    catalogName: pm.catalogName,
     size: 0,
     type: 'text',
     provider: pm.provider,

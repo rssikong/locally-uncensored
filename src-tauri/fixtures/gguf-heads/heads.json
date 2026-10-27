@@ -1,0 +1,128 @@
+{
+  "gemma-4-12b-it-Q4_K_M": {
+    "repo": "unsloth/gemma-4-12b-it-GGUF",
+    "file": "gemma-4-12b-it-Q4_K_M.gguf",
+    "fileBytes": 7121861440,
+    "headBytes": 15824191,
+    "tensors": 667,
+    "keys": 58,
+    "droppedArrays": 4
+  },
+  "gemma-4-26B-A4B-it-UD-Q4_K_M": {
+    "repo": "unsloth/gemma-4-26B-A4B-it-GGUF",
+    "file": "gemma-4-26B-A4B-it-UD-Q4_K_M.gguf",
+    "fileBytes": 16947541728,
+    "headBytes": 15824659,
+    "tensors": 658,
+    "keys": 60,
+    "droppedArrays": 4
+  },
+  "gemma-4-31B-it-Q4_K_M": {
+    "repo": "unsloth/gemma-4-31B-it-GGUF",
+    "file": "gemma-4-31B-it-Q4_K_M.gguf",
+    "fileBytes": 18323733440,
+    "headBytes": 15834157,
+    "tensors": 833,
+    "keys": 57,
+    "droppedArrays": 4
+  },
+  "gemma-4-31B-mmproj-BF16": {
+    "repo": "unsloth/gemma-4-31B-it-GGUF",
+    "file": "mmproj-BF16.gguf",
+    "fileBytes": 1200726496,
+    "headBytes": 22800,
+    "tensors": 356,
+    "keys": 30,
+    "droppedArrays": 0
+  },
+  "gemma4-12B-hauhau-Q4_K_M": {
+    "repo": "HauhauCS/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced",
+    "file": "Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M.gguf",
+    "fileBytes": 7381381760,
+    "headBytes": 15821948,
+    "tensors": 667,
+    "keys": 43,
+    "droppedArrays": 4
+  },
+  "gemma4-12B-hauhau-mmproj-BF16": {
+    "repo": "HauhauCS/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced",
+    "file": "mmproj-Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-BF16.gguf",
+    "fileBytes": 175115264,
+    "headBytes": 2024,
+    "tensors": 11,
+    "keys": 30,
+    "droppedArrays": 0
+  },
+  "glm-4.7-flash-Q4_K_M": {
+    "repo": "unsloth/GLM-4.7-Flash-GGUF",
+    "file": "GLM-4.7-Flash-Q4_K_M.gguf",
+    "fileBytes": 18312339808,
+    "headBytes": 9475932,
+    "tensors": 844,
+    "keys": 60,
+    "droppedArrays": 3
+  },
+  "gpt-oss-20b-MXFP4": {
+    "repo": "ggml-org/gpt-oss-20b-GGUF",
+    "file": "gpt-oss-20b-MXFP4.gguf",
+    "fileBytes": 12109566624,
+    "headBytes": 13008263,
+    "tensors": 459,
+    "keys": 36,
+    "droppedArrays": 3
+  },
+  "granite-4.0-h-tiny-Q4_K_M": {
+    "repo": "ibm-granite/granite-4.0-h-tiny-GGUF",
+    "file": "granite-4.0-h-tiny-Q4_K_M.gguf",
+    "fileBytes": 4230976352,
+    "headBytes": 3588692,
+    "tensors": 666,
+    "keys": 42,
+    "droppedArrays": 3
+  },
+  "llama-3.1-8B-Instruct-Q4_K_M": {
+    "repo": "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF",
+    "file": "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
+    "fileBytes": 4920739232,
+    "headBytes": 7840907,
+    "tensors": 292,
+    "keys": 33,
+    "droppedArrays": 3
+  },
+  "qwen3-30B-A3B-Q4_K_M": {
+    "repo": "unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF",
+    "file": "Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf",
+    "fileBytes": 18556686752,
+    "headBytes": 5970312,
+    "tensors": 579,
+    "keys": 45,
+    "droppedArrays": 3
+  },
+  "qwen3-8B-Q4_K_M": {
+    "repo": "Qwen/Qwen3-8B-GGUF",
+    "file": "Qwen3-8B-Q4_K_M.gguf",
+    "fileBytes": 5027783488,
+    "headBytes": 5956403,
+    "tensors": 399,
+    "keys": 28,
+    "droppedArrays": 3
+  },
+  "qwen3-next-80B-A3B-Q4_K_M": {
+    "repo": "unsloth/Qwen3-Next-80B-A3B-Instruct-GGUF",
+    "file": "Qwen3-Next-80B-A3B-Instruct-Q4_K_M.gguf",
+    "fileBytes": 48506100512,
+    "headBytes": 5986054,
+    "tensors": 843,
+    "keys": 53,
+    "droppedArrays": 3
+  },
+  "qwen3.5-27B-Q4_K_M": {
+    "repo": "unsloth/Qwen3.5-27B-GGUF",
+    "file": "Qwen3.5-27B-Q4_K_M.gguf",
+    "fileBytes": 16740812704,
+    "headBytes": 10993552,
+    "tensors": 851,
+    "keys": 49,
+    "droppedArrays": 3
+  }
+}

@@ -117,6 +117,18 @@ export interface AgentToolCall {
   /** Group key for serial execution within a parallel batch (Phase 5).
    *  Writes to the same file path or the singleton "shell" share a key. */
   sideEffectKey?: string
+  /** Set when a long generation went on in the background and the turn moved
+   *  on without waiting for it (lib/background-tools.ts). The result lands on
+   *  this same call when the job is done. */
+  background?: BackgroundToolState
+}
+
+/** Where a call that went on in the background stands. */
+export interface BackgroundToolState {
+  jobId: string
+  startedAt: number
+  state: 'running' | 'done' | 'failed' | 'cancelled' | 'interrupted'
+  finishedAt?: number
 }
 
 // Phases rendered as distinct UI blocks in chat

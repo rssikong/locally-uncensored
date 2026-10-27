@@ -30,3 +30,38 @@ export function toolFailureNote(status: string): string {
   if (status !== 'failed' && status !== 'error' && status !== 'timeout') return ''
   return '\n\nThis tool did NOT run, so there is no output. Do not state or guess what it would have returned. Either call it again with corrected arguments, or tell the user plainly that this step failed.'
 }
+
+// ── Das Echo ────────────────────────────────────────────────────────────
+//
+// Ein kleines Modell gibt den Zusatz oben als seine Antwort aus, fast Wort
+// fuer Wort (Gegenpruefung grosses iPhone, N11: Qwen3 1.7B nach einem
+// Zeitlimit von web_fetch: "The tool execution timed out, so there is no
+// output. Do not state or guess what it would have returned. Either call it
+// again with corrected arguments, or tell the user plainly that this step
+// failed."). Der Zusatz ist eine Anweisung der App an das Modell und keine
+// Antwort an den Nutzer. Die zwei Anweisungssaetze erkennt man sicher: kein
+// Mensch und kein Modell schreibt sie von sich aus. Der erste Satz wird nur
+// mitgenommen, wenn er direkt davor steht und auf "so there is no output"
+// endet, denn seinen Anfang formuliert das Modell um.
+//
+// Rein, und nur gerufen, wo eine Oberflaeche es will (die Handy-Shell). Der
+// Zusatz selbst bleibt Zeichen fuer Zeichen, wie er war.
+
+const ws = (sentence: string): string => sentence.split(/\s+/).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s+')
+const NO_GUESS = ws('Do not state or guess what it would have returned')
+const CALL_AGAIN = ws('Either call it again with corrected arguments, or tell the user plainly that this step failed')
+const NO_OUTPUT_LEAD = `(?:[^.!?\\n]{0,120},?\\s+so\\s+there\\s+is\\s+no\\s+output\\.?\\s*)?`
+const FAILURE_ECHO = new RegExp(`["'\u201c]?${NO_OUTPUT_LEAD}(?:${NO_GUESS}\\.?\\s*(?:${CALL_AGAIN}\\.?)?|${CALL_AGAIN}\\.?)["'\u201d]?`, 'gi')
+
+/**
+ * Pure: an answer without a repeat of the note above. `echoed` says that one
+ * was there, so a reader can say in its own words what happened when nothing
+ * else is left of the answer.
+ */
+export function stripFailureNoteEcho(text: string): { text: string; echoed: boolean } {
+  const source = text ?? ''
+  FAILURE_ECHO.lastIndex = 0
+  if (!FAILURE_ECHO.test(source)) return { text: source, echoed: false }
+  FAILURE_ECHO.lastIndex = 0
+  return { text: source.replace(FAILURE_ECHO, '').replace(/\n{3,}/g, '\n\n').trim(), echoed: true }
+}

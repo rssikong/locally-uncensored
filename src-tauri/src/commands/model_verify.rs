@@ -426,7 +426,7 @@ pub async fn trash_model_file(
     let path = resolve_path(&state, &req)
         .await
         .ok_or_else(|| format!("{} is not a model file LU can move.", filename))?;
-    trash_one(&path, crate::commands::mlx_outputs::system_trash)
+    trash_one(&path, crate::commands::os_trash::system_trash)
 }
 
 /// The Trash step on its own, so the rule (only an existing file, only to the

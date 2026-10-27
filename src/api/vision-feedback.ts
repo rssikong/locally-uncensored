@@ -18,6 +18,8 @@ import { modelSupportsVision } from './ollama'
 import { modelNameSuggestsVision } from '../lib/model-compatibility'
 import { fetchComfyImageBase64 } from './comfyui'
 import { log } from '../lib/logger'
+import { backendCall } from './backend'
+import { fileUrlToPath, guessMimeFromName } from '../lib/local-media-url'
 import { frameIdInResult, takeFrame } from '../lib/computer/frames'
 import { COMPUTER_USE_TOOL_NAME } from '../lib/computer/prompt'
 
@@ -134,10 +136,15 @@ export async function buildVisionFeedback(
   // gemma4 + Wan T2V .webp output → spurious post-gen agent error). The call site's own
   // comment already intends to no-op for video results — this makes that real.
   if (toolName !== 'image_generate') return null
-  const m = result.match(COMFY_VIEW_RE)
-  if (!m) return null
-  const url = m[1]
-  if (urlIsVideo(url)) return null // can't feed a video to the model as an image
+  // The address is on the last line; the prompt on the first may quote one.
+  const tail = result.slice(result.lastIndexOf('\n') + 1)
+  // A13: a Mac's picture is a file the app wrote (file://). It was never
+  // shown to the model, which then described the prompt instead of the image.
+  const localPath = /^file:\/\//i.test(tail.trim()) ? fileUrlToPath(tail.trim()) : null
+  const m = localPath ? null : tail.match(COMFY_VIEW_RE)
+  if (!m && !localPath) return null
+  const url = m ? m[1] : ''
+  if (m && urlIsVideo(url)) return null // can't feed a video to the model as an image
   // Vision capability, provider-aware (a user 2026-06-21: on a non-Ollama
   // provider the generated image never reached the model's vision input, so it
   // described from the prompt and hallucinated). Ollama: the accurate /api/show
@@ -154,7 +161,7 @@ export async function buildVisionFeedback(
   if (!(await modelCanSee(model, providerId, declaredVision))) return null
   let b64: string
   try {
-    b64 = await fetchComfyImageBase64(url)
+    b64 = localPath ? await backendCall<string>('read_media_file', { path: localPath }) : await fetchComfyImageBase64(url)
   } catch (e) {
     log.warn('vision_feedback.fetch_failed', { err: String(e) })
     return null
@@ -171,12 +178,12 @@ export async function buildVisionFeedback(
     content:
       'Here is the image you just generated, shown to the user. Look at it and describe in one or two sentences what you actually see in the picture (composition, subject, colors).' +
       chain,
-    images: [{ data: b64, mimeType: 'image/png' }],
+    images: [{ data: b64, mimeType: localPath ? guessMimeFromName(localPath) : 'image/png' }],
     visionFeedback: true,
     // G22: the run swaps the attachment for this line when the model turns
     // out to be text-only, instead of dying on the multimodal error.
     fallbackText:
       'The image was generated successfully and is already shown to the user in the chat. ' +
-      'You cannot view images, so do not ask for them.' + chain,
+      'You cannot view images, so do not ask for them, and do not describe what it shows.' + chain,
   }
 }

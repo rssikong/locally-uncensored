@@ -8,6 +8,7 @@ import {
 } from '../api/discover'
 import { imagePartFileName, isImagePartFile } from '../lib/image-part'
 import { isTauri } from '../api/backend'
+import { isMobileHost } from '../lib/mobile-host'
 import { coalescedJSONStorage } from '../lib/coalescedStorage'
 import { waitForModelsVisible } from '../lib/bundle-install'
 import { log } from '../lib/logger'
@@ -109,6 +110,45 @@ export interface DownloadMeta {
   sha256?: string
 }
 
+/** One file of a download that goes to a folder by path (every GGUF of the built-in engine). */
+export interface PathDownload {
+  url: string
+  filename: string
+  expectedBytes?: number
+  sha256?: string
+}
+
+/**
+ * How a start by path ended. The backend answers "exists", "already_running"
+ * and "error" as values, not as exceptions, and every caller used to read
+ * them for itself (or not at all).
+ */
+export type PathStartAnswer =
+  | { answer: 'started' }
+  /** The file is already there, complete. The row is marked done. */
+  | { answer: 'exists' }
+  /** A transfer of this file is already running. It keeps running. */
+  | { answer: 'running' }
+  | { answer: 'error'; error?: string }
+
+/**
+ * Files that are downloaded by path and that the desktop catalog does not
+ * list: the phone catalog. Registered by whoever owns such a list, so this
+ * store can name a partial of theirs after a restart without importing them
+ * (the desktop bundle must not pull the phone catalog in).
+ */
+const pathCatalog = new Map<string, PathDownload>()
+
+/** Make files known to the orphan scan. Calling it again with the same list changes nothing. */
+export function registerPathCatalog(files: readonly PathDownload[]): void {
+  for (const f of files) if (f.filename && f.url) pathCatalog.set(f.filename, { ...f })
+}
+
+/** For tests. */
+export function clearPathCatalog(): void {
+  pathCatalog.clear()
+}
+
 /** A `.download` file from an earlier run, plus what we could work out about it. */
 export interface OrphanEntry extends OrphanDownload {
   /** The download id, when the stem could be matched back to a known file.
@@ -140,12 +180,17 @@ interface DownloadStoreState {
   startPolling: () => void
   stopPolling: () => void
   setMeta: (filename: string, url: string, subfolder: string, destDir?: string, extra?: { expectedBytes?: number; sha256?: string }) => void
+  /** Start one file into a folder: remember how to start it again, save that at
+   *  once, start, and say how the start ended. */
+  startToPath: (file: PathDownload, destDir: string) => Promise<PathStartAnswer>
   setBundleGroup: (bundleName: string, filenames: string[]) => void
   markComplete: (filename: string) => void
   markInvisible: (filename: string) => void
   pause: (id: string) => Promise<void>
   cancel: (id: string) => Promise<void>
-  resume: (id: string) => Promise<void>
+  /** Continue where the transfer stopped. False when nothing is known about
+   *  the file any more, or when the start by path was refused. */
+  resume: (id: string) => Promise<boolean>
   retry: (id: string) => Promise<void>
   dismiss: (id: string) => void
   /** The user cleared the bundle's row: its cancelled files go with it. */
@@ -333,6 +378,23 @@ export const useDownloadStore = create<DownloadStoreState>()(persist((set, get) 
     })
   },
 
+  startToPath: async (file, destDir) => {
+    get().setMeta(file.filename, file.url, 'gguf', destDir, { expectedBytes: file.expectedBytes, sha256: file.sha256 })
+    // This record is what a restart resumes from. It must not wait for the
+    // next write window: an app that is closed a second after the tap would
+    // leave a partial nobody can name.
+    void flushDownloadPersist().catch(() => { /* the next window writes it */ })
+    const res = await startModelDownloadToPath(file.url, destDir, file.filename, file.expectedBytes, file.sha256)
+    if (res?.status === 'exists') {
+      get().markComplete(file.filename)
+      return { answer: 'exists' }
+    }
+    if (res?.status === 'error') return { answer: 'error', error: res.error }
+    set(s => ({ orphans: withoutFilename(s.orphans, file.filename) }))
+    get().startPolling()
+    return res?.status === 'already_running' ? { answer: 'running' } : { answer: 'started' }
+  },
+
   setBundleGroup: (bundleName, filenames) => {
     set(s => {
       const updated = { ...s.bundleMap }
@@ -424,19 +486,35 @@ export const useDownloadStore = create<DownloadStoreState>()(persist((set, get) 
 
   resume: async (id: string) => {
     const meta = ensureMeta(get, id)
-    if (!meta) return
-    // A file that was fetched to a folder of its own (a chat model, its image
-    // part) is continued there. The resume by subfolder knows only the ComfyUI
-    // tree: it found no half file in it, began at zero and wrote the 0.9 GB of
-    // an image part into ComfyUI's models folder, where no engine looks for it
-    // (box, 09.10.2026). The start by path picks up the half file by itself.
+    if (!meta) return false
     if (meta.destDir) {
-      await startModelDownloadToPath(meta.url, meta.destDir, id, meta.expectedBytes, meta.sha256)
+      // A file that was downloaded by path (every GGUF of the built-in engine,
+      // a chat model, its image part) has no ComfyUI subfolder, and
+      // `resume_download` resolves its folder from one: it found no half file
+      // there, began at zero and wrote the 0.9 GB of an image part into
+      // ComfyUI's models folder, where no engine looks for it (box,
+      // 09.10.2026). Starting the same download by path again IS the resume:
+      // the backend finds the `.download` next to the target and asks the
+      // source for the rest.
+      if (get().downloads[id]?.status === 'error') {
+        // A settled failure keeps its row on the backend, and the next poll
+        // would bring the red card back over the running transfer.
+        await clearDownloadEntry(id).catch(() => { /* best effort */ })
+      }
+      const res = await startModelDownloadToPath(meta.url, meta.destDir, id, meta.expectedBytes, meta.sha256)
+      if (res?.status === 'exists') {
+        // The whole file is there already (the partial was the last step away).
+        get().markComplete(id)
+        set(s => ({ orphans: withoutFilename(s.orphans, id) }))
+        return true
+      }
+      if (res?.status === 'error') return false
     } else {
       await resumeDownload(id, meta.url, meta.subfolder, meta.expectedBytes, meta.sha256)
     }
     set(s => ({ orphans: withoutFilename(s.orphans, id) }))
     get().startPolling()
+    return true
   },
 
   /**
@@ -497,7 +575,15 @@ export const useDownloadStore = create<DownloadStoreState>()(persist((set, get) 
     // to throw away the gigabytes it downloaded before it failed. The partial
     // stays and shows up as a resumable orphan on the next start; Cancel is
     // the button that deletes.
-    if (get().downloads[id]?.status === 'error') {
+    const status = get().downloads[id]?.status
+    if (status === 'error') {
+      clearDownloadEntry(id).catch(() => { /* app restart clears it anyway */ })
+    }
+    // The phone shell clears a finished row for good: its list polls again on
+    // every visit, and a row the backend still holds came back a second after
+    // it was cleared. The desktop badge keeps dismissing finished rows on this
+    // side only, as before.
+    if (status === 'complete' && isMobileHost()) {
       clearDownloadEntry(id).catch(() => { /* app restart clears it anyway */ })
     }
     set(s => ({
@@ -531,7 +617,7 @@ export const useDownloadStore = create<DownloadStoreState>()(persist((set, get) 
     // Meta first: it is the only source that also knows the destDir. The
     // catalog is the fallback for a partial from before this store persisted
     // anything.
-    const known = [...Object.keys(meta), ...catalogFilenames()]
+    const known = [...Object.keys(meta), ...catalogFilenames(), ...pathCatalog.keys()]
     const orphans: Record<string, OrphanEntry> = {}
     for (const o of found) {
       const filename = orphanFilename(o.stem, known)
@@ -541,10 +627,18 @@ export const useDownloadStore = create<DownloadStoreState>()(persist((set, get) 
       // subfolder so Resume has somewhere to go.
       if (filename && !get().downloadMeta[filename]) {
         const cat = lookupFileMeta(filename)
+        const byPath = pathCatalog.get(filename)
         if (cat) {
           get().setMeta(filename, cat.url, cat.subfolder, undefined, {
             expectedBytes: cat.expectedBytes,
             sha256: cat.sha256,
+          })
+        } else if (byPath) {
+          // A file that is fetched by path resumes into the folder its partial
+          // lies in. That folder is the one thing the disk still knows.
+          get().setMeta(filename, byPath.url, 'gguf', o.dir, {
+            expectedBytes: byPath.expectedBytes,
+            sha256: byPath.sha256,
           })
         }
       }

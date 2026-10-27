@@ -3,7 +3,8 @@
  * Character Studio on the Mac (14.10.2026): the Use shelf lists the
  * characters in the Mac's LoRA folder (api/mlx-loras), never ComfyUI's list,
  * and picking one brings the Z-Image model it was trained for. The Train tab
- * trains on the Mac (api/mlx-train) once Z-Image Turbo is installed.
+ * trains on the Mac (api/mlx-train) once Z-Image Turbo is installed, and
+ * says so above its inputs before.
  *
  * Run: npx vitest run src/components/create/experimental/__tests__/mac-character-shelf.test.tsx
  */
@@ -89,7 +90,8 @@ describe('Character Studio on the Mac', () => {
     arrange('train')
     render(<SpecialControls intent="character" />)
     expect((await screen.findByTestId('mac-train-note')).textContent).toMatch(/needs Z-Image Turbo/)
-    expect(screen.queryByTestId('mac-train-controls')).toBeNull()
+    // GH #194: the trigger word field stays (mac-train-zeigt-das-trigger-feld.test.tsx).
+    expect(screen.getByPlaceholderText('Trigger word, e.g. davechar')).toBeTruthy()
     cleanup()
 
     io.train = { ...io.train, base: 'z-image-turbo-4bit', memoryRefusal: 'Training a character needs a Mac with 24 GB of memory, and this one has 16 GB.' }

@@ -89,6 +89,8 @@ export interface CardLook {
   name: string
   stopped: string
   active: string
+  /** A14: the quiet mark of a copy LU removed the refusals from. */
+  mark: string
   meta: string
   use: string
   useSpinnerSize: number

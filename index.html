@@ -13,11 +13,24 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/favicon.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover: without it env(safe-area-inset-*) answers 0 on a
+         phone. It has no effect in a desktop window. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <!-- Brand faces (Inter / JetBrains Mono / Space Grotesk), self-hosted.
          index.css declares the Inter stack but nothing ever shipped the face,
          so every install outside this dev box rendered in system-ui. -->
     <link rel="stylesheet" href="/fonts/lu-fonts.css" />
+    <!-- A phone gets the ground colour of the phone shell from the first frame,
+         light or dark (public/first-paint.js marks <html>). Nothing in it
+         matches on a desktop. A file and not a style block: one style
+         element in this page makes Tauri put a nonce into style-src, and the
+         style attributes below are refused from then on (public/first-paint.css). -->
+    <link rel="stylesheet" href="/first-paint.css" />
+    <script src="/first-paint.js"></script>
+    <!-- An Android web view that is too old to carry the app says so before
+         the app is loaded (public/webview-check.js). Nothing happens on a
+         desktop or on iOS. -->
+    <script src="/webview-check.js"></script>
     <title>Locally Uncensored</title>
   </head>
   <body style="background:#161616;margin:0">

@@ -1,0 +1,462 @@
+{
+ "name": "create-model",
+ "art": "blatt",
+ "quelle": "integ-306",
+ "blatt": "create-model",
+ "strang": "create",
+ "code": "K3",
+ "lage": {
+  "route": "/dev/routes",
+  "screen": "m-dev-routes-screen",
+  "blaetter": [
+   "create-model"
+  ],
+  "dialog": [],
+  "reiter": null,
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back-under",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-page-back",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-overlays",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-sheet-scrim",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "",
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-sheet-create-model",
+   "tag": "div",
+   "rolle": "dialog",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    743
+   ]
+  },
+  {
+   "id": "m-sheet-close",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Close",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-create-model-search",
+   "tag": "input",
+   "rolle": "searchbox",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Search models",
+   "el": "K3.1",
+   "box": [
+    330,
+    48
+   ]
+  },
+  {
+   "id": "m-create-model-stale",
+   "tag": "div",
+   "rolle": "status",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    358,
+    135
+   ]
+  },
+  {
+   "id": "m-create-model-refresh",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Update list",
+   "box": [
+    111,
+    48
+   ]
+  },
+  {
+   "id": "m-create-model-list",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    767
+   ]
+  },
+  {
+   "id": "m-create-model-row",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Z-Image Turbo (fast) BestOpen weights",
+   "mId": "z-image-turbo",
+   "el": "K3.2",
+   "box": [
+    304,
+    62
+   ]
+  },
+  {
+   "id": "m-create-model-price-open",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Price details for Z-Image Turbo (fast)",
+   "el": "K3.3",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-create-model-row",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Flux 2 Dev Open weights",
+   "mId": "flux-2-dev",
+   "el": "K3.2",
+   "box": [
+    304,
+    62
+   ]
+  },
+  {
+   "id": "m-create-model-price-open",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Price details for Flux 2 Dev",
+   "el": "K3.3",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-create-model-row",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Chroma Uncensored Open weightsNo Filter",
+   "mId": "chroma",
+   "el": "K3.2",
+   "box": [
+    304,
+    62
+   ]
+  },
+  {
+   "id": "m-create-model-nofilter",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    63,
+    20
+   ]
+  },
+  {
+   "id": "m-create-model-price-open",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Price details for Chroma Uncensored",
+   "el": "K3.3",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-create-model-row",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Prefect Pony XL (illustration) Uncensored Open weightsNo Filter",
+   "mId": "prefect-pony",
+   "el": "K3.2",
+   "box": [
+    304,
+    86
+   ]
+  },
+  {
+   "id": "m-create-model-nofilter",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    63,
+    20
+   ]
+  },
+  {
+   "id": "m-create-model-price-open",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Price details for Prefect Pony XL (illustration) Uncensored",
+   "el": "K3.3",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-create-model-row",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Neta Lumina (anime) Uncensored Open weightsNo Filter",
+   "mId": "neta-lumina",
+   "el": "K3.2",
+   "box": [
+    304,
+    86
+   ]
+  },
+  {
+   "id": "m-create-model-nofilter",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    63,
+    20
+   ]
+  },
+  {
+   "id": "m-create-model-price-open",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Price details for Neta Lumina (anime) Uncensored",
+   "el": "K3.3",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-create-model-row",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Flux Schnell (fast) Open weights",
+   "mId": "flux-schnell",
+   "el": "K3.2",
+   "box": [
+    304,
+    62
+   ]
+  },
+  {
+   "id": "m-create-model-price-open",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Price details for Flux Schnell (fast)",
+   "el": "K3.3",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-create-model-row",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Flux Dev (quality) Open weights",
+   "mId": "flux-dev",
+   "el": "K3.2",
+   "box": [
+    304,
+    62
+   ]
+  },
+  {
+   "id": "m-create-model-price-open",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Price details for Flux Dev (quality)",
+   "el": "K3.3",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-create-model-row",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Qwen Image Open weights",
+   "mId": "qwen-image",
+   "el": "K3.2",
+   "box": [
+    304,
+    62
+   ]
+  },
+  {
+   "id": "m-create-model-price-open",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Price details for Qwen Image",
+   "el": "K3.3",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-create-model-row",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "HiDream Open weights",
+   "mId": "hidream",
+   "el": "K3.2",
+   "box": [
+    304,
+    62
+   ]
+  },
+  {
+   "id": "m-create-model-price-open",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Price details for HiDream",
+   "el": "K3.3",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-create-model-row",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "HunyuanImage 2.1 Open weights",
+   "mId": "hunyuan-image",
+   "el": "K3.2",
+   "box": [
+    304,
+    62
+   ]
+  },
+  {
+   "id": "m-create-model-price-open",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Price details for HunyuanImage 2.1",
+   "el": "K3.3",
+   "box": [
+    48,
+    48
+   ]
+  }
+ ]
+}

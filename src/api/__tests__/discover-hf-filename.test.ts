@@ -6,7 +6,7 @@
  * base name, which produced doubled tags like
  *   "TinyLlama-1.1B-Chat-v1.0-Q4_K_M-GGUF" → "TinyLlama-1.1B-Chat-v1.0-Q4_K_M-Q4_K_M.gguf"
  * and every download from a HF-search result into a repo-name-with-quant-in-it
- * failed with HTTP 404. Surfaced during v2.4.0 E2E of the new Model Storage
+ * failed with HTTP 404. Surfaced during v2.4.0 E2E of the new Storage
  * override feature. Fix: detect the quant suffix and collapse to "{name}.gguf".
  */
 import { describe, it, expect } from 'vitest'

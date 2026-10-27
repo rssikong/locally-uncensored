@@ -1,0 +1,296 @@
+{
+ "name": "tools",
+ "art": "blatt",
+ "quelle": "integ-306",
+ "blatt": "tools",
+ "strang": "create",
+ "code": "K2",
+ "lage": {
+  "route": "/dev/routes",
+  "screen": "m-dev-routes-screen",
+  "blaetter": [
+   "tools"
+  ],
+  "dialog": [],
+  "reiter": null,
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back-under",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-page-back",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-overlays",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-sheet-scrim",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "",
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-sheet-tools",
+   "tag": "div",
+   "rolle": "dialog",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    494
+   ]
+  },
+  {
+   "id": "m-sheet-close",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Close",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-create-tools-grid",
+   "tag": "div",
+   "rolle": "radiogroup",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    345
+   ]
+  },
+  {
+   "id": "m-create-tools-image",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Image",
+   "el": "K2.1",
+   "box": [
+    114,
+    77
+   ]
+  },
+  {
+   "id": "m-create-tools-edit",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Edit",
+   "el": "K2.1",
+   "box": [
+    114,
+    77
+   ]
+  },
+  {
+   "id": "m-create-tools-removebg",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Remove background",
+   "risiko": "paid",
+   "el": "K2.1",
+   "box": [
+    114,
+    77
+   ]
+  },
+  {
+   "id": "m-create-tools-upscale",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Enhance image",
+   "el": "K2.1",
+   "box": [
+    114,
+    76
+   ]
+  },
+  {
+   "id": "m-create-tools-eraser",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Erase object",
+   "risiko": "paid",
+   "el": "K2.1",
+   "box": [
+    114,
+    76
+   ]
+  },
+  {
+   "id": "m-create-tools-video",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Video",
+   "el": "K2.1",
+   "box": [
+    114,
+    76
+   ]
+  },
+  {
+   "id": "m-create-tools-animate",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Animate image",
+   "risiko": "paid",
+   "el": "K2.1",
+   "box": [
+    114,
+    77
+   ]
+  },
+  {
+   "id": "m-create-tools-character",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Character",
+   "el": "K2.1",
+   "box": [
+    114,
+    77
+   ]
+  },
+  {
+   "id": "m-create-tools-lipsync",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Talking character",
+   "el": "K2.1",
+   "box": [
+    114,
+    77
+   ]
+  },
+  {
+   "id": "m-create-tools-music",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Music",
+   "el": "K2.1",
+   "box": [
+    114,
+    76
+   ]
+  },
+  {
+   "id": "m-create-tools-extend",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Extend video",
+   "risiko": "paid",
+   "el": "K2.1",
+   "box": [
+    114,
+    76
+   ]
+  },
+  {
+   "id": "m-create-tools-motion",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Motion",
+   "el": "K2.1",
+   "box": [
+    114,
+    76
+   ]
+  },
+  {
+   "id": "m-create-tools-presets",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Presets Guided runs in a few steps",
+   "el": "K2.3",
+   "box": [
+    356,
+    57
+   ]
+  }
+ ]
+}

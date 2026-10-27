@@ -1,0 +1,487 @@
+/* Frame of the shell: app root, main area, stack of pages, tab bar or rail,
+   page with header, body and footer. Sizes of text are rem, spacing is px. */
+
+/* The shell is exactly as high as the visible viewport. iOS scrolls the whole
+   page up when the keyboard opens and only visualViewport tells the truth, so
+   top and height follow it (platform/keyboard.ts) and the page itself never
+   scrolls. */
+.m-app {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: var(--m-vtop);
+  height: var(--m-vh);
+  display: flex;
+  flex-direction: column;
+  background: var(--m-canvas);
+  color: var(--m-t1);
+  font-family: var(--m-font);
+  font-size: var(--m-text-body);
+  line-height: 1.45;
+  overflow: hidden;
+}
+
+/* The desktop sheet sets `#root > * { height: 100% }` (src/index.css), and an
+   id beats a class: without this line the shell stayed as high as the screen
+   with the keyboard open, and whatever sat at its foot lay under the keyboard
+   (measured in the iOS simulator, 667 px instead of 434). */
+html[data-shell='mobile'] #root > .m-app {
+  height: var(--m-vh);
+}
+
+.m-main {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* All pages of the active stack share one grid cell. Only the top one is
+   visible, the one below stays mounted so its scroll position and inputs
+   survive (nav/Stack.tsx). */
+.m-stack {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: grid;
+  position: relative;
+  padding-top: var(--m-safe-top);
+  padding-bottom: var(--m-bottom);
+  padding-left: var(--m-safe-left);
+  padding-right: var(--m-safe-right);
+}
+/* The storage line of the shell (boot/StorageFallback.tsx) sits above the
+   pages and takes the top safe area from them. */
+.m-storage-alert {
+  flex: none;
+  padding: var(--m-safe-top) var(--m-safe-right) 0 var(--m-safe-left);
+}
+/* The notice after a return stays until it is dismissed, on every tab. On a small phone the full
+   box took a quarter of the screen (acceptance on Android, buttons, M4), so it is a slim one:
+   less padding, title and text in the size of a caption, the buttons in one row. */
+.m-storage-alert--slim .m-note {
+  gap: var(--m-s2);
+  margin-bottom: var(--m-s2);
+  padding: var(--m-s2) var(--m-s3);
+}
+.m-storage-alert--slim .m-note-title {
+  font-size: var(--m-text-caption);
+  hyphens: manual;
+  -webkit-hyphens: manual;
+}
+.m-storage-alert--slim .m-note-actions {
+  margin-top: var(--m-s1);
+}
+/* While the keyboard is open the notice after a return folds away: what is left of the screen belongs to the
+   text field. On 360x640 the box (117 px) pushed the Send button 27 px under the keyboard, with a text of three
+   lines (check on Android with 4 GB, F1). Only the box goes; its frame keeps the top safe area for the pages.
+   With the keyboard closed it is back. "Not saved" (boot/StorageFallback.tsx) is not this class and stays. */
+html.m-kb-open .m-resume-alert .m-note {
+  display: none;
+}
+.m-app:has(> .m-storage-alert) .m-stack {
+  padding-top: 0;
+}
+/* With the tab bar below, the bar owns the bottom safe area. */
+.m-app[data-tabbar='bottom'] .m-stack {
+  padding-bottom: 0;
+}
+/* With the rail on the left, the rail owns the left safe area. */
+.m-app[data-tabbar='rail'] .m-stack {
+  padding-left: 0;
+}
+
+.m-page {
+  grid-area: 1 / 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--m-canvas);
+}
+.m-page[data-m-hidden] {
+  visibility: hidden;
+}
+.m-page[data-m-enter='push'] {
+  animation: m-slide-in var(--m-slow) var(--m-ease);
+}
+@keyframes m-slide-in {
+  from {
+    transform: translateX(100%);
+  }
+}
+/* Going back: the page that leaves slides out to the right, above the one
+   that comes back, and takes no input meanwhile (nav/Stack.tsx). After an
+   edge swipe it starts where the finger let go. */
+.m-page[data-m-exit] {
+  z-index: 2;
+  pointer-events: none;
+  animation: m-slide-out var(--m-base) var(--m-ease) forwards;
+}
+@keyframes m-slide-out {
+  from {
+    transform: translateX(var(--m-exit-from, 0px));
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes m-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes m-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes m-up {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+}
+@keyframes m-sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+}
+@keyframes m-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes m-blink {
+  50% {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .m-page[data-m-enter='push'] {
+    animation: m-fade var(--m-fast) linear;
+  }
+  .m-page[data-m-exit] {
+    animation: m-fade-out var(--m-fast) linear forwards;
+  }
+}
+
+/* Invisible strip at the left edge for the iOS back swipe (nav/edge-swipe.ts).
+   It lies above a page that fills the screen (the viewer, z-index 60) and
+   under a sheet (70): on the viewer the strip was covered and the gesture
+   did nothing (acceptance iPhone, K13, 0 of 12 on two pages). */
+.m-edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 20px;
+  z-index: 61;
+  touch-action: pan-y;
+}
+/* Where the finger paints up to the edge there is no strip: a stroke that
+   starts at the left must not leave the page and lose the mask. */
+.m-page[data-route='/create/mask'] > .m-edge {
+  display: none;
+}
+
+/* ---------- header ---------- */
+.m-hdr {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--m-s1);
+  min-height: var(--m-touch);
+  padding: var(--m-s1) var(--m-s2);
+}
+.m-hdr-side {
+  flex: none;
+  display: flex;
+  align-items: center;
+  min-width: var(--m-touch);
+}
+.m-hdr-side--end {
+  justify-content: flex-end;
+}
+.m-hdr-title {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  /* The title follows the text size up to 26 px. Between two 44 px targets a
+     larger one leaves room for half a word (320 px wide, 200 percent). */
+  font-size: min(var(--m-text-title), calc(26px / var(--m-zoom)));
+  font-weight: 600;
+  line-height: 1.3;
+}
+/* The title itself: two lines at most. A word that is longer than the line
+   is hyphenated (the document is lang="en"); it only breaks without a hyphen
+   when there is no syllable to break at. The whole title stays the name of
+   the page for a screen reader (aria-label on the section). */
+.m-hdr-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  -webkit-hyphens: manual;
+  hyphens: manual;
+}
+.m-hdr-sub {
+  display: block;
+  font-family: var(--m-font-mono);
+  font-size: min(var(--m-text-mono), calc(20px / var(--m-zoom)));
+  font-weight: 400;
+  line-height: 1.3;
+  color: var(--m-t3);
+  overflow-wrap: break-word;
+}
+.m-hdr--big {
+  flex-wrap: wrap;
+  row-gap: var(--m-s2);
+  padding: var(--m-s2) var(--m-s2) var(--m-s2) var(--m-s4);
+}
+.m-hdr--big .m-hdr-title {
+  flex: 1 1 auto;
+  text-align: left;
+  font-family: var(--m-font-display);
+  font-size: min(var(--m-text-display), calc(40px / var(--m-zoom)));
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+.m-hdr-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--m-s1);
+  max-width: 100%;
+}
+
+/* A phone on its side with the keyboard open keeps about 100 px of height
+   (measured: 101). The header would take half of it, so it steps aside while
+   the user types: the field and what is typed get the room. Back closes the
+   keyboard first and the header is there again. The window itself gets lower
+   where the system resizes it for the keyboard (Android); the query sees that. */
+@media (max-height: 200px) {
+  html.m-kb-open .m-screen > .m-hdr {
+    display: none;
+  }
+}
+
+/* ---------- body and footer ---------- */
+.m-body {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+.m-body-inner {
+  padding-bottom: var(--m-s4);
+}
+.m-pad {
+  padding-left: var(--m-gutter);
+  padding-right: var(--m-gutter);
+}
+.m-foot {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s2);
+  padding: var(--m-s3) var(--m-s4);
+  border-top: 1px solid var(--m-hair);
+  background: var(--m-canvas);
+  /* A footer with progress, two buttons and the main button would take the
+     whole page at 320 by 568 px and 200 percent text. It gets at most 46
+     percent of the page and scrolls inside beyond that. */
+  max-height: 46%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.m-foot > * {
+  flex: none;
+}
+
+/* ---------- tab bar, rail in landscape ---------- */
+.m-tabbar {
+  flex: none;
+  display: flex;
+  background: var(--m-surface);
+  border-top: 1px solid var(--m-hair);
+  padding-bottom: var(--m-safe-bottom);
+  padding-left: var(--m-safe-left);
+  padding-right: var(--m-safe-right);
+}
+.m-tab {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--m-row);
+  padding: 4px 2px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  color: var(--m-t3);
+  font-size: var(--m-text-tab);
+  font-weight: 500;
+  line-height: 1;
+  position: relative;
+}
+.m-app .m-tab {
+  text-align: center;
+}
+.m-tab-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-bottom: 1px;
+}
+.m-tab[aria-selected='true'] {
+  color: var(--m-t1);
+}
+.m-tab[aria-selected='true'] svg {
+  stroke-width: 2;
+}
+.m-tab-icon {
+  position: relative;
+  display: inline-flex;
+}
+.m-tab-dot {
+  position: absolute;
+  top: -2px;
+  right: -6px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--m-accent);
+}
+
+.m-app[data-orient='land'] .m-main {
+  flex-direction: row-reverse;
+}
+.m-app[data-orient='land'] .m-tabbar {
+  flex-direction: column;
+  justify-content: center;
+  border-top: 0;
+  border-right: 1px solid var(--m-hair);
+  width: calc(var(--m-rail) + var(--m-safe-left));
+  padding: var(--m-safe-top) 0 var(--m-safe-bottom) var(--m-safe-left);
+}
+.m-app[data-orient='land'] .m-tab {
+  flex: none;
+  min-height: 56px;
+}
+/* In landscape the content is held to 42rem and centered (DESIGN.md 2.3). */
+.m-app[data-orient='land'] .m-body > *,
+.m-app[data-orient='land'] .m-foot > *,
+.m-app[data-orient='land'] .m-hdr {
+  width: 100%;
+  max-width: var(--m-measure);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* ---------- text helpers ---------- */
+.m-mono {
+  font-family: var(--m-font-mono);
+  font-size: var(--m-text-mono);
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+  /* Addresses, paths and code are one word to the browser. They break where the line ends, never run out of it. */
+  overflow-wrap: anywhere;
+}
+.m-cap {
+  font-size: var(--m-text-caption);
+  line-height: 1.4;
+  color: var(--m-t3);
+}
+.m-label {
+  font-size: var(--m-text-label);
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--m-t3);
+}
+.m-t2 {
+  color: var(--m-t2);
+}
+.m-t3 {
+  color: var(--m-t3);
+}
+.m-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+.m-icon {
+  width: var(--m-icon);
+  height: var(--m-icon);
+  flex: none;
+}
+.m-icon--sm {
+  width: var(--m-icon-sm);
+  height: var(--m-icon-sm);
+}
+.m-mono-mark {
+  flex: none;
+  fill: currentColor;
+}
+.m-stackv {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s2);
+}
+.m-rowh {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--m-s2);
+}
+.m-grow {
+  /* A basis in text units: in a row that may wrap, large text pushes the neighbour onto its own line. */
+  flex: 1 1 calc(6 * var(--m-u));
+  min-width: 0;
+}
+.m-rowh > .m-cap {
+  flex: 1 1 calc(6 * var(--m-u));
+  min-width: 0;
+}
+
+/* What ui/Page renders inside the grid cell that nav/Stack provides. */
+.m-screen {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Hyphenation is there for long words on a narrow screen with large text. A short word is never
+   split ("An-swer" in the header of a chat, acceptance on the small iPhone, N24): it moves to the
+   next line as a whole. */
+.m-hdr-text,
+.m-seg-label,
+.m-row-title,
+.m-card-title,
+.m-empty-title,
+.m-sheet-title,
+.m-dlg-title,
+.m-numrow-title,
+.m-heading {
+  hyphenate-limit-chars: 10 4 4;
+  -webkit-hyphenate-limit-before: 4;
+  -webkit-hyphenate-limit-after: 4;
+}

@@ -1,0 +1,351 @@
+{
+ "name": "/settings/memory",
+ "art": "seite",
+ "quelle": "integ-306",
+ "route": "/settings/memory",
+ "strang": "agent",
+ "code": "E7",
+ "lage": {
+  "route": "/settings/memory",
+  "screen": "m-settings-memory-screen",
+  "blaetter": [],
+  "dialog": [],
+  "reiter": null,
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back-under",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-memory-screen",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-memory-search",
+   "tag": "input",
+   "rolle": "searchbox",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Search memories",
+   "el": "E7.1",
+   "box": [
+    298,
+    48
+   ]
+  },
+  {
+   "id": "m-memory-types",
+   "tag": "div",
+   "rolle": "radiogroup",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    48
+   ]
+  },
+  {
+   "id": "m-memory-type-all",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "All",
+   "el": "E7.2",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-memory-type-user",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "About you",
+   "el": "E7.2",
+   "box": [
+    100,
+    48
+   ]
+  },
+  {
+   "id": "m-memory-type-feedback",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "How to answer",
+   "el": "E7.2",
+   "box": [
+    133,
+    48
+   ]
+  },
+  {
+   "id": "m-memory-type-project",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Projects",
+   "el": "E7.2",
+   "box": [
+    85,
+    48
+   ]
+  },
+  {
+   "id": "m-memory-type-reference",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "References",
+   "el": "E7.2",
+   "box": [
+    107,
+    48
+   ]
+  },
+  {
+   "id": "m-memory-empty",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    185
+   ]
+  },
+  {
+   "id": "m-memory-settings",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    509
+   ]
+  },
+  {
+   "id": "m-memory-learn",
+   "tag": "button",
+   "rolle": "switch",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Learn from chats After an answer LU asks the model once more what is worth keepi",
+   "el": "E7.5",
+   "box": [
+    356,
+    94
+   ]
+  },
+  {
+   "id": "m-memory-learn-with",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    356,
+    98
+   ]
+  },
+  {
+   "id": "m-memory-outside",
+   "tag": "button",
+   "rolle": "switch",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Also outside Agent mode Learn from plain chats as well.",
+   "el": "E7.6",
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-memory-keep-row",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    356,
+    146
+   ]
+  },
+  {
+   "id": "m-memory-keep",
+   "tag": "input",
+   "rolle": "textbox",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Keep at most",
+   "el": "E7.7",
+   "box": [
+    72,
+    48
+   ]
+  },
+  {
+   "id": "m-memory-review",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Review old memories Nothing to review",
+   "el": "E7.8",
+   "deaktiviert": true,
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-memory-sync-signedout",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    94
+   ]
+  },
+  {
+   "id": "m-memory-signin",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Sign in to sync With an account your memories can follow you to other devices.",
+   "el": "E7.9",
+   "box": [
+    356,
+    76
+   ]
+  },
+  {
+   "id": "m-memory-data",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    171
+   ]
+  },
+  {
+   "id": "m-memory-export",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Export There is nothing to export yet.",
+   "el": "E7.12",
+   "deaktiviert": true,
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-memory-import",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Import A Markdown or JSON export of LU.",
+   "el": "E7.13",
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-memory-delete-all",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Delete all memories There are no memories to delete yet.",
+   "risiko": "destructive",
+   "el": "E7.14",
+   "deaktiviert": true,
+   "box": [
+    358,
+    52
+   ]
+  },
+  {
+   "id": "m-memory-add",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Add memory",
+   "el": "E7.4",
+   "box": [
+    358,
+    48
+   ]
+  }
+ ]
+}

@@ -1,0 +1,98 @@
+{
+ "name": "/settings/providers/:id",
+ "art": "seite",
+ "quelle": "integ-306",
+ "route": "/settings/providers/:id",
+ "strang": "settings",
+ "code": "E12",
+ "lage": {
+  "route": "/settings/providers/:id",
+  "screen": "m-settings-provider-screen",
+  "blaetter": [],
+  "dialog": [],
+  "reiter": null,
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back-under",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-provider-screen",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-provider-unknown",
+   "tag": "div",
+   "rolle": "alert",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    189
+   ]
+  },
+  {
+   "id": "m-settings-provider-back",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Back to providers",
+   "box": [
+    320,
+    48
+   ]
+  }
+ ]
+}

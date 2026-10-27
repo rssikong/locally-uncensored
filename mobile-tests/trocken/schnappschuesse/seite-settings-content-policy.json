@@ -1,0 +1,164 @@
+{
+ "name": "/settings/content-policy",
+ "art": "seite",
+ "quelle": "integ-306",
+ "route": "/settings/content-policy",
+ "strang": "settings",
+ "code": "E18",
+ "lage": {
+  "route": "/settings/content-policy",
+  "screen": "m-settings-content-policy-screen",
+  "blaetter": [],
+  "dialog": [],
+  "reiter": null,
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back-under",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-content-policy-screen",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-content-policy-state",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "signed-out",
+   "box": [
+    390,
+    425
+   ]
+  },
+  {
+   "id": "m-settings-content-policy-signed-out",
+   "tag": "div",
+   "rolle": "status",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    358,
+    136
+   ]
+  },
+  {
+   "id": "m-settings-content-policy-signin",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Sign in",
+   "box": [
+    109,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-content-policy-list",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "el": "E18.1",
+   "box": [
+    390,
+    213
+   ]
+  },
+  {
+   "id": "m-settings-content-policy-strict",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Strict Blocks more than the default",
+   "el": "E18.1",
+   "deaktiviert": true,
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-settings-content-policy-soft",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Standard The default",
+   "el": "E18.1",
+   "deaktiviert": true,
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-settings-content-policy-off",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Off No filter on what the models write",
+   "el": "E18.1",
+   "deaktiviert": true,
+   "box": [
+    356,
+    57
+   ]
+  }
+ ]
+}

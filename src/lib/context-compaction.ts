@@ -9,6 +9,7 @@
  */
 
 import { getModelContextCached } from '../api/ollama'
+import { isCompatProviderId } from '../api/providers/compat-id'
 import { getProviderForModel, getProviderIdFromModel } from '../api/providers'
 import { useModelStore } from '../stores/modelStore'
 import { useSettingsStore } from '../stores/settingsStore'
@@ -69,7 +70,7 @@ export async function getModelMaxTokens(modelName: string): Promise<number> {
       return await provider.getContextLength(modelId)
     }
 
-    if (providerId === 'openai' || providerId === 'anthropic') {
+    if (providerId === 'openai' || providerId === 'anthropic' || isCompatProviderId(providerId)) {
       // Use provider's getContextLength for cloud models
       const { provider, modelId } = getProviderForModel(modelName)
       return await provider.getContextLength(modelId)

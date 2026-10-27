@@ -22,8 +22,13 @@ import { basename, join } from 'node:path'
 const FILES = [
   // i18n bootstrap: one call before React mounts.
   'src/main.tsx',
-  // e2e runs in English so the 1600+ selectors keep working.
-  'playwright.config.ts',
+  // `playwright.config.ts` used to be here: it started the e2e web server in
+  // English so 1600+ selectors kept working, and retried the two geometry
+  // specs. This fork no longer runs e2e (the inherited `ci.yml` is disabled and
+  // the release gate never ran it), and upstream rewrites that file often —
+  // 3.0.8 turned `webServer` into an array for the mobile project, which is
+  // exactly the kind of change that made the patch fail. Dropped on purpose:
+  // one fewer file that can block a sync.
   // The updater checks THIS repository, not upstream's. It has to live in
   // tauri.conf.json (not an overlay): `release-dry-run.mjs` refuses a checked-in
   // overlay that sets plugins.updater, and a dry run rewrites this file.

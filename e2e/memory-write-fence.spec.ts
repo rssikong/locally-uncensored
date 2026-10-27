@@ -37,14 +37,15 @@ test('deleting through Memory Settings survives a late automatic extraction and 
     Reflect.set(window, 'pendingMemoryExtraction', pending)
   }, DEFAULT_MODEL_NAME)
   await expect(page.locator('body')).toHaveAttribute('data-extraction', 'waiting')
-  await page.getByRole('button', { name: 'Delete entry', exact: true }).click()
+  await page.getByTitle('Delete this memory', { exact: true }).click()
+  await page.getByTitle('Click again to delete', { exact: true }).click()
   await page.evaluate(async () => {
     const release: unknown = Reflect.get(window, 'releaseMemoryExtraction')
     if (typeof release !== 'function') throw new Error('Missing fixture release')
     release()
     await Reflect.get(window, 'pendingMemoryExtraction')
   })
-  await expect(page.getByRole('button', { name: 'Delete entry', exact: true })).toHaveCount(0)
+  await expect(page.getByTitle('Delete this memory', { exact: true })).toHaveCount(0)
   // Ordinary Zustand persistence is asynchronous. Observe the committed
   // value before testing reload, rather than racing navigation against it.
   await appModules(page, ['/src/lib/idbStorage.ts'])
@@ -60,7 +61,7 @@ test('deleting through Memory Settings survives a late automatic extraction and 
     return Array.isArray(entries) ? entries.length : -1
   })).toBe(0)
   await page.reload()
-  await expect(page.getByRole('button', { name: 'Delete entry', exact: true })).toHaveCount(0)
+  await expect(page.getByTitle('Delete this memory', { exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: 'Preview AI memory context' }).click()
   await expect(page.locator('#result')).toHaveText('No eligible memories')
 })

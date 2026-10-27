@@ -19,6 +19,7 @@
  * auch nicht: "why does my computer see only 8 GB" fragt nach Hardware.
  */
 import { entumlauten } from './chat-tool-intent'
+import { platformText } from './platform-text'
 
 // Adressen im Netz vorher heraus, damit "/home/" in einer URL kein Pfad wird.
 const URL_RE = /\bhttps?:\/\/\S+|\bwww\.\S+/gi
@@ -47,5 +48,4 @@ export function asksForLocalFiles(message: string): boolean {
 }
 
 /** Die Zeile ueber dem Verlauf. Nennt die Knoepfe so, wie sie heissen. */
-export const LOCAL_FILES_NOTICE =
-  'Plain chat cannot open files on this computer. Turn on Agent above the message box, choose "Pick a folder…" and select the folder that holds them, then ask again. Agent needs a model that can use tools.'
+export const LOCAL_FILES_NOTICE = platformText('localFilesNotice')

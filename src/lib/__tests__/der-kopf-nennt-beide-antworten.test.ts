@@ -14,6 +14,7 @@
  *
  * Run: npx vitest run src/lib/__tests__/der-kopf-nennt-beide-antworten.test.ts
  */
+import { localBackendUnreachableMessage, remoteBackendUnreachableMessage } from '../local-backend-transport'
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -49,13 +50,12 @@ describe('der Kopf von local-backend-transport.ts', () => {
   it('die ferne Antwort schickt niemanden zu einem Server, den er nicht betreibt', () => {
     // Die Gegenprobe zur Aussage des Kopfes: die beiden Saetze sind wirklich
     // verschieden, sonst waere die ganze Unterscheidung Schmuck.
-    const fern = quelle.slice(quelle.indexOf('export function remoteBackendUnreachableMessage'))
+    // Seit der Textnaht (lib/platform-text.ts) stehen die Saetze nicht mehr
+    // in dieser Datei. Geprueft wird deshalb, was die beiden Funktionen sagen.
+    const fern = remoteBackendUnreachableMessage('My API', 'https://api.example.com/v1')
     expect(fern).not.toContain('Start it and send again')
     expect(fern).toContain('check your network')
-    const nah = quelle.slice(
-      quelle.indexOf('export function localBackendUnreachableMessage'),
-      quelle.indexOf('export function remoteBackendUnreachableMessage'),
-    )
+    const nah = localBackendUnreachableMessage('vLLM', 'http://192.168.1.20:8000/v1')
     expect(nah).toContain('Start it and send again')
     expect(nah).not.toContain('check your network')
   })

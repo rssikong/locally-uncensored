@@ -11,7 +11,7 @@ import { isMlxImageHost } from '../../../api/mlx-image'
 import { ICON_LG, ICON_STROKE_MARK } from '../../ui/icon-size'
 import { PromptDetails } from './PromptDetails'
 import { hasPromptPanel } from '../../../lib/render/ran-prompt'
-import { markGalleryItemAvailable } from './galleryUrl'
+import { markGalleryItemAvailable, playsAsVideo } from './galleryUrl'
 import { deleteTitle, unavailableLine, playerHasControls, UNAVAILABLE_VIDEO_BOX } from './galleryWording'
 import { downloadGalleryItem } from './galleryDownload'
 import { galleryLabel } from '../../../lib/render/gallery-label'
@@ -138,6 +138,8 @@ export function GeneratingView() {
 interface ResultProps {
   item: GalleryItem
   onFullscreen: () => void
+  /** The Prompt word in the facts: the large view with the prompt unfolded. */
+  onShowPrompt?: () => void
   onSendToEditor?: () => void
   /** C1: adopt this finished image as the Animate intent's source, matching
    *  web's OutputView (the web app,
@@ -168,10 +170,12 @@ function reconcileDims(item: GalleryItem, w: number, h: number) {
   }
 }
 
-export function ResultView({ item, onFullscreen, onSendToEditor, onAnimate, onSaveCharacter, side }: ResultProps) {
+export function ResultView({ item, onFullscreen, onShowPrompt, onSendToEditor, onAnimate, onSaveCharacter, side }: ResultProps) {
   const { src: url, onError } = useComfyMedia(item)
   const download = () => void downloadGalleryItem(item)
   const isVideo = item.type === 'video'
+  // An old animated .webp clip shows as a picture, which still moves (A19).
+  const inPlayer = playsAsVideo(item)
   const isAudio = item.type === 'audio'
   // `maxHeight` is the height the stage has left for the result (FitStage).
   // Until the stage is measured it keeps the share of the window it always had.
@@ -183,7 +187,7 @@ export function ResultView({ item, onFullscreen, onSendToEditor, onAnimate, onSa
             <p className="t-body text-gray-400 text-center line-clamp-2">{galleryLabel(item)}</p>
             <audio src={url} controls onError={onError} className="w-full" onLoadedData={() => markGalleryItemAvailable(item)} />
           </div>
-        ) : isVideo ? (
+        ) : inPlayer ? (
           <video
             src={url}
             controls={playerHasControls(!!item.unavailable)}
@@ -209,7 +213,7 @@ export function ResultView({ item, onFullscreen, onSendToEditor, onAnimate, onSa
           />
         )}
         {item.unavailable && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-[var(--radius-panel)] bg-black/60 text-gray-400 p-6 text-center">
+          <div className="lu-on-dark absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-[var(--radius-panel)] bg-black/60 text-gray-400 p-6 text-center">
             <MonitorOff size={ICON_LG} />
             <span className="t-body">
               {unavailableLine(item.unavailableReason === 'gone', isMlxImageHost())}
@@ -265,7 +269,7 @@ export function ResultView({ item, onFullscreen, onSendToEditor, onAnimate, onSa
             <span>·</span>
             <button
               type="button"
-              onClick={onFullscreen}
+              onClick={onShowPrompt ?? onFullscreen}
               title="Show the prompt and settings of this result"
               className="shrink-0 underline underline-offset-2 hover:text-gray-300"
               data-testid="result-prompt-open"
@@ -297,7 +301,7 @@ function IconBtn({ children, title, onClick, disabled }: { children: React.React
       title={title}
       disabled={disabled}
       className={cn(
-        'w-7 h-7 flex items-center justify-center rounded-lg bg-black/50 backdrop-blur transition-colors',
+        'lu-on-dark w-7 h-7 flex items-center justify-center rounded-lg bg-black/50 backdrop-blur transition-colors',
         disabled ? 'text-gray-600 cursor-not-allowed' : 'text-gray-200 hover:text-white hover:bg-black/70',
       )}
     >

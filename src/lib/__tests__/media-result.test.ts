@@ -81,3 +81,29 @@ describe('media-result — failed generations must not pass as delivered media',
     })
   })
 })
+
+// A13 (21.10.2026): every way a local render ends without media is a failure,
+// not only the shapes the old list knew. These are the texts render-budget.ts
+// and vram-handoff.ts really return.
+describe('media-result: budget, stop and cancel are not delivered media', () => {
+  const ENDED_WITHOUT_MEDIA = [
+    'Image generation hit the 5 minute budget and was cancelled so the GPU is free again. Lower the steps.',
+    'Video generation stopped early: at the measured pace this render needs about 40 minutes, more than the 10 minute budget.',
+    'Image generation stopped: after 6 minutes the model was still loading into VRAM and sampling never started.',
+    'Video generation cancelled.',
+    'Image generation was not started. The companion file was not downloaded.',
+    'Video generation timed out after 60 minutes; the generation was stopped.',
+  ]
+  for (const text of ENDED_WITHOUT_MEDIA) {
+    it(`flags: ${text.slice(0, 50)}`, () => {
+      expect(isMediaFailureResult(text)).toBe(true)
+      expect(mediaCallSucceeded('image_generate', text)).toBe(false)
+    })
+  }
+
+  it('passes the real result lines of ComfyUI and of the Mac engines', () => {
+    expect(isMediaFailureResult('Image generated: LU_00012_.png (prompt: "a cat")\nhttp://127.0.0.1:8188/view?filename=LU_00012_.png&subfolder=&type=output')).toBe(false)
+    expect(isMediaFailureResult('Video generated: clip.mp4 (prompt: "a cat")\nfile:///Users/a/Library/clip.mp4')).toBe(false)
+    expect(isMediaFailureResult('Image generated: mlx-1.png (prompt: "a cat")\ndata:image/png;base64,iVBOR')).toBe(false)
+  })
+})

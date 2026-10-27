@@ -2,6 +2,8 @@ import { backendCall, isTauri } from "./backend";
 import { asString, prop } from "../types/json-guards";
 import { blobFromUrl } from "../lib/render/data-url";
 import { cloudFetch, jsonOrError, CloudJobError } from "./cloud/client";
+import { assertCloudContentConsent } from "../lib/cloud-content-gate";
+import { hasLocalVoice } from "../lib/capabilities";
 import { openMicrophone } from "./microphone";
 
 /**
@@ -227,6 +229,9 @@ export async function checkWhisperAvailable(): Promise<{
   loading?: boolean;
   error?: string;
 }> {
+  // A phone has no faster-whisper and no Python to run it. The command behind
+  // this probe is a stub there, so the answer is known without asking.
+  if (!hasLocalVoice()) return { available: false, backend: null };
   try {
     if (isTauri()) {
       return await backendCall("whisper_status");
@@ -310,6 +315,8 @@ export async function transcribeAudio(audioBlob: Blob): Promise<string> {
  *  large-v3-turbo, flat-metered per request — so useVoice disables the
  *  interim-streaming cadence in cloud mode and only sends the final take). */
 export async function transcribeAudioCloud(audioBlob: Blob): Promise<string> {
+  // A recording is content: it leaves only with the consent of the user (phone, M1).
+  assertCloudContentConsent();
   const res = await cloudFetch("/api/voice/transcribe", {
     method: "POST",
     headers: { "content-type": audioBlob.type || "audio/wav" },
@@ -385,6 +392,8 @@ export function chunkForTts(text: string, max = TTS_MAX_CHARS): string[] {
  *  object URL for playNeuralAudio (which revokes it when the clip settles).
  *  `signal` aborts the in-flight synthesis — the server cancels un-metered. */
 export async function synthesizeCloud(text: string, voice?: string, signal?: AbortSignal): Promise<string> {
+  // The text of an answer is content as well.
+  assertCloudContentConsent();
   const res = await cloudFetch("/api/voice/tts", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -392,10 +401,13 @@ export async function synthesizeCloud(text: string, voice?: string, signal?: Abo
     signal,
   });
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}) as { error?: string });
+    const body = await res.json().catch(() => ({}) as { error?: string; code?: string });
+    // The code travels along: 429 means a burst guard, a provider throttle or
+    // an empty wallet, and only the code tells them apart (see CloudJobError).
     throw new CloudJobError(
       typeof body.error === "string" ? body.error : `cloud TTS failed (${res.status})`,
       res.status,
+      typeof body.code === "string" ? { code: body.code } : undefined,
     );
   }
   const blob = await res.blob();
@@ -423,6 +435,8 @@ export function getLastTtsStatus(): { available: boolean; piper?: boolean; voice
 /** Probe neural TTS. Pass the SELECTED voice — readiness is per voice: having
  *  some other voice on disk says nothing about the one that is about to speak. */
 export async function checkTtsAvailable(voice?: string): Promise<{ available: boolean; piper?: boolean; voice?: boolean }> {
+  // No Piper on a phone, see checkWhisperAvailable.
+  if (!hasLocalVoice()) return { available: false };
   try {
     if (isTauri()) return await backendCall("tts_status", { voice });
     return { available: false };
@@ -499,6 +513,7 @@ export async function downloadPiperVoice(voice: string): Promise<void> {
 
 /** Voice ids already present on disk — used to mark the Settings picker. */
 export async function listInstalledPiperVoices(): Promise<string[]> {
+  if (!hasLocalVoice()) return [];
   try {
     if (isTauri()) return (await backendCall<string[]>("installed_piper_voices")) || [];
     return [];

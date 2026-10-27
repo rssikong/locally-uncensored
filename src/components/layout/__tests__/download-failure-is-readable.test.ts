@@ -30,7 +30,7 @@ import { useDownloadStore } from '../../../stores/downloadStore'
 /** What Rust hands back for a CivitAI refusal, verbatim (download.rs). */
 const CIVITAI_REFUSAL =
   'CivitAI refused this download (HTTP 401). Most CivitAI downloads need an API key. ' +
-  'Add one under Settings > AI Backends > Model Storage, then start this download again.'
+  'Add one under Settings > AI Backends > Storage, then start this download again.'
 
 function seedFailure(error: string | undefined) {
   useDownloadStore.setState({
@@ -65,7 +65,7 @@ describe('a failed single-file download', () => {
     openPanel()
     // The whole sentence, including where to go.
     expect(screen.getByText(CIVITAI_REFUSAL)).toBeTruthy()
-    expect(document.body.textContent).toContain('Settings > AI Backends > Model Storage')
+    expect(document.body.textContent).toContain('Settings > AI Backends > Storage')
   })
 
   // Negative control: a failure that carries no reason must not draw an empty

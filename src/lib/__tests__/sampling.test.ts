@@ -64,9 +64,9 @@ describe('buildSamplingRequest: the rule the fixliste asks for', () => {
   it('NEGATIVKONTROLLE: a chat without its own value follows the Settings page, not the app default', () => {
     // If this chat's override were ignored (or the Settings page were), the
     // request would carry the wrong number or none at all.
-    const settings = { ...SAMPLING_DEFAULTS, temperature: 1.9 }
-    expect(buildSamplingRequest(settings)).toEqual({ temperature: 1.9 })
-    expect(buildSamplingRequest(settings, { topP: 0.1 })).toEqual({ temperature: 1.9, topP: 0.1 })
+    const settings = { ...SAMPLING_DEFAULTS, temperature: 1.1 }
+    expect(buildSamplingRequest(settings)).toEqual({ temperature: 1.1 })
+    expect(buildSamplingRequest(settings, { topP: 0.1 })).toEqual({ temperature: 1.1, topP: 0.1 })
   })
 
   it('treats max tokens 0 as auto, and omits it the same way a default is omitted', () => {
@@ -89,7 +89,7 @@ describe('samplingIsChanged', () => {
 describe('clampSampling', () => {
   it('holds a written value inside its bounds', () => {
     expect(clampSampling({ temperature: 5, topP: -1, maxTokens: -10 })).toEqual({
-      temperature: 2,
+      temperature: 1.5,
       topP: 0,
       maxTokens: 0,
     })
@@ -121,7 +121,7 @@ describe('buildSamplingRequest with a persona preset', () => {
   })
 
   it('the persona wins over the Settings page', () => {
-    const settings = { ...SAMPLING_DEFAULTS, temperature: 1.9 }
+    const settings = { ...SAMPLING_DEFAULTS, temperature: 1.1 }
     expect(buildSamplingRequest(settings, undefined, { temperature: 0.4 })).toEqual({ temperature: 0.4 })
   })
 

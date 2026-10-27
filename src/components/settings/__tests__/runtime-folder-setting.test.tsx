@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  *
- * Discord D2: Settings, Model Storage, "Voice and Python folder". Choosing a
+ * Discord D2: Settings, Storage, "Voice and Python folder". Choosing a
  * folder stores it and moves nothing; the Move button asks first and then
  * reports each folder; a folder inside the model folder never reaches Rust.
  *

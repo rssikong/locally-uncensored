@@ -1,0 +1,74 @@
+{
+ "name": "alter-rueckfrage-play",
+ "art": "zustand",
+ "quelle": "integ-306",
+ "preset": "play",
+ "lage": {
+  "route": null,
+  "screen": null,
+  "blaetter": [],
+  "dialog": [],
+  "reiter": null,
+  "alter": "confirm"
+ },
+ "kennungen": [
+  {
+   "id": "m-age-gate",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-age-confirm",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    219
+   ]
+  },
+  {
+   "id": "m-age-actions",
+   "tag": "footer",
+   "rolle": "footer",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    129
+   ]
+  },
+  {
+   "id": "m-age-confirm-back",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Go back",
+   "box": [
+    358,
+    48
+   ]
+  },
+  {
+   "id": "m-age-confirm-minor",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Yes, I am under 18",
+   "risiko": "destructive",
+   "box": [
+    358,
+    48
+   ]
+  }
+ ]
+}

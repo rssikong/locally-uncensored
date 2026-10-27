@@ -37,7 +37,7 @@ const headings = (md: string) => md.split('\n').filter((line) => line.startsWith
 
 describe('GH #171: a group chat export names who wrote each turn', () => {
   it('Markdown: persona and model on every model turn, never "Assistant"', () => {
-    const md = exportAsMarkdown(group, [WALT, BARON])
+    const md = exportAsMarkdown(group, { personas: [WALT, BARON] })
     expect(headings(md)).toEqual([
       '### You',
       '### ウォルト (qwen3-32b)',
@@ -46,7 +46,7 @@ describe('GH #171: a group chat export names who wrote each turn', () => {
   })
 
   it('Markdown: a participant without a persona is headed by its model', () => {
-    const md = exportAsMarkdown({ ...group, groupPersonas: { [A]: 'walt' } }, [WALT, BARON])
+    const md = exportAsMarkdown({ ...group, groupPersonas: { [A]: 'walt' } }, { personas: [WALT, BARON] })
     expect(headings(md)).toEqual(['### You', '### ウォルト (qwen3-32b)', '### llama3.3:70b'])
   })
 
@@ -57,7 +57,7 @@ describe('GH #171: a group chat export names who wrote each turn', () => {
       groupPersonas: { [A]: 'baron', [B]: 'baron' },
       messages: group.messages.map((m) => (m.id === 'a1' ? { ...m, groupPersonaId: 'walt', groupSpeakerName: 'ウォルト' } : m)),
     }
-    expect(headings(exportAsMarkdown(later, [WALT, BARON]))[1]).toBe('### ウォルト (qwen3-32b)')
+    expect(headings(exportAsMarkdown(later, { personas: [WALT, BARON] }))[1]).toBe('### ウォルト (qwen3-32b)')
   })
 
   it('Markdown: a persona deleted since keeps the name it had at the turn', () => {
@@ -66,7 +66,7 @@ describe('GH #171: a group chat export names who wrote each turn', () => {
       groupPersonas: undefined,
       messages: group.messages.map((m) => (m.id === 'a1' ? { ...m, groupPersonaId: 'walt', groupSpeakerName: `ウォルト (${A})` } : m)),
     }
-    expect(headings(exportAsMarkdown(gone, [BARON]))[1]).toBe('### ウォルト (qwen3-32b)')
+    expect(headings(exportAsMarkdown(gone, { personas: [BARON] }))[1]).toBe('### ウォルト (qwen3-32b)')
   })
 
   it('JSON: every model turn carries its persona next to the model it already had', () => {
@@ -79,7 +79,7 @@ describe('GH #171: a group chat export names who wrote each turn', () => {
 
   it('NEGATIVE CONTROL: a single-model chat keeps "### Assistant" and an unchanged JSON', () => {
     const single: Conversation = { ...group, groupModels: undefined, groupPersonas: undefined }
-    expect(headings(exportAsMarkdown(single, [WALT, BARON]))).toEqual(['### You', '### Assistant', '### Assistant'])
+    expect(headings(exportAsMarkdown(single, { personas: [WALT, BARON] }))).toEqual(['### You', '### Assistant', '### Assistant'])
     expect(exportAsJSON(single, [WALT, BARON])).toBe(JSON.stringify(single, null, 2))
   })
 })

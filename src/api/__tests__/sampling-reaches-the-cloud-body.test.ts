@@ -168,9 +168,17 @@ describe('what an UNTOUCHED value does NOT put on the wire', () => {
   it('NEGATIVKONTROLLE: a chat with its OWN override still sends it, only the untouched fields are omitted', async () => {
     // Counter-check for the two cases above: a body that dropped every
     // sampling field unconditionally would pass them by coincidence.
-    const body = await cloudBody({ temperature: 1.9 })
-    expect(body.temperature).toBe(1.9)
+    const body = await cloudBody({ temperature: 0.95 })
+    expect(body.temperature).toBe(0.95)
     expect(body.top_p).toBeUndefined() // still untouched
+  })
+
+  // A33 (3.0.8): the customer's 1.9 went to LU Cloud with no top_p and no
+  // top_k, the upstream read top_p 1.0, and every answer was noise.
+  it('above temperature 1 the body carries top_p 0.9, even with top P untouched', async () => {
+    const body = await cloudBody({ temperature: 1.4 })
+    expect(body.temperature).toBe(1.4)
+    expect(body.top_p).toBe(0.9)
   })
 
   it('NEGATIVKONTROLLE: a Settings-page value that really moved is not mistaken for untouched', async () => {

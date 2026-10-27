@@ -123,6 +123,18 @@ describe('Extended Thinking sends a body the API can accept', () => {
     expect(body).not.toHaveProperty('top_k')
   })
 
+  // A33 (3.0.8): the Messages API takes temperature 0 to 1 and answers more
+  // with a 400, so a chat set higher still gets an answer, at the ceiling.
+  it('holds temperature at 1, the most the API takes', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(sse([STOP]))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await drain(new AnthropicProvider(config())
+      .chatStream('claude-sonnet-4-20250514', [{ role: 'user', content: 'hi' }], { temperature: 1.4 }))
+
+    expect(sentBody(fetchMock).temperature).toBe(1)
+  })
+
   it('never needs the drop-thinking retry any more — one request, not two', async () => {
     const fetchMock = vi.fn().mockResolvedValue(sse([STOP]))
     vi.stubGlobal('fetch', fetchMock)

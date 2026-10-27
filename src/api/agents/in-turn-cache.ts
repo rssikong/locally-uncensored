@@ -65,6 +65,10 @@ const NON_CACHEABLE_TOOLS = new Set<string>([
   'check_tasks',
   // Sends a message to another agent. The same words twice are two messages.
   'message_agent',
+  // A11: reads settings that set_setting just changed, and set_setting asks
+  // the user every time. Neither may be answered from an earlier call.
+  'get_settings',
+  'set_setting',
 ])
 
 /**

@@ -1,0 +1,15 @@
+# Vorlage fuer die Release-Signatur. Die ausgefuellte Datei liegt AUSSERHALB
+# des Repos, das Repo ist oeffentlich. Gradle findet sie ueber die
+# Umgebungsvariable LU_ANDROID_KEY_PROPERTIES (app/build.gradle.kts):
+#
+#   export LU_ANDROID_KEY_PROPERTIES="$HOME/.lu-mobile-signing/wegwerf/key.properties"
+#
+# Ohne die Variable baut der Release unsigniert. Ein Debug-Bau braucht sie nie.
+# Eine key.properties in diesem Ordner wird nicht von selbst gelesen.
+#
+# Wegwerf-Schluessel fuer einen Platzhalter-Release:
+#   sh scripts/mobile/release/make-wegwerf-keystore.sh
+storeFile=
+storePassword=
+keyAlias=
+keyPassword=

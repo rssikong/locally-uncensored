@@ -1,0 +1,258 @@
+{
+ "name": "/create/showcase",
+ "art": "seite",
+ "quelle": "integ-306",
+ "route": "/create/showcase",
+ "strang": "create",
+ "code": "K13",
+ "lage": {
+  "route": "/create/showcase",
+  "screen": "m-create-showcase-screen",
+  "blaetter": [],
+  "dialog": [],
+  "reiter": null,
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back-under",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-create-showcase-screen",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-create-showcase-card",
+   "tag": "article",
+   "rolle": "article",
+   "sichtbar": true,
+   "bedienbar": false,
+   "mId": "image",
+   "box": [
+    358,
+    298
+   ]
+  },
+  {
+   "id": "m-create-showcase-card",
+   "tag": "article",
+   "rolle": "article",
+   "sichtbar": true,
+   "bedienbar": false,
+   "mId": "edit",
+   "box": [
+    358,
+    298
+   ]
+  },
+  {
+   "id": "m-create-showcase-card",
+   "tag": "article",
+   "rolle": "article",
+   "sichtbar": true,
+   "bedienbar": false,
+   "mId": "removebg",
+   "box": [
+    358,
+    298
+   ]
+  },
+  {
+   "id": "m-create-showcase-card",
+   "tag": "article",
+   "rolle": "article",
+   "sichtbar": true,
+   "bedienbar": false,
+   "mId": "upscale",
+   "box": [
+    358,
+    298
+   ]
+  },
+  {
+   "id": "m-create-showcase-card",
+   "tag": "article",
+   "rolle": "article",
+   "sichtbar": true,
+   "bedienbar": false,
+   "mId": "eraser",
+   "box": [
+    358,
+    298
+   ]
+  },
+  {
+   "id": "m-create-showcase-card",
+   "tag": "article",
+   "rolle": "article",
+   "sichtbar": true,
+   "bedienbar": false,
+   "mId": "video",
+   "box": [
+    358,
+    298
+   ]
+  },
+  {
+   "id": "m-create-showcase-card",
+   "tag": "article",
+   "rolle": "article",
+   "sichtbar": true,
+   "bedienbar": false,
+   "mId": "animate",
+   "box": [
+    358,
+    276
+   ]
+  },
+  {
+   "id": "m-create-showcase-card",
+   "tag": "article",
+   "rolle": "article",
+   "sichtbar": true,
+   "bedienbar": false,
+   "mId": "character",
+   "box": [
+    358,
+    298
+   ]
+  },
+  {
+   "id": "m-create-showcase-card",
+   "tag": "article",
+   "rolle": "article",
+   "sichtbar": true,
+   "bedienbar": false,
+   "mId": "lipsync",
+   "box": [
+    358,
+    298
+   ]
+  },
+  {
+   "id": "m-create-showcase-card",
+   "tag": "article",
+   "rolle": "article",
+   "sichtbar": true,
+   "bedienbar": false,
+   "mId": "music",
+   "box": [
+    358,
+    298
+   ]
+  },
+  {
+   "id": "m-create-showcase-card",
+   "tag": "article",
+   "rolle": "article",
+   "sichtbar": true,
+   "bedienbar": false,
+   "mId": "extend",
+   "box": [
+    358,
+    298
+   ]
+  },
+  {
+   "id": "m-create-showcase-card",
+   "tag": "article",
+   "rolle": "article",
+   "sichtbar": true,
+   "bedienbar": false,
+   "mId": "motion",
+   "box": [
+    358,
+    298
+   ]
+  },
+  {
+   "id": "m-create-showcase-actions",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "signed-out",
+   "box": [
+    358,
+    108
+   ]
+  },
+  {
+   "id": "m-create-showcase-cloud",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Sign in to LU Cloud",
+   "el": "K13.1",
+   "box": [
+    358,
+    48
+   ]
+  },
+  {
+   "id": "m-create-showcase-plans",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "See plans",
+   "risiko": "paid",
+   "el": "K13.2",
+   "box": [
+    358,
+    48
+   ]
+  }
+ ]
+}

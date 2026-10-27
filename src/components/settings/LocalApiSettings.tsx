@@ -25,7 +25,7 @@ import { HINWEIS_TEXT } from '../../lib/hinweis'
  * qualifizierter Name: wer ihn kopiert, lernt die Namensform gleich mit.
  */
 export function LocalApiSettings() {
-  const { port, lan, token, corsOrigins, laeuft, fehler, setPort, setLan, setCors, neuesToken, starten, stoppen, auffrischen } = useLocalApiStore()
+  const { port, lan, token, corsOrigins, mitLuStarten, laeuft, fehler, setPort, setLan, setCors, setMitLuStarten, neuesToken, starten, stoppen, auffrischen } = useLocalApiStore()
   const [zeigeToken, setZeigeToken] = useState(false)
   const [kopiert, setKopiert] = useState<string | null>(null)
   // Der Rohtext bleibt lokal: gespeichert wird nur, was die Pruefung
@@ -140,6 +140,18 @@ export function LocalApiSettings() {
             />
           </div>
         </div>
+      </div>
+
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="t-micro text-gray-500">Start with LU</div>
+          <div className="t-micro text-gray-600">Starts the API every time LU opens, with the settings above. Useful when LU runs on a server.</div>
+        </div>
+        <InlineToggle
+          enabled={mitLuStarten}
+          onChange={() => setMitLuStarten(!mitLuStarten)}
+          label={mitLuStarten ? 'on' : 'off'}
+        />
       </div>
 
       <div className="space-y-1">

@@ -12,7 +12,9 @@ interface Props {
 // Upgrade of src/components/settings/SliderControl.tsx — same neutral-grey fill
 // and thumb as the live app, plus a unit + tabular-mono value readout.
 export function Slider({ label, value, min, max, step, onChange, unit, format }: Props) {
-  const pct = ((value - min) / (max - min)) * 100
+  // Held inside the track: a value outside min..max (a stored setting from a
+  // wider range) drew the bar and the thumb past the end of the slider.
+  const pct = max > min ? Math.min(100, Math.max(0, ((value - min) / (max - min)) * 100)) : 0
   const display = format ? format(value) : `${value}${unit ? ' ' + unit : ''}`
   return (
     <div className="space-y-1.5">

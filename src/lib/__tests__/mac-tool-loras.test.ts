@@ -18,7 +18,8 @@ describe('macToolLoras', () => {
   })
 
   it('holds the strength inside what the tool accepts', () => {
-    expect(macToolLoras('ink', 40, LISTED)).toEqual({ use: [{ name: 'styles/ink.safetensors', strength: 10 }] })
+    expect(macToolLoras('ink', 40, LISTED)).toEqual({ use: [{ name: 'styles/ink.safetensors', strength: 20 }] })
+    expect(macToolLoras('ink', -15, LISTED)).toEqual({ use: [{ name: 'styles/ink.safetensors', strength: -15 }] })
     expect(macToolLoras('ink', Number.NaN, LISTED)).toEqual({ use: [{ name: 'styles/ink.safetensors', strength: 1 }] })
   })
 

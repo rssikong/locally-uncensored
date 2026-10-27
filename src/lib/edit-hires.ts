@@ -1,0 +1,31 @@
+import { qwenEditResolution } from '../api/dynamic-workflow'
+import { isQwenImageEditModel } from './edit-references'
+import { editCanvas } from './image-engines'
+import type { ImageRef } from './image-ref'
+
+/**
+ * The canvas a local ComfyUI Edit comes out at, before Native HiRes scales
+ * it. In Create the sliders are the canvas; in Edit the source picture is:
+ *
+ * - Qwen-Image 2.1 edits on the pixel budget of the sliders, in the shape of
+ *   the source (TextEncodeQwenImage21 `resolution`, as `editCanvas` mirrors).
+ * - Qwen-Image-Edit 2509/2511 goes through FluxKontextImageScale, which picks
+ *   the trained size closest to the source, about one megapixel.
+ * - Every other edit encodes the source as it is (VAEEncode).
+ *
+ * An estimate for the size line and the 4096 limit: the HiRes node itself
+ * scales whatever latent the first pass made (LatentUpscaleBy, api/hires-fix).
+ */
+export function editHiresBase(opts: {
+  source: Pick<ImageRef, 'width' | 'height'> | null | undefined
+  width: number
+  height: number
+  modelType?: string
+  modelName?: string
+}): { width: number; height: number } | null {
+  const { source, width, height, modelType, modelName } = opts
+  if (!source || !(source.width > 0) || !(source.height > 0)) return null
+  if (modelType === 'qwenimage') return editCanvas(qwenEditResolution(width, height), source)
+  if (modelType === 'qwenimage1' && modelName && isQwenImageEditModel(modelName)) return editCanvas(1024, source)
+  return { width: source.width, height: source.height }
+}

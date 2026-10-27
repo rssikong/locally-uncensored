@@ -1,0 +1,86 @@
+{
+ "name": "alter-ja-appstore",
+ "art": "zustand",
+ "quelle": "integ-306",
+ "preset": "appstore",
+ "lage": {
+  "route": "/welcome",
+  "screen": "m-onboarding-screen",
+  "blaetter": [],
+  "dialog": [],
+  "reiter": null,
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-onboarding-screen",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-onboarding-intro",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    225
+   ]
+  },
+  {
+   "id": "m-onboarding-next",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Get started",
+   "el": "A1.1",
+   "box": [
+    358,
+    48
+   ]
+  },
+  {
+   "id": "m-onboarding-account",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "I have an LU Cloud account",
+   "el": "A1.2",
+   "box": [
+    358,
+    48
+   ]
+  }
+ ]
+}

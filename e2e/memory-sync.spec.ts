@@ -169,14 +169,17 @@ test('explicit UI sync uploads, downloads, preserves conflicts and persists shar
   records = records.map(record => ({ ...record, revision: 7, payload: { ...record.payload, content: 'Delete this cloud fact', updatedAt: 7 } }))
   await sync.click()
   await expect(conflict).toBeVisible()
-  await page.getByRole('button', { name: 'Delete entry', exact: true }).click()
+  await page.getByTitle('Delete this memory', { exact: true }).click()
+  await page.getByTitle('Click again to delete', { exact: true }).click()
+  // The Undo bar of a delete is a status line of its own (3.0.8); OK closes it.
+  await page.getByRole('button', { name: 'Dismiss', exact: true }).click()
   await expect(page.getByRole('group', { name: 'Memory conflict 1', exact: true })).toHaveCount(0)
   await sync.click()
   await expect(page.getByRole('status')).toHaveText('Synced 1 uploads and 0 downloads. 0 conflicting memories left unchanged.')
   expect(records[0]).toMatchObject({ deleted: true, payload: null, revision: 8 })
   await page.reload()
   await accountFixture(page)
-  await expect(page.getByRole('button', { name: 'Delete entry', exact: true })).toHaveCount(0)
+  await expect(page.getByTitle('Delete this memory', { exact: true })).toHaveCount(0)
   await appModules(page, ['/src/stores/memoryStore.ts'])
   const baseline = await page.evaluate(() => {
     const { useMemoryStore } = (window as unknown as AppWindow).__APP__['/src/stores/memoryStore.ts'] as typeof import('../src/stores/memoryStore')
@@ -228,7 +231,8 @@ test(`a ${responseMode} first-upload response cannot revive a locally deleted me
   }
   await expect(page.getByRole('status')).toContainText('Some changes may already be saved')
   expect(records[0].deleted).toBe(false)
-  await page.getByRole('button', { name: 'Delete entry', exact: true }).click()
+  await page.getByTitle('Delete this memory', { exact: true }).click()
+  await page.getByTitle('Click again to delete', { exact: true }).click()
   await appModules(page, ['/src/lib/memory-persistence.ts'])
   await page.evaluate(async () => {
     await ((window as unknown as AppWindow).__APP__['/src/lib/memory-persistence.ts'] as typeof import('../src/lib/memory-persistence')).flushMemoryPersist()
@@ -245,6 +249,6 @@ test(`a ${responseMode} first-upload response cannot revive a locally deleted me
   await page.getByRole('button', { name: 'Sync account memories', exact: true }).click()
   await expect(page.getByRole('status')).toHaveText('Synced 1 uploads and 0 downloads. 0 conflicting memories left unchanged.')
   expect(records[0]).toMatchObject({ revision: 2, payload: null, deleted: true })
-  await expect(page.getByRole('button', { name: 'Delete entry', exact: true })).toHaveCount(0)
+  await expect(page.getByTitle('Delete this memory', { exact: true })).toHaveCount(0)
 })
 }

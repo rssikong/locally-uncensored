@@ -2,6 +2,294 @@
 
 All notable changes to Locally Uncensored are documented here.
 
+## [3.0.8] - 2026-10-27
+
+Web search in the chat finds an answer again: LU asks five search services in
+turn, needs no key for any of them and reads a page the way a reader view
+does. A video made in the chat now plays in the chat, Wan 2.1 clips are mp4
+files, and a long video no longer holds the chat: it renders in the
+background while you write on. A picture attached in the chat reaches the
+image tool. With two graphics cards, chat and ComfyUI can each get their own.
+The LU Engine plans a model's memory from the file itself, says what a long
+context costs and offers a shorter one with one click, and on Windows it no
+longer keeps a second copy of the model in memory. AMD cards on Windows get
+AMD's current ROCm build, Intel Arc cards get their own. Memories can be
+deleted again, the onboarding no longer runs twice, LU Cloud users see an
+outage notice in the app, and icons stay visible in light mode. New tools:
+the chat can read and change LU's settings with a confirmation card, the
+Model Manager can make a copy of a local model that refuses less, and
+Settings, Storage puts models, gallery and runtime in one folder of your
+choice. The temperature is held to 1.5, where models still write sense.
+What has only run in automated tests is listed under Known limits. LU Cloud
+keeps its open models: seventeen video models and nine image models in the
+cloud catalogue.
+
+### Added
+
+- **Web search with five services in turn, no key needed.** The chat's
+  web_search asks Exa first, then You.com, a SearXNG instance, DuckDuckGo and
+  Wikipedia, and moves on when one does not answer or blocks the request.
+  DuckDuckGo's bot page is recognised as a failure instead of read as an empty
+  result. There is no limit on the number of searches in one answer. Only when
+  every service fails does the model read one clear sentence telling it not
+  to retry and to answer from what it knows. web_fetch reads a page on your
+  machine with a port of Mozilla Readability and falls back to Exa when the
+  page cannot be read. Settings lists every service in its order. LU Cloud
+  chats use the same search, running in the app. (Discord, the search loop
+  since 3.0.7)
+- **A long video no longer holds the chat.** When the model starts a video or
+  a long image job and it takes longer than a short wait, the turn ends with
+  the model's sentence and the clip renders in the background. You can write
+  on. When it is done it appears in the message that asked for it, and the
+  model learns about it from a note on the next turn. Stop on a later turn
+  does not cancel it. A short render stays in the turn as before, and the
+  setting can switch the background off. (Discord)
+- **A graphics card per task.** With two cards, Settings can put the chat
+  model on one and ComfyUI on the other, so a video does not push the chat
+  model out of memory. ComfyUI is started with only its card visible, the LU
+  Engine with its own device.
+- **The LU Engine says what a long context costs.** The start plans layers,
+  context and cache from the model file's own header, the way llama.cpp
+  counts them, including sliding window and mixture of experts models. When a
+  model does not fit, the notice says how many layers fit at your context and
+  at a shorter one, for example "With 64K context, 24 of 60 layers fit on the
+  graphics card ... With 16K, 30 fit", with buttons Context 16K and KV q8_0.
+  A context you set yourself and the cache type are never changed without
+  you. A context nobody chose is as much as fits, up to 32K. After each start
+  the plan is compared with what llama.cpp reserved, and the next start
+  corrects itself.
+- **Tokens per answer and /usage.** Each reply shows the tokens it took, and
+  /usage in the chat sums up the conversation. (Discord)
+- **LoRA stack: search, strength from -20 to 20, copy a name.** The LoRA list
+  in Create gets a search field, keeps its place and copies a LoRA's name with
+  one click; the strength slider takes -20 to 20. (Discord)
+- **"Start with LU" for the Local API.** The Local API can come up on every
+  launch of the app. (Discord)
+- **Outage notice for LU Cloud.** When LU Cloud announces an outage, the app
+  shows a short line you can close, and a failed cloud chat, agent or Create
+  run says what is going on instead of a raw error. The check runs only while
+  you are signed in.
+- **Kimi K3.1 Pro** is in the LU Cloud model list. In the Model Manager Kimi K3
+  and K3.1 Pro are listed but cannot be started locally yet.
+- **Settings from the chat.** Ask "turn on auto compact" or "what is my
+  temperature?" and the model reads or changes the setting. Every change
+  shows a card with old and new value, Accept and Decline, also in Bypass,
+  and stays as a row with Undo. Computer control, remote access, the Local
+  API, permissions, keys, paths, plugins and persona texts cannot be changed
+  this way; a few switches only one way (towards the safer value). Sub-agents,
+  voice and workflow steps never get these tools.
+- **Remove refusals from a local model** (Model Manager, Abliteration). A
+  button makes a copy of an installed GGUF that refuses fewer requests, next
+  to the original, which stays untouched. LU finds the original weights,
+  shows the license (Llama, Gemma and anything not on the open list need
+  their note confirmed, 18+ once), plans memory, disk and time before
+  anything is downloaded and says when a model is too large for the machine.
+  It runs Heretic 1.4.0 (AGPL-3.0-or-later) in an environment of its own,
+  quantizes the copy to the original's type and checks both with the same
+  150 short prompts. Stop keeps the download and the checkpoint.
+- **Storage in one place.** Settings, Storage (was Model Storage) has a
+  Storage folder: models of the LU Engine, ComfyUI and voice, the gallery and
+  the runtime go there. Check shows what goes where and the free space per
+  drive; "Use for new files only" moves nothing, "Move the files and use it"
+  moves file by file, overwrites nothing and can be cancelled. (Discord)
+- **Native HiRes in Edit**, on local ComfyUI and on a Mac, as in Create.
+  (Discord)
+- **Your phone on this computer (Remote).** Pair a phone by QR code; the
+  channel between them is sealed, over the wi-fi and, when "Reach this
+  computer from anywhere" is on, over the internet. Chats can be shared with
+  the phone and continued there ("Continue on phone"), a phone's turn follows
+  the rights you gave that device, and Create can run on this computer for
+  the phone. On Windows LU says when the firewall blocks the wi-fi way and
+  allows it on a click. The phone app that uses this ships in its own
+  release.
+- Binary files such as ROMs reach the tools with their full path, and the
+  chip says where an attached file goes. (Discord)
+- Docs: which AMD cards run what, and LU on a Linux server without a screen.
+
+### Changed
+
+- **Ask in Code asks before every external tool.** REA and the tools of any
+  other MCP server show the same card as a shell command, and No runs
+  nothing. Bypass does not ask.
+
+- **A video made in the chat plays in the chat.** It used to show as a broken
+  picture called "Generated image" with only a download link. It now plays
+  with controls in Chat, Agent and Code, also after the app or ComfyUI
+  restarts and after the chat is opened again. (Discord)
+- **Wan 2.1 clips are mp4.** Wan 2.1 used to save an animated WebP, a picture
+  with no controls and no sound, while the other video models gave mp4. Every
+  silent video path now saves mp4 (H.264), in the chat and in Create. Older
+  WebP clips in the gallery stay moving pictures.
+- **A character trained on LU Cloud says whether it can run on your machine.**
+  Only a Z-Image character can be saved for local use. Other characters show
+  a fixed Cloud only label instead of Use locally, and cloud training says
+  under the model pick that characters trained on Flux or Qwen run in LU Cloud
+  only. The 3.0.7 notes said every cloud character could run on your machine;
+  that was wrong.
+- **The answer starts sooner in a long chat.** The clock, memories and
+  retrieved passages used to sit in the system prompt, in front of the whole
+  conversation, so every new message made the engine read the entire chat
+  again. They now ride behind the newest message. In our measurement the
+  first step of the second message went from 10.1 s to 0.9 s on a Mac
+  (Qwen3.5-9B) and from 5.7 s to 0.8 s on Windows. While the model reads, the
+  status says "Reading the conversation" with its size instead of "Starting".
+- **REA shows only in Agent and Code**, the two places its tools reach.
+- **A half-written message waits for you.** Text and attachments in the
+  message field stay when you open Create, Models or Settings and come back,
+  each chat with its own, while the app runs.
+- **Voice can search the web without the agent switch** (GitHub #187). Files,
+  commands and the screen stay behind the agent switch.
+- **The large view in Create** opens with the prompt folded, steps through the
+  gallery with the arrows and the arrow keys, and zooms with the mouse wheel.
+- **AMD on Windows uses AMD's current ROCm index** with the right package for
+  each card (Radeon RX 7000 and 9000, PRO and Ryzen AI chips); Intel Arc cards
+  get the XPU build of PyTorch. A setup that runs ComfyUI on DirectML starts
+  it on DirectML instead of the processor. Force GPU and the processor notice
+  send cards LU serves to Repair environment. Settings, Hardware shows what LU
+  installs on this machine. (Discord)
+- **Edit images are named the way the Qwen encoders label them**, so "image
+  2", "IMAGE 2." and "picture 2" all reach the model the same way, and each
+  tile in the reference strip shows its name and adds it to the prompt. A
+  measure after a number ("2 m") is a size, not an image reference. (Discord)
+- A batch in Edit keeps the image its list was made from as the reference.
+  (Discord)
+- **Temperature is held to 1.5.** At 1.9 every model wrote mixed-language
+  noise. The sliders stop at 1.5, a value above it from an older version goes
+  back to the default, from 1.2 a warning says what high values do and offers
+  Reset. Agent turns hold their own ceiling of 1.0. (Discord)
+- The image and video tools of the chat end honestly: a render that stopped
+  or never started is not reported as delivered, Stop ends exactly that
+  render, "attachment 2" or an earlier result by its name is the picture
+  that is used, and a ComfyUI that crashed is called a crash with its last
+  error line. An edit changes what it was asked to.
+
+### Fixed
+
+- **A picture attached in the chat reaches the image tool.** image_generate
+  and video_generate failed with "could not read input image image.png (HTTP
+  404)". The attachment now goes in by its number in the chat. (Discord)
+- **The LU Engine no longer keeps a second copy of the model in memory on
+  Windows.** With layers on the graphics card the whole file stayed mapped in
+  RAM as well. It now starts without the mapping when layers go to the card;
+  on a processor-only start and on Mac and Linux nothing changes. A model that
+  is unused can be unloaded. (Discord)
+- **Memories can be deleted.** The delete buttons showed only on hover, and
+  some Linux desktops report no hover at all. They are always visible now;
+  one, several or all memories can be deleted with a confirmation and Undo,
+  and a deleted memory is not brought back by the automatic extraction. The
+  same for documents. (Discord)
+- **The onboarding no longer runs twice on a first start**, on Windows in
+  particular.
+- **PDFs in the Documents panel work on a Mac.** Every PDF failed with
+  "undefined is not a function". A scanned PDF without text now says so.
+- The Frames slider above the prompt for MiniMax H3 has the range of the model
+  family; it drew three times too wide at 362 frames. (Discord)
+- An engine that finds no graphics card says which driver is missing.
+  (Discord)
+- Workflows & Tags lists only models Create can pick.
+- Light mode: icons in the gallery, the large view, the stage, Voice and
+  elsewhere are visible again. (Discord)
+- Native HiRes on Qwen-Image 2.1, Noct Q, FLUX 2 and ERNIE-Image made the
+  picture four times the size with doubled faces; the pass now follows the
+  model's own grid. Width and height can be typed by hand. (Discord)
+- An attached picture is edited also when ComfyUI was not running yet, and a
+  picture earlier in the chat no longer makes a model without eyes refuse
+  every later message.
+- **Wan 2.2 14B runs from Animate and Video.** LU loaded the 5B model's VAE
+  for the 14B models and the run stopped with a tensor size error. With the
+  high noise and the low noise model in the same folder, LU runs both one
+  after the other like ComfyUI's own template. (GitHub #193)
+- Character Studio finds the Z-Image base files in every folder ComfyUI uses,
+  and Download base files always says what happened. It used to call files
+  missing that ComfyUI already had and then do nothing. (Discord)
+- A folder with just a main.py is no longer taken for ComfyUI, and Comfy
+  Desktop's installs are found and start from their own environment.
+- **The LU Engine starts when the Windows user name has letters outside
+  English**, such as "Şaban Yılmaz". The engine stopped with "not a
+  directory" for its cache folder. (GitHub #190)
+- On a Mac, the image and video engines pass over a Python their packages do
+  not exist for yet, such as Homebrew's 3.15, and use one that fits or LU's
+  own. A broken environment from such an attempt is built again. (GitHub #188)
+- The Linux AppImage's icon link points inside the AppImage instead of at the
+  folder it was built in. (GitHub #191)
+- On a Mac, Train new shows the trigger word field also before Z-Image Turbo
+  is installed, with a button to install it, and Create says so before the
+  photos are staged. Before, the field was missing and the tab looked broken.
+  (GitHub #194)
+- **In Code, the mode the button shows is the mode the run gets.** On the
+  start screen, before a coding chat existed, the button showed Ask while the
+  first run took the mode picked last anywhere, Bypass included. The pick on
+  the start screen now counts, and when the two disagree the stricter one
+  runs. (Discord)
+- In Agent, switching a tool category off and on again no longer turns "asks"
+  into "runs without asking".
+- REA keeps its tools on a follow-up message, finds Node.js where a terminal
+  finds it (nvm, fnm, mise, Volta and others, and the login shell on Linux)
+  and looks twice when it starts with the app. A shortened procedure list
+  points at the search that finds the rest. (Discord)
+- A model that repeats the same plan in alternation instead of acting is
+  steered once with its own words and then stopped. (Discord)
+
+### Security
+
+- SECURITY.md describes how to report a vulnerability, the response times and
+  what has been reviewed. There has been no independent audit yet.
+- Every push and every release now runs CodeQL, OpenSSF Scorecard and a
+  dependency audit (npm and cargo). Each release carries a CycloneDX SBOM and
+  a SHA256SUMS.txt.
+- Updated dependencies with known vulnerabilities: zip, zstd, rustls,
+  rustls-webpki, webpki-root-certs, tokio and others. One accepted exception: the zip
+  version inside the updater, which only opens archives whose signature it
+  has checked.
+- A new page locallyuncensored.com/security/.
+
+### Known limits
+
+- We clicked through a build made like the release on one Windows machine:
+  chat, web search, settings, settings from the chat, memory, light mode,
+  Storage and the Remote settings. Image and video, the LU Engine with a
+  GGUF file and LU Cloud were not part of that run.
+- Two graphics cards: the background run and the card picks have run in
+  automated tests with simulated cards. A real machine with two cards has not
+  run them yet.
+- AMD on Windows: the packages were resolved against AMD's real index, and
+  the detection was tested with simulated cards, among them a Ryzen system
+  with an RX 9070 XT. No AMD card has run it. Whether an integrated GPU counts
+  as device 0 is not known.
+- The memory plan was checked against llama.cpp for twelve models and in 39
+  runs on Windows with an RTX 3060. Linux, a real CUDA engine and a 31B model
+  on a card have not run. The Context 16K and KV q8_0 buttons have run in
+  automated tests only.
+- Web search: the services are free and can limit or change at any time.
+  When web_fetch falls back to Exa, Exa sees the address of the page.
+- The faster start was measured on one Mac and one Windows machine. Part of
+  the 53 seconds one user saw on Windows was not in the engine; the app now
+  logs where the first wait goes.
+- Kimi K3 and K3.1 Pro do not run in the LU Engine yet; the llama.cpp version
+  LU ships cannot load them.
+- A character trained on Flux or Qwen in LU Cloud still runs in LU Cloud only.
+- Settings from the chat ran with a 9B model on a Mac (change, Undo, a
+  locked setting refused) and, reading only, in the built app on Windows. A
+  small model may still word its answer oddly after a refusal. The phone app
+  does not offer these tools.
+- Abliteration: has run end to end from the command line on a Mac; the run
+  through the built app is still open. It needs a model's original weights
+  from Hugging Face, and the run takes long and needs several times the
+  model's size on disk.
+- Remote with a phone: pairing, shared chats, approvals on the phone and
+  Create from the phone ran with the Android emulator and the iOS simulator
+  against a Mac. The phone app that pairs with this is not released yet.
+- Wan 2.2 14B: the graph was checked against a real ComfyUI; a real 14B
+  render has not run.
+- Train new on a Mac without Z-Image Turbo: checked in automated tests; a
+  real training run through the built app has not run.
+- A Windows user name outside English: the engine and its cache folder ran
+  with such a folder on one Windows machine, not with a whole Windows account
+  of that name.
+- Storage: moving models, gallery and runtime to another drive and back ran
+  in the built app on Windows with a small test set. Native HiRes in Edit has
+  not run against a real ComfyUI edit or on a Mac yet.
+
 ## [3.0.7] - 2026-10-19
 
 Trained characters now work in every part of Create and in chat, and a Mac can
@@ -227,7 +515,7 @@ and nine image models in the cloud catalogue.
 - **A trained local character can be deleted.** The Use character shelf has a
   delete button for a character trained on this machine. It asks first, and the
   file goes to the Recycle Bin or Trash.
-- **A character trained on LU Cloud can run on your machine.** Use locally on
+- **A Z-Image character trained on LU Cloud can run on your machine.** Use locally on
   the cloud character shelf saves a Z Image character into the LoRA folder of
   this machine, so the local Use character shelf lists it. If a file of that
   name is already there, LU stops and says so instead of replacing it.

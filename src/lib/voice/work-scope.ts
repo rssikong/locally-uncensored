@@ -1,8 +1,10 @@
 // What a voice session may do on the computer, and where.
 //
 // Two switches sit at the top of the Voice surface. "Agent" decides whether
-// the model gets tools at all. "Where it may work" decides how far they
-// reach:
+// the model may work on the computer. Off, it still looks things up on the
+// web, as the plain chat does since 3.0.7 (GitHub #187: a voice question
+// about today got an answer from the training data). "Where it may work"
+// decides how far the agent reaches:
 //
 //   workspace  Files only inside the folder of the session (the file tools
 //              are held there by the path jail on the Rust side), commands
@@ -29,7 +31,7 @@ import type { AgentWorkspace } from '../../types/agent-workspace'
 export type VoiceWorkScope = 'workspace' | 'computer'
 
 export interface VoiceWork {
-  /** The model gets tools. */
+  /** The model gets the tools of the agent. Off, only the web tools. */
   agent: boolean
   scope: VoiceWorkScope
 }
@@ -57,15 +59,22 @@ export function thinkingBudgetStep(tokens: number): number {
 // `screenshot` is the older tool of the long catalog that captures the display.
 const SCREEN_TOOLS: ReadonlySet<string> = new Set([COMPUTER_TASK_TOOL_NAME, COMPUTER_USE_TOOL_NAME, 'screenshot'])
 const SHELL_TOOLS: ReadonlySet<string> = new Set(['shell_execute'])
+/**
+ * What a session has with the agent off: the web pair of the plain chat's
+ * tools (lib/chat-tool-intent.ts CHAT_TOOLS). Both only read, nothing on this
+ * computer changes. The chat's other three write a file or start a render,
+ * which a spoken conversation does not do without the agent.
+ */
+export const CONVERSATION_TOOLS: ReadonlySet<string> = new Set(['web_search', 'web_fetch'])
 
 export const AGENT_OFF_REFUSAL =
-  'Tools are switched off in this voice session. Tell the user that the Agent switch at the top of Voice turns them on.'
+  'With the agent off this voice session can only look things up on the web. Tell the user that the Agent switch at the top of Voice lets it work with files, commands and the screen.'
 export const SCREEN_REFUSAL =
   'This voice session may only work in its folder, not on the screen. Tell the user to set "Where it may work" at the top of Voice to "Whole computer" for that.'
 
 /** A tool the model is shown under these switches. */
 export function toolInScope(name: string, work: VoiceWork): boolean {
-  if (!work.agent) return false
+  if (!work.agent) return CONVERSATION_TOOLS.has(name)
   if (work.scope === 'workspace' && SCREEN_TOOLS.has(name)) return false
   return true
 }
@@ -77,6 +86,7 @@ export function toolInScope(name: string, work: VoiceWork): boolean {
  */
 export function levelInScope(name: string, level: PermissionLevel, work: VoiceWork): PermissionLevel {
   if (!toolInScope(name, work)) return 'blocked'
+  if (!work.agent) return level
   // A command cannot be held inside a folder, so the user sees each one.
   if (work.scope === 'workspace' && SHELL_TOOLS.has(name) && level === 'auto') return 'confirm'
   return level
@@ -168,7 +178,7 @@ export interface ScopeCall {
  * model was shown: a model can call a tool it was offered a minute ago.
  */
 export function scopeRefusal(call: ScopeCall, work: VoiceWork, workspaceRoot: string | null): string | null {
-  if (!work.agent) return AGENT_OFF_REFUSAL
+  if (!work.agent) return CONVERSATION_TOOLS.has(call.name) ? null : AGENT_OFF_REFUSAL
   if (work.scope !== 'workspace') return null
   if (SCREEN_TOOLS.has(call.name)) return SCREEN_REFUSAL
   if (call.name === 'shell_execute') {
@@ -185,7 +195,7 @@ export function scopeRefusal(call: ScopeCall, work: VoiceWork, workspaceRoot: st
 
 /** The line of the instructions that tells the model where it stands. */
 export function scopePromptLine(work: VoiceWork): string {
-  if (!work.agent) return ''
+  if (!work.agent) return 'You can look things up on the web. You cannot work with files, commands or the screen; if the user asks for that, say that the Agent switch at the top of Voice turns it on.'
   return work.scope === 'workspace'
     ? 'You may only work inside the workspace folder of this session. Use relative paths. You cannot use the screen. If the user asks for something outside the folder, say that "Where it may work" at the top of Voice has to be set to "Whole computer".'
     : 'You may work on the whole computer: files by absolute path, commands in any folder, and the screen when a screen tool is offered.'

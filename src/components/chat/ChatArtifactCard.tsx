@@ -1,8 +1,7 @@
 import { useState } from 'react'
 import { FileText, Download, Check, Copy } from 'lucide-react'
 import type { ChatArtifact } from '../../types/chat'
-import { isTauri, backendCall } from '../../api/backend'
-import { downloadFile } from '../../lib/chat-export'
+import { saveOrShare, saveSucceeded, type SaveOutcome } from '../../lib/save-or-share'
 import { formatBytes } from '../../lib/formatters'
 
 /**
@@ -19,9 +18,18 @@ function extOf(name: string): string {
 
 const PREVIEW_LINES = 200
 
+export type ArtifactSaveState = 'idle' | 'saving' | 'done' | 'failed'
+
+/** What the Download button shows after an attempt: "Saved" for a file that
+ *  went somewhere, "Not saved" for a failure, nothing for a cancel. */
+export function saveStateAfter(outcome: SaveOutcome): ArtifactSaveState {
+  if (saveSucceeded(outcome)) return 'done'
+  return outcome.status === 'error' ? 'failed' : 'idle'
+}
+
 export function ChatArtifactCard({ artifact }: { artifact: ChatArtifact }) {
   const [copied, setCopied] = useState(false)
-  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'done'>('idle')
+  const [saveState, setSaveState] = useState<ArtifactSaveState>('idle')
 
   const lines = artifact.content.split('\n')
   const preview = lines.slice(0, PREVIEW_LINES).join('\n')
@@ -34,23 +42,16 @@ export function ChatArtifactCard({ artifact }: { artifact: ChatArtifact }) {
   const handleDownload = async () => {
     if (saveState === 'saving') return
     setSaveState('saving')
-    // Tauri → native Save-As (returns the path, or null when the user cancels).
-    // If the command itself throws, fall back to a blob download. Browser → blob.
-    if (isTauri()) {
-      try {
-        await backendCall<string | null>('save_text_file_dialog', {
-          content: artifact.content,
-          defaultName: artifact.name,
-          extension: extOf(artifact.name),
-          extLabel: extOf(artifact.name).toUpperCase(),
-        })
-      } catch {
-        downloadFile(artifact.content, artifact.name, artifact.mime)
-      }
-    } else {
-      downloadFile(artifact.content, artifact.name, artifact.mime)
-    }
-    setSaveState('done')
+    // Desktop → native Save-As, a blob download if the command itself throws.
+    // Browser → blob. Phone → share sheet. One door: lib/save-or-share.ts.
+    const outcome = await saveOrShare(
+      { filename: artifact.name, mime: artifact.mime, text: artifact.content },
+      { extension: extOf(artifact.name), extLabel: extOf(artifact.name).toUpperCase(), anchorOnDialogFailure: true },
+    )
+    // "Saved" only when the file really went somewhere. It used to appear
+    // after a cancelled dialog too, and on a phone after the dialog command
+    // had failed outright.
+    setSaveState(saveStateAfter(outcome))
     setTimeout(() => setSaveState('idle'), 2000)
   }
 
@@ -85,7 +86,7 @@ export function ChatArtifactCard({ artifact }: { artifact: ChatArtifact }) {
           className="flex items-center gap-1 px-1.5 py-0.5 rounded t-micro font-medium bg-blue-500/15 text-blue-500 hover:bg-blue-500/25 border border-blue-500/30 transition-colors disabled:opacity-50 shrink-0"
         >
           {saveState === 'done' ? <Check size={11} /> : <Download size={11} />}
-          <span>{saveState === 'done' ? 'Saved' : saveState === 'saving' ? '…' : 'Download'}</span>
+          <span>{saveState === 'done' ? 'Saved' : saveState === 'failed' ? 'Not saved' : saveState === 'saving' ? '…' : 'Download'}</span>
         </button>
       </div>
       {/* Scrollable preview */}

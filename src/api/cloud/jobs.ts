@@ -2,6 +2,9 @@
 // fetch wrappers onto cloudFetch (bearer + base URL).
 // Pure HTTP, no store access; useCloudCreate owns the store choreography.
 
+import { assertCloudContentConsent } from '../../lib/cloud-content-gate'
+import { CONTENT_POLICY_RANK, contentPolicyCap } from '../../lib/content-policy-cap'
+import type { ContentPolicy } from '../../lib/content-policy-cap'
 import type { RenderKind, CloudQuota } from '../../lib/render/cloud-jobs'
 import { cloudFetch, jsonOrError, CloudJobError } from './client'
 import type { RenderOp } from '../../lib/render/cloud-jobs'
@@ -132,12 +135,34 @@ export type UploadRole = 'source' | 'mask' | 'train' | 'audio' | 'video'
 // for an account Create in chat is not released for. The Create tab passes
 // none and sends the requests it always sent.
 
-export async function uploadInput(file: Blob, role: UploadRole, origin?: JobOrigin): Promise<string> {
+/** What an upload can be given besides the file and its role. `signal` lets
+ *  the caller end the upload (the phone's Cancel), `origin` names an order of
+ *  the chat. */
+export interface UploadOptions {
+  signal?: AbortSignal
+  origin?: JobOrigin
+}
+
+/** The third argument is either the origin alone (how Create in chat calls
+ *  it) or the options above (how the phone calls it). */
+export async function uploadInput(
+  file: Blob,
+  role: UploadRole,
+  originOrOpts?: JobOrigin | UploadOptions,
+): Promise<string> {
+  const opts: UploadOptions = typeof originOrOpts === 'string' ? { origin: originOrOpts } : originOrOpts ?? {}
+  const origin = opts.origin
+  // The backstop of the consent (phone, M1): the screens ask, this refuses.
+  assertCloudContentConsent()
   const body = await file.arrayBuffer()
+  // A caller that hands in a signal can end the upload itself (a Cancel while
+  // a 40 MB clip goes up over a phone line). Without one the request runs to
+  // its own deadline, as it always did.
   const res = await cloudFetch(`/api/jobs/upload?role=${role}`, {
     method: 'POST',
     headers: { 'content-type': 'application/octet-stream', ...originHeaders(origin) },
     body,
+    ...(opts.signal ? { signal: opts.signal } : {}),
   })
   const { path } = await jsonOrError<{ path: string }>(res)
   return path
@@ -201,14 +226,26 @@ export async function submitCloudJob(
   submit: CloudJobSubmit,
   origin?: JobOrigin,
 ): Promise<CloudJobSubmitResult> {
+  assertCloudContentConsent()
   // A dropped or timed-out submit may have booked the job anyway (bug hunt
   // 01.10.2026, K8): it ran, it was charged, and the desktop, which has no job
   // list, never saw it. The request id was minted for exactly this and never
   // used: the same body goes out again, and the server replays the booking
   // it already made instead of charging twice.
+  // A store build of the phone app sends the upper limit of the content policy
+  // with every job (lib/content-policy-cap.ts), whatever the account says and
+  // whatever a caller put there. No cap on the desktop: nothing is added.
+  // As a number (0 strict, 1 soft), not as a word: the server runs its word
+  // lists over every TEXT in params, and a field of ours must never be part of
+  // what is judged there.
+  const cap = contentPolicyCap()
   const body = JSON.stringify({
     ...submit,
-    params: { ...submit.params, client_request_id: submit.params.client_request_id ?? crypto.randomUUID() },
+    params: {
+      ...submit.params,
+      client_request_id: submit.params.client_request_id ?? crypto.randomUUID(),
+      ...(cap ? { content_policy_cap: CONTENT_POLICY_RANK[cap] } : {}),
+    },
   })
   let res: Response
   for (let attempt = 1; ; attempt++) {
@@ -355,7 +392,20 @@ export async function pollJob(
         status >= 400 && status < 500 && status !== 401 && status !== 408 && status !== 429
       failures += 1
       if (definitive || failures >= MAX_POLL_FAILURES) throw err
-      if (Date.now() >= deadline) throw new CloudJobError('render timed out', 0)
+      if (Date.now() >= deadline) {
+        // The deadline is a wall clock, and a request can die for a reason
+        // that has nothing to do with the render: a laptop lid, a phone that
+        // froze the app with the request open. Both come back long after the
+        // deadline with one failed request and a job that finished meanwhile.
+        // So the server is asked once more before the customer is told that
+        // the render is still running.
+        const last = await getJob(id).catch(() => null)
+        if (last && TERMINAL.has(last.status)) {
+          opts.onTick?.(last)
+          return last
+        }
+        throw new CloudJobError('render timed out', 0)
+      }
       await sleep(Math.min(intervalMs * failures, 15_000), opts.signal)
       continue
     }
@@ -370,7 +420,7 @@ export { CloudJobError }
 
 // ── Kontoeinstellung: Inhaltsrichtlinie ─────────────────────────────
 
-export type ContentPolicy = 'strict' | 'soft' | 'off'
+export type { ContentPolicy } from '../../lib/content-policy-cap'
 
 export interface ContentPolicyState {
   policy: ContentPolicy

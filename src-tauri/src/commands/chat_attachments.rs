@@ -18,10 +18,13 @@
 //! is 64 lowercase hex characters or the call is refused.
 
 use crate::os_error;
+// Only the desktop dialog commands below use these two.
+#[cfg_attr(mobile, allow(unused_imports))]
 use base64::Engine;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
+#[cfg_attr(mobile, allow(unused_imports))]
 use std::io::{BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -202,6 +205,7 @@ pub struct ExportOutcome {
 }
 
 /// Save As for a chat export (one chat or all), with the images put back in.
+#[cfg(desktop)]
 #[tauri::command]
 #[allow(non_snake_case)]
 pub async fn export_chats_dialog(content: String, defaultName: String) -> Result<Option<ExportOutcome>, String> {
@@ -236,8 +240,37 @@ pub async fn export_chats_dialog(content: String, defaultName: String) -> Result
     .map_err(|e| e.to_string())?
 }
 
+/// The phone version. The export is streamed into a temp file of the app, the
+/// same way the desktop streams it to the chosen path, and the system's own
+/// picker saves it from there (`mobile_native::save_with_picker`). `path` is
+/// then a content address on Android and a file address on iOS.
+#[cfg(mobile)]
+#[tauri::command]
+#[allow(non_snake_case)]
+pub async fn export_chats_dialog(
+    app: tauri::AppHandle,
+    content: String,
+    defaultName: String,
+) -> Result<Option<ExportOutcome>, String> {
+    let name = crate::commands::mobile_native::file_name_for(Some(defaultName), Some("json"), "lu-chats.json");
+    let saved = crate::commands::mobile_native::save_with_picker(&app, &name, Some("application/json"), move |file| {
+        let dir = attachment_dir()?;
+        std::fs::File::create(file)
+            .and_then(|f| {
+                let mut out = BufWriter::new(f);
+                let missing = write_export(&content, &mut out, &dir)?;
+                out.flush()?;
+                Ok(missing)
+            })
+            .map_err(|e| format!("Write failed: {}", os_error::english(&e)))
+    })
+    .await?;
+    Ok(saved.map(|(path, missing)| ExportOutcome { path, missing }))
+}
+
 /// Open dialog for a chat import. Returns the file with its inline images
 /// already moved into attachments, or None when the user cancelled.
+#[cfg(desktop)]
 #[tauri::command]
 pub async fn import_chats_dialog() -> Result<Option<String>, String> {
     let Some(handle) = rfd::AsyncFileDialog::new().add_filter("JSON", &["json"]).pick_file().await else {
@@ -252,9 +285,16 @@ pub async fn import_chats_dialog() -> Result<Option<String>, String> {
     .map_err(|e| e.to_string())?
 }
 
+#[cfg(mobile)]
+#[tauri::command]
+pub async fn import_chats_dialog() -> Result<Option<String>, String> {
+    Err(crate::commands::filesystem::NO_FILE_DIALOG.to_string())
+}
+
 /// Save one chat image as a real image file. The WebView's own download path
 /// (an anchor on a blob URL) is unreliable in WebView2, see
 /// `save_binary_file_dialog`.
+#[cfg(desktop)]
 #[tauri::command]
 #[allow(non_snake_case)]
 pub async fn save_chat_attachment_dialog(id: String, defaultName: String, mimeType: String) -> Result<Option<String>, String> {
@@ -283,6 +323,38 @@ pub async fn save_chat_attachment_dialog(id: String, defaultName: String, mimeTy
     let path = handle.path().to_path_buf();
     std::fs::write(&path, &bytes).map_err(|e| format!("Write failed: {}", os_error::english(&e)))?;
     Ok(Some(path.to_string_lossy().into_owned()))
+}
+
+/// The phone version: the image goes through the system's picker like every
+/// other saved file. Putting it into the photo library instead is
+/// `saveToPhotos` of src/lib/lu-native.ts.
+#[cfg(mobile)]
+#[tauri::command]
+#[allow(non_snake_case)]
+pub async fn save_chat_attachment_dialog(
+    app: tauri::AppHandle,
+    id: String,
+    defaultName: String,
+    mimeType: String,
+) -> Result<Option<String>, String> {
+    let (ext, mime) = match mimeType.as_str() {
+        "image/jpeg" | "image/jpg" => ("jpg", "image/jpeg"),
+        "image/webp" => ("webp", "image/webp"),
+        "image/gif" => ("gif", "image/gif"),
+        "image/bmp" => ("bmp", "image/bmp"),
+        "image/avif" => ("avif", "image/avif"),
+        _ => ("png", "image/png"),
+    };
+    let name = crate::commands::mobile_native::file_name_for(Some(defaultName), Some(ext), "image.png");
+    let saved = crate::commands::mobile_native::save_with_picker(&app, &name, Some(mime), move |file| {
+        let data = read_attachment(&attachment_dir()?, &id)?;
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(data.as_bytes())
+            .map_err(|_| "Chat attachment is damaged. Please attach the original image again.".to_string())?;
+        std::fs::write(file, &bytes).map_err(|e| format!("Write failed: {}", os_error::english(&e)))
+    })
+    .await?;
+    Ok(saved.map(|(place, ())| place))
 }
 
 // ── Deleting what nothing points at any more ────────────────────────────

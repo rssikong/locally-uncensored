@@ -38,7 +38,7 @@
 //! ── Warum das Hauptfenster trotzdem existiert ─────────────────────────────
 //!
 //! Es steht in `tauri.conf.json`, und daran hängen Tray, Einzelinstanz und
-//! die Zur-Leiste-statt-Schließen-Logik in `main.rs`. Es unsichtbar zu lassen
+//! die Zur-Leiste-statt-Schließen-Logik in `lib.rs`. Es unsichtbar zu lassen
 //! ist billiger und sicherer, als es nachträglich zu erzeugen: alles, was
 //! `get_webview_window("main")` ruft, findet es weiterhin.
 //!
@@ -65,11 +65,15 @@
 //! Die `#[cfg]`-Zeilen in `open()` sind die einzigen plattformabhängigen
 //! Zeilen dieses Moduls.
 
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
+// Ein Handy baut und zeigt kein Fenster (siehe unten), dort bleibt die Haelfte ungenutzt.
+#[cfg_attr(mobile, allow(unused_imports))]
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 use crate::commands::system::{is_onboarding_done, read_store_backup, write_onboarding_marker};
+#[cfg_attr(mobile, allow(unused_imports))]
 use crate::state::AppState;
 
 /// Das Label des Hauptfensters (`tauri.conf.json`).
@@ -94,7 +98,7 @@ pub const ONBOARDING_WIDTH: f64 = 640.0;
 pub const ONBOARDING_HEIGHT: f64 = 640.0;
 
 /// Wie lange das Frontend Zeit hat, `show_window` zu rufen, bevor Rust das
-/// vorderste Fenster von sich aus zeigt (Bug D, siehe `main.rs`).
+/// vorderste Fenster von sich aus zeigt (Bug D, siehe `lib.rs`).
 pub const FORCE_SHOW_DELAY: Duration = Duration::from_secs(10);
 /// Wie lange nach dem Setzen des Markers das Hauptfenster Zeit hat, sich zu
 /// melden, bevor Rust die Übergabe selbst erzwingt. Länger als der Kaltstart
@@ -197,6 +201,7 @@ pub fn reveal_decision(label: &str, onboarding_done: bool, onboarding_window_exi
 }
 
 /// `show_window` aus dem Frontend landet hier, für JEDES Fenster.
+#[cfg(desktop)]
 pub fn reveal(window: &WebviewWindow) {
     let app = window.app_handle();
     let onboarding = app.get_webview_window(ONBOARDING);
@@ -243,6 +248,7 @@ pub fn reveal(window: &WebviewWindow) {
 /// Nur das Hauptfenster: im 640×640-Fenster nähme der gedockte Inspector
 /// die halbe Fläche (ebenfalls gemessen). Wer ihn dort braucht, öffnet ihn
 /// mit Cmd/Ctrl+Shift+I — Debug-Builds erlauben das.
+#[cfg(desktop)]
 fn open_devtools_in_debug(window: &WebviewWindow) {
     #[cfg(debug_assertions)]
     if window.label() == MAIN {
@@ -256,6 +262,7 @@ fn open_devtools_in_debug(window: &WebviewWindow) {
 /// `show_window` ruft (derselbe Weg wie beim Hauptfenster, aus demselben
 /// Grund: kein weißer Blitz vor dem ersten Frame). Gibt ein schon
 /// vorhandenes zurück statt ein zweites zu bauen.
+#[cfg(desktop)]
 pub fn open(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     if let Some(existing) = app.get_webview_window(ONBOARDING) {
         return Ok(existing);
@@ -286,9 +293,9 @@ pub fn open(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     #[cfg(target_os = "linux")]
     let builder = builder.decorations(false);
 
-    let window = builder.build()?;
+    let window = while_building(|| builder.build())?;
 
-    // Wie beim Hauptfenster in `main.rs`: ohne das zeichnet DWM einen
+    // Wie beim Hauptfenster in `lib.rs`: ohne das zeichnet DWM einen
     // 1-mm-Rand um ein rahmenloses Fenster.
     #[cfg(target_os = "windows")]
     let _ = window.set_shadow(false);
@@ -307,6 +314,7 @@ pub fn open(app: &AppHandle) -> tauri::Result<WebviewWindow> {
 
 /// Das Onboarding-Fenster wurde geschlossen, bevor das Onboarding fertig war:
 /// derselbe Weg wie „Quit" im Tray, damit kein Kindprozess zurückbleibt.
+#[cfg(desktop)]
 fn quit(app: &AppHandle) {
     tracing::info!("onboarding window closed before setup finished — quitting");
     if let Some(state) = app.try_state::<AppState>() {
@@ -315,16 +323,52 @@ fn quit(app: &AppHandle) {
     app.exit(0);
 }
 
+/// Wie viele Bauten des Onboarding-Fensters gerade laufen (`while_building`).
+static BUILDING: AtomicUsize = AtomicUsize::new(0);
+
+/// Führt `build` aus und meldet das Onboarding-Fenster solange schon als da.
+///
+/// A24 (A12-Echtlauf auf der Box, 21.10.2026): Unter Windows wartet `build()`
+/// auf WebView2 und pumpt dabei eine geschachtelte Nachrichtenschleife auf
+/// dem Hauptfaden (derselbe Mechanismus wie beim Hänger in
+/// `set_onboarding_done_baut_das_fenster_nicht_auf_dem_hauptfaden`). Das
+/// Hauptfenster lädt zu dem Zeitpunkt schon, und seine Frage
+/// `onboarding_window_open` wird MITTEN in dieser Schleife beantwortet, bevor
+/// Tauri das neue Fenster eingetragen hat: „nein". Das Hauptfenster bootete
+/// darauf die App mit leeren Stores, zeichnete den Assistenten unsichtbar
+/// selbst, und der Notweg `handover_fallback` zeigte nach dem Abschluss im
+/// kleinen Fenster genau diesen alten Stand: das Onboarding ein zweites Mal.
+fn while_building<T>(build: impl FnOnce() -> T) -> T {
+    struct Guard;
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            BUILDING.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
+    BUILDING.fetch_add(1, Ordering::SeqCst);
+    let _guard = Guard;
+    build()
+}
+
+/// Die Antwort auf `onboarding_window_open`: das Fenster ist eingetragen ODER
+/// wird gerade gebaut. Ein Fenster, dessen Bau scheitert, lässt das `setup`
+/// scheitern (`open(app.handle())?` in `main.rs`) — ein „ja" zu viel kann so
+/// kein Hauptfenster ohne Gegenüber zurücklassen.
+fn delegated(window_registered: bool) -> bool {
+    window_registered || BUILDING.load(Ordering::SeqCst) > 0
+}
+
 /// Läuft das Onboarding gerade in seinem eigenen Fenster? Das Hauptfenster
 /// fragt das beim Boot (`src/main.tsx`) und wartet dann, statt die App zu
 /// laden.
 #[tauri::command]
 pub fn onboarding_window_open(app: AppHandle) -> bool {
-    app.get_webview_window(ONBOARDING).is_some()
+    delegated(app.get_webview_window(ONBOARDING).is_some())
 }
 
 /// Die Fenster folgen dem Marker — aufgerufen von `set_onboarding_done`,
 /// NACH dem erfolgreichen Schreiben.
+#[cfg(desktop)]
 pub fn follow_marker(app: &AppHandle, done: bool) {
     let onboarding = app.get_webview_window(ONBOARDING);
     if done {
@@ -352,11 +396,13 @@ pub fn follow_marker(app: &AppHandle, done: bool) {
 /// Das vorderste Fenster: das Onboarding, solange es existiert, sonst das
 /// Hauptfenster. Tray-„Show", Doppelklick aufs Tray-Symbol und ein zweiter
 /// Start der App holen dieses Fenster nach vorn.
+#[cfg(desktop)]
 pub fn front_window(app: &AppHandle) -> Option<WebviewWindow> {
     app.get_webview_window(ONBOARDING)
         .or_else(|| app.get_webview_window(MAIN))
 }
 
+#[cfg(desktop)]
 pub fn bring_to_front(app: &AppHandle) {
     if let Some(window) = front_window(app) {
         let _ = window.show();
@@ -365,10 +411,11 @@ pub fn bring_to_front(app: &AppHandle) {
     }
 }
 
-/// Bug D (`main.rs`): ruft das Frontend nie `show_window`, zeigt Rust das
+/// Bug D (`lib.rs`): ruft das Frontend nie `show_window`, zeigt Rust das
 /// vorderste Fenster nach `delay` von sich aus. Geht durch `reveal()`, damit
 /// auch der Notweg die Regel kennt — ein Hauptfenster, das während des
 /// Onboardings aufpoppt, wäre genau der Blitz, den das Ganze verhindern soll.
+#[cfg(desktop)]
 pub fn force_show_after(app: AppHandle, delay: Duration) {
     std::thread::spawn(move || {
         std::thread::sleep(delay);
@@ -400,6 +447,7 @@ pub fn force_show_after(app: AppHandle, delay: Duration) {
 
 /// Meldet sich das Hauptfenster nach dem Marker nicht (Boot hängt, Keychain
 /// klemmt), erzwingt Rust die Übergabe: Hauptfenster zeigen, Onboarding zu.
+#[cfg(desktop)]
 fn handover_fallback(app: AppHandle, delay: Duration) {
     std::thread::spawn(move || {
         std::thread::sleep(delay);
@@ -412,11 +460,36 @@ fn handover_fallback(app: AppHandle, delay: Duration) {
     });
 }
 
+// ── Ein Handy hat genau ein Fenster ──────────────────────────────────────────
+//
+// Alles oben, was ein Fenster zeigt, versteckt, baut oder schliesst, ist
+// `cfg(desktop)`: `show`, `hide`, `destroy` und der Fenster-Builder mit Titel
+// und Groesse gibt es in Tauri fuer Android und iOS gar nicht. Wichtiger als
+// der Baufehler ist die Regel dahinter. Auf dem Handy darf NIE ein zweites
+// Webview fuer das Onboarding entstehen: es laege unsichtbar hinter dem
+// einzigen Fenster, und das Hauptfenster wuerde ewig darauf warten.
+//
+// Deshalb gibt es `open()` dort nicht, `onboarding_window_open` antwortet
+// immer `false` (es findet kein Fenster mit dem Label), und der Assistent
+// laeuft im Hauptwebview, so wie `AppShell.tsx` ihn seit jeher zeichnen kann.
+// Die zwei Funktionen hier halten nur die Aufrufer aus `commands` am Leben.
+
+/// `show_window` auf dem Handy: nichts zu tun, das eine Fenster ist von Anfang
+/// an sichtbar (`visible: true` in tauri.android.conf.json und
+/// tauri.ios.conf.json).
+#[cfg(mobile)]
+pub fn reveal(_window: &WebviewWindow) {}
+
+/// Der Marker wurde geschrieben oder geloescht. Auf dem Handy folgt ihm kein
+/// Fenster, das Frontend liest den Marker selbst.
+#[cfg(mobile)]
+pub fn follow_marker(_app: &AppHandle, _done: bool) {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    const MAIN_RS: &str = include_str!("main.rs");
+    const LIB_RS: &str = include_str!("lib.rs");
     const PROCESS_RS: &str = include_str!("commands/process.rs");
     const SYSTEM_RS: &str = include_str!("commands/system.rs");
 
@@ -542,9 +615,50 @@ mod tests {
         );
     }
 
+    /// Auf dem Handy darf kein zweites Fenster entstehen. Der Handy-Bau laeuft
+    /// nicht in diesem Testlauf, also wird gelesen, was er uebersetzen wuerde.
+    #[test]
+    fn ein_handy_bekommt_kein_zweites_fenster() {
+        let src = include_str!("onboarding_window.rs");
+        // Jede Funktion, die ein Fenster baut, zeigt, versteckt oder schliesst.
+        for signatur in [
+            "pub fn reveal(window: &WebviewWindow) {",
+            "pub fn open(app: &AppHandle) -> tauri::Result<WebviewWindow> {",
+            "fn quit(app: &AppHandle) {",
+            "pub fn follow_marker(app: &AppHandle, done: bool) {",
+            "pub fn bring_to_front(app: &AppHandle) {",
+            "pub fn force_show_after(app: AppHandle, delay: Duration) {",
+            "fn handover_fallback(app: AppHandle, delay: Duration) {",
+        ] {
+            assert!(
+                src.contains(&format!("#[cfg(desktop)]\n{signatur}")),
+                "{signatur} muss cfg(desktop) sein"
+            );
+        }
+        // Was das Handy stattdessen hat, baut nichts.
+        let handy = &src[src.find("// ── Ein Handy hat genau ein Fenster").expect("Abschnitt da")
+            ..src.find("#[cfg(test)]\nmod tests {").expect("Tests folgen")];
+        assert!(handy.contains("#[cfg(mobile)]\npub fn reveal(_window: &WebviewWindow) {}"));
+        assert!(handy.contains("#[cfg(mobile)]\npub fn follow_marker(_app: &AppHandle, _done: bool) {}"));
+        let code: String = handy.lines().filter(|l| !l.trim_start().starts_with("//")).collect::<Vec<_>>().join("\n");
+        for verboten in ["WebviewWindowBuilder::new", "open(", ".build()", ".show()"] {
+            assert!(!code.contains(verboten), "der Handy-Teil darf kein Fenster bauen: {verboten}");
+        }
+        // Und das Setup ruft die Entscheidung und den Notweg nur am Desktop.
+        let setup = &LIB_RS[LIB_RS.find(".setup(|app| {").expect("setup exists")..];
+        let setup = &setup[..setup.find(".build(tauri::generate_context!())").expect("build follows setup")];
+        assert!(setup.contains(
+            "#[cfg(desktop)]\n            if onboarding_window::decide_first_window() == onboarding_window::FirstWindow::Onboarding {"
+        ));
+        assert!(setup.contains("#[cfg(desktop)]\n            onboarding_window::force_show_after("));
+        // Das Kommando, das das Frontend fragt, bleibt auf jeder Plattform da
+        // und antwortet auf dem Handy mangels Fenster mit false.
+        assert!(src.contains("#[tauri::command]\npub fn onboarding_window_open(app: AppHandle) -> bool {"));
+    }
+
     #[test]
     fn das_setup_entscheidet_vor_dem_ersten_fenster() {
-        let setup = &MAIN_RS[MAIN_RS.find(".setup(|app| {").expect("setup exists")..];
+        let setup = &LIB_RS[LIB_RS.find(".setup(|app| {").expect("setup exists")..];
         let setup = &setup[..setup.find(".build(tauri::generate_context!())").expect("build follows setup")];
         assert!(
             setup.contains("onboarding_window::decide_first_window()"),
@@ -580,7 +694,7 @@ mod tests {
 
     #[test]
     fn tray_und_zweiter_start_holen_das_vorderste_fenster_nach_vorn() {
-        let main_fn = &MAIN_RS[MAIN_RS.find("\nfn main() {").expect("main exists")..];
+        let main_fn = &LIB_RS[LIB_RS.find("\npub fn run() {").expect("run exists")..];
         let main_fn = &main_fn[..main_fn.find("\n}\n").expect("main ends")];
         assert_eq!(
             main_fn.matches("onboarding_window::bring_to_front(").count(),
@@ -589,10 +703,45 @@ mod tests {
         );
     }
 
+    // ── A24: die Frage des Hauptfensters mitten im Fensterbau ─────────────
+
+    #[test]
+    fn die_frage_mitten_im_fensterbau_bekommt_ja() {
+        // Der Ablauf vom 21.10. ohne WebView2: das Hauptfenster fragt,
+        // während `build()` noch läuft und das Fenster noch nicht
+        // eingetragen ist. Vorher hieß die Antwort hier „nein".
+        let mut asked_during_build = None;
+        while_building(|| asked_during_build = Some(delegated(false)));
+        assert_eq!(asked_during_build, Some(true), "the main window must wait for the onboarding being built");
+        // Danach zählt wieder nur das eingetragene Fenster: ein Neuladen nach
+        // der Übergabe (Fenster zerstört) bootet die App sofort.
+        assert!(!delegated(false));
+        assert!(delegated(true));
+    }
+
+    #[test]
+    fn der_bau_zaehlt_auch_wenn_er_scheitert_nicht_weiter() {
+        let result: Result<(), &str> = while_building(|| Err("webview2 failed"));
+        assert!(result.is_err());
+        assert!(!delegated(false), "a failed build must not leave the main window waiting forever");
+    }
+
+    #[test]
+    fn open_baut_das_fenster_im_waechter_und_das_kommando_fragt_beides() {
+        let src = include_str!("onboarding_window.rs");
+        let open_fn = &src[src.find("pub fn open(").expect("open exists")..];
+        let open_fn = &open_fn[..open_fn.find("\n}\n").expect("open ends")];
+        assert!(open_fn.contains("while_building(|| builder.build())?"), "{open_fn}");
+        assert_eq!(open_fn.matches(".build()").count(), 1, "every build must run inside while_building");
+        let cmd = &src[src.find("pub fn onboarding_window_open(").expect("command exists")..];
+        let cmd = &cmd[..cmd.find("\n}\n").expect("command ends")];
+        assert!(cmd.contains("delegated(app.get_webview_window(ONBOARDING).is_some())"), "{cmd}");
+    }
+
     #[test]
     fn das_kommando_ist_registriert() {
         assert!(
-            MAIN_RS.contains("onboarding_window::onboarding_window_open,"),
+            LIB_RS.contains("onboarding_window::onboarding_window_open,"),
             "onboarding_window_open is not in generate_handler!"
         );
     }

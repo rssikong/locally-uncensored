@@ -79,7 +79,7 @@ describe('Edit on a Mac: the slots follow the memory', () => {
     expect(await screen.findAllByText('not sent')).toHaveLength(2)
     expect(document.querySelectorAll('[data-not-sent="true"]')).toHaveLength(2)
     expect(screen.getAllByRole('img')).toHaveLength(3)
-    expect(screen.getByText(/^Name them in the prompt as image 2\. With 24 GB of memory this Mac takes one more image at this size\. The ones marked not sent stay here and are left out of the edit\.$/)).toBeTruthy()
+    expect(screen.getByText(/^Name them in the prompt as image 2\. The image above is image 1\. With 24 GB of memory this Mac takes one more image at this size\. The ones marked not sent stay here and are left out of the edit\.$/)).toBeTruthy()
     expect(screen.queryByTitle('Add another image the edit can use')).toBeNull()
     expect(useCreateStore.getState().references).toHaveLength(3)
   })

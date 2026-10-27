@@ -139,9 +139,40 @@ function stillPending(chatId: string, change: StagedChange): boolean {
   return useStagedChangesStore.getState().list(chatId).some((c) => c.id === change.id)
 }
 
+type AppliedListener = (chatId: string, changeId: string) => void
+const appliedListeners = new Set<AppliedListener>()
+
+/** Hears every staged change that landed on disk, just before it leaves the
+ *  queue (lib/remote-chats-bridge tells "applied" from "rejected" by it). */
+export function subscribeStagedApplied(fn: AppliedListener): () => void {
+  appliedListeners.add(fn)
+  return () => { appliedListeners.delete(fn) }
+}
+
+type FailedListener = (chatId: string, changeId: string, reason: string) => void
+const failedListeners = new Set<FailedListener>()
+
+/** Hears every apply that failed; the change stays in the queue. */
+export function subscribeStagedFailed(fn: FailedListener): () => void {
+  failedListeners.add(fn)
+  return () => { failedListeners.delete(fn) }
+}
+
 /** Writes one staged change. Returns false, without writing, when the user
  *  rejected it before the write happened. */
 export async function applyStagedChange(chatId: string, change: StagedChange): Promise<boolean> {
+  try {
+    return await applyStagedChangeInner(chatId, change)
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e)
+    for (const fn of failedListeners) {
+      try { fn(chatId, change.id, reason) } catch { /* a listener never changes the outcome */ }
+    }
+    throw e
+  }
+}
+
+async function applyStagedChangeInner(chatId: string, change: StagedChange): Promise<boolean> {
   if (!stillPending(chatId, change)) return false
   const jail = await jailFor(chatId)
   const { content, merged } = await reconcile(jail, change)
@@ -156,6 +187,9 @@ export async function applyStagedChange(chatId: string, change: StagedChange): P
   // matched byte-for-byte). Anything else is a real failure worth retrying.
   if (res?.status && res.status !== 'saved' && res.status !== 'unchanged') {
     throw new Error(`fs_write returned status "${res.status}"`)
+  }
+  for (const fn of appliedListeners) {
+    try { fn(chatId, change.id) } catch { /* a listener never stops the write */ }
   }
   useStagedChangesStore.getState().remove(chatId, change.id)
   // Mirror the apply in the chat log so the user sees a confirmation in the
@@ -200,4 +234,53 @@ export async function applyAllStagedChanges(
     }
   }
   return { applied, failed }
+}
+
+/** How the review of one staged change ended. */
+export type StagedReview =
+  | { outcome: 'applied' }
+  | { outcome: 'rejected' }
+  | { outcome: 'replaced' }
+  | { outcome: 'failed'; reason: string }
+  | { outcome: 'stopped' }
+
+/**
+ * Waits until a staged change is decided: written (Apply at the desktop, or
+ * once/chat on the paired phone), rejected (Reject, or deny), replaced by a
+ * later write of the same file, or its apply failed (then it leaves the
+ * queue, the model hears why). A stopped run stops waiting and leaves the
+ * change for the desktop.
+ */
+export function waitForStagedReview(chatId: string, changeId: string, path: string, signal?: AbortSignal): Promise<StagedReview> {
+  return new Promise((resolve) => {
+    let landed = false
+    let done = false
+    const offs: Array<() => void> = []
+    const finish = (r: StagedReview) => {
+      if (done) return
+      done = true
+      for (const off of offs) off()
+      resolve(r)
+    }
+    const check = () => {
+      const list = useStagedChangesStore.getState().list(chatId)
+      if (list.some((c) => c.id === changeId)) return
+      if (landed) return finish({ outcome: 'applied' })
+      return finish(list.some((c) => c.path === path) ? { outcome: 'replaced' } : { outcome: 'rejected' })
+    }
+    offs.push(subscribeStagedApplied((c, id) => { if (c === chatId && id === changeId) landed = true }))
+    offs.push(subscribeStagedFailed((c, id, reason) => {
+      if (c !== chatId || id !== changeId) return
+      finish({ outcome: 'failed', reason })
+      useStagedChangesStore.getState().remove(chatId, changeId)
+    }))
+    offs.push(useStagedChangesStore.subscribe(check))
+    if (signal) {
+      if (signal.aborted) return finish({ outcome: 'stopped' })
+      const onAbort = () => finish({ outcome: 'stopped' })
+      signal.addEventListener('abort', onAbort, { once: true })
+      offs.push(() => signal.removeEventListener('abort', onAbort))
+    }
+    check()
+  })
 }

@@ -81,6 +81,14 @@ export function macTrainRunStatus(p: MacTrainProgress): { status: string; phase:
 }
 
 /** The line under the train inputs: how long and what the first run fetches. */
+/** What a Mac lacks before it can train, or null. The standard Mac setup
+ *  brings the image engine with SD-Turbo; the engine a run trains with
+ *  arrives with Z-Image Turbo, so one install answers both (GH #194). */
+export function macTrainMissing(s: Pick<MacTrainStatus, 'engineReady' | 'base'>): string | null {
+  if (s.engineReady && s.base) return null
+  return 'Training a character on this Mac needs Z-Image Turbo, about 6 GB. The standard setup does not install it.'
+}
+
 export function macTrainNote(stepsNote: string, s: Pick<MacTrainStatus, 'adapterReady' | 'adapterBytes'>): string {
   const first = s.adapterReady ? '' : ` The first run also downloads a ${Math.round(s.adapterBytes / 1_000_000)} MB training adapter.`
   return `Runs on this Mac and takes a while (${stepsNote}). The local chat model pauses for the run.${first} The character lands in your LoRA folder.`

@@ -70,6 +70,16 @@ interface CodexState {
    * Transient on purpose, an app restart has no run to park anything for.
    */
   parkedModeByConversation: Record<string, CodexMode>
+  /**
+   * A mode picked on the Code start screen, before any conversation exists
+   * (A37, 26.10.2026). The dropdown used to show the global default there and
+   * drop a pick on the floor ("Open a coding chat first"), while the first
+   * send stamped the new conversation with `lastPickedMode`. A user who had
+   * once picked Bypass saw "Ask" and got an unattended run. The next
+   * conversation created is stamped with this, then it is cleared.
+   * Transient: a restart shows lastPickedMode again, which is also what runs.
+   */
+  draftMode: CodexMode | null
   /** The mode this conversation had before it went into Plan mode. */
   prePlanModeByConversation: Record<string, CodexMode>
   /** Plan finished, waiting for approval. Cleared when the run is approved. */
@@ -121,12 +131,24 @@ interface CodexState {
    * PARKED and applied by the next send; otherwise it lands immediately.
    */
   chooseCodexMode: (conversationId: string, mode: CodexMode, runActive: boolean) => void
-  /** A Code conversation was just created: it starts in the last Ask/Bypass pick. */
+  /** A pick on the start screen, before a conversation exists (see draftMode). */
+  chooseDraftMode: (mode: CodexMode) => void
+  /** A Code conversation was just created: it starts in the start-screen pick,
+   *  else the last Ask/Bypass pick. */
   startConversationMode: (conversationId: string) => void
   /** Apply a parked pick. Called once at the start of every send. */
   applyParkedMode: (conversationId: string) => void
   /** The conversation's mode, falling back to the global default. */
   codexModeFor: (conversationId: string | null | undefined, defaultMode: unknown) => CodexMode
+  /**
+   * The mode the NEXT send in this conversation runs under, or, without a
+   * conversation, the mode the one a send creates will run under. The dropdown
+   * shows exactly this, so what it says and what runs come from one function
+   * (A37). A parked pick counts: the next send applies it.
+   */
+  nextSendMode: (conversationId: string | null | undefined, defaultMode: unknown) => CodexMode
+  /** Pin a conversation to a mode without touching lastPickedMode or parks. */
+  alignConversationMode: (conversationId: string, mode: CodexMode) => void
   setPlanApproval: (conversationId: string, approval: CodexPlanApproval | null) => void
 
   getThread: (conversationId: string) => CodexThread | undefined
@@ -161,6 +183,7 @@ export const useCodexStore = create<CodexState>()(
       modeByConversation: {},
       lastPickedMode: null,
       parkedModeByConversation: {},
+      draftMode: null,
       prePlanModeByConversation: {},
       planApprovalByConversation: {},
 
@@ -214,10 +237,20 @@ export const useCodexStore = create<CodexState>()(
           }
         }),
 
+      chooseDraftMode: (mode) =>
+        set((state) => ({
+          draftMode: mode,
+          lastPickedMode: mode === 'plan' ? state.lastPickedMode : mode,
+        })),
+
       startConversationMode: (conversationId) =>
         set((state) => {
-          if (!state.lastPickedMode || state.modeByConversation[conversationId]) return state
-          return { modeByConversation: { ...state.modeByConversation, [conversationId]: state.lastPickedMode } }
+          const stamp = state.draftMode ?? state.lastPickedMode
+          if (!stamp || state.modeByConversation[conversationId]) return state
+          return {
+            draftMode: null,
+            modeByConversation: { ...state.modeByConversation, [conversationId]: stamp },
+          }
         }),
 
       applyParkedMode: (conversationId) =>
@@ -241,6 +274,22 @@ export const useCodexStore = create<CodexState>()(
           conversationId ? get().modeByConversation[conversationId] : undefined,
           defaultMode,
         ),
+
+      nextSendMode: (conversationId, defaultMode) => {
+        const state = get()
+        if (!conversationId) {
+          return resolveCodexMode(state.draftMode ?? state.lastPickedMode, defaultMode)
+        }
+        return resolveCodexMode(
+          state.parkedModeByConversation[conversationId] ?? state.modeByConversation[conversationId],
+          defaultMode,
+        )
+      },
+
+      alignConversationMode: (conversationId, mode) =>
+        set((state) => state.modeByConversation[conversationId] === mode
+          ? state
+          : { modeByConversation: { ...state.modeByConversation, [conversationId]: mode } }),
 
       setPlanApproval: (conversationId, approval) =>
         set((state) => ({

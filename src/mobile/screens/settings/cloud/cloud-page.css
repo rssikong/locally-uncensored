@@ -1,0 +1,94 @@
+/* The page LU Cloud (E3), round 51: the number band at the top. No motion, no gradient here. */
+
+.m-cloud-band {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s2);
+  padding-top: var(--m-s4);
+  padding-bottom: var(--m-s4);
+}
+
+.m-cloud-band-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--m-s3);
+  row-gap: var(--m-s1);
+}
+
+.m-cloud-total {
+  font-family: var(--m-font-display);
+  font-size: 2.5rem;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--m-t1);
+}
+
+.m-cloud-total-label {
+  font-size: var(--m-text-title);
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--m-t1);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.m-cloud-split {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--m-s2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.m-cloud-split > li {
+  font-size: var(--m-text-caption);
+  line-height: 1.3;
+  color: var(--m-t2);
+  padding: 4px 10px;
+  border: 1px solid var(--m-edge);
+  border-radius: var(--m-r-pill);
+}
+
+.m-cloud-split > li > b {
+  font-family: var(--m-font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--m-t1);
+}
+
+.m-cloud-split > li.m-cloud-tag {
+  border-color: var(--m-cloud-edge);
+  background: var(--m-cloud-soft);
+}
+
+.m-cloud-say {
+  margin: 0;
+  color: var(--m-t2);
+  overflow-wrap: anywhere;
+}
+
+.m-cloud-benefit {
+  display: flex;
+  gap: var(--m-s3);
+  align-items: flex-start;
+  color: var(--m-t2);
+}
+
+.m-cloud-benefit > span:first-child {
+  color: var(--m-cloud);
+  flex: none;
+  margin-top: 2px;
+}
+
+.m-cloud-note {
+  margin: 0;
+  text-align: center;
+}
+
+/* An address is one word: it never breaks at its hyphen ("lu-" / "labs.ai"). */
+.m-nobr {
+  white-space: nowrap;
+}

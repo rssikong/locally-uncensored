@@ -3,7 +3,7 @@
  *
  * Deliberately separate from `detectProviderModelPath` in discover.ts: that
  * one asks the backend for a DOWNLOAD TARGET and the backend creates the
- * folder to hand one back. Model Storage asks a different question ("where is
+ * folder to hand one back. Storage asks a different question ("where is
  * it, and is it there at all") and must not leave a folder behind on a machine
  * that has no LM Studio.
  */

@@ -45,6 +45,9 @@ import { exportConversation, missingImagesNote } from '../../lib/chat-export'
 import { conversationMode } from '../../lib/conversation-mode'
 import { PermissionOverrideBar } from './PermissionOverrideBar'
 import { CodexView } from './CodexView'
+import { registerChatSender } from '../../lib/remote-chat-senders'
+import { ContinueOnPhoneButton } from './ContinueOnPhoneButton'
+import { HEADER_CHIP } from './header-chip'
 import { useCodexStore } from '../../stores/codexStore'
 import { useGenerationStore } from '../../stores/generationStore'
 import { composerBusy } from '../../lib/composer-busy'
@@ -63,6 +66,13 @@ interface Landing {
 
 export function ChatView() {
   const { sendMessage, stopGeneration, isGenerating, isLoadingModel, regenerateMessage, editAndResend, pendingApproval, approveToolCall, rejectToolCall } = useChat()
+  // A message from the paired phone in a shared chat goes through this very
+  // send path (lib/remote-chats-bridge, lib/remote-chat-senders).
+  useEffect(() => registerChatSender('chat', {
+    send: (content, images, files) => sendMessage(content, images.length ? images : undefined, files.length ? files : undefined),
+    // Stop of the open chat is this view's own Stop.
+    stop: (convId) => { if (useChatStore.getState().activeConversationId === convId) stopGeneration() },
+  }), [sendMessage, stopGeneration])
   const activeConversationId = useChatStore((s) => s.activeConversationId)
   // Drives the recent-chats list on the empty screen: collapsed panel means
   // the list stands in the main area, expanded means it stands in the panel.
@@ -666,11 +676,14 @@ export function ChatView() {
                           picker; 2026-07-11). View / add / delete injected context. */}
                       <MemoryDebugToggle />
 
+                      {/* Shared chats (CHATS-V1.md): this chat on the paired phone. */}
+                      <ContinueOnPhoneButton />
+
                       {/* Export */}
                       <div className="relative">
                         <button
                           onClick={() => setExportOpen(!exportOpen)}
-                          className="flex items-center gap-1 px-2 py-0.5 rounded border border-gray-200 dark:border-white/[0.06] hover:border-gray-400 dark:hover:border-white/15 text-gray-500 transition-colors text-[0.55rem]"
+                          className={`${HEADER_CHIP} border-gray-200 dark:border-white/[0.06] hover:border-gray-400 dark:hover:border-white/15 text-gray-500`}
                           title="Export chat"
                         >
                           <Download size={10} />
@@ -852,7 +865,7 @@ export function ChatView() {
                 />
 
                 {/* Plugins (Chat Tools + Caveman + Personas) */}
-                <PluginsDropdown openUpward />
+                <PluginsDropdown openUpward agentTools={isAgentActive} />
 
                 {/* Tools: agent permission overrides (only when agent active) */}
                 {isAgentActive && (

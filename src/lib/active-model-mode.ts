@@ -1,5 +1,6 @@
 import type { AppMode } from '../types/settings'
 import { canAutoSelectChat, type ChatSizeCandidate } from './chat-model-minimum'
+import { isCompatProviderId } from '../api/providers/compat-id'
 
 /**
  * Which chat model may stay selected under the current Local/Cloud switch.
@@ -127,7 +128,10 @@ export function pickForMode(
   // benannte Zeile und die letzte eigene Cloud-Wahl oben bleiben.
   const fallback = appMode === 'cloud'
     ? undefined
-    : models.find(model => wanted(model) && canAutoSelectChat(model))
+    // Kein Modell eines zusaetzlichen Steckplatzes mit eigenem Schluessel
+    // (`openai-<slug>`): es rechnet je Nachricht ab und wird nur gewaehlt,
+    // nie eingesetzt.
+    : models.find(model => wanted(model) && !isCompatProviderId(model.provider ?? '') && canAutoSelectChat(model))
   if (activeModel === null && !fallback) return { change: false, next: null, usedRequest: false }
   return { change: true, next: fallback ? fallback.name : null, usedRequest: false }
 }

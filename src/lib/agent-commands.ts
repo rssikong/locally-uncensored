@@ -21,6 +21,8 @@
  */
 
 import { READ_ONLY_SHELL_HINT } from './shell-command-classify'
+import { slashCommandExistsOnThisDevice } from './mobile-tools'
+import { isMobile } from './device-kind'
 
 export interface AgentCommand {
   /** Command word without the leading slash, e.g. "review". */
@@ -75,6 +77,10 @@ export type CommandScope = 'agent' | 'chat'
 
 /** May this command be offered on that surface? */
 export function commandInScope(command: AgentCommand, scope: CommandScope): boolean {
+  // A phone offers only the commands on its list (lib/mobile-tools.ts): the
+  // rest expand to instructions that need a shell, git or a repository. Out
+  // of scope is the same answer as unknown, so `/commit` there is plain text.
+  if (!slashCommandExistsOnThisDevice(command.name)) return false
   return scope === 'agent' || (command.scope ?? 'agent') === 'chat'
 }
 
@@ -150,7 +156,7 @@ export function buildLoopRecheck(task: string, pass: number): string {
 
 ${task}
 
-Do not assume the previous pass was right. Re-read the task, then check the actual current state with your tools — the files, the test run, the build. Specifically:
+Do not assume the previous pass was right. Re-read the task, then check the actual current state with your tools${isMobile() ? ': read the files back and look at what your tools returned' : ' — the files, the test run, the build'}. Specifically:
 - Anything claimed as done that you have not PROVEN is still open. Prove it or fix it.
 - Anything the task asks for that has not been touched at all.
 - Anything the last pass broke on the way.
@@ -214,6 +220,19 @@ export const AGENT_COMMANDS: AgentCommand[] = [
     },
   },
 
+  {
+    name: 'usage',
+    summary: 'Show the tokens the last answer used',
+    // Discord 22.10.2026: "Whats the cmd to see how much tokens was used in
+    // the previous request?" Bookkeeping like /goal: the hook reads the
+    // numbers stored on the last answer (lib/request-usage.ts) and prints
+    // them as an app notice. It never reaches a model and needs no tools, so
+    // plain chat has it too. Takes no argument.
+    scope: 'chat',
+    handledLocally: true,
+    build: () => 'usage',
+  },
+
   // ── Steer ─────────────────────────────────────────────────────────────
   {
     name: 'goal',
@@ -243,7 +262,7 @@ This is pass 1 of a LOOP. The app will bring you back roughly every ${formatDura
 
 Each pass:
 1) Do the next concrete step.
-2) VERIFY it — run the tests, the build, the command, whatever actually proves it. Reading your own change back is not verification.
+2) ${isMobile() ? 'VERIFY it: read the result back with your tools and hold it against what the task asks for, point by point.' : 'VERIFY it — run the tests, the build, the command, whatever actually proves it. Reading your own change back is not verification.'}
 3) If the check fails, fix the cause and check again.
 
 End this reply with ${LOOP_CONTINUE_MARKER} on its own line if anything is left, or ${LOOP_DONE_MARKER} on its own line if everything the task asks for is done AND verified, naming the check that proved it. A wrong ${LOOP_DONE_MARKER} ships a broken result; an honest ${LOOP_CONTINUE_MARKER} costs one more pass.

@@ -68,6 +68,12 @@ describe('pickModelForGeneration — image', () => {
     expect(useModelPickStore.getState().pending).toBeNull()
   })
 
+  it('a single fitting model is used without a card (A13: no second question after the approval)', async () => {
+    vi.mocked(getImageModels).mockResolvedValue([{ name: 'v1-5-pruned-emaonly-fp16.safetensors', type: 'sd15', source: 'checkpoint' }] as never)
+    expect(await pickModelForGeneration('image', {})).toBe('v1-5-pruned-emaonly-fp16.safetensors')
+    expect(useModelPickStore.getState().pending).toBeNull()
+  })
+
   it('no saved preference → picker; choice without save is NOT persisted', async () => {
     const p = pickModelForGeneration('image', {})
     await answerPick({ model: 'RealVisXL_V5.safetensors', save: false })

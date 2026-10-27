@@ -16,6 +16,7 @@
  */
 
 import { isPrivateOrLanHost, hostnameOf } from '../api/backend'
+import { isCompatProviderId } from '../api/providers/compat-id'
 import { useProviderStore } from '../stores/providerStore'
 import { openaiEntryOfModel, getProviderIdFromModel } from '../api/providers/model-name'
 import type { ProviderConfig, ProviderId } from '../api/providers/types'
@@ -54,7 +55,21 @@ export function sendsToALanBackend(providerId: string, model: string | null | un
   // OpenAI-compatible entry has to be asked about ITS server, and a call that
   // left the model out answered for the slot instead (LM Studio next to a
   // paid cloud endpoint in the slot got the paid cap).
+  // An extra OpenAI-compatible slot of a phone (`openai-<slug>`) is asked
+  // about its own address, not about the shared one's.
+  if (isCompatProviderId(providerId)) return isLanSlot(providerId)
   return providerId === 'openai' && isLanOpenAiBackend(model ? openaiEntryOfModel(model) : null)
+}
+
+/** The same question for an extra OpenAI-compatible slot of a phone. */
+function isLanSlot(slot: ProviderId): boolean {
+  try {
+    const cfg = useProviderStore.getState().providers[slot]
+    if (!cfg) return false
+    return cfg.isLocal === true || isPrivateOrLanHost(hostnameOf(cfg.baseUrl))
+  } catch {
+    return false
+  }
 }
 
 /**

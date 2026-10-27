@@ -215,7 +215,7 @@ describe('Zaehler und Preis mit Anzahl', () => {
 })
 
 describe('Referenzleiste', () => {
-  const tiles = () => screen.queryAllByAltText(/^photo \d$/)
+  const tiles = () => screen.queryAllByAltText(/^image \d$/)
 
   function edit(model: string) {
     const s = useCreateStore.getState()
@@ -261,8 +261,9 @@ describe('Referenzleiste', () => {
     fireEvent.change(input, { target: { files: [new File(['x'], 'a.png', { type: 'image/png' }), new File(['x'], 'b.png', { type: 'image/png' })] } })
     await waitFor(() => expect(useCreateStore.getState().references).toHaveLength(2))
     expect(tiles()).toHaveLength(2)
-    expect(screen.getByText('2')).toBeTruthy()
-    expect(screen.getByText('3')).toBeTruthy()
+    // The tile carries the name the prompt uses (Discord help-18, 23.10.2026).
+    expect(screen.getByText('Image 2')).toBeTruthy()
+    expect(screen.getByText('Image 3')).toBeTruthy()
     fireEvent.click(screen.getByLabelText('Remove photo 2'))
     expect(useCreateStore.getState().references).toHaveLength(1)
   })

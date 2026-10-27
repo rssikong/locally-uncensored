@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Images, Play, PanelRightClose, Trash2, Download, MonitorOff, AudioLines, FolderInput } from 'lucide-react'
 import { useCreateStore, type GalleryItem } from '../../../stores/createStore'
 import { galleryLabel } from '../../../lib/render/gallery-label'
-import { GALLERY_DRAG_TYPE } from './galleryUrl'
+import { GALLERY_DRAG_TYPE, playsAsVideo } from './galleryUrl'
 import { deleteTitle, unavailableTitle } from './galleryWording'
 import { isMlxImageHost } from '../../../api/mlx-image'
 import { downloadGalleryItem } from './galleryDownload'
@@ -128,14 +128,14 @@ export function CreatePanel({ open, onOpenChange, activeId, onSelect }: Props) {
                       }}
                       className={cn(
                         'w-full aspect-square rounded-lg overflow-hidden border-2 transition-colors relative',
-                        (activeId ?? gallery[0]?.id) === g.id ? 'border-white/60' : 'border-transparent hover:border-white/20',
+                        (activeId ?? gallery[0]?.id) === g.id ? 'border-gray-900/60 dark:border-white/60' : 'border-transparent hover:border-white/20',
                         itemHasAlpha(g) && 'lu-checker',
                       )}
                     >
                       <GalleryThumb g={g} />
                       {g.unavailable && (
                         <span
-                          className="absolute inset-0 flex items-center justify-center bg-black/50 text-gray-500"
+                          className="lu-on-dark absolute inset-0 flex items-center justify-center bg-black/50 text-gray-500"
                           title={unavailableTitle(g.unavailableReason === 'gone', isMlxImageHost())}
                         >
                           <MonitorOff size={16} />
@@ -144,21 +144,21 @@ export function CreatePanel({ open, onOpenChange, activeId, onSelect }: Props) {
                     </button>
                     <button
                       onClick={() => removeFromGallery(g.id)}
-                      className="absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full bg-red-600/90 hover:bg-red-600 text-gray-100 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center shadow-sm"
+                      className="lu-on-dark absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full bg-red-600/90 hover:bg-red-600 text-gray-100 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center shadow-sm"
                       title={deleteTitle(isMlxImageHost())}
                     >
                       <Trash2 size={12} />
                     </button>
                     <button
                       onClick={() => setMoving([g.id])}
-                      className="absolute bottom-1 left-1 w-6 h-6 rounded-md bg-black/55 hover:bg-black/70 text-gray-100 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center shadow-sm"
+                      className="lu-on-dark absolute bottom-1 left-1 w-6 h-6 rounded-md bg-black/55 hover:bg-black/70 text-gray-100 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center shadow-sm"
                       title="Move to folder" aria-label="Move to folder"
                     >
                       <FolderInput size={12} />
                     </button>
                     <button
                       onClick={() => { void downloadGalleryItem(g) }}
-                      className="absolute bottom-1 right-1 w-6 h-6 rounded-md bg-black/55 hover:bg-black/70 text-gray-100 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center shadow-sm"
+                      className="lu-on-dark absolute bottom-1 right-1 w-6 h-6 rounded-md bg-black/55 hover:bg-black/70 text-gray-100 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center shadow-sm"
                       title="Download"
                     >
                       <Download size={12} />
@@ -189,7 +189,7 @@ function GalleryThumb({ g }: { g: GalleryItem }) {
       </span>
     )
   }
-  return g.type === 'video' ? (
+  return playsAsVideo(g) ? (
     <>
       <video src={src} muted playsInline onError={onError} onLoadedData={onLoad} className="w-full h-full object-cover" />
       <span className="absolute inset-0 flex items-center justify-center bg-black/20"><Play size={16} className="text-white/90" /></span>

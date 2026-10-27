@@ -130,6 +130,157 @@ export interface ReleaseNote {
 }
 
 export const RELEASE_NOTES: ReleaseNote[] = [
+  // 3.0.8 (26.10.2026, Kandidat integ/308-rc, A23). Der Umfang steht in
+  // CHANGELOG.md unter [3.0.8]; dieses Blatt nimmt vorn die fuenf Dinge, die
+  // ein Nutzer zuerst merkt, und darunter den Rest in Abschnitten. Das Blatt
+  // von 3.0.7 sieht nach dem Update niemand mehr (releaseNotesStore zeigt nur
+  // die laufende Version), darum steht die Korrektur zu den Cloud-Charakteren
+  // hier vorn. Was nur in Tests lief, sagt die Zeile selbst knapp, der
+  // CHANGELOG unter Known limits ausfuehrlich.
+  {
+    version: '3.0.8',
+    headline: 'Web search finds answers again, a video from the chat plays in the chat and renders while you write on, and LU can read and change its own settings when you ask.',
+    lines: [
+      {
+        title: 'Web search asks five services in turn, no key needed.',
+        detail: 'The chat\'s web search asks Exa first, then You.com, a SearXNG instance, DuckDuckGo and Wikipedia, and moves on when one does not answer. A key for Brave, Tavily or Exa goes first. web_fetch reads a page on your machine the way a reader view does and falls back to Exa when it cannot, which then sees the address of that page. LU Cloud chats use the same search, running in the app.',
+      },
+      {
+        title: 'A video made in the chat plays in the chat, and a long one renders in the background.',
+        detail: 'A clip made in Chat, Agent or Code plays with controls instead of showing as a broken picture, also after a restart. When a render takes longer than a short wait, the turn ends and the clip appears in the message that asked for it while you write on. Wan 2.1 clips are mp4 now.',
+      },
+      {
+        title: 'A Z-Image character trained on LU Cloud can run on your machine.',
+        detail: 'Only a Z-Image character can be saved for local use. Characters of other model families now show a fixed Cloud only label on the cloud character shelf instead of the Use locally button, and cloud training says under the model pick that characters trained on Flux or Qwen run in LU Cloud only. The 3.0.7 notes said every cloud character could run on your machine; that was wrong.',
+      },
+      {
+        title: 'Ask the chat to read or change a setting.',
+        detail: 'Questions like "what is my temperature?" or "turn on auto compact" reach LU\'s settings. Every change shows a card with the old and the new value, Accept and Decline, and stays as a row with Undo. Computer control, remote access, the Local API, permissions, keys, paths, plugins and persona texts cannot be changed this way.',
+      },
+      {
+        title: 'The temperature stops at 1.5, where models still write sense.',
+        detail: 'At 1.9 every model wrote mixed-language noise. The sliders stop at 1.5, a value above it from an older version goes back to the default, and from 1.2 a warning says what high values do and offers Reset. Agent turns hold their own ceiling of 1.0.',
+      },
+    ],
+    details: [
+      {
+        title: 'Chat',
+        items: [
+          {
+            title: 'A picture attached in the chat reaches the image tool.',
+            detail: 'image_generate and video_generate failed with "could not read input image". The attachment now goes in by its number in the chat, and an edit works also when ComfyUI had not been started.',
+          },
+          {
+            title: 'The answer starts sooner in a long chat.',
+            detail: 'The clock, memories and retrieved passages rode in front of the whole conversation, so every new message made the engine read the entire chat again. They now ride behind the newest message. Measured on one Mac and one Windows machine: the first step of the second message went from 10.1 s to 0.9 s and from 5.7 s to 0.8 s.',
+          },
+          {
+            title: 'Tokens per answer and /usage.',
+            detail: 'Each reply shows the tokens it took, and /usage in the chat sums up the conversation.',
+          },
+          {
+            title: 'REA shows only in Agent and Code.',
+            detail: 'The REA plugin and its switch sit under Plugins in Agent and Code only, the two places its tools reach. Plain chat no longer shows them.',
+          },
+          {
+            title: 'A half-written message waits for you.',
+            detail: 'Text and attachments in the message field of a chat stay when you open Create, Models or Settings and come back, each chat with its own. They are kept while the app runs, not across a restart.',
+          },
+          {
+            title: 'Memories can be deleted again.',
+            detail: 'The delete buttons are always visible; one, several or all memories can be deleted with a confirmation and Undo, and a deleted memory is not brought back by the automatic extraction.',
+          },
+          {
+            title: 'In Code, the mode the button shows is the mode the run gets.',
+            detail: 'On the start screen the button could show Ask while the first run took the mode picked last somewhere else, Bypass included. The pick on the start screen now counts, and when the two disagree the stricter one runs. Under Ask, REA and every other external tool now ask first, like a shell command.',
+          },
+          {
+            title: 'REA finds Node.js and keeps its tools.',
+            detail: 'REA looks for Node.js where a terminal finds it, also when LU starts from a menu, and its tools stay on a follow-up message. A model that repeats the same plan in alternation is steered once and then stopped.',
+          },
+          {
+            title: 'Binary files reach the tools with their full path.',
+            detail: 'A ROM or another binary attached in Agent or Code goes to the working folder, the model gets its full path, and the chip says where an attached file goes.',
+          },
+        ],
+      },
+      {
+        title: 'Create',
+        items: [
+          {
+            title: 'Wan 2.2 14B runs from Animate and Video.',
+            detail: 'LU loaded the 5B model\'s VAE for the 14B models and the run stopped with a tensor size error. With the high noise and the low noise model in the same folder, LU runs both one after the other (GitHub #193). A real 14B render has not run on our machines.',
+          },
+          {
+            title: 'Native HiRes in Edit, and HiRes at the right size on every model.',
+            detail: 'Edit has the HiRes switch Create has, on local ComfyUI and on a Mac. On Qwen-Image 2.1, Noct Q, FLUX 2 and ERNIE-Image the second pass made the picture four times the size with doubled faces; it now follows the model\'s own grid. Width and height can be typed by hand.',
+          },
+          {
+            title: 'The image and video tools of the chat end honestly.',
+            detail: 'A render that stopped or never started is not reported as delivered, Stop ends exactly that render, "attachment 2" or an earlier result by its name is the picture that is used, and a ComfyUI that crashed is called a crash with its last error line.',
+          },
+          {
+            title: 'Train new on a Mac shows the trigger word field.',
+            detail: 'Without Z-Image Turbo installed the field was missing and the tab looked broken. It now shows with a button to install the model, and Create says so before the photos are staged (GitHub #194).',
+          },
+          {
+            title: 'Character Studio finds its base files.',
+            detail: 'Download base files always says what happened; it used to call files missing that ComfyUI already had and then do nothing. A folder with just a main.py is no longer taken for ComfyUI, and Comfy Desktop\'s installs are found.',
+          },
+          {
+            title: 'Edit images are named the way the Qwen encoders label them.',
+            detail: '"image 2", "IMAGE 2." and "picture 2" reach the model the same way, and each tile in the reference strip shows its name. The large view opens with the prompt folded, steps with the arrow keys and zooms with the mouse wheel.',
+          },
+        ],
+      },
+      {
+        title: 'Models and engines',
+        items: [
+          {
+            title: 'Remove refusals from a local model (Abliteration).',
+            detail: 'A button in the Model Manager makes a copy of an installed GGUF that refuses fewer requests, next to the original, which stays untouched. LU shows the license, plans memory, disk and time first, and checks original and copy with the same short prompts. It has run from the command line on a Mac; the run through the app is new.',
+          },
+          {
+            title: 'The LU Engine plans memory from the model file.',
+            detail: 'When a model does not fit, the notice says how many layers fit at your context and at a shorter one, with buttons Context 16K and KV q8_0. On Windows the engine no longer keeps a second copy of the model in RAM.',
+          },
+          {
+            title: 'The LU Engine starts with a user name outside English.',
+            detail: 'A Windows user folder such as "Şaban Yılmaz" stopped the engine with "not a directory" (GitHub #190). On a Mac the image and video engines pass over a Python their packages do not exist for, such as 3.15 (GitHub #188), and the Linux AppImage keeps its icon (GitHub #191).',
+          },
+          {
+            title: 'A graphics card per task.',
+            detail: 'With two cards, Settings can put the chat model on one and ComfyUI on the other. This has run with simulated cards only.',
+          },
+          {
+            title: 'AMD and Intel Arc on Windows get their own PyTorch.',
+            detail: 'AMD cards get AMD\'s current ROCm build, Intel Arc the XPU build. It has not run on an AMD card here.',
+          },
+        ],
+      },
+      {
+        title: 'Settings, storage and your phone',
+        items: [
+          {
+            title: 'One Storage folder for models, gallery and runtime.',
+            detail: 'Settings, AI Backends, Storage shows what goes where and the free space per drive. "Use for new files only" moves nothing, "Move the files and use it" moves file by file, overwrites nothing and can be cancelled.',
+          },
+          {
+            title: 'Your phone on this computer (Remote).',
+            detail: 'Pair a phone by QR code; the channel is sealed, over the wi-fi and, with "Reach this computer from anywhere", over the internet. The phone app that pairs with this ships in its own release.',
+          },
+          {
+            title: 'LU Cloud says when it has an outage.',
+            detail: 'When LU Cloud announces an outage, the app shows a short line you can close, and a failed cloud run says what is going on instead of a raw error.',
+          },
+          {
+            title: 'The onboarding no longer runs twice, and icons show in light mode.',
+            detail: 'A first start on Windows ran the onboarding twice. In light mode the icons of the gallery, the large view, Voice and elsewhere were invisible.',
+          },
+        ],
+      },
+    ],
+  },
   // 3.0.7, vorbereitet am 14.10.2026 auf integ/307, am 15.10.2026 um alles aus
   // 3.0.8 erweitert (Davids Wort: 3.0.8 kommt in 3.0.7; Stand e5dc1f4a0). Umfang:
   // alle Commits seit 3.0.6 (origin/master..HEAD), der Pruefstand in
@@ -200,7 +351,7 @@ export const RELEASE_NOTES: ReleaseNote[] = [
           },
           // Baustein C8
           {
-            title: 'A character trained on LU Cloud can run on your machine.',
+            title: 'A Z-Image character trained on LU Cloud can run on your machine.',
             detail: 'Use locally on the cloud character shelf saves a Z Image character into the LoRA folder of this machine, so the local Use character shelf lists it. If a file of that name is already there, LU stops and says so instead of replacing it. Characters of other model families are refused with the reason. This has run in automated tests only, not yet against the real service.',
           },
           // Baustein C9

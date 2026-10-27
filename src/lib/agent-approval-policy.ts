@@ -113,6 +113,28 @@ export interface FrontDecision {
   execConfirm?: boolean
   /** Der Lauf ist lesend gestellt (Plan-Modus, Code-Review, Nur-Lesen-Zug). */
   readOnlyRun: boolean
+  /**
+   * Das Werkzeug kommt von einem externen MCP-Server (REA, eigene Server).
+   * Unter Ask fragt es vor jeder Ausfuehrung, unter Bypass nicht (Davids
+   * Entscheidung 26.10.2026, A37: "Ask und Bypass soll da auch klappen").
+   */
+  external?: boolean
+}
+
+/**
+ * Fragt die Code-Oberflaeche vor diesem Aufruf? Ask fragt vor den Werkzeugen
+ * mit beliebiger Ausfuehrung UND vor jedem externen Werkzeug: ein MCP-Server
+ * wie REA startet Programme (Ghidra headless), die der Nutzer unter Ask nie
+ * ungefragt laufen sehen wollte. Bypass fragt nichts davon, ausser der Nutzer
+ * hat die Cloud-Rueckfrage selbst eingeschaltet (execConfirm, nur die
+ * Ausfuehrungswerkzeuge).
+ */
+export function codexAsksBefore(
+  toolName: string,
+  d: { codexMode: string | null; execConfirm?: boolean; external?: boolean },
+): boolean {
+  if (d.codexMode === 'ask' && d.external === true) return true
+  return d.execConfirm === true && CODEX_CONFIRM_TOOLS.has(toolName)
 }
 
 /**
@@ -154,7 +176,7 @@ export function resolveApprovalLevel(toolName: string, d: FrontDecision): Permis
     // shell_execute, sobald jemand 'terminal' fuer den Agent-Chat auf 'auto'
     // gestellt hat.
     if (BACKGROUND_AGENT_TOOLS.has(toolName)) return 'auto'
-    return d.execConfirm === true && CODEX_CONFIRM_TOOLS.has(toolName) ? 'confirm' : 'auto'
+    return codexAsksBefore(toolName, d) ? 'confirm' : 'auto'
   }
 
   // Agent-Chat: der Berechtigungs-Store ist die Entscheidung von vorne.

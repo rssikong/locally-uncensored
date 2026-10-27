@@ -258,15 +258,16 @@ describe('the queue while it runs', () => {
   })
 })
 
+// The local generate(), reduced to what the batch reads from it: a result in
+// the gallery, or an error in the store.
+const localRun = (fail: string[] = []) => vi.fn(async () => {
+  const s = useCreateStore.getState()
+  const name = atob(s.source!.url.split(',')[1])
+  if (fail.includes(name)) { s.setError(`Generation failed: ${name}`); return }
+  s.addToGallery(item(`r-${name}`))
+})
+
 describe('a local run over the list', () => {
-  // The local generate(), reduced to what the batch reads from it: a result in
-  // the gallery, or an error in the store.
-  const localRun = (fail: string[] = []) => vi.fn(async () => {
-    const s = useCreateStore.getState()
-    const name = atob(s.source!.url.split(',')[1])
-    if (fail.includes(name)) { s.setError(`Generation failed: ${name}`); return }
-    s.addToGallery(item(`r-${name}`))
-  })
 
   it('runs every image with the same settings and ties each result to its file', async () => {
     start('local', 'edit')
@@ -332,6 +333,71 @@ describe('a local run over the list', () => {
     expect(run).toHaveBeenCalledTimes(1)
     expect(names()).toEqual(['b.png', 'c.png'])
     expect(useCreateStore.getState().error).toContain('Stopped. The other 2 were not started.')
+  })
+})
+
+// Discord, jazziinau 23.10.2026: after a batch of 50 with "recreate the
+// image" the original image was gone, only the last image of the list was
+// left to pick. The original is the image the list was made from.
+describe('the original of a list', () => {
+  const nameOf = (url: string) => atob(url.split(',')[1])
+  const fifty = () => Array.from({ length: 50 }, (_, i) => png(`p${String(i + 1).padStart(2, '0')}.png`))
+
+  it('is back on the Stage after a full list of 50, not the last image', async () => {
+    start('local', 'edit')
+    useCreateStore.getState().setSource({ filename: '', url: `data:image/png;base64,${btoa('original.png')}`, width: 8, height: 8, name: 'original.png' })
+    await addBatchFiles(fifty())
+    // The list is capped at 50, and the original stays its first entry.
+    expect(names()).toHaveLength(50)
+    expect(names()[0]).toBe('original.png')
+    expect(names()).not.toContain('p50.png')
+    const seen: string[] = []
+    const run = vi.fn(async () => {
+      const s = useCreateStore.getState()
+      seen.push(nameOf(s.source!.url))
+      s.addToGallery(item(`r-${seen.length}`))
+    })
+    await runBatchEdit(run)
+    expect(run).toHaveBeenCalledTimes(50)
+    // Every run starts from its own image of the list, never from a result.
+    expect(seen).toEqual(['original.png', ...Array.from({ length: 49 }, (_, i) => `p${String(i + 1).padStart(2, '0')}.png`)])
+    const s = useCreateStore.getState()
+    expect(s.batchSources).toEqual([])
+    expect(s.source!.name).toBe('original.png')
+    expect(nameOf(s.source!.url)).toBe('original.png')
+    // The last result stays on screen, and the next Create starts from the original.
+    render(<Stage displayed={s.gallery[0]} onOpenMaskEditor={vi.fn()} onFullscreen={vi.fn()} />)
+    const next = screen.getByTestId('result-source-actions')
+    expect(nameOf(next.querySelector('img')!.getAttribute('src')!)).toBe('original.png')
+    expect(screen.queryByText('Use the original')).toBeNull()
+  })
+
+  it('stays to pick in the empty slot however many results the batch made', async () => {
+    start('local', 'edit')
+    useCreateStore.getState().setSource({ filename: '', url: `data:image/png;base64,${btoa('original.png')}`, width: 8, height: 8, name: 'original.png' })
+    await addBatchFiles(fifty())
+    await runBatchEdit(vi.fn(async () => {
+      const s = useCreateStore.getState()
+      s.addToGallery(item(`r-${s.gallery.length}`))
+    }))
+    expect(useCreateStore.getState().gallery).toHaveLength(50)
+    useCreateStore.getState().setSource(null)
+    render(<Stage onOpenMaskEditor={vi.fn()} onFullscreen={vi.fn()} />)
+    fireEvent.click(screen.getByTestId('pick-original'))
+    await waitFor(() => expect(useCreateStore.getState().source?.name).toBe('original.png'))
+  })
+
+  it('can be put back when the list stopped on another image', async () => {
+    start('local', 'edit')
+    useCreateStore.getState().setSource({ filename: '', url: `data:image/png;base64,${btoa('original.png')}`, width: 8, height: 8, name: 'original.png' })
+    await addBatchFiles([png('a.png'), png('b.png')])
+    const run = localRun(['b.png'])
+    await runBatchEdit(run)
+    // b failed, so it is the next source. The original is one click away.
+    expect(nameOf(useCreateStore.getState().source!.url)).toBe('b.png')
+    render(<Stage onOpenMaskEditor={vi.fn()} onFullscreen={vi.fn()} />)
+    fireEvent.click(screen.getByText('Use the original'))
+    expect(useCreateStore.getState().source!.name).toBe('original.png')
   })
 })
 

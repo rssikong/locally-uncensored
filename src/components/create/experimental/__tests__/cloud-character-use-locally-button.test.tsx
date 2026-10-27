@@ -2,8 +2,10 @@
 /**
  * The "Use locally" button on the cloud character shelf (3.0.7). A Z-Image
  * character goes into this computer's LoRA folder and the local shelves are
- * read again; any other family says that only Z-Image runs locally and saves
- * nothing. A failure lands in the red bar, a file LU cannot vouch for too.
+ * read again. Any other family has no button at all, only a fixed "Cloud
+ * only" label (3.0.8): a customer read the button as a promise and trained a
+ * Qwen character for local use. A failure lands in the red bar, a file LU
+ * cannot vouch for too.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -20,6 +22,7 @@ const clearNodeCache = vi.fn()
 vi.mock('../../../../api/comfyui-nodes', () => ({ clearNodeCache: () => clearNodeCache() }))
 
 import { CharacterUseLocally } from '../CharacterUseLocally'
+import { CLOUD_TRAINING_FAMILY_NOTE } from '../../../../api/character-import'
 import { useCreateStore } from '../../../../stores/createStore'
 
 const ZIMAGE = { id: 'c1', name: 'Anna', trigger_word: 'annachar', base_family: 'z-image', created_at: '' }
@@ -31,11 +34,23 @@ beforeEach(() => {
 })
 
 describe('Use locally', () => {
-  it('another family: says only Z-Image runs locally, saves nothing', async () => {
-    render(<CharacterUseLocally lora={{ ...ZIMAGE, base_family: 'flux' }} />)
-    fireEvent.click(screen.getByTestId('character-use-locally'))
-    expect(await screen.findByText('Only Z-Image characters run locally')).toBeTruthy()
+  it.each(['flux', 'qwen-image', 'ltx-2'])('%s: a fixed Cloud only label, no button', (family) => {
+    render(<CharacterUseLocally lora={{ ...ZIMAGE, base_family: family }} />)
+    const label = screen.getByTestId('character-cloud-only')
+    expect(label.textContent).toBe('Cloud only')
+    expect(label.getAttribute('title')).toMatch(/^Only Z-Image characters run locally/)
+    expect(screen.queryByTestId('character-use-locally')).toBeNull()
     expect(importCloudCharacter).not.toHaveBeenCalled()
+  })
+
+  it('cloud training says before the run which characters stay in the cloud', () => {
+    expect(CLOUD_TRAINING_FAMILY_NOTE).toBe('Characters trained on Flux or Qwen run in LU Cloud only. Pick Z-Image to use the character on your machine too.')
+  })
+
+  it('a Z-Image character gets the button and no label', () => {
+    render(<CharacterUseLocally lora={ZIMAGE} />)
+    expect(screen.getByTestId('character-use-locally')).toBeTruthy()
+    expect(screen.queryByTestId('character-cloud-only')).toBeNull()
   })
 
   it('a Z-Image character is saved, ComfyUI rescans and the shelves read again', async () => {

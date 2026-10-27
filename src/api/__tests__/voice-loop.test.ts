@@ -142,7 +142,8 @@ describe('voice loop wiring', () => {
   const read = (...parts: string[]) => readFileSync(join(REPO_ROOT, ...parts), 'utf-8')
 
   it('every command is registered in Rust, mapped for dev mode, stubbed and mocked', () => {
-    const mainRs = read('src-tauri', 'src', 'main.rs')
+    // The handler list lives in lib.rs since the app became a library.
+    const mainRs = read('src-tauri', 'src', 'lib.rs')
     const backendTs = read('src', 'api', 'backend.ts')
     const stubs = read('dev-server', 'voice-loop-stubs.ts')
     const mock = read('e2e', 'support', 'tauri-mock.ts')

@@ -1,0 +1,162 @@
+{
+ "name": "/remote/connect",
+ "art": "seite",
+ "quelle": "integ-306",
+ "route": "/remote/connect",
+ "strang": "remote",
+ "code": "R2",
+ "lage": {
+  "route": "/remote/connect",
+  "screen": "m-remote-connect-screen",
+  "blaetter": [],
+  "dialog": [],
+  "reiter": null,
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back-under",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-remote-connect-screen",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-remote-connect-address",
+   "tag": "input",
+   "rolle": "textbox",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Address",
+   "el": "R2.1",
+   "box": [
+    284,
+    48
+   ]
+  },
+  {
+   "id": "m-remote-connect-passcode",
+   "tag": "input",
+   "rolle": "textbox",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Passcode",
+   "el": "R2.2",
+   "box": [
+    324,
+    48
+   ]
+  },
+  {
+   "id": "m-remote-connect-insecure",
+   "tag": "p",
+   "rolle": "p",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    358,
+    73
+   ]
+  },
+  {
+   "id": "m-remote-connect-scan",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Scan QR code instead",
+   "risiko": "sensor",
+   "el": "R2.4",
+   "box": [
+    358,
+    48
+   ]
+  },
+  {
+   "id": "m-remote-connect-help",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "How it works",
+   "box": [
+    358,
+    48
+   ]
+  },
+  {
+   "id": "m-remote-connect-submit",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Connect",
+   "el": "R2.3",
+   "box": [
+    358,
+    48
+   ]
+  },
+  {
+   "id": "m-remote-connect-status",
+   "tag": "div",
+   "rolle": "status",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    358,
+    24
+   ]
+  }
+ ]
+}

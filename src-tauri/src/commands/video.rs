@@ -1131,7 +1131,7 @@ fn order_base_candidates(mut candidates: Vec<String>) -> Vec<String> {
     candidates
 }
 
-fn python_version(python: &str) -> Option<(u32, u32)> {
+pub(crate) fn python_version(python: &str) -> Option<(u32, u32)> {
     let out = crate::python::python_command(python)
         .args(["-c", "import sys; print(sys.version_info[0], sys.version_info[1])"])
         .stdin(Stdio::null())
@@ -1146,17 +1146,77 @@ fn python_version(python: &str) -> Option<(u32, u32)> {
     Some((parts.next()??, parts.next()??))
 }
 
-/// An interpreter a venv can be built from: 3.11 or newer, which is what the
-/// engine and the image side both ask for.
-fn locate_base_python(preferred: Option<String>) -> Option<String> {
+/// The Python versions an engine's pinned packages have wheels for on an
+/// Apple Silicon Mac (GH #188).
+///
+/// The pins are exact, so pip cannot reach for a newer release that knows a
+/// newer Python. Homebrew's 3.15 took the MLX image engine down with "No
+/// matching distribution found for torch==2.13.0". Read on PyPI on
+/// 26.10.2026, the macOS arm64 wheels of every pin: torch 2.12.1 and 2.13.0
+/// cp310 to cp314, mlx 0.31.2, 0.32.0 and 0.32.2 up to cp314, none of them
+/// cp315. numpy 2.5.3 (LTX-2 MLX) and scipy 1.18.0 (mlx-video) ask for 3.12
+/// or newer, numpy 2.4.x has no cp310 wheel. A bound moves only together with
+/// the pins, and `the_python_ranges_were_read_for_these_pins` says when.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct PythonRange {
+    pub min: (u32, u32),
+    pub max: (u32, u32),
+}
+
+impl PythonRange {
+    pub(crate) fn fits(self, version: (u32, u32)) -> bool {
+        self.min <= version && version <= self.max
+    }
+
+    /// "3.11 to 3.14", for the log and the sentence the customer reads.
+    pub(crate) fn label(self) -> String {
+        format!("{}.{} to {}.{}", self.min.0, self.min.1, self.max.0, self.max.1)
+    }
+}
+
+/// The diffusers sidecar (`resources/mlx/requirements.txt`) and mflux.
+pub(crate) const TORCH_ENGINES_PYTHON: PythonRange = PythonRange { min: (3, 11), max: (3, 14) };
+/// mlx-video and LTX-2 MLX.
+pub(crate) const VIDEO_ENGINES_PYTHON: PythonRange = PythonRange { min: (3, 12), max: (3, 14) };
+
+/// Whether a venv's interpreter is one the range allows. A venv a 3.15 left
+/// behind answers pip, and pip would fail inside it on every retry, so it is
+/// built again instead.
+pub(crate) fn venv_python_fits(python: &str, range: PythonRange) -> bool {
+    python_version(python).is_some_and(|v| range.fits(v))
+}
+
+/// The interpreter picked, and every one passed over with its version.
+type BasePick = (Option<String>, Vec<(String, (u32, u32))>);
+
+/// The first candidate whose version the range allows, and every one that
+/// answered with a version outside it, for the log.
+fn pick_base_python(
+    candidates: impl IntoIterator<Item = String>,
+    version_of: impl Fn(&str) -> Option<(u32, u32)>,
+    range: PythonRange,
+) -> BasePick {
+    let mut passed_over = Vec::new();
+    for candidate in candidates {
+        match version_of(&candidate) {
+            Some(v) if range.fits(v) => return (Some(candidate), passed_over),
+            Some(v) => passed_over.push((candidate, v)),
+            None => {}
+        }
+    }
+    (None, passed_over)
+}
+
+/// An interpreter a venv can be built from, inside the engine's range.
+fn locate_base_python(preferred: Option<String>, range: PythonRange) -> BasePick {
     let on_path = crate::os_paths::find_python().map(|p| p.to_string_lossy().to_string());
     let candidates = preferred.into_iter().chain(on_path).chain(crate::python::python_interpreters()).collect();
     // What is found on the machine comes first. The Python LU downloaded for
     // itself, when the machine had none, is asked last.
-    order_base_candidates(candidates)
+    let all = order_base_candidates(candidates)
         .into_iter()
-        .chain(crate::private_python::installed().map(|p| p.to_string_lossy().to_string()))
-        .find(|c| python_version(c).is_some_and(|v| v >= (3, 11)))
+        .chain(crate::private_python::installed().map(|p| p.to_string_lossy().to_string()));
+    pick_base_python(all, python_version, range)
 }
 
 /// The interpreter a venv is built from: one found on this Mac, otherwise the
@@ -1165,10 +1225,23 @@ fn locate_base_python(preferred: Option<String>) -> Option<String> {
 pub(super) fn base_python_or_own(
     slot: &crate::install_state::InstallSlot,
     preferred: Option<String>,
+    range: PythonRange,
 ) -> Result<String, String> {
-    match locate_base_python(preferred) {
+    let (found, passed_over) = locate_base_python(preferred, range);
+    for (python, (major, minor)) in &passed_over {
+        slot.log(format!(
+            "passing over Python {major}.{minor} at {python}: this engine's packages are built for Python {} only",
+            range.label()
+        ));
+    }
+    match found {
         Some(found) => Ok(found),
-        None => crate::private_python::ensure(slot).map(|p| p.to_string_lossy().to_string()),
+        None => {
+            let log = format!("no Python {} on this computer", range.label());
+            let sentence = format!("This computer has no Python {}", range.label());
+            crate::private_python::ensure_for(slot, crate::private_python::Why { log: &log, sentence: &sentence })
+                .map(|p| p.to_string_lossy().to_string())
+        }
     }
 }
 
@@ -1199,7 +1272,8 @@ fn ensure_engine_python(
     let own = own_venv_dir();
     let usable = |venv: &std::path::Path| {
         let python = venv_python(venv);
-        (python.exists() && python_has_module(&python.to_string_lossy(), "pip")).then(|| python.to_string_lossy().to_string())
+        let text = python.to_string_lossy().to_string();
+        (python.exists() && python_has_module(&text, "pip") && venv_python_fits(&text, VIDEO_ENGINES_PYTHON)).then_some(text)
     };
     if let Some(python) = usable(&own) {
         return Ok(python);
@@ -1209,7 +1283,7 @@ fn ensure_engine_python(
             return Ok(python);
         }
     }
-    let base = base_python_or_own(slot, preferred_base)?;
+    let base = base_python_or_own(slot, preferred_base, VIDEO_ENGINES_PYTHON)?;
     slot.log(format!("Python: {base}"));
     create_venv(slot, &base, &own)?;
     Ok(venv_python(&own).to_string_lossy().to_string())
@@ -3163,6 +3237,93 @@ mod tests {
             let body = &src[src.find(command).unwrap()..src.find(end).unwrap()];
             assert!(body.contains("ensure_engine_python(") || body.contains("install_engine_steps("), "{command}");
         }
+    }
+
+    /// GH #188: Homebrew's `python3` is 3.15 by now, and none of the pins has
+    /// a wheel for it. It is passed over, said in the log, and a 3.14 next to
+    /// it is taken.
+    #[test]
+    fn gh188_a_python_the_pins_have_no_wheels_for_is_passed_over() {
+        let version_of = |p: &str| match p {
+            "/opt/homebrew/bin/python3" => Some((3, 15)),
+            "/opt/homebrew/bin/python3.14" => Some((3, 14)),
+            "/Users/u/.pyenv/shims/python3.11" => Some((3, 11)),
+            "/usr/bin/python3" => Some((3, 9)),
+            _ => None,
+        };
+        let names = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let (picked, passed_over) = pick_base_python(
+            names(&["/opt/homebrew/bin/python3", "/opt/homebrew/bin/python3.14", "/usr/bin/python3"]),
+            version_of,
+            TORCH_ENGINES_PYTHON,
+        );
+        assert_eq!(picked.as_deref(), Some("/opt/homebrew/bin/python3.14"));
+        assert_eq!(passed_over, vec![("/opt/homebrew/bin/python3".to_string(), (3, 15))]);
+
+        // Only the 3.15 and the stub: nothing here, LU fetches its own.
+        let (picked, passed_over) = pick_base_python(names(&["/opt/homebrew/bin/python3", "/usr/bin/python3"]), version_of, TORCH_ENGINES_PYTHON);
+        assert_eq!(picked, None);
+        assert_eq!(passed_over.len(), 2);
+
+        // 3.11 carries the image engines, not the video ones (numpy 2.5.3,
+        // scipy 1.18.0 ask for 3.12).
+        let pyenv = names(&["/Users/u/.pyenv/shims/python3.11"]);
+        assert!(pick_base_python(pyenv.clone(), version_of, TORCH_ENGINES_PYTHON).0.is_some());
+        assert!(pick_base_python(pyenv, version_of, VIDEO_ENGINES_PYTHON).0.is_none());
+
+        // The Python LU fetches for itself fits every engine.
+        if let Some(own) = crate::private_python::version_here() {
+            assert!(TORCH_ENGINES_PYTHON.fits(own) && VIDEO_ENGINES_PYTHON.fits(own), "{own:?}");
+        }
+        assert_eq!(TORCH_ENGINES_PYTHON.label(), "3.11 to 3.14");
+    }
+
+    /// GH #188: a venv the 3.15 left behind answers pip, and pip failed in it
+    /// on every retry. It is built again from a Python that fits.
+    #[cfg(unix)]
+    #[test]
+    fn gh188_a_venv_built_from_python_315_is_not_continued_in() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let stub = |name: &str, answer: &str| {
+            let path = root.path().join(name);
+            std::fs::write(&path, format!("#!/bin/sh\necho '{answer}'\n")).unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            path.to_string_lossy().to_string()
+        };
+        assert!(!venv_python_fits(&stub("py315", "3 15"), TORCH_ENGINES_PYTHON));
+        assert!(venv_python_fits(&stub("py314", "3 14"), TORCH_ENGINES_PYTHON));
+        assert!(!venv_python_fits(&stub("py311", "3 11"), VIDEO_ENGINES_PYTHON));
+        assert!(!venv_python_fits(&root.path().join("missing").to_string_lossy(), TORCH_ENGINES_PYTHON));
+
+        // Every engine asks it before continuing in a venv, and hands its
+        // range to the base it builds a new one from.
+        let mflux = include_str!("image_mflux.rs");
+        assert!(mflux.contains("venv_python_fits(&python, TORCH_ENGINES_PYTHON)"));
+        assert!(mflux.contains("base_python_or_own(slot, preferred_base, TORCH_ENGINES_PYTHON)"));
+        let ltx = include_str!("video_ltx2mlx.rs");
+        assert!(ltx.contains("venv_python_fits(&python, VIDEO_ENGINES_PYTHON)"));
+        assert!(ltx.contains("base_python_or_own(slot, preferred_base, VIDEO_ENGINES_PYTHON)"));
+        let src = production_source();
+        assert!(src.contains("venv_python_fits(&text, VIDEO_ENGINES_PYTHON)"));
+        assert!(src.contains("base_python_or_own(slot, preferred_base, VIDEO_ENGINES_PYTHON)"));
+        assert!(include_str!("mlx.rs").contains("clear_dead_venv(slot, &venv_dir, interpreter_fits)"));
+    }
+
+    /// The bounds above were read on PyPI for exactly these pins. Moving one
+    /// of them means reading the wheels again.
+    #[test]
+    fn the_python_ranges_were_read_for_these_pins() {
+        let mflux = include_str!("image_mflux.rs");
+        assert!(mflux.contains("\"torch==2.13.0\"") && mflux.contains("\"mlx==0.32.0\"") && mflux.contains("\"numpy==2.4.1\""));
+        let sidecar = include_str!("../../resources/mlx/requirements.txt");
+        assert!(sidecar.contains("torch==2.12.1") && sidecar.contains("numpy==2.4.6"));
+        let ltx = include_str!("video_ltx2mlx.rs");
+        assert!(ltx.contains("\"mlx==0.32.2\"") && ltx.contains("\"numpy==2.5.3\""));
+        let src = production_source();
+        assert!(src.contains("\"mlx==0.31.2\"") && src.contains("\"scipy==1.18.0\""));
+        assert_eq!((TORCH_ENGINES_PYTHON.min, TORCH_ENGINES_PYTHON.max), ((3, 11), (3, 14)));
+        assert_eq!((VIDEO_ENGINES_PYTHON.min, VIDEO_ENGINES_PYTHON.max), ((3, 12), (3, 14)));
     }
 
     #[test]

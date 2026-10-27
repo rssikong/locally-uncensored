@@ -38,21 +38,41 @@ export function funnelEventFor(action: CloudSwitchAction): FunnelEvent {
 }
 
 export function reportCloudSwitch(action: CloudSwitchAction): void {
-  reportFunnel(funnelEventFor(action))
+  const event = reportCloudSwitchAnonymous(action)
+  reportCloudSwitchForAccount(event)
 }
 
 /** A click in the gate pop-up, counted like a press of the switch. */
 export function reportCloudGate(event: GateFunnelEvent): void {
-  reportFunnel(event)
+  reportFunnelAnonymous(event)
+  reportCloudSwitchForAccount(event)
 }
 
-function reportFunnel(event: FunnelEvent): void {
+/**
+ * The anonymous half alone: event name, platform, app version, no session.
+ * The phone counts only through this one (api/cloud/switch-counter.ts), so
+ * its Privacy page can say "No account, no content" and be right
+ * (durchsicht-mobile M2). Returns the event it counted.
+ */
+export function reportCloudSwitchAnonymous(action: CloudSwitchAction): FunnelEvent {
+  // Written out here, not through reportFunnelAnonymous: the Privacy check of
+  // the phone (ios-privacy-manifest.test.ts) reads this body for what it sends.
+  const event = funnelEventFor(action)
   try {
     void backendCall('funnel_ping', { event }).catch(() => {})
   } catch {
     /* no bridge (web build): the press is simply not counted */
   }
-  reportCloudSwitchForAccount(event)
+  return event
+}
+
+function reportFunnelAnonymous(event: FunnelEvent): FunnelEvent {
+  try {
+    void backendCall('funnel_ping', { event }).catch(() => {})
+  } catch {
+    /* no bridge (web build): the press is simply not counted */
+  }
+  return event
 }
 
 /**

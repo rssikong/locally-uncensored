@@ -51,7 +51,7 @@ describe('the reference strip', () => {
     fireEvent.change(input, { target: { files: [new File(['x'], 'person.png', { type: 'image/png' })] } })
     await screen.findByAltText('image 2')
     expect(useCreateStore.getState().references.map((r) => r.filename)).toEqual(['up_person.png'])
-    expect(screen.getByText('Name them in the prompt as image 2.')).toBeTruthy()
+    expect(screen.getByText('Name them in the prompt as image 2. The image above is image 1.')).toBeTruthy()
   })
 
   it('removing the source drops its references too', () => {
@@ -92,13 +92,13 @@ describe('many references (Discord D7: up to ten images)', () => {
     render(<ReferenceStrip />)
     expect(screen.getByTestId('reference-strip').querySelectorAll('img')).toHaveLength(9)
     expect(screen.queryByTitle('Add another image the edit can use')).toBeNull()
-    expect(screen.getByText('Name them in the prompt as image 2 to image 10. With this many images, say what each one brings, for example "the scarf from image 3". With this many images the edit comes out smaller, so it fits in memory.')).toBeTruthy()
+    expect(screen.getByText('Name them in the prompt as image 2 to image 10. The image above is image 1. With this many images, say what each one brings, for example "the scarf from image 3". With this many images the edit comes out smaller, so it fits in memory.')).toBeTruthy()
   })
 
   it('up to four images in all there is no size note', () => {
     editWith(QWEN21, 'qwenimage')
     useCreateStore.setState({ references: refs(3) })
     render(<ReferenceStrip />)
-    expect(screen.getByText('Name them in the prompt as image 2 to image 4.')).toBeTruthy()
+    expect(screen.getByText('Name them in the prompt as image 2 to image 4. The image above is image 1.')).toBeTruthy()
   })
 })

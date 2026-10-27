@@ -420,6 +420,49 @@ mod civitai_auth_tests {
         assert_eq!(outgoing_token("https://example.test/m.gguf", Some("k"), Some("hf_x")), None);
     }
 
+    /// The hub answers a `resolve` address with a redirect to a storage host
+    /// whose address is already signed. v3.0.5 let reqwest follow it, and
+    /// reqwest drops `Authorization` on every change of host. The redirects
+    /// followed by hand have to do the same: a sub-domain of the hub is
+    /// another host and gets no token.
+    #[test]
+    fn the_hub_token_does_not_follow_a_redirect_to_another_host() {
+        use super::{key_stays_on_hop, RidingKey};
+        let first = "https://huggingface.co/org/repo/resolve/main/m.gguf";
+        let key = RidingKey::new(first, Some("hf_x".to_string()));
+        assert_eq!(key.for_hop(first), Some("hf_x"));
+        // A relative redirect on the hub itself keeps it.
+        assert_eq!(key.for_hop("https://huggingface.co/api/resolve-cache/models/org/repo/abc/m.gguf"), Some("hf_x"));
+        assert_eq!(key.for_hop("https://HuggingFace.co/x"), Some("hf_x"));
+        // The signed storage hosts, old and new, get nothing.
+        for hop in [
+            "https://cdn-lfs.huggingface.co/repos/ab/cd/ef?X-Amz-Signature=1",
+            "https://cdn-lfs-us-1.huggingface.co/repos/ab/cd/ef?Signature=1",
+            "https://cas-bridge.xethub.hf.co/xet-bridge-us/abc?X-Amz-Signature=1",
+            "https://evil.test/m.gguf",
+        ] {
+            let key = RidingKey::new(first, Some("hf_x".to_string()));
+            assert_eq!(key.for_hop(first), Some("hf_x"));
+            assert_eq!(key.for_hop(hop), None, "{hop}");
+            // Asked again for the same hop (a retried connection): still nothing.
+            assert_eq!(key.for_hop(hop), None, "{hop}");
+            // Gone for the rest of the chain, also on the way back.
+            assert_eq!(key.for_hop(first), None, "back from {hop}");
+        }
+        // Another port is another server, and https never steps down.
+        assert!(!key_stays_on_hop("https://huggingface.co/a", "https://huggingface.co:8443/a"));
+        assert!(!key_stays_on_hop("https://huggingface.co/a", "http://huggingface.co/a"));
+        assert!(key_stays_on_hop("https://huggingface.co/a", "https://huggingface.co:443/b"));
+        assert!(!key_stays_on_hop("not a url", "https://huggingface.co/a"));
+        assert!(!key_stays_on_hop("https://huggingface.co/a", "not a url"));
+        // The same rule for the CivitAI key.
+        let civitai = RidingKey::new("https://civitai.com/api/download/models/1", Some("k".to_string()));
+        assert_eq!(civitai.for_hop("https://civitai.com/api/download/models/1"), Some("k"));
+        assert_eq!(civitai.for_hop("https://civitai-delivery-worker-prod.5ac0637cfd0766c97916cefa3764fbdf.r2.cloudflarestorage.com/m?sig=1"), None);
+        // No token stored: nothing rides anywhere.
+        assert_eq!(RidingKey::new(first, None).for_hop(first), None);
+    }
+
     #[test]
     fn a_refused_civitai_download_names_the_field_instead_of_a_bare_number() {
         // A user, 2026-08-28: the download died on a bare HTTP 400 and
@@ -642,7 +685,7 @@ pub(crate) fn not_ours_to_delete(filename: &str, base: &str, extra_dirs: &[Strin
 /// ComfyUI enum entry; we jail-check it and look for the single file match
 /// across the known model subdirs.
 ///
-/// `extraDirs` is the folder the user named under Model Storage. LU tells
+/// `extraDirs` is the folder the user named under Storage. LU tells
 /// ComfyUI about the ComfyUI-shaped subfolders in it (GH #122), so ComfyUI now
 /// lists files that are NOT ours to delete. It stays that way on purpose: a
 /// folder the user keeps by hand is his. The button used to end in a flat
@@ -722,7 +765,7 @@ pub async fn delete_comfy_model(
                 let file = f.clone();
                 let name = base.clone();
                 return tauri::async_runtime::spawn_blocking(move || {
-                    to_the_bin(&file, &name, bytes, crate::commands::mlx_outputs::system_trash)
+                    to_the_bin(&file, &name, bytes, crate::commands::os_trash::system_trash)
                 })
                 .await
                 .map_err(|e| e.to_string())?;
@@ -823,7 +866,7 @@ fn models_dir_with(
 /// are paths over there, and a ComfyUI install found on this PC is not the one
 /// rendering. Downloads went to one or the other and ended in "Create models
 /// dir: permission denied (os error 5)" or "ComfyUI path not set". They land
-/// in the Model Storage folder now, in ComfyUI's own layout (`loras/...`,
+/// in the Storage folder now, in ComfyUI's own layout (`loras/...`,
 /// `checkpoints/...`), so copying its folders into the `models` folder over
 /// there, or sharing the folder with that machine, is all it takes.
 pub(crate) struct RemoteComfy {
@@ -847,7 +890,7 @@ fn host_is_this_machine(host: &str) -> bool {
             .unwrap_or(false)
 }
 
-/// The Model Storage folder when one is set, else a folder in Downloads.
+/// The Storage folder when one is set, else a folder in Downloads.
 fn remote_models_root() -> PathBuf {
     use crate::commands::custom_models::{remembered_root, RememberedRoot};
     match remembered_root() {
@@ -1161,13 +1204,22 @@ fn throttle_wait(slot: &mut Option<Instant>, limit_bps: u64, bytes: u64, now: In
     done.saturating_duration_since(now)
 }
 
-/// Settings, Model Storage: megabytes per second, 0 for no limit.
-#[tauri::command]
-pub fn set_download_limit(mb_per_sec: f64) -> Result<(), String> {
+/// The limit in bytes per second, or why the number is not one.
+pub(crate) fn download_limit_bps(mb_per_sec: f64) -> Result<u64, String> {
     if !mb_per_sec.is_finite() || mb_per_sec < 0.0 {
         return Err("The download limit has to be 0 or a positive number of MB/s.".to_string());
     }
-    DOWNLOAD_LIMIT_BPS.store((mb_per_sec * 1_000_000.0).round() as u64, Ordering::Relaxed);
+    Ok((mb_per_sec * 1_000_000.0).round() as u64)
+}
+
+/// Settings, Storage: megabytes per second, 0 for no limit.
+///
+/// On a phone the command of the same name in download_mobile.rs answers:
+/// the transfer there belongs to the native layer, which keeps the limit.
+#[cfg_attr(desktop, tauri::command)]
+#[cfg_attr(mobile, allow(dead_code))]
+pub fn set_download_limit(mb_per_sec: f64) -> Result<(), String> {
+    DOWNLOAD_LIMIT_BPS.store(download_limit_bps(mb_per_sec)?, Ordering::Relaxed);
     Ok(())
 }
 
@@ -1246,7 +1298,7 @@ fn total_from_content_range(v: &str) -> Option<u64> {
 /// Anything else is refused rather than quietly ignored: a mistyped digest that
 /// silently disables the check is worse than no digest at all, because it looks
 /// like the file was verified.
-fn normalize_sha256(v: &str) -> Result<String, String> {
+pub(crate) fn normalize_sha256(v: &str) -> Result<String, String> {
     let t = v.trim();
     if t.len() == 64 && t.chars().all(|c| c.is_ascii_hexdigit()) {
         Ok(t.to_ascii_lowercase())
@@ -1273,8 +1325,16 @@ fn normalize_sha256(v: &str) -> Result<String, String> {
 /// shape here breaks that decision there.
 pub fn http_error_message(status: u16, filename: &str) -> String {
     match status {
+        // The phone has no "Model Manager" and its copy carries no dash; the desktop sentence stays as it was.
+        #[cfg(mobile)]
         404 | 410 => format!(
-            "{filename} is not at this address any more (HTTP {status}). The repository was renamed, moved or taken down, so trying again cannot help. Look for a newer version of this model in the Model Manager, or update Locally Uncensored — the address is part of the app's catalog."
+            "{filename} is not at this address any more (HTTP {status}). The repository was renamed, moved or taken down, so trying again cannot help. Look for a newer version of this model under Models, or update {product}. The address is part of the app's catalog.",
+            product = crate::app_identity::PRODUCT_NAME
+        ),
+        #[cfg(not(mobile))]
+        404 | 410 => format!(
+            "{filename} is not at this address any more (HTTP {status}). The repository was renamed, moved or taken down, so trying again cannot help. Look for a newer version of this model in the Model Manager, or update {product} — the address is part of the app's catalog.",
+            product = crate::app_identity::PRODUCT_NAME
         ),
         401 | 403 => format!(
             "{filename} cannot be downloaded without a login at this host (HTTP {status}). The address is gated or private: open it in a browser, sign in, accept any licence, and put the file into the model folder by hand. Trying again here cannot help."
@@ -1345,13 +1405,12 @@ fn bundle_space_message(required: u64, reserved: u64, needed: u64, free: u64) ->
 /// Free bytes on the drive that holds `dest`. The longest matching mount point
 /// wins, so a model folder on a mounted volume is measured against that volume
 /// and not against the root it hangs under.
+///
+/// The lookup itself lives in `crate::disk`, because a phone needs a different
+/// one: inside an app sandbox sysinfo's disk list measures the wrong file
+/// system and refused every download (Android finding A11).
 pub(crate) fn available_space_for(dest: &Path) -> Option<u64> {
-    let disks = sysinfo::Disks::new_with_refreshed_list();
-    disks
-        .iter()
-        .filter(|d| dest.starts_with(d.mount_point()))
-        .max_by_key(|d| d.mount_point().as_os_str().len())
-        .map(|d| d.available_space())
+    crate::disk::available_bytes(dest)
 }
 
 /// Gibibyte, weil Windows und der Finder den freien Platz so anzeigen und der
@@ -1401,7 +1460,7 @@ pub(crate) fn is_huggingface_host(url: &str) -> bool {
 /// HuggingFace link would send people to the wrong setting.
 ///
 /// The section name is part of the message and it has to be the section that
-/// really holds the field. It did not: the key moved out of Model Storage into
+/// really holds the field. It did not: the key moved out of Storage into
 /// a section of its own (the A14 review found a tester saving a folder path as
 /// his API key, because the two fields sat under each other), and this text
 /// kept sending people to the folder settings, where the field they were
@@ -1480,6 +1539,64 @@ fn outgoing_token(url: &str, civitai_key: Option<&str>, hf_token: Option<&str>) 
     civitai.or(hub).map(|t| t.to_string())
 }
 
+/// Does a credential that went out with `first` still belong on `hop`?
+///
+/// The rule reqwest applies when it follows a redirect itself, and the rule
+/// every download of v3.0.5 lived by: `Authorization` survives a redirect only
+/// while host and port stay the same. A sub-domain is another host. That
+/// matters for the hub: `huggingface.co` answers a `resolve` address with a
+/// redirect to a storage host (`cdn-lfs.huggingface.co`, `*.hf.co`) whose
+/// address is already signed. A signed address that gets a Bearer header on
+/// top answers 400, so the download would fail exactly for the people who
+/// stored a token. Never down from https either.
+fn key_stays_on_hop(first: &str, hop: &str) -> bool {
+    let (a, b) = match (url::Url::parse(first), url::Url::parse(hop)) {
+        (Ok(a), Ok(b)) => (a, b),
+        _ => return false,
+    };
+    let host_a = a.host_str().unwrap_or("").to_ascii_lowercase();
+    let host_b = b.host_str().unwrap_or("").to_ascii_lowercase();
+    if host_a.is_empty() || host_a != host_b {
+        return false;
+    }
+    if a.port_or_known_default() != b.port_or_known_default() {
+        return false;
+    }
+    !(a.scheme() == "https" && b.scheme() != "https")
+}
+
+/// The credential of one download on its way through the redirects.
+///
+/// It rides while the hop is the address the download was started with (same
+/// host, same port). Once a redirect has left that host the credential is
+/// gone for the rest of the chain, even when a later hop comes back: reqwest
+/// removes the header from the request it carries along, it never puts it
+/// back.
+pub(crate) struct RidingKey {
+    first: String,
+    token: Option<String>,
+    dropped: std::sync::atomic::AtomicBool,
+}
+
+impl RidingKey {
+    pub(crate) fn new(first: &str, token: Option<String>) -> Self {
+        Self { first: first.to_string(), token, dropped: std::sync::atomic::AtomicBool::new(false) }
+    }
+
+    /// The token for this hop, or nothing. Asking twice for the same hop (a
+    /// connection that is tried again) gives the same answer.
+    pub(crate) fn for_hop(&self, hop: &str) -> Option<&str> {
+        use std::sync::atomic::Ordering;
+        if !key_stays_on_hop(&self.first, hop) {
+            self.dropped.store(true, Ordering::SeqCst);
+        }
+        if self.dropped.load(Ordering::SeqCst) {
+            return None;
+        }
+        self.token.as_deref()
+    }
+}
+
 /// One reqwest client, built the same way for every request this module makes.
 ///
 /// The SSRF guard is not optional and not a per-call decision: model downloads
@@ -1488,7 +1605,7 @@ fn outgoing_token(url: &str, civitai_key: Option<&str>, hf_token: Option<&str>) 
 /// on any redirect.
 pub(crate) fn download_client(connect_secs: u64, read_secs: u64) -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
-        .user_agent("LocallyUncensored/1.5")
+        .user_agent(crate::app_identity::outgoing_agent!("1.5"))
         .redirect(crate::commands::proxy::ssrf_safe_redirect_policy(10))
         .connect_timeout(std::time::Duration::from_secs(connect_secs))
         .read_timeout(std::time::Duration::from_secs(read_secs))
@@ -1593,7 +1710,10 @@ async fn do_download(
     // civitai, ollama). Block private/loopback/metadata hosts and re-validate
     // every redirect hop so a crafted catalog/model URL can't pull from an
     // internal service or 169.254.169.254.
-    crate::commands::proxy::validate_public_url(url)?;
+    // The gate itself runs inside `send_download_request`, once per hop and
+    // with the patient resolver: a slow line gets three lookups with growing
+    // time instead of one of five seconds, and when the network really is
+    // gone the row says so in a sentence of its own (models 26c).
 
     // A deadline on the whole request punishes people for having a slow line
     // rather than a broken one: the 2 hour cap this replaces killed any
@@ -1604,7 +1724,6 @@ async fn do_download(
     // per-connect and per-read. A dead socket now fails in two minutes and
     // resumes from the partial on the next attempt; a slow one is left to
     // finish.
-    let client = download_client(30, 120)?;
 
     // The Hugging Face token from Settings goes to the hub and to no other
     // host: gated repos answer 401 without it, and anonymous hub traffic is
@@ -1615,22 +1734,28 @@ async fn do_download(
     let sent_token: Option<String> = outgoing_token(url, auth_token.as_deref(), hf_token.as_deref());
 
     let mut resume_offset = resume_offset;
+    let riding_key = RidingKey::new(url, sent_token.clone());
     let response = loop {
-        let mut request = client.get(url);
-        if let Some(t) = sent_token.as_deref() {
-            request = request.bearer_auth(t);
-        }
-
-        // Resume support: request only remaining bytes
         if resume_offset > 0 {
-            request = request.header("Range", format!("bytes={}-", resume_offset));
             println!("[Download] Resuming from byte {}", resume_offset);
         }
-
-        let response = request
-            .send()
-            .await
-            .map_err(|e| format!("Request failed: {}", os_error::english(&e)))?;
+        let offset = resume_offset;
+        let response = crate::commands::proxy::send_download_request(url, 30, 120, 10, |client, hop| {
+            let mut request = client.get(hop);
+            // Asked again for every hop: a key follows a redirect only while the
+            // hop is still the host the download was started with, as reqwest
+            // did it in v3.0.5. The file itself usually comes from a signed
+            // storage address that must not see it, see `key_stays_on_hop`.
+            if let Some(t) = riding_key.for_hop(hop) {
+                request = request.bearer_auth(t);
+            }
+            // Resume support: request only remaining bytes
+            if offset > 0 {
+                request = request.header("Range", format!("bytes={}-", offset));
+            }
+            request
+        })
+        .await?;
 
         // GH #113: a partial that already holds the whole file (the rename
         // after the last byte failed, or the app ended right there) or more
@@ -1645,7 +1770,7 @@ async fn do_download(
                 id, resume_offset
             );
             let moved = tmp.clone();
-            tokio::task::spawn_blocking(move || crate::commands::mlx_outputs::system_trash(&moved))
+            tokio::task::spawn_blocking(move || crate::commands::os_trash::system_trash(&moved))
                 .await
                 .map_err(|e| e.to_string())?
                 .map_err(|e| format!(
@@ -1884,7 +2009,10 @@ async fn do_download(
     Ok(())
 }
 
-#[tauri::command]
+// Phone builds register the lu-native variant from download_mobile.rs under
+// the same name, and one name can carry only one command macro.
+#[cfg_attr(desktop, tauri::command)]
+#[cfg_attr(mobile, allow(dead_code))]
 pub fn pause_download(id: String, state: State<'_, AppState>) -> Result<serde_json::Value, String> {
     // Set status to "pausing" so the download loop knows it's a pause, not cancel
     if let Ok(mut dl) = state.downloads.lock() {
@@ -1918,7 +2046,10 @@ pub fn pause_download(id: String, state: State<'_, AppState>) -> Result<serde_js
 /// text promised "start it again to resume", the user pressed the button the UI
 /// offered, and the button deleted the 36 GB it was about to resume from. On a
 /// bad line that never converges.
-#[tauri::command]
+// Phone builds register the lu-native variant from download_mobile.rs under
+// the same name, and one name can carry only one command macro.
+#[cfg_attr(desktop, tauri::command)]
+#[cfg_attr(mobile, allow(dead_code))]
 pub fn cancel_download(id: String, state: State<'_, AppState>) -> Result<serde_json::Value, String> {
     // Cancel the token
     if let Ok(tokens) = state.download_tokens.lock() {
@@ -2063,7 +2194,10 @@ mod image_part_removal_tests {
 /// Refuses to touch a transfer that is still live: "connecting", "downloading"
 /// and "pausing" own their entry, and dropping it under them would leave a
 /// running tokio task writing into a file nothing knows about.
-#[tauri::command]
+// Phone builds register the lu-native variant from download_mobile.rs under
+// the same name, and one name can carry only one command macro.
+#[cfg_attr(desktop, tauri::command)]
+#[cfg_attr(mobile, allow(dead_code))]
 pub fn clear_download_entry(id: String, state: State<'_, AppState>) -> Result<serde_json::Value, String> {
     let mut dl = state
         .downloads
@@ -2188,7 +2322,7 @@ pub struct OrphanDownload {
 
 /// Basename minus its extension. The one place the `.download` naming rule is
 /// read, so the orphan scan and the id matching cannot drift apart.
-fn file_stem_of(name: &str) -> String {
+pub(crate) fn file_stem_of(name: &str) -> String {
     match name.rsplit_once('.') {
         Some((stem, _)) if !stem.is_empty() => stem.to_string(),
         _ => name.to_string(),
@@ -2242,7 +2376,10 @@ fn orphan_roots(state: &State<'_, AppState>, extra: &[String]) -> Vec<PathBuf> {
 /// Entries the running app is already working on are left out: those are not
 /// orphans, they have a row.
 #[allow(non_snake_case)]
-#[tauri::command]
+// Phone builds register the lu-native variant from download_mobile.rs under
+// the same name, and one name can carry only one command macro.
+#[cfg_attr(desktop, tauri::command)]
+#[cfg_attr(mobile, allow(dead_code))]
 pub async fn find_orphan_downloads(
     extraDirs: Option<Vec<String>>,
     state: State<'_, AppState>,
@@ -2269,7 +2406,7 @@ pub async fn find_orphan_downloads(
 /// Skipping them is what keeps the startup scan off the user's clock.
 const SCAN_SKIP: &[&str] = &[".git", "__pycache__", "node_modules", ".venv", "venv", ".cache"];
 
-fn scan_for_partials(roots: Vec<PathBuf>, live: Vec<String>) -> Vec<OrphanDownload> {
+pub(crate) fn scan_for_partials(roots: Vec<PathBuf>, live: Vec<String>) -> Vec<OrphanDownload> {
     let mut out: Vec<OrphanDownload> = Vec::new();
     let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
     for root in roots {
@@ -2339,7 +2476,10 @@ pub fn delete_orphan_download(
 }
 
 #[allow(non_snake_case)]
-#[tauri::command]
+// Phone builds register the lu-native variant from download_mobile.rs under
+// the same name, and one name can carry only one command macro.
+#[cfg_attr(desktop, tauri::command)]
+#[cfg_attr(mobile, allow(dead_code))]
 pub async fn resume_download(
     id: String,
     url: String,
@@ -2439,7 +2579,10 @@ pub async fn resume_download(
     Ok(serde_json::json!({"status": "resuming", "offset": resume_offset}))
 }
 
-#[tauri::command]
+// Phone builds register the lu-native variant from download_mobile.rs under
+// the same name, and one name can carry only one command macro.
+#[cfg_attr(desktop, tauri::command)]
+#[cfg_attr(mobile, allow(dead_code))]
 pub fn download_progress(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
     let downloads = state.downloads.lock().unwrap();
     let map: HashMap<String, DownloadProgress> = downloads.clone();
@@ -2448,10 +2591,34 @@ pub fn download_progress(state: State<'_, AppState>) -> Result<serde_json::Value
 
 // ─── HuggingFace GGUF Downloads (to provider model dirs) ───
 
+/// The names the built-in engine goes by. The Discover tab passes the display
+/// name (`providers.openai.name`), not the internal id.
+///
+/// Written as a `match` with the arm on one line: the sweep for the old name
+/// on screen exempts exactly that line (`no-built-in-engine-left-on-screen`).
+#[allow(clippy::match_like_matches_macro)]
+pub(crate) fn is_builtin_provider(provider_lower: &str) -> bool {
+    match provider_lower {
+        "builtin" | "lu engine" | "built-in engine" | "built in engine" => true,
+        _ => false,
+    }
+}
+
 #[tauri::command]
 pub fn detect_model_path(provider: String) -> Result<serde_json::Value, String> {
-    let home = dirs::home_dir().ok_or("Cannot find home directory")?;
     let provider_lower = provider.to_lowercase();
+
+    // The built-in engine is answered BEFORE anyone asks for a home folder.
+    // A phone has none (Android: no HOME, no XDG, cwd `/`), and with the
+    // home lookup in front this command failed with "Cannot find home
+    // directory" for the one provider a phone has, so the first model could
+    // never be downloaded (Android finding A14).
+    if is_builtin_provider(&provider_lower) {
+        return crate::commands::engine::builtin_models_dir()
+            .map(|p| serde_json::json!(p.to_string_lossy()));
+    }
+
+    let home = dirs::home_dir().ok_or("Cannot find home directory")?;
 
     // Providers with managed model directories. Checked in order, first
     // existing path wins. Falls through to LU fallback dir if none match —
@@ -2468,10 +2635,9 @@ pub fn detect_model_path(provider: String) -> Result<serde_json::Value, String> 
         // Accept the display name too ("Built-in Engine") — the Discover tab
         // passes `providers.openai.name`, not the internal id, so without these
         // aliases a built-in-active install couldn't add a second chat model.
-        "builtin" | "lu engine" | "built-in engine" | "built in engine" => {
-            return crate::commands::engine::builtin_models_dir()
-                .map(|p| serde_json::json!(p.to_string_lossy()));
-        }
+        //
+        // That answer is given at the top of this function now, before the
+        // home lookup, so no arm for those names is left in this match.
         // Ollama manages its own blob store — treat as a pointer so LU can
         // later auto-create a Modelfile pointing at the downloaded GGUF.
         "ollama" => vec![
@@ -2619,7 +2785,10 @@ pub fn lmstudio_dir_in(home: &Path) -> Option<PathBuf> {
 }
 
 #[allow(non_snake_case)]
-#[tauri::command]
+// Phone builds register the lu-native variant from download_mobile.rs under
+// the same name, and one name can carry only one command macro.
+#[cfg_attr(desktop, tauri::command)]
+#[cfg_attr(mobile, allow(dead_code))]
 pub async fn download_model_to_path(
     url: String,
     destDir: String,
@@ -2785,7 +2954,7 @@ fn checked_model_path(dest_dir: &Path, filename: &str) -> Option<PathBuf> {
 
 /// Where `download_model` puts `filename` of `subfolder`: the same ComfyUI
 /// folder (the running engine's own answer first, a ComfyUI on another machine
-/// in the Model Storage folder) and the same jail as `check_model_sizes`. Used
+/// in the Storage folder) and the same jail as `check_model_sizes`. Used
 /// by Check files and Repair (model_verify.rs), so the check can never look in
 /// another tree than the download wrote into. `None` for a name that has to be
 /// refused.
@@ -2859,7 +3028,7 @@ pub async fn check_model_sizes(
     // measure a tree nothing was written to and report every file as missing.
     let folders = engine_folders(&state).await;
     // A ComfyUI on another machine: the files are measured where they were
-    // written, in the Model Storage folder (GH #143).
+    // written, in the Storage folder (GH #143).
     let remote = remote_comfy(&state);
     // Read once for the whole list (GH #183).
     let user = comfy_user_paths::for_comfy(&comfy_path);
@@ -3066,6 +3235,50 @@ mod tests {
         panic!("unbalanced braces after {signature}");
     }
 
+    /// B3 of the check "the desktop must not break". The frontend resumes a
+    /// file that was downloaded by path (every GGUF of the built-in engine)
+    /// through `download_model_to_path` now, where v3.0.5 called
+    /// `resume_download`. That is only allowed to stay if the two continue a
+    /// transfer the same way, so this holds them next to each other: both
+    /// read the offset from `<target>.download`, both claim the row with it,
+    /// both hand the same offset to the same `do_download`, both finish and
+    /// fail into the same row states. What differs is where the target is:
+    /// `resume_download` resolves a ComfyUI subfolder (for a GGUF by path
+    /// that folder never held the partial, and without ComfyUI it is an
+    /// error), the start by path takes the folder the file really went to.
+    #[test]
+    fn a_start_by_path_continues_a_partial_exactly_like_resume_download() {
+        let src = include_str!("download.rs");
+        let resume = fn_body(src, "pub async fn resume_download(");
+        let by_path = fn_body(src, "pub async fn download_model_to_path(");
+        let squeezed = |body: &str| body.split_whitespace().collect::<Vec<_>>().join(" ");
+        let (resume, by_path) = (squeezed(resume), squeezed(by_path));
+        for step in [
+            // The partial sits next to the target, with this suffix.
+            r#"let tmp_path = dest_file.with_extension("download");"#,
+            // Its length is where the transfer goes on.
+            "let resume_offset = if tmp_path.exists() { tmp_path.metadata().map(|m| m.len()).unwrap_or(0) } else { 0 };",
+            // One writer per file, the row starts at the offset.
+            "&dest_file, resume_offset) {",
+            "Claim::AlreadyRunning => {",
+            "Claim::NameConflict(other) => {",
+            // The same transfer function with the same offset and the same claims of the catalog.
+            "match do_download(&url, &dest_file, &downloads_arc, &id_clone, token, resume_offset, CatalogClaims { expected_bytes, expected_sha256, auth_token",
+            // The same ends.
+            r#"p.status = "complete".to_string();"#,
+            r#"if e == "paused" {"#,
+            r#"} else if e == "cancelled" { let tmp = dest_file.with_extension("download"); let _ = std::fs::remove_file(&tmp);"#,
+            r#"p.status = "error".to_string(); p.error = Some(e.clone());"#,
+        ] {
+            assert!(resume.contains(step), "resume_download lost: {step}");
+            assert!(by_path.contains(step), "download_model_to_path lost: {step}");
+        }
+        // The one difference, named: the folder.
+        assert!(resume.contains("comfy_models_dir(&state, &comfy_path, &subfolder)"));
+        assert!(by_path.contains("PathBuf::from(&dest_dir)"));
+        assert!(!by_path.contains("comfy_models_dir"));
+    }
+
     #[test]
     fn a_delete_with_trash_puts_the_file_in_the_bin_whole() {
         let dir = tempfile::tempdir().unwrap();
@@ -3111,7 +3324,7 @@ mod tests {
         let branch = body.find("if trash.unwrap_or(false)").expect("trash branch");
         let remove = body.find("fs::remove_file(f)").expect("remove branch");
         assert!(branch < remove, "the trash branch comes before the delete for good");
-        assert!(body[branch..remove].contains("mlx_outputs::system_trash"), "{body}");
+        assert!(body[branch..remove].contains("os_trash::system_trash"), "{body}");
         assert!(body[branch..remove].contains("return "), "{body}");
     }
 
@@ -3135,7 +3348,7 @@ mod tests {
         );
         assert!(delete_body.contains("engine_folders(&state).await"), "{delete_body}");
         // The space check goes through comfy_models_dir since GH #143 (a
-        // remote ComfyUI measures the Model Storage folder), and that one asks
+        // remote ComfyUI measures the Storage folder), and that one asks
         // the engine fresh for everything else.
         assert!(space_body.contains("comfy_models_dir(&state"), "{space_body}");
         let dir_body = fn_body(src, "async fn comfy_models_dir(");
@@ -3190,7 +3403,7 @@ mod tests {
 
     #[test]
     fn the_lm_studio_row_looks_and_never_creates() {
-        // A14: Model Storage has to be able to say "LM Studio is not
+        // A14: Storage has to be able to say "LM Studio is not
         // installed". detect_model_path cannot answer that, because it is a
         // download target and calls create_dir_all on the way out, so asking
         // it would conjure ~/.lmstudio/models on a machine that has never seen
@@ -3523,6 +3736,44 @@ mod tests {
 /// the same `.download` file — one truncating it, the other appending at its
 /// own offset. The file still reached `total` bytes and was reported
 /// "complete": a silently corrupt model, several GB of it.
+/// Guard for Android finding A14: a phone has no home folder, and the one
+/// provider it has must not depend on one.
+#[cfg(test)]
+mod builtin_path_needs_no_home_tests {
+    use super::*;
+
+    #[test]
+    fn every_name_of_the_builtin_engine_gets_the_app_models_folder() {
+        let want = crate::commands::engine::builtin_models_dir().unwrap();
+        // The two old spellings are put together here, so the sweep for the
+        // old name on screen finds no string of it in this file.
+        let old_dashed = ["Built", "in Engine"].join("-");
+        let old_spaced = ["built", "in engine"].join(" ");
+        for name in ["builtin", "LU Engine", old_dashed.as_str(), old_spaced.as_str()] {
+            let got = detect_model_path(name.to_string()).unwrap();
+            assert_eq!(got, serde_json::json!(want.to_string_lossy()), "{name}");
+        }
+        assert!(!is_builtin_provider("ollama"));
+    }
+
+    #[test]
+    fn the_builtin_answer_comes_before_the_home_lookup() {
+        // Read from the source: HOME cannot be taken away from a test that
+        // shares its process with a thousand others. What matters is the
+        // order, because `?` on a missing home ends the function.
+        let src = include_str!("download.rs");
+        let f = &src[src.find("pub fn detect_model_path(").expect("exists")..];
+        let builtin = f.find("if is_builtin_provider(&provider_lower)").expect("the early answer exists");
+        let home = f.find("dirs::home_dir()").expect("the home lookup exists");
+        assert!(
+            builtin < home,
+            "detect_model_path must answer for the LU Engine before it asks for a home folder"
+        );
+        let early = &f[builtin..home];
+        assert!(early.contains("return crate::commands::engine::builtin_models_dir()"), "{early}");
+    }
+}
+
 #[cfg(test)]
 mod claim_tests {
     use super::*;

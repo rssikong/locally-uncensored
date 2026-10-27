@@ -46,7 +46,7 @@ pub(super) fn download_file_blocking(
     install_state: &Arc<Mutex<InstallState>>,
 ) -> Result<(), String> {
     let client = reqwest::blocking::Client::builder()
-        .user_agent("LocallyUncensored/2.3")
+        .user_agent(crate::app_identity::outgoing_agent!("2.3"))
         .redirect(reqwest::redirect::Policy::limited(10))
         // This path pulls installers and archives (hundreds of MB), so the
         // whole-request deadline still fits. The blocking client has no

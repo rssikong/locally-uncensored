@@ -1,0 +1,174 @@
+{
+ "name": "/chat/:id",
+ "art": "seite",
+ "quelle": "integ-306",
+ "route": "/chat/:id",
+ "strang": "chat",
+ "code": "C2",
+ "lage": {
+  "route": "/chat/:id",
+  "screen": "m-chat-screen",
+  "blaetter": [],
+  "dialog": [],
+  "reiter": null,
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back-under",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-chat-screen",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-chat-empty",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    343
+   ]
+  },
+  {
+   "id": "m-chat-install-model",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Install a model",
+   "box": [
+    320,
+    48
+   ]
+  },
+  {
+   "id": "m-chat-use-cloud",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Use LU Cloud",
+   "box": [
+    320,
+    48
+   ]
+  },
+  {
+   "id": "m-chat-input",
+   "tag": "textarea",
+   "rolle": "textbox",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Message",
+   "box": [
+    364,
+    48
+   ]
+  },
+  {
+   "id": "m-chat-attach",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Attach",
+   "el": "C2.4",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-chat-options",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Chat options",
+   "el": "C2.5",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-chat-model",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Choose a model",
+   "el": "C2.6",
+   "box": [
+    206,
+    48
+   ]
+  },
+  {
+   "id": "m-chat-mic",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Dictate",
+   "risiko": "paid",
+   "box": [
+    48,
+    48
+   ]
+  }
+ ]
+}

@@ -107,12 +107,80 @@ export const PATCHES = {
       from: "import { dataUrlToBlob } from '@/lib/render/data-url'\n",
       to: "import { dataUrlToBlob } from '@/lib/render/data-url'\nimport { errorText } from '@/types/json-guards'\n",
     },
+    {
+      why: "A13: the catch-up after a lost answer follows a run with the deadline of its own kind, so this is read outside the file.",
+      from: "function timeoutFor(run: OrderRun): number {",
+      to: "export function timeoutFor(run: OrderRun): number {",
+    },
+    {
+      why: "A13: a run whose job is with the server, but whose answer did not arrive (the poll ran out of time or the network went away), is marked as such, so its settling note says what happened.",
+      from: "  stoppedLate?: boolean\n  refunded?: boolean\n",
+      to: "  stoppedLate?: boolean\n  lostTrack?: boolean\n  refunded?: boolean\n",
+    },
+    {
+      why: "A13: settling a lost run clears its mark with the others.",
+      from: "interrupted: undefined, stoppedLate: undefined",
+      to: "interrupted: undefined, stoppedLate: undefined, lostTrack: undefined",
+      times: 3,
+    },
+    {
+      why: "A13: a lost run that settles says that it settled, not that the page was reloaded.",
+      from: "  return {\n    ...next,\n    state: 'stopped',\n    note: finished\n      ? 'The page was reloaded while this order ran.",
+      to: "  if (run.lostTrack) {\n    return {\n      ...next,\n      state: 'stopped',\n      note: finished\n        ? `Item ${n} has finished on LU Cloud after all and was charged.`\n        : `Item ${n} did not finish on LU Cloud and was refunded.`,\n    }\n  }\n  return {\n    ...next,\n    state: 'stopped',\n    note: finished\n      ? 'The page was reloaded while this order ran.",
+    },
+    {
+      why: "A13: a stop between the submit and the first poll asks the server whether the job was taken back, instead of reporting a refund nobody confirmed.",
+      from: "          if (jobId && polling) {\n            try {\n              const res = await deps.cancelJob(jobId)",
+      to: "          if (jobId) {\n            try {\n              const res = await deps.cancelJob(jobId)",
+    },
+    {
+      why: "A13: a job the server has (it was sent and polled) whose answer did not arrive is not \"could not start\": it keeps rendering. It is marked lost, and the store follows it to its end (catchUp), as after a reload.",
+      from: "        const text = err instanceof HandleError ? err.message : failure.text ?? 'Could not start this item.'\n",
+      to: "        const sentId = order.items.find((i) => i.n === item.n)!.runs[index].jobId\n        if (polling && sentId) {\n          emit({\n            ...replaceRun(order, item.n, index, { status: 'failed', refunded: false, error: LOST_TRACK_ERROR, interrupted: true, lostTrack: true }),\n            state: 'stopped',\n            note: `Item ${item.n} is with LU Cloud, but its answer did not arrive (${failure.text ?? 'no reply'}). LU keeps checking; it is charged only if it finishes.`,\n          })\n          return order\n        }\n        const text = err instanceof HandleError ? err.message : failure.text ?? 'Could not start this item.'\n",
+    },
+    {
+      why: "A13: the text of a lost run.",
+      from: "export const INTERRUPTED_NOTE =",
+      to: "export const LOST_TRACK_ERROR = 'Still with LU Cloud: its answer did not arrive yet.'\nexport const INTERRUPTED_NOTE =",
+    },
   ],
   'lib/create/engine.ts': [
     {
       why: 'The desktop compiles with noUnusedParameters; the web does not read this parameter either.',
       from: '  quoteImages?: number,\n): Promise<PresetQuote> {\n  if (measuredByServer(r))',
       to: '  _quoteImages?: number,\n): Promise<PresetQuote> {\n  if (measuredByServer(r))',
+    },
+  ],
+  'stores/createOrderStore.ts': [
+    {
+      why: "A13: the catch-up follows a run with the deadline of its kind (45 minutes for a clip, 125 for a preset) instead of the 15 minute default, and it can be stopped.",
+      from: "  orderIdFromToolResult, resumeInterrupted, settleInterrupted,\n",
+      to: "  orderIdFromToolResult, resumeInterrupted, settleInterrupted, timeoutFor,\n",
+    },
+    {
+      why: "A13: the catch-up after a run takes the cancel as well.",
+      from: "  catchUp: (orderId: string, deps?: Pick<ExecuteDeps, 'getJob' | 'pollJob'>) => Promise<void>",
+      to: "  catchUp: (orderId: string, deps?: Pick<ExecuteDeps, 'getJob' | 'pollJob'> & Partial<Pick<ExecuteDeps, 'cancelJob'>>) => Promise<void>",
+    },
+    {
+      why: "A13: the catch-up after a run takes the cancel as well.",
+      from: "void get().catchUp(orderId, { getJob: deps.getJob, pollJob: deps.pollJob })",
+      to: "void get().catchUp(orderId, { getJob: deps.getJob, pollJob: deps.pollJob, cancelJob: deps.cancelJob })",
+    },
+    {
+      why: "A13: a followed run has a controller, so the card shows Stop and Stop reaches the server; before, a run resumed after a reload could not be stopped at all.",
+      from: "        if (catchingUp.has(orderId) || controllers.has(orderId)) return\n        catchingUp.add(orderId)\n        try {",
+      to: "        if (catchingUp.has(orderId) || controllers.has(orderId)) return\n        catchingUp.add(orderId)\n        const controller = new AbortController()\n        controllers.set(orderId, controller)\n        try {",
+    },
+    {
+      why: "A13: the deadline of the run and its Stop.",
+      from: "                job = await deps.pollJob(jobId, {})\n",
+      to: "                const run = locate(get(), orderId)?.items.find((i) => i.n === n)?.runs[index]\n                try {\n                  job = await deps.pollJob(jobId, { timeoutMs: run ? timeoutFor(run) : undefined, signal: controller.signal })\n                } catch (err) {\n                  if (!controller.signal.aborted) throw err\n                  await (deps.cancelJob ?? cancelJob)(jobId).catch(() => null)\n                  job = await deps.getJob(jobId)\n                }\n",
+    },
+    {
+      why: "A13: the controller goes with the catch-up.",
+      from: "        } finally {\n          catchingUp.delete(orderId)\n        }",
+      to: "        } finally {\n          catchingUp.delete(orderId)\n          if (controllers.get(orderId) === controller) controllers.delete(orderId)\n        }",
     },
   ],
 }

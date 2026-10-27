@@ -113,6 +113,7 @@ export const IMAGE_PART = {
   'ornith-ai/Ornith-1.5-9B-GGUF/mmproj-Ornith-1.5-9B-BF16.gguf': part('ornith-ai/Ornith-1.5-9B-GGUF', 'mmproj-Ornith-1.5-9B-BF16.gguf', 921704672, '626f9f90627402a6bf4a999111d0fbd69b5fcca7aa8ba089d69e5f10e8858e1d'),
   'unsloth/Devstral-Small-2-24B-Instruct-2512-GGUF/mmproj-F16.gguf': part('unsloth/Devstral-Small-2-24B-Instruct-2512-GGUF', 'mmproj-F16.gguf', 878054048, '236bb4f0500620164917f26749cd402485b7d749034ea817c6a2d65253b126b9'),
   'unsloth/Kimi-K2.7-Code-GGUF/mmproj-F16.gguf': part('unsloth/Kimi-K2.7-Code-GGUF', 'mmproj-F16.gguf', 952572320, '9036f4050ca6e0cb4007ad9e46644f47031b4b979ba29ae4e355de5e006e7afe'),
+  'unsloth/Kimi-K3-GGUF/mmproj-F16.gguf': part('unsloth/Kimi-K3-GGUF', 'mmproj-F16.gguf', 903244832, '1937732929a5279d442a98345e93772e759bc7cbae8b2bb8b80a1648574d53a3'),
   'unsloth/Llama-4-Scout-17B-16E-Instruct-GGUF/mmproj-F16.gguf': part('unsloth/Llama-4-Scout-17B-16E-Instruct-GGUF', 'mmproj-F16.gguf', 1746780928, '70240ddf9daa0a91570a0975c0480044cb6b84bea427feb52bc0226df682fdeb'),
   'unsloth/Mistral-Medium-3.5-128B-GGUF/mmproj-F16.gguf': part('unsloth/Mistral-Medium-3.5-128B-GGUF', 'mmproj-F16.gguf', 5356846528, '494e993f80330f170ca6dd436db7a8f64cbc5617fcccf3e7d12564667114b272'),
   'unsloth/Mistral-Small-4-119B-2603-GGUF/mmproj-F16.gguf': part('unsloth/Mistral-Small-4-119B-2603-GGUF', 'mmproj-F16.gguf', 857078496, '8afb53096537664e248a0b4a9240c25677bb0f8a8cb5a5aad3cd1d608776a4e7'),

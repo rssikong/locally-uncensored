@@ -147,6 +147,35 @@ describe('Edit on the Mac hands the engine the image on the Stage', () => {
     expect(mlx.runs).toHaveLength(1)
   })
 
+  // Discord feature request 21.10.2026 ("Native HiRes Upscale in the EDIT"):
+  // the edited picture goes back in for the same second pass Create runs.
+  it('HiRes fix in Edit: the edited picture is the image of the second pass, only that one is kept', async () => {
+    arrange('edit', [SDTURBO, QWEN], QWEN)
+    useCreateStore.setState({ source: img('a'), hiresFixEnabled: true, hiresScale: 1.5, hiresSteps: 12, hiresDenoise: 0.5 } as never)
+    const { result } = renderHook(() => useCreate())
+    await result.current.generate()
+    expect(mlx.runs).toHaveLength(2)
+    // First the edit of the source, as without HiRes.
+    expect(mlx.runs[0]).toMatchObject({ images: ['/data/videos/start-images/a.png'], resolution: 1056 })
+    // Then the edited picture (1376 x 768 from the engine), staged and edited
+    // again at the larger size, partway down the schedule.
+    expect(mlx.runs[1]).toMatchObject({
+      images: ['/data/videos/start-images/late.png'], width: 2048, height: 1152, steps: 24, strength: 0.5, seed: 7,
+    })
+    expect(mlx.staged).toHaveLength(1)
+    expect(state().gallery).toHaveLength(1)
+    expect(state().gallery[0]).toMatchObject({ intent: 'edit' })
+    expect(state().error).toBeNull()
+  })
+
+  it('COUNTER-CHECK: Edit without HiRes stays one run', async () => {
+    arrange('edit', [SDTURBO, QWEN], QWEN)
+    useCreateStore.setState({ source: img('a'), hiresFixEnabled: false } as never)
+    const { result } = renderHook(() => useCreate())
+    await result.current.generate()
+    expect(mlx.runs).toHaveLength(1)
+  })
+
   it('a painted mask is written to disk and goes with the strength to the engine', async () => {
     arrange('edit', [QWEN], QWEN)
     // A feather of 0 hands the mask on as it was painted (jsdom has no
@@ -177,6 +206,20 @@ describe('Edit on the Mac hands the engine the image on the Stage', () => {
       // 1600 x 900 at a budget of 1056 x 1056, as the engine works it out.
       width: 1408, height: 800,
     })
+  })
+
+  // Discord help-18, 23.10.2026: mflux labels the images <image1>, <image2>
+  // (qwen21 prompt_encoder.py), so every spelling reaches it in that form,
+  // while the gallery keeps the prompt as it was typed.
+  it('names the images as the engine labels them, and the gallery keeps the typed prompt', async () => {
+    arrange('edit', [QWEN], QWEN)
+    useCreateStore.setState({ source: img('a'), references: [img('b')], negativePrompt: 'two of IMAGE 2' } as never)
+    state().setPrompt('the person in Image 1 takes the pose of IMAGE 2., not image 3')
+    const { result } = renderHook(() => useCreate())
+    await result.current.generate()
+    expect(mlx.runs[0].prompt).toBe('the person in <image1> takes the pose of <image2>., not image 3')
+    expect(mlx.runs[0].negativePrompt).toBe('two of <image2>')
+    expect(state().gallery[0]).toMatchObject({ prompt: 'the person in Image 1 takes the pose of IMAGE 2., not image 3' })
   })
 
   // Discord D7 (3.0.8): mflux reads ten images (MAX_REFERENCES = 10). Past

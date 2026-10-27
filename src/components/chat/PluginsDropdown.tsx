@@ -15,6 +15,11 @@ import { isTauri } from '../../api/backend'
 import { createChatLive, createInChatOf, createSupport, servedWindowOf } from '../../lib/create/chat-switch'
 import { useCreateChatReleased } from '../../lib/create/chat-release'
 
+/** Whether the Plugins menu carries REA: desktop app, Agent or Code only. */
+export function reaInPlugins(desktop: boolean, agentTools: boolean): boolean {
+  return desktop && agentTools
+}
+
 /** The line next to the greyed Create switch in a group chat. */
 export const CREATE_GROUP_REASON = 'Not available in a group chat.'
 
@@ -38,10 +43,15 @@ const CAVEMAN_MODES: { value: CavemanMode; label: string; desc: string }[] = [
 // toolbar and nothing in the composer. The active-plugin signal moves from the
 // dot row onto the icon colour, because a row of dots that appears and
 // disappears is exactly the kind of width jump the composer was cured of.
+//
+// `agentTools` says the surface runs the agent loop: Agent on in Chat, or
+// Code. REA's tools reach only those two, so its row, its dot and its line
+// stay out of plain chat (3.0.8, A6).
 export function PluginsDropdown({
   openUpward = false,
   iconOnly = false,
-}: { openUpward?: boolean; iconOnly?: boolean } = {}) {
+  agentTools = false,
+}: { openUpward?: boolean; iconOnly?: boolean; agentTools?: boolean } = {}) {
   const [open, setOpen] = useState(false)
   useDismissOnEscape(open, () => setOpen(false))
   const menuRef = useRef<HTMLDivElement>(null)
@@ -123,8 +133,9 @@ export function PluginsDropdown({
     (activePersona ? activePersona.id !== 'unrestricted' : chatPersona.prompt.trim() !== '')
   const currentCaveman = CAVEMAN_MODES.find((m) => m.value === (cavemanMode || 'off'))
 
-  // REA (lib/plugins/rea.ts): a local process, so the desktop app only.
-  const reaShown = isTauri()
+  // REA (lib/plugins/rea.ts): a local process, so the desktop app only, and
+  // only where its tools go: Agent and Code.
+  const reaShown = reaInPlugins(isTauri(), agentTools)
   const reaOn = useSettingsStore((s) => s.settings.reaPluginEnabled === true) && reaShown
   const anyPluginActive = !!(isCavemanActive || isPersonaActive || isGroupActive || createOn || reaOn)
 

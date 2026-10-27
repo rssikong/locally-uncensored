@@ -214,6 +214,18 @@ out_name_for() {
   esac
 }
 
+# llama-quantize ships on macOS only (static binary, nothing beside it).
+quantize_ships_for() {
+  case "$1" in
+    *-apple-darwin) return 0 ;;
+    *)              return 1 ;;
+  esac
+}
+
+quantize_out_name_for() {
+  echo "lu-llama-quantize-$1"
+}
+
 # A 40-hex commit SHA and nothing else. A short SHA, a tag name or an empty
 # override would all silently reduce the pin back to "whatever origin says".
 assert_pinned_commit() {
@@ -408,6 +420,13 @@ build_triple() {
   # CI runners mid llama.cpp.o (SIGTERM 143). Cap to a finite, memory-safe count;
   # CI lowers it further via BUILD_JOBS=2.
   cmake --build "$build_dir" --config Release --target llama-server -j "${BUILD_JOBS:-4}"
+  # macOS also ships llama-quantize (lu-llama-quantize, tauri.macos.conf.json):
+  # the refusal-removal tool (A14) writes its copy in the original's quant
+  # type with it. Same static Metal build, same source tree. Windows and
+  # Linux do not ship it yet; the tool writes Q8_0 there instead.
+  if quantize_ships_for "$triple"; then
+    cmake --build "$build_dir" --config Release --target llama-quantize -j "${BUILD_JOBS:-4}"
+  fi
   # Locate the produced binary (path differs by generator/platform).
   local built
   built="$(find "$build_dir" -type f \( -name 'llama-server' -o -name 'llama-server.exe' \) -print -quit)"
@@ -416,6 +435,13 @@ build_triple() {
   local out="$BIN_DIR/$(out_name_for "$triple")"
   cp "$built" "$out"
   chmod +x "$out"
+  if quantize_ships_for "$triple"; then
+    local built_q
+    built_q="$(find "$build_dir" -type f -name 'llama-quantize' -print -quit)"
+    [ -n "$built_q" ] || die "llama-quantize binary not found under $build_dir"
+    cp "$built_q" "$BIN_DIR/$(quantize_out_name_for "$triple")"
+    chmod +x "$BIN_DIR/$(quantize_out_name_for "$triple")"
+  fi
 
   local out_digest; out_digest="$(sha256_of "$out")"
   local digest_lines="$out: ${out_digest:-unavailable}"

@@ -19,7 +19,8 @@ const shown = (v: number) => v.toFixed(2)
  * The strength of one LoRA in the stack: the slider for the usual 0 to 2 and
  * a number field for the exact value, which also takes what the slider cannot
  * reach (Discord 2026-10-02: slider LoRAs for Krea 2 are made
- * for about -10 to 10, negative included).
+ * for about -10 to 10, negative included; Discord 2026-10-23: some for -10 to
+ * 15, so the field takes -20 to 20).
  *
  * The field is a text input on purpose. While someone types, "-" and "1," are
  * not numbers yet, and a number input hands those back as an empty string, so

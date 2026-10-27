@@ -81,7 +81,7 @@ test('Agent and Thinking switch with one click, by mouse and by keyboard, and st
   await expect(agent).toHaveAttribute('aria-pressed', 'true')
   await agent.click()
   await expect(agent).toHaveAttribute('aria-pressed', 'false')
-  await expect(agent).toHaveAttribute('title', /Conversation only/)
+  await expect(agent).toHaveAttribute('title', /Conversation with web search/)
   await expect(bar.getByTestId('voice-scope')).toBeDisabled()
   // The keyboard reaches it and Space moves it.
   await agent.focus()

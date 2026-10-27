@@ -26,7 +26,7 @@
  * ── Why the trigger is page unload and NOT onCloseRequested ──────────────
  *
  * The obvious Tauri hook is the wrong one here. In this app the window's X
- * does not quit: `main.rs:549` calls `api.prevent_close()` and hides to the
+ * does not quit: `lib.rs` calls `api.prevent_close()` and hides to the
  * tray, deliberately, and the window comes back with Show. Hanging the MCP
  * teardown off `onCloseRequested` would kill every connected server every time
  * the user pressed X and expected the app to keep standing.
@@ -71,6 +71,7 @@
  * that forked its own processes can still leave them behind there.
  */
 import { disconnectAllExternalServers } from './external-client'
+import { isMobile } from '../../lib/device-kind'
 
 /**
  * Set while a sweep is in flight, so the two triggers cannot double-fire.
@@ -107,12 +108,22 @@ export function installMcpShutdown(): () => void {
   // fires on a reload in WebKit/WebView2; `beforeunload` is kept because it is
   // the earlier of the two and costs nothing when both arrive — `sweeping`
   // makes the second call a no-op.
-  window.addEventListener('pagehide', onGone)
-  window.addEventListener('beforeunload', onGone)
+  //
+  // Not on a phone: `pagehide` there is an app switch, not the end of the
+  // process, and tearing every server down for it would cut a running agent
+  // off from its tools. (A phone has no external MCP servers to begin with,
+  // they are child processes; this keeps it that way if that ever changes.)
+  const sweepOnDeparture = !isMobile()
+  if (sweepOnDeparture) {
+    window.addEventListener('pagehide', onGone)
+    window.addEventListener('beforeunload', onGone)
+  }
 
   installed = () => {
-    window.removeEventListener('pagehide', onGone)
-    window.removeEventListener('beforeunload', onGone)
+    if (sweepOnDeparture) {
+      window.removeEventListener('pagehide', onGone)
+      window.removeEventListener('beforeunload', onGone)
+    }
     installed = null
   }
   return installed

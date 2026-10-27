@@ -348,7 +348,20 @@ pub fn repair_comfyui_env(state: State<'_, AppState>) -> Result<serde_json::Valu
         );
         let refs: Vec<&str> = torch_args.iter().map(|s| s.as_str()).collect();
         match pip_install_streaming_with_retry_cancellable(&refs, &venv_py, 3, &install_status, Some(&cancel_flag)) {
-            Ok(()) => update("installing", "PyTorch installed."),
+            Ok(()) => {
+                update("installing", "PyTorch installed.");
+                // 3.0.8: same check as the installer, see post_install_gpu_line.
+                if torch_index.is_some() {
+                    let sees = crate::commands::process::probe_comfy_gpu(&venv_py);
+                    if let Some(line) = crate::commands::torch_wheels::post_install_gpu_line(
+                        torch_index.as_deref(),
+                        sees,
+                        std::env::consts::OS,
+                    ) {
+                        update("installing", &line);
+                    }
+                }
+            }
             Err(d) if d == "cancelled" => {
                 abort_and_restore(
                     "cancelled",

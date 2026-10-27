@@ -97,6 +97,12 @@ fn run_cmd(program: &str, args: &[&str]) -> Option<String> {
     crate::commands::shell::output_bounded(cmd, std::time::Duration::from_secs(5))
 }
 
+/// nvidia-smi's cards alone, for a caller that needs only those (the chat
+/// role's engine device, gpu_roles.rs).
+pub(crate) fn detect_nvidia_cards() -> Vec<DetectedGpu> {
+    detect_nvidia()
+}
+
 fn detect_nvidia() -> Vec<DetectedGpu> {
     // `nvidia-smi --query-gpu=index,name,memory.total --format=csv,noheader,nounits`
     // is portable across Linux and Windows. Output line: "0, NVIDIA GeForce RTX 4070, 12282"
@@ -1446,7 +1452,7 @@ fn apply_rocm_facts(gpus: &mut Vec<DetectedGpu>, facts: Option<&RocmFacts>) {
 /// looked like the tolerant choice and was the dangerous one: "AMD Radeon RX
 /// 7900 XT" is contained in "AMD Radeon RX 7900 XTX", and a box holding both
 /// would have paired them.
-fn names_agree(a: &str, b: &str) -> bool {
+pub(crate) fn names_agree(a: &str, b: &str) -> bool {
     normalised_adapter_name(a) == normalised_adapter_name(b)
 }
 
@@ -1986,6 +1992,8 @@ End of search: 3 match(es) found.
     #[test]
     fn gpu_selection_lock_is_never_held_across_apply_gpu_env() {
         let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        // 3.0.8 (A2): the spawn sites ask gpu_roles.rs for the selection of
+        // their service, and the clone-then-drop read moved in there with it.
         for rel in ["src/commands/process.rs", "src/commands/engine.rs"] {
             let path = manifest.join(rel);
             let src = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {rel}: {e}"));
@@ -1994,12 +2002,17 @@ End of search: 3 match(es) found.
                 "{rel} still has the old lock-wraps-apply_gpu_env shape (the MutexGuard \
                  was alive for the whole call, including any nvidia-smi I/O inside it)"
             );
-            let safe_pattern = "state.gpu_selection.lock().ok().map(|sel| sel.clone())";
             assert!(
-                src.contains(safe_pattern),
-                "{rel} has no clone-then-drop call site at all -- did the B2 fix move or get reverted?"
+                src.contains("gpu_roles::effective_selection(state,"),
+                "{rel} has no call site that reads the selection through gpu_roles::effective_selection"
             );
         }
+        let roles = std::fs::read_to_string(manifest.join("src/commands/gpu_roles.rs")).expect("read gpu_roles.rs");
+        let body = roles.split("pub fn effective_selection(").nth(1).expect("effective_selection in gpu_roles.rs");
+        let body = &body[..body.find("\n}\n").expect("end of effective_selection")];
+        assert!(body.contains("state.gpu_selection.lock().ok().map(|s| s.clone())"), "the selection is not cloned out of its lock");
+        assert!(body.contains("state.gpu_roles.lock().ok().map(|r| r.clone())"), "the roles are not cloned out of their lock");
+        assert!(!body.contains("apply_gpu_env"), "effective_selection must not forward while it holds a lock");
     }
 
     #[test]
@@ -2467,6 +2480,84 @@ End of search: 1 match(es) found.
         );
     }
 
+
+    // ── 3.0.8: kinghebes, simulated end to end ──────────────────────────
+    //
+    // Windows 11, Ryzen 9 9900X3D (its Raphael iGPU reports itself as "AMD
+    // Radeon(TM) Graphics") and an RX 9070 XT, ComfyUI on the processor with
+    // Auto and with Force GPU. We own neither, so the registry answer such a
+    // machine gives is written out here and run through the real detection,
+    // the real plan and the real pip arguments.
+    const DRIVER_DESC_KINGHEBES: &str = r"
+HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0000
+    DriverDesc    REG_SZ    AMD Radeon(TM) Graphics
+
+HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0001
+    DriverDesc    REG_SZ    AMD Radeon RX 9070 XT
+
+End of search: 2 match(es) found.
+";
+
+    #[test]
+    fn kinghebes_machine_gets_amds_rocm_build_for_the_9070_xt_and_only_for_it() {
+        use crate::commands::install::pytorch_pip_args;
+        use crate::commands::torch_wheels::{
+            amd_rocm_served, comfy_wheel_plan_for, resolve_plan_with, WheelPlan, ROCM_WINDOWS_CHANNELS,
+        };
+        let names = parse_reg_query(DRIVER_DESC_KINGHEBES, "DriverDesc");
+        let found = windows_fallback_from(&names, &[], None, false);
+        let amd: Vec<&str> = found.iter().filter(|g| g.vendor == "amd").map(|g| g.name.as_str()).collect();
+        assert_eq!(amd, vec!["AMD Radeon(TM) Graphics", "AMD Radeon RX 9070 XT"], "{found:?}");
+
+        let plan = comfy_wheel_plan_for(false, None, true, &amd, &[], "windows");
+        let WheelPlan::IndexOrCpu { candidates, .. } = &plan else {
+            panic!("an RX 9070 XT on Windows must reach AMD's index, got {plan:?}");
+        };
+        assert_eq!(*candidates, ROCM_WINDOWS_CHANNELS);
+        let (index, packages, note) = resolve_plan_with(&plan, |_| true);
+        assert_eq!(index, Some("https://stable.repo.amd.com/rocm/whl-next/"));
+        // gfx1201 for the 9070 XT, and nothing for the iGPU nobody can place:
+        // no device-all, no guess.
+        assert_eq!(
+            packages,
+            vec![
+                "torch[device-gfx1201]>=2.13,<2.14".to_string(),
+                "torchvision[device-gfx1201]>=0.28,<0.29".to_string(),
+                "torchaudio>=2.11,<2.12".to_string(),
+            ],
+        );
+        assert!(note.contains("gfx1201"), "{note}");
+        let refs: Vec<&str> = packages.iter().map(String::as_str).collect();
+        let args = pytorch_pip_args(index, &refs);
+        let at = args.iter().position(|a| a == "--index-url").expect("an index");
+        assert_eq!(args[at + 1], "https://stable.repo.amd.com/rocm/whl-next/");
+        assert!(!args.iter().any(|a| a.contains("device-all")), "{args:?}");
+
+        // The warnings know LU serves this card, so they point at Repair.
+        assert!(amd_rocm_served(&amd, "windows"));
+        let warn = crate::commands::process::force_gpu_warning_for(
+            crate::commands::process::ComfyGpuMode::ForceGpu,
+            Some(false),
+            true,
+            amd_rocm_served(&amd, "windows"),
+            "windows",
+        )
+        .expect("Force GPU on a processor torch is worth a word");
+        assert!(warn.contains("Repair environment"), "{warn}");
+        assert!(!warn.contains("ZLUDA"), "the wrong door for a card LU serves: {warn}");
+
+        // NEGATIVE CONTROL: AMD's index down, so the processor build and the
+        // sentence that says so, never a dead channel.
+        let (dead, dead_packages, dead_note) = resolve_plan_with(&plan, |_| false);
+        assert_eq!(dead, None);
+        assert_eq!(dead_packages, vec!["torch", "torchvision", "torchaudio"]);
+        assert!(dead_note.contains("did not answer"), "{dead_note}");
+
+        // NEGATIVE CONTROL: the iGPU alone is not enough for the ROCm build.
+        let igpu_only = comfy_wheel_plan_for(false, None, true, &["AMD Radeon(TM) Graphics"], &[], "windows");
+        assert!(matches!(igpu_only, WheelPlan::Cpu { .. }), "{igpu_only:?}");
+        assert!(!amd_rocm_served(&["AMD Radeon(TM) Graphics"], "windows"));
+    }
 
     // ── A5: the Windows HIP SDK, GitHub #123 (RX 9070 XT, 7.1.1) ──
     //

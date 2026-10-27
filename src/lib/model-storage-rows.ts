@@ -1,5 +1,5 @@
 /**
- * What Settings, AI Backends, Model Storage says about each of the three
+ * What Settings, AI Backends, Storage says about each of the three
  * places a local chat model can live.
  *
  * A14 (2.6.8), the owner: the panel held ONE field labelled "(auto-detect)" and a

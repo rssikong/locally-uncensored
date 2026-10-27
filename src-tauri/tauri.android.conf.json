@@ -1,0 +1,46 @@
+{
+  "build": {
+    "beforeBuildCommand": "VITE_LU_BUILD_TARGET=mobile npm run build",
+    "beforeDevCommand": "VITE_LU_BUILD_TARGET=mobile npm run dev"
+  },
+  "identifier": "com.purpledoubled.locallyuncensored",
+  "version": "3.0.7",
+  "app": {
+    "windows": [
+      {
+        "title": "LU",
+        "visible": true,
+        "dragDropEnabled": false
+      }
+    ]
+  },
+  "bundle": {
+    "externalBin": [],
+    "resources": [],
+    "android": {
+      "minSdkVersion": 24,
+      "versionCode": 30007001
+    }
+  },
+  "plugins": {
+    "updater": null,
+    "deep-link": {
+      "mobile": [
+        {
+          "scheme": [
+            "lu"
+          ],
+          "host": "oauth",
+          "appLink": false
+        },
+        {
+          "scheme": [
+            "lu"
+          ],
+          "host": "remote",
+          "appLink": false
+        }
+      ]
+    }
+  }
+}

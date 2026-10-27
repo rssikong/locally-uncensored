@@ -1,60 +1,62 @@
 # Security Policy
 
+## Reporting a vulnerability
+
+Please do not open a public issue for a security problem. Use one of these, in this order:
+
+1. **GitHub private vulnerability reporting:** [open a draft advisory](https://github.com/PurpleDoubleD/locally-uncensored/security/advisories/new). Only the maintainers see it, and the fix, the advisory and a CVE can be prepared in the same place.
+2. **Email:** hello@lu-labs.ai with "Security" in the subject. Say if you want to send an encrypted report and we agree on a way first.
+3. **Discord:** a direct message on the [Discord](https://locallyuncensored.com/discord), if neither of the above works for you.
+
+Please include what is affected (version, platform, feature), the steps to reproduce, what an attacker gains, and a fix if you have one.
+
+## What happens next
+
+| Step | Target |
+|---|---|
+| We confirm that the report arrived | within 48 hours |
+| We tell you whether we accept it and how severe we rate it | within 7 days |
+| Fix released for a critical or high issue | within 14 days of accepting it |
+| Fix released for a medium or low issue | in one of the next regular releases |
+
+Locally Uncensored is maintained by a small team, so these are targets, not a contract; when one slips we say so in the report thread. We disclose in coordination with you: the advisory is published once the fix is out, at the latest 90 days after the report, and you are credited unless you ask us not to.
+
 ## Supported versions
 
-Security fixes go into the latest release. Older versions get no patches of their own, so the fix for an older version is the update. The app looks for a new version shortly after start and at most every six hours after that, and **Settings → Updates** shows the installed version and what it found.
+| Version | Security fixes |
+|---|---|
+| Latest release (see [Releases](https://github.com/PurpleDoubleD/locally-uncensored/releases/latest)) | Yes |
+| Any older release | No, the fix is the update |
 
-## Reporting a Vulnerability
+The app looks for a new version shortly after start and at most every six hours after that. **Settings → Updates** shows the installed version and what it found.
 
-If you discover a security vulnerability, please report it responsibly.
+## In scope
 
-**Do NOT open a public issue.** Instead:
+The desktop app (Windows, macOS, Linux) built from this repository, the phone app's connection to it, and the release and update path:
 
-1. Use [GitHub's private vulnerability reporting](https://github.com/PurpleDoubleD/locally-uncensored/security/advisories/new), or
-2. Reach out via the [Discord](https://locallyuncensored.com/discord) DM.
+- **Chat and agent output:** model output or a fetched page that runs script in the app (XSS), or makes a tool run without the confirmation the app promises
+- **File access:** path traversal or writes outside the folders a feature is meant to touch
+- **Local bridges and APIs:** the ComfyUI bridge, the LU Engine and the local API answering a web page or another user on the machine when they should not, or running commands nobody asked for
+- **Remote Access:** auth bypass, pairing code or passcode brute force, chat dispatch by an unpaired device, over the home network or the Cloudflare tunnel
+- **Computer control and Voice:** an action without the promised confirmation, a way around the apps that are off limits, audio that leaves the device in local mode
+- **Release and update:** an update accepted that was not built and signed by this repository's release workflow
+- **Dependencies:** a known vulnerability in an npm, Cargo or Python package we ship that is reachable in the app
 
-Include:
-- Description of the vulnerability
-- Steps to reproduce
-- Potential impact
-- Suggested fix (if you have one)
+## Out of scope
 
-### Response Timeline
+- Vulnerabilities in Ollama, ComfyUI, LM Studio or other backends themselves (please report them to their maintainers)
+- The hosted LU Cloud service at lu-labs.ai (report those to hello@lu-labs.ai as well, but they are not covered by this repository's advisories)
+- Attacks that need physical access to an unlocked machine or an account that already has admin rights
+- Social engineering, spam, denial of service through sheer volume
+- Antivirus false positives (see below)
 
-- **Acknowledgment**: Within 48 hours
-- **Assessment**: Within 1 week
-- **Fix**: Depends on severity, but we aim for patches within 2 weeks for critical issues
+## What we check before every release
 
-### In-Scope
+Every push to `master` and every release runs the same gate (`.github/workflows/ci.yml`): lint, type check, unit and end-to-end tests, Rust tests and Clippy, and a dependency audit (`npm audit` for the shipped packages, `cargo deny` and `cargo audit` for the Rust crates, accepted advisories listed with their reason in `src-tauri/deny.toml`). CodeQL scans the TypeScript, Rust, Python and workflow code (`.github/workflows/codeql.yml`), and the [OpenSSF Scorecard](https://scorecard.dev/viewer/?uri=github.com/PurpleDoubleD/locally-uncensored) rates the repository's own practices. From 3.0.8 on, each release carries CycloneDX SBOMs and a `SHA256SUMS.txt`. Every updater bundle is signed (key below).
 
-Locally Uncensored runs on your own machine, so the attack surface is limited. We still take the following seriously:
+**There has not been an independent security audit yet.** One is planned, and this file will link the report when it exists. What the project does and where data goes is described on the [Security page](https://locallyuncensored.com/security/).
 
-- **XSS in the chat UI**: malicious model outputs that could execute scripts
-- **Path traversal**: file access outside intended directories
-- **ComfyUI API abuse**: unintended command execution through the ComfyUI bridge
-- **Remote Access**: auth bypass, passcode brute-force, unauthorized chat dispatch over LAN or Cloudflare Tunnel
-- **Computer control and Voice**: an action that runs without the confirmation the app promises, a way around the list of apps that are off limits, or audio that leaves the device in local mode
-- **The release and update path**: a way to get an update accepted that was not built by this repository's release workflow
-- **Dependency vulnerabilities**: outdated npm, Cargo or Python packages with known CVEs
-
-### Out of Scope
-
-- Vulnerabilities in Ollama, ComfyUI, LM Studio, or other backends themselves (report to their maintainers)
-- Issues that require physical access to the machine
-- Social engineering attacks
-- Antivirus false positives (see the next section)
-
-## What 3.0.6 hardens
-
-Five changes that matter for this policy. The Security section of the CHANGELOG lists the others.
-
-- **The agent reads web pages more safely.** A page the agent fetches cannot come from a private network or from the range 100.64.0.0/10, a page over 8 MB is refused, and when the app refuses a page that answer is final.
-- **Computer control asks in every chat.** The first time a chat wants the screen, a card asks whether computer control may be used there. Until you click, LU takes no screenshot and does nothing. No setting and no autonomous session skips the card, and a spoken yes does not allow it.
-- **Computer control asks before two more kinds of action.** A button, link or menu item without a name is asked about like any target LU cannot name, in an autonomous session too. On Windows and Linux the same holds for Alt with a letter, which presses a button or opens a menu from anywhere in a window. Neither takes a spoken yes.
-- **With Whole computer, the start files of the shell can be read and not changed.** The tools of a voice session no longer write to the files your system runs by itself when a terminal or a session starts (such as `.zshrc`, `.bashrc` or the PowerShell profile) or to the settings of git, because a line written there is a command that runs later without a question.
-- **A catalogue search reads at most 16 MB.** When LU searches a model catalogue or reads a file list from the internet, it stops at 16 MB. There was no limit before.
-
-What has not been checked in the real app is written under "Known limits" in the CHANGELOG section of the release.
+The changes that harden each release are in the Security section of the [CHANGELOG](CHANGELOG.md).
 
 ---
 
@@ -75,7 +77,7 @@ Some antivirus engines and browser SmartScreen prompts flag the Windows installe
 ### What you can do as a user
 
 - **Verify the source.** Only download from the [official GitHub Releases page](https://github.com/PurpleDoubleD/locally-uncensored/releases). Every release is built by GitHub Actions from public source on the `master` branch, see `.github/workflows/release.yml`.
-- **Verify the SHA-256.** GitHub Releases lists the exact bytes uploaded. The same hash should appear on [VirusTotal](https://www.virustotal.com/) if you scan it yourself. Scan results for the installer are discussed in [Discussion #25](https://github.com/PurpleDoubleD/locally-uncensored/discussions/25).
+- **Verify the SHA-256.** From 3.0.8 on, every release has a `SHA256SUMS.txt`; download it next to the installer and run `sha256sum -c SHA256SUMS.txt --ignore-missing` (on Windows: `Get-FileHash` and compare). The same hash should appear on [VirusTotal](https://www.virustotal.com/) if you scan it yourself. Scan results for the installer are discussed in [Discussion #25](https://github.com/PurpleDoubleD/locally-uncensored/discussions/25).
 - **Verify the auto-update.** Once installed, `Settings → Updates` checks `latest.json` from GitHub Releases and validates the bundle signature against this minisign public key:
   ```
   RWRHseb4LudtbIpBRaMDxMpSLMq+1TqeULJS/HY2/eviNqnAXVVyGsDc

@@ -18,6 +18,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { bundledEngineStatus, type EngineStatus } from '../api/engine'
 import { isTauri } from '../api/backend'
+import { onAppForeground } from '../lib/app-lifecycle'
 
 /** Rust meldet den eingesammelten toten Griff hierunter. */
 export const SIDECAR_GONE_EVENT = 'lu-sidecar-gone'
@@ -66,10 +67,16 @@ export function useBuiltinEngineStatus(pausiert?: () => boolean): EngineStatusVi
       .then(({ listen }) => listen(SIDECAR_GONE_EVENT, () => read()))
       .then((off) => { if (alive) unlisten = off; else off() })
       .catch(() => {})
+    // After a stay in the background the interval was frozen and the engine
+    // may have been reclaimed by the system meanwhile: ask at once instead of
+    // showing the old answer for up to one beat. Only a phone ever sends this
+    // signal (lib/app-lifecycle.ts); on a desktop nobody installs its sources.
+    const offForeground = onAppForeground(read)
     return () => {
       alive = false
       clearInterval(timer)
       unlisten?.()
+      offForeground()
     }
   }, [])
 

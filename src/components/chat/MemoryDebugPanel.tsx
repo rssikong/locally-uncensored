@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
 import { useDismissOnEscape } from '../../hooks/useDismissOnEscape'
 import { createPortal } from 'react-dom'
-import { Brain, X, Plus, Trash2, ChevronDown, Archive } from 'lucide-react'
+import { Brain, X, Plus, Trash2, ChevronDown, Archive, ListChecks } from 'lucide-react'
 import { useMemoryStore } from '../../stores/memoryStore'
 import { useModelStore } from '../../stores/modelStore'
 import { getModelMaxTokens } from '../../lib/context-compaction'
 import { AnimatePresence, motion } from 'framer-motion'
+import { MemoryDeleteConfirm, MemoryRowDelete, MemoryUndoBar, memoriesWord, useMemoryUndo } from './MemoryDelete'
 
 // Memory button. Lives in the TOP BAR next to the model picker (the owner
 // 2026-06-06: "memory button raus aus chat/code/agent, neben den modelloader
@@ -47,7 +48,12 @@ function MemoryPopover({ onClose }: { onClose: () => void }) {
   useDismissOnEscape(true, onClose)
   const entries = useMemoryStore((s) => s.entries)
   const addMemory = useMemoryStore((s) => s.addMemory)
-  const removeMemory = useMemoryStore((s) => s.removeMemory)
+  const { removal, failed, remove, undo, dismiss } = useMemoryUndo()
+  // Several at once (A27): `selecting` shows a checkbox per row, `confirm`
+  // holds the question before a multi delete.
+  const [selecting, setSelecting] = useState(false)
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
+  const [confirm, setConfirm] = useState<null | { ids: string[]; all: boolean }>(null)
   const activeModel = useModelStore((s) => s.activeModel)
   const [injectedPreview, setInjectedPreview] = useState<string>('')
   const [adding, setAdding] = useState(false)
@@ -64,7 +70,26 @@ function MemoryPopover({ onClose }: { onClose: () => void }) {
       .then((preview) => { if (!cancelled) setInjectedPreview(preview) })
       .catch(() => {})
     return () => { cancelled = true }
-  }, [activeModel, entries.length])
+    // `entries`, not its length: an Undo or an edit changes what is sent
+    // without changing how many there are.
+  }, [activeModel, entries])
+
+  // Ids that left the list (deleted elsewhere, account switch) drop out of the selection.
+  const live = new Set(entries.map((e) => e.id))
+  const selectedIds = [...selected].filter((id) => live.has(id))
+  const toggleSelected = (id: string) => setSelected((prev) => {
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    return next
+  })
+  const confirmDelete = () => {
+    if (!confirm) return
+    remove(confirm.ids)
+    setConfirm(null)
+    setSelected(new Set())
+    setSelecting(false)
+  }
 
   // Vier Kategorien, vier Farben. `project` stand auf Gelb, und Gelb ist in
   // dieser App keine Kategorie mehr, sondern gar nichts (`lib/hinweis.ts`).
@@ -119,6 +144,25 @@ function MemoryPopover({ onClose }: { onClose: () => void }) {
             <span className="t-micro font-semibold text-gray-700 dark:text-gray-300">Memory ({entries.length})</span>
           </div>
           <div className="flex items-center gap-1">
+            {entries.length > 0 && (
+              <button
+                onClick={() => { setSelecting((on) => !on); setSelected(new Set()); setConfirm(null) }}
+                title="Select several memories to delete"
+                aria-pressed={selecting}
+                className={'flex items-center gap-1 px-1.5 py-0.5 rounded t-micro font-medium transition-colors ' + (selecting ? 'bg-purple-500/15 text-purple-300' : 'text-gray-500 hover:text-gray-300 hover:bg-white/10')}
+              >
+                <ListChecks size={11} /> Select
+              </button>
+            )}
+            {entries.length > 0 && (
+              <button
+                onClick={() => setConfirm({ ids: entries.map((e) => e.id), all: true })}
+                title="Delete all memories"
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded t-micro font-medium text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+              >
+                <Trash2 size={11} /> Delete all
+              </button>
+            )}
             <button
               onClick={() => setAdding((a) => !a)}
               title="Add a memory"
@@ -129,6 +173,29 @@ function MemoryPopover({ onClose }: { onClose: () => void }) {
             <button onClick={onClose} className="p-0.5 rounded hover:bg-white/10 text-gray-500"><X size={12} /></button>
           </div>
         </div>
+
+        {confirm && (
+          <MemoryDeleteConfirm count={confirm.ids.length} all={confirm.all} onConfirm={confirmDelete} onCancel={() => setConfirm(null)} />
+        )}
+
+        {selecting && !confirm && (
+          <div className="flex items-center gap-2 px-3 py-1 border-b border-white/[0.06] t-micro text-gray-500 shrink-0">
+            <button
+              onClick={() => setSelected(selectedIds.length === entries.length ? new Set() : new Set(entries.map((e) => e.id)))}
+              className="underline hover:text-gray-300"
+            >
+              {selectedIds.length === entries.length ? 'Select none' : 'Select all'}
+            </button>
+            <span className="flex-1">{selectedIds.length} selected</span>
+            <button
+              onClick={() => setConfirm({ ids: selectedIds, all: selectedIds.length === entries.length })}
+              disabled={selectedIds.length === 0}
+              className="flex items-center gap-1 px-2 py-0.5 rounded font-medium bg-red-500/15 border border-red-500/30 text-red-300 hover:bg-red-500/25 disabled:opacity-40"
+            >
+              <Trash2 size={10} /> Delete {selectedIds.length > 0 ? memoriesWord(selectedIds.length) : 'selected'}
+            </button>
+          </div>
+        )}
 
         {/* Add form */}
         {adding && (
@@ -155,28 +222,33 @@ function MemoryPopover({ onClose }: { onClose: () => void }) {
           </div>
         )}
 
-        {/* Memory list — each row deletable on hover */}
+        {/* Memory list: every row has its own delete, always visible (A27) */}
         <div className="overflow-y-auto flex-1 scrollbar-thin">
           {entries.length === 0 ? (
             <p className="t-micro text-gray-600 px-3 py-5 text-center">No memories yet, click <span className="text-purple-400">Add</span> to write one.</p>
           ) : (
-            entries.slice(0, 50).map((entry) => {
+            // All of them. Until A27 only the first 50 were listed, so number
+            // 51 and later could not be deleted here at all.
+            entries.map((entry) => {
               const stale = entry.stale === true || typeof entry.supersededBy === 'string'
               return (
                 <div key={entry.id} className={`group px-3 py-1.5 border-b border-white/[0.03] hover:bg-white/[0.02] ${stale ? 'opacity-50' : ''}`}>
                   <div className="flex items-center gap-1.5">
+                    {selecting && (
+                      <input
+                        type="checkbox"
+                        checked={selected.has(entry.id)}
+                        onChange={() => toggleSelected(entry.id)}
+                        aria-label={`Select ${entry.title}`}
+                        className="shrink-0 accent-purple-500"
+                      />
+                    )}
                     <span className={`text-[0.5rem] uppercase font-bold tracking-wider ${typeColors[entry.type] || 'text-gray-500'}`}>{entry.type}</span>
                     <span className="t-micro text-gray-300 font-medium truncate flex-1">{entry.title}</span>
                     {stale && (
                       <span className="flex items-center gap-0.5 text-[0.45rem] uppercase tracking-wider text-gray-500 shrink-0" title="Outdated, not injected"><Archive size={8} /> outdated</span>
                     )}
-                    <button
-                      onClick={() => removeMemory(entry.id)}
-                      title="Delete this memory"
-                      className="shrink-0 p-0.5 rounded text-gray-600 opacity-0 group-hover:opacity-100 hover:text-red-400 hover:bg-red-500/10 transition"
-                    >
-                      <Trash2 size={11} />
-                    </button>
+                    {!selecting && <MemoryRowDelete title={entry.title} onDelete={() => remove([entry.id])} />}
                   </div>
                   <p className="text-[0.55rem] text-gray-600 truncate mt-0.5">{entry.content.substring(0, 120)}</p>
                 </div>
@@ -184,6 +256,8 @@ function MemoryPopover({ onClose }: { onClose: () => void }) {
             })
           )}
         </div>
+
+        <MemoryUndoBar removal={removal} failed={failed} onUndo={undo} onDismiss={dismiss} />
 
         {/* Injection preview — exactly what gets prepended to the prompt */}
         {injectedPreview && (

@@ -95,7 +95,7 @@ describe('the sentence for each verdict', () => {
   })
 })
 
-describe('Model Storage shows it under the path', () => {
+describe('Storage shows it under the path', () => {
   it('warns about a whole drive instead of pretending the list is complete', async () => {
     expect(await noteFor('truncated')).toContain('too big to scan completely')
   })

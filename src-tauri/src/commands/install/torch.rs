@@ -125,16 +125,9 @@ pub(crate) fn pytorch_pip_args(index_url: Option<&str>, packages: &[&str]) -> Ve
 /// them from the combined arg list would be a second copy of the exact
 /// assembly `pytorch_pip_args` already does.
 pub(crate) fn plan_pytorch_install() -> (Vec<String>, String, Option<String>, Vec<String>) {
-    let (has_nvidia, has_amd, amd_names) = torch_wheels::gpu_vendor_facts();
-    let compute_cap = if has_nvidia { detect_nvidia_compute_cap() } else { None };
-    let amd_refs: Vec<&str> = amd_names.iter().map(|s| s.as_str()).collect();
-    let plan = torch_wheels::comfy_wheel_plan(
-        has_nvidia,
-        compute_cap,
-        has_amd,
-        &amd_refs,
-        std::env::consts::OS,
-    );
+    // 3.0.8: the plan knows Intel Arc too, and is the same plan the settings
+    // show as "what LU installs here", so the line and the install agree.
+    let plan = torch_wheels::comfy_wheel_plan_here();
     // The note is resolved WITH the index: a plan that reached for AMD's
     // Windows channel and found it dead falls back to the processor wheels,
     // and then the sentence in "Step 2/3" has to be the fallback's, not the
@@ -144,13 +137,9 @@ pub(crate) fn plan_pytorch_install() -> (Vec<String>, String, Option<String>, Ve
         Some(url) => format!("{note} ({url})"),
         None => note,
     };
-    let args = pytorch_pip_args(index, packages);
-    (
-        args,
-        gpu_info,
-        index.map(|s| s.to_string()),
-        packages.iter().map(|s| s.to_string()).collect(),
-    )
+    let package_refs: Vec<&str> = packages.iter().map(String::as_str).collect();
+    let args = pytorch_pip_args(index, &package_refs);
+    (args, gpu_info, index.map(|s| s.to_string()), packages)
 }
 
 // ── Runde 2, Nachbesserung 12: torch/Python-version preflight ───────────────
@@ -274,6 +263,68 @@ pub(crate) fn python_versions_from_index_html(html: &str) -> std::collections::B
         .collect()
 }
 
+/// The Python versions this index serves `package` for, counting only the
+/// wheels whose version falls into `range` (">=2.13,<2.14", or "" for all).
+///
+/// Only the two operators LU's own requirements use are understood. Anything
+/// else in `range` reads as "no limit", which is what the old check did for
+/// every package.
+pub(crate) fn python_versions_in_range(html: &str, package: &str, range: &str) -> std::collections::BTreeSet<(u32, u32)> {
+    if range.is_empty() {
+        return python_versions_from_index_html(html);
+    }
+    let dist = package.replace('-', "_").to_lowercase();
+    let mut out = std::collections::BTreeSet::new();
+    // A wheel file name is "<dist>-<version>-<python tag>-<abi>-<platform>.whl";
+    // the version may carry "+rocm10.1.0", URL-encoded as "%2B".
+    for chunk in html.split(".whl") {
+        let Some(start) = chunk.to_lowercase().rfind(&format!("{dist}-")) else { continue };
+        let file = &chunk[start + dist.len() + 1..];
+        let mut parts = file.splitn(2, '-');
+        let (Some(version), Some(rest)) = (parts.next(), parts.next()) else { continue };
+        let version = version.replace("%2B", "+").replace("%2b", "+");
+        if !version_in_range(&version, range) {
+            continue;
+        }
+        out.extend(python_versions_from_index_html(rest));
+    }
+    out
+}
+
+/// Does `version` (local label ignored) satisfy `range`, a comma list of
+/// ">=X" and "<Y"? Pure, numeric release segments only.
+pub(crate) fn version_in_range(version: &str, range: &str) -> bool {
+    fn release(v: &str) -> Vec<u64> {
+        v.split('+')
+            .next()
+            .unwrap_or(v)
+            .split('.')
+            .map(|p| p.chars().take_while(|c| c.is_ascii_digit()).collect::<String>())
+            .map(|p| p.parse::<u64>().unwrap_or(0))
+            .collect()
+    }
+    fn cmp(a: &[u64], b: &[u64]) -> std::cmp::Ordering {
+        let n = a.len().max(b.len());
+        for i in 0..n {
+            let (x, y) = (a.get(i).copied().unwrap_or(0), b.get(i).copied().unwrap_or(0));
+            if x != y {
+                return x.cmp(&y);
+            }
+        }
+        std::cmp::Ordering::Equal
+    }
+    let v = release(version);
+    range.split(',').map(str::trim).filter(|c| !c.is_empty()).all(|clause| {
+        if let Some(lo) = clause.strip_prefix(">=") {
+            cmp(&v, &release(lo)) != std::cmp::Ordering::Less
+        } else if let Some(hi) = clause.strip_prefix('<') {
+            cmp(&v, &release(hi)) == std::cmp::Ordering::Less
+        } else {
+            true
+        }
+    })
+}
+
 /// Fetch a PEP 503 wheel index page (`<index_url>/<package>/`, or PyPI's own
 /// simple index when `index_url` is `None`) and read the Python versions it
 /// serves wheels for, per [`python_versions_from_index_html`].
@@ -283,11 +334,11 @@ pub(crate) fn python_versions_from_index_html(html: &str) -> std::collections::B
 /// in this file stays a pure decision over a probe, on purpose, and this is
 /// the deliberate, narrow exception, isolated so the pure half stays
 /// testable without it.
-fn fetch_index_python_versions(index_url: Option<&str>, package: &str) -> Result<std::collections::BTreeSet<(u32, u32)>, String> {
+fn fetch_index_python_versions(index_url: Option<&str>, package: &str, range: &str) -> Result<std::collections::BTreeSet<(u32, u32)>, String> {
     let base = index_url.unwrap_or("https://pypi.org/simple").trim_end_matches('/');
     let url = format!("{base}/{package}/");
     let client = reqwest::blocking::Client::builder()
-        .user_agent("LocallyUncensored/3.0")
+        .user_agent(crate::app_identity::outgoing_agent!("3.0"))
         .connect_timeout(std::time::Duration::from_secs(10))
         .timeout(std::time::Duration::from_secs(20))
         .build()
@@ -297,7 +348,7 @@ fn fetch_index_python_versions(index_url: Option<&str>, package: &str) -> Result
         return Err(format!("index returned HTTP {}", resp.status()));
     }
     let html = resp.text().map_err(|e| format!("index body: {}", crate::os_error::english(&e)))?;
-    Ok(python_versions_from_index_html(&html))
+    Ok(python_versions_in_range(&html, package, range))
 }
 
 /// The Python versions EVERY package of the install has a wheel for on this
@@ -311,10 +362,13 @@ fn fetch_index_python_versions(index_url: Option<&str>, package: &str) -> Result
 /// the install can actually use.
 fn served_python_versions(index_url: Option<&str>, packages: &[&str]) -> Option<std::collections::BTreeSet<(u32, u32)>> {
     common_python_versions(packages.iter().map(|package| {
-        // The AMD Windows channel serves "torch[device-all]"; strip any extra
-        // so the index lookup is against the real package directory.
-        let name = package.split('[').next().unwrap_or(package);
-        fetch_index_python_versions(index_url, name).ok()
+        // The AMD Windows channel serves "torch[device-gfx1201]>=2.13,<2.14":
+        // the extra and the range go, so the lookup is against the real package
+        // directory, and the range comes along so only the wheels pip may pick
+        // are counted. Otherwise a Python that only torch 2.14 serves would
+        // pass a check for an install pinned to 2.13.
+        let name = torch_wheels::requirement_name(package);
+        fetch_index_python_versions(index_url, name, torch_wheels::requirement_range(package)).ok()
     }))
 }
 
@@ -929,15 +983,60 @@ mod tests {
     #[test]
     fn pytorch_args_pass_a_channels_own_package_names_through_untouched() {
         // AMD's Windows index serves torch behind a device extra. pip has to
-        // see "torch[device-all]" verbatim; a bare "torch" from that index is
-        // an environment with no kernels for any card.
-        use crate::commands::torch_wheels::{TORCH_TRIO, TORCH_TRIO_AMD_WINDOWS};
-        let args = pytorch_pip_args(Some("https://repo.amd.com/rocm/whl-multi-arch/"), TORCH_TRIO_AMD_WINDOWS);
-        assert!(args.contains(&"torch[device-all]".to_string()), "{args:?}");
-        assert!(args.contains(&"torchvision".to_string()));
+        // see "torch[device-gfx1201]>=2.13,<2.14" verbatim; a bare "torch" from
+        // that index is an environment with no kernels for any card.
+        use crate::commands::torch_wheels::{amd_windows_packages, ROCM_WINDOWS_CHANNELS, TORCH_TRIO};
+        let pkgs = amd_windows_packages(&["gfx1201"]);
+        let refs: Vec<&str> = pkgs.iter().map(String::as_str).collect();
+        let args = pytorch_pip_args(Some(ROCM_WINDOWS_CHANNELS[0]), &refs);
+        assert!(args.contains(&"torch[device-gfx1201]>=2.13,<2.14".to_string()), "{args:?}");
+        assert!(args.contains(&"torchvision[device-gfx1201]>=0.28,<0.29".to_string()), "{args:?}");
+        assert!(args.contains(&"torchaudio>=2.11,<2.12".to_string()), "{args:?}");
         // NEGATIVE CONTROL: the extra is never bolted onto the normal channels.
         let plain = pytorch_pip_args(Some("https://download.pytorch.org/whl/cu130"), TORCH_TRIO);
         assert!(!plain.iter().any(|a| a.contains('[')), "{plain:?}");
+    }
+
+    // ── 3.0.8: the Python check counts only the wheels pip may pick ───────
+
+    /// A cut of AMD's whl-next torch page as served on 2026-10-20, hrefs
+    /// URL-encoded and link text plain, the way the index writes both.
+    const AMD_TORCH_PAGE: &str = concat!(
+        r#"<a href="torch-2.13.0%2Brocm10.1.0-cp312-cp312-win_amd64.whl">torch-2.13.0+rocm10.1.0-cp312-cp312-win_amd64.whl</a>"#,
+        r#"<a href="torch-2.13.0%2Brocm10.1.0-cp313-cp313-win_amd64.whl">torch-2.13.0+rocm10.1.0-cp313-cp313-win_amd64.whl</a>"#,
+        r#"<a href="torch-2.14.0%2Brocm10.1.0-cp310-cp310-win_amd64.whl">torch-2.14.0+rocm10.1.0-cp310-cp310-win_amd64.whl</a>"#,
+        r#"<a href="torch-2.14.0%2Brocm10.1.0-cp314-cp314-win_amd64.whl">torch-2.14.0+rocm10.1.0-cp314-cp314-win_amd64.whl</a>"#,
+    );
+
+    #[test]
+    fn the_python_check_counts_only_wheels_inside_the_pinned_series() {
+        let all = python_versions_in_range(AMD_TORCH_PAGE, "torch", "");
+        assert!(all.contains(&(3, 10)) && all.contains(&(3, 14)), "{all:?}");
+        let pinned = python_versions_in_range(AMD_TORCH_PAGE, "torch", ">=2.13,<2.14");
+        assert_eq!(pinned.into_iter().collect::<Vec<_>>(), vec![(3, 12), (3, 13)]);
+        // NEGATIVE CONTROL: a range nothing on the page satisfies yields nothing
+        assert!(python_versions_in_range(AMD_TORCH_PAGE, "torch", ">=2.15").is_empty());
+    }
+
+    #[test]
+    fn the_version_range_reads_local_labels_and_the_two_operators() {
+        assert!(version_in_range("2.13.0+rocm10.1.0", ">=2.13,<2.14"));
+        assert!(!version_in_range("2.14.0+rocm10.1.0", ">=2.13,<2.14"));
+        assert!(!version_in_range("2.12.0+rocm10.1.0", ">=2.13,<2.14"));
+        assert!(version_in_range("0.28.0", ">=0.28,<0.29"));
+        assert!(version_in_range("2.11.0.3", ">=2.11,<2.12"));
+        assert!(version_in_range("9.9", ""));
+    }
+
+    #[test]
+    fn a_requirement_splits_into_name_and_range() {
+        use crate::commands::torch_wheels::{requirement_name, requirement_range};
+        assert_eq!(requirement_name("torch[device-gfx1201]>=2.13,<2.14"), "torch");
+        assert_eq!(requirement_range("torch[device-gfx1201]>=2.13,<2.14"), ">=2.13,<2.14");
+        assert_eq!(requirement_name("torchaudio>=2.11,<2.12"), "torchaudio");
+        assert_eq!(requirement_range("torchaudio>=2.11,<2.12"), ">=2.11,<2.12");
+        assert_eq!(requirement_name("torch"), "torch");
+        assert_eq!(requirement_range("torch"), "");
     }
 
     // ── parse_compute_cap_output (Bug #10 — Blackwell PyTorch routing) ────

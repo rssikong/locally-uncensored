@@ -173,6 +173,9 @@ export function categorizeNodes(allNodes: Record<string, NodeMetadata>): Categor
     // Video savers
     SaveAnimatedWEBP: 'videoSavers',
     VHS_VideoCombine: 'videoSavers',
+    // Core mp4 pair (A19): CreateVideo muxes the frames, SaveVideo writes them
+    CreateVideo: 'videoSavers',
+    SaveVideo: 'videoSavers',
     // AnimateDiff / Motion
     ADE_LoadAnimateDiffModel: 'motion',
     ADE_ApplyAnimateDiffModelSimple: 'motion',

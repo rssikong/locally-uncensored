@@ -15,6 +15,7 @@
  * nothing and resolve to native exactly as before.
  */
 
+import { isCompatProviderId } from '../api/providers/compat-id'
 import { getProviderIdFromModel, getProviderForModel } from '../api/providers'
 import { type ToolCallingStrategy } from './model-compatibility'
 import { toolStrategyFor, applyLiveCapabilities } from './tool-support'
@@ -86,7 +87,7 @@ export async function resolveToolCallingStrategy(modelName: string): Promise<Res
   // run still sent a native `tools` payload the bundled llama-server
   // silently drops. Ask the server itself before the first request; only a
   // hard `false` downgrades, cloud endpoints answer without a network call.
-  if (strategy === 'native' && providerId === 'openai' && provider.serverToolSupport) {
+  if (strategy === 'native' && (providerId === 'openai' || isCompatProviderId(providerId)) && provider.serverToolSupport) {
     if ((await provider.serverToolSupport(modelToUse)) === false) strategy = 'hermes_xml'
   }
 

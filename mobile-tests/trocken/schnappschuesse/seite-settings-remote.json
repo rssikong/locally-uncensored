@@ -1,0 +1,124 @@
+{
+ "name": "/settings/remote",
+ "art": "seite",
+ "quelle": "integ-306",
+ "route": "/settings/remote",
+ "strang": "settings",
+ "code": "E15",
+ "lage": {
+  "route": "/settings/remote",
+  "screen": "m-settings-remote-screen",
+  "blaetter": [],
+  "dialog": [],
+  "reiter": null,
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back-under",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-remote-screen",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-remote-state",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "unpaired",
+   "box": [
+    390,
+    62
+   ]
+  },
+  {
+   "id": "m-settings-remote-status",
+   "tag": "div",
+   "rolle": "status",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    358,
+    62
+   ]
+  },
+  {
+   "id": "m-settings-remote-connect",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Connect",
+   "el": "E15.1",
+   "box": [
+    358,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-remote-how",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "How it works",
+   "el": "E15.2",
+   "box": [
+    356,
+    52
+   ]
+  }
+ ]
+}

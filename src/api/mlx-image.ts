@@ -9,7 +9,7 @@
  *
  * Hard rule: this is the Mac local image backend, NOT ComfyUI.
  */
-import { isMacOS } from './backend'
+import { hasMlx } from '../lib/capabilities'
 import { invokeMedia } from './mlx-invoke'
 import { siGbToBytes } from '../lib/formatters'
 import type { ClassifiedModel } from './comfyui'
@@ -459,7 +459,7 @@ export async function generateMlxImageDataUrl(
 
 /** True when this machine is a Mac (Apple Silicon build → the MLX host). */
 export function isMlxImageHost(): boolean {
-  return isMacOS()
+  return hasMlx()
 }
 
 export const MLX_MODEL_PREFIX = 'MLX '

@@ -127,7 +127,10 @@ const fullWire = () => JSON.stringify(wireTools(codingCatalog()))
  */
 const CODING_CHAR_CEILING = 7600
 const CODING_TOKEN_CEILING = 1730
-const FULL_CHAR_CEILING = 18370
+// 3.0.8 (A11): +762 Zeichen fuer get_settings und set_setting im VOLLEN
+// Katalog (18.370 -> 19.132). Der codierende Zug bleibt gleich: beide stehen
+// hinter dem Tor und fahren nur auf einer Nachricht ueber Einstellungen mit.
+const FULL_CHAR_CEILING = 19170
 const FULL_TOKEN_CEILING = 4090
 
 describe('the coding step carries a catalog the diet actually shrank', () => {

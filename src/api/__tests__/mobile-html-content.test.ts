@@ -83,6 +83,8 @@ describe('mobile page › the shell is a whole HTML document', () => {
   })
 })
 
+const APP_LINKS = ['https://lu-labs.ai/android']
+
 describe('mobile page › no third-party requests (Bug #5)', () => {
   it('the stylesheet uses the system font stack and loads no font', () => {
     expect(CSS).toContain('system-ui')
@@ -99,7 +101,9 @@ describe('mobile page › no third-party requests (Bug #5)', () => {
       ['client.js', JS],
     ] as const) {
       // Data and blob URLs are fine — thumbnails and the QR code use them.
-      const external = src.match(/https?:\/\/[^\s"'()]+/g) ?? []
+      // The one exception is a link the user taps, never a request: the
+      // download page of the LU app in the hint at the top (client.js).
+      const external = (src.match(/https?:\/\/[^\s"'()]+/g) ?? []).filter((u) => !(name === 'client.js' && APP_LINKS.includes(u)))
       expect(external, `${name} names an external host`).toEqual([])
     }
   })

@@ -1,0 +1,261 @@
+{
+ "name": "/settings/account",
+ "art": "seite",
+ "quelle": "integ-306",
+ "route": "/settings/account",
+ "strang": "settings",
+ "code": "E2",
+ "lage": {
+  "route": "/settings/account",
+  "screen": "m-account-screen",
+  "blaetter": [],
+  "dialog": [],
+  "reiter": null,
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back-under",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-account-screen",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-account-state",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "signed-out",
+   "box": [
+    390,
+    848
+   ]
+  },
+  {
+   "id": "m-account-mode",
+   "tag": "div",
+   "rolle": "radiogroup",
+   "sichtbar": true,
+   "bedienbar": false,
+   "el": "E2.1",
+   "box": [
+    358,
+    54
+   ]
+  },
+  {
+   "id": "m-account-mode-signin",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Sign in",
+   "box": [
+    144,
+    48
+   ]
+  },
+  {
+   "id": "m-account-mode-signup",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Create account",
+   "box": [
+    206,
+    48
+   ]
+  },
+  {
+   "id": "m-account-email",
+   "tag": "input",
+   "rolle": "textbox",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Email",
+   "el": "E2.2",
+   "box": [
+    324,
+    48
+   ]
+  },
+  {
+   "id": "m-account-password",
+   "tag": "input",
+   "rolle": "textbox",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Password",
+   "el": "E2.3",
+   "box": [
+    258,
+    48
+   ]
+  },
+  {
+   "id": "m-account-password-show",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Show password",
+   "box": [
+    74,
+    48
+   ]
+  },
+  {
+   "id": "m-account-signin",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Sign in",
+   "el": "E2.4",
+   "box": [
+    358,
+    48
+   ]
+  },
+  {
+   "id": "m-account-forgot",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Forgot password? Get a link by email and choose a new one",
+   "el": "E2.7",
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-account-google",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Continue with Google",
+   "el": "E2.5",
+   "box": [
+    358,
+    48
+   ]
+  },
+  {
+   "id": "m-account-github",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Continue with GitHub",
+   "el": "E2.6",
+   "box": [
+    358,
+    48
+   ]
+  },
+  {
+   "id": "m-account-same-signin",
+   "tag": "p",
+   "rolle": "p",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    358,
+    36
+   ]
+  },
+  {
+   "id": "m-account-delete-signed-out",
+   "tag": "div",
+   "rolle": "status",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    358,
+    136
+   ]
+  },
+  {
+   "id": "m-account-delete-website",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Delete account on lu-labs.ai",
+   "risiko": "destructive",
+   "box": [
+    260,
+    48
+   ]
+  },
+  {
+   "id": "m-account-what-is-cloud",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "What is LU Cloud?",
+   "el": "E2.8",
+   "box": [
+    356,
+    52
+   ]
+  }
+ ]
+}

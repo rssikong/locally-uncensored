@@ -99,8 +99,15 @@ Use the [Feature Request template](https://github.com/PurpleDoubleD/locally-unce
 3. Make your changes
 4. Test locally with `npm run dev`
 5. Run type checking: `npx tsc --noEmit`
-6. Commit with a descriptive message
-7. Push and open a PR against `master`
+6. Run the tests: `npm test`, and `cargo test` in `src-tauri` if you touched Rust
+7. Commit with a descriptive message
+8. Push and open a PR against `master`
+
+### Tests
+
+A change that adds or alters behaviour comes with a test that fails without it: a Vitest test next to the code (`__tests__/`) for the front end, a `#[test]` in the module for Rust, a Playwright spec in `e2e/` for a flow through the UI. A bug fix comes with a test that reproduces the bug. CI (`.github/workflows/ci.yml`) runs all of them on every pull request, together with lint, type check, Clippy, CodeQL and the dependency audit, and a pull request is merged only when they pass.
+
+Security problems are not reported in issues or pull requests: see [SECURITY.md](SECURITY.md).
 
 ### Code Style
 

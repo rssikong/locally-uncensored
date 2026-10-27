@@ -70,9 +70,17 @@ for (const mode of ['Chat', 'Agent', 'Code'] as const) {
     const payload: unknown = JSON.parse(body!)
     if (!isRecord(payload) || !Array.isArray(payload.messages)) throw new Error('Missing provider messages')
     const system = payload.messages.filter(isRecord).filter(message => message.role === 'system').map(message => message.content).join('\n')
-    expect(system).toContain('<remembered_context>')
-    expect(system).toContain('SOURCEPROOF_global')
-    expect(system).toContain('SOURCEPROOF_project')
+    // Since 3.0.8 (A7, lib/turn-context.ts) Chat and Agent send the memories
+    // behind the user's newest message, so the system prompt stays the same
+    // for the whole chat; Code keeps them in the system prompt.
+    const afterTheWords = payload.messages.filter(isRecord).filter(message => message.role === 'user')
+      .map(message => typeof message.content === 'string' ? message.content : JSON.stringify(message.content))
+      .join('\n').split('sourceproof preferences please').slice(1).join('')
+    const carrier = mode === 'Code' ? system : afterTheWords
+    if (mode !== 'Code') expect(system).not.toContain('<remembered_context>')
+    expect(carrier).toContain('<remembered_context>')
+    expect(carrier).toContain('SOURCEPROOF_global')
+    expect(carrier).toContain('SOURCEPROOF_project')
     for (const excluded of ['private', 'foreign', 'stale']) expect(body).not.toContain(`SOURCEPROOF_${excluded}`)
     // Regression guard: the "Memory sources" chip under an answer was removed
     // (2026-09-19: the purple brain icon already shows memory is active,

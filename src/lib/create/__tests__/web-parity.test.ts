@@ -80,11 +80,17 @@ describe.skipIf(!WEB)('the mirrored files are the web files', () => {
         expect(patch.from).not.toBe(patch.to)
       }
     }
-    // Three files, six places. The sixth draws the big view of a chat image
-    // over the app, without which its prompt stood behind the composer. A
-    // seventh is a decision, not a drive-by.
-    expect(Object.keys(PATCHES).sort()).toEqual(['components/chat/create/CreateMedia.tsx', 'lib/create/engine.ts', 'lib/create/order.ts'])
-    expect(Object.values(PATCHES as Record<string, unknown[]>).flat()).toHaveLength(6)
+    // Four files, nineteen places. The sixth draws the big view of a chat image
+    // over the app, without which its prompt stood behind the composer. The
+    // thirteen of A13 (21.10.2026) keep a sent job that lost its answer (the
+    // poll ran out, the network went away) from being booked as "could not
+    // start": it is followed to its end with its own deadline and can be
+    // stopped, and a stop right after the submit asks the server. They are
+    // for the web to take over; until it has, a new web state that moved one
+    // of these places fails the mirror loudly. A further one is a decision,
+    // not a drive-by.
+    expect(Object.keys(PATCHES).sort()).toEqual(['components/chat/create/CreateMedia.tsx', 'lib/create/engine.ts', 'lib/create/order.ts', 'stores/createOrderStore.ts'])
+    expect(Object.values(PATCHES as Record<string, unknown[]>).flat()).toHaveLength(19)
   })
 
   it('translates the classes of the card into the desktop tokens, and nothing else', () => {

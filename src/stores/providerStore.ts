@@ -8,7 +8,8 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { safeJSONStorage } from '../lib/storage-quota'
-import type { ProviderId, ProviderConfig } from '../api/providers/types'
+import type { CompatProviderId, FixedProviderId, ProviderId, ProviderConfig } from '../api/providers/types'
+import { compatProviderId, isCompatProviderId } from '../api/providers/compat-id'
 import { clearProviderCache } from '../api/providers/client-cache'
 import { onLocalSlotChanged } from '../lib/builtin-slot-eviction'
 import { LU_ENGINE_NAME, renameLegacyEngine } from '../lib/engine-name'
@@ -57,6 +58,48 @@ export function deobfuscate(encoded: string): string {
 // before. Module-level so the static `partialize` can read it.
 let keychainReady = false
 const PROVIDER_IDS: ProviderId[] = ['ollama', 'openai', 'anthropic']
+
+// ── Vault access per slot ──────────────────────────────────────
+// The four fixed slots have a fixed vault entry each (secret_*). An extra
+// OpenAI-compatible slot (`openai-<slug>`, api/providers/compat-id.ts) is not
+// on that list, so its key goes to the parked namespace of the same vault
+// (secret_park_*), which takes any slug of [a-z0-9-]{1,64}. The `slot-`
+// prefix keeps these entries apart from the keys lib/parked-key.ts parks
+// there under a backend's display name, and which it deletes on restore.
+function parkedAccount(id: CompatProviderId): string {
+  return `slot-${id}`
+}
+function vaultGet(id: ProviderId): Promise<string | null> {
+  return isCompatProviderId(id) ? secretParkGet(parkedAccount(id)) : secretGet(id)
+}
+function vaultSet(id: ProviderId, key: string): Promise<void> {
+  return isCompatProviderId(id) ? secretParkSet(parkedAccount(id), key) : secretSet(id, key)
+}
+function vaultDelete(id: ProviderId): Promise<void> {
+  return isCompatProviderId(id) ? secretParkDelete(parkedAccount(id)) : secretDelete(id)
+}
+
+/**
+ * What an extra slot may carry when it comes out of storage. A blob is text
+ * somebody could have edited, and this entry decides where a saved API key
+ * is sent, so nothing is taken over that was not checked: the id is the map
+ * key, the address must be http or https, and the fields that belong to the
+ * shared slot alone (`managed`, `displaced`) never survive.
+ */
+function sanitizeCompatSlot(id: CompatProviderId, raw: unknown): ProviderConfig | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Partial<ProviderConfig>
+  const baseUrl = typeof r.baseUrl === 'string' ? r.baseUrl.trim() : ''
+  if (baseUrl && !/^https?:\/\//i.test(baseUrl)) return null
+  return {
+    id,
+    name: typeof r.name === 'string' && r.name.trim() ? r.name.trim().slice(0, 80) : id,
+    enabled: r.enabled === true && !!baseUrl,
+    baseUrl,
+    apiKey: typeof r.apiKey === 'string' ? r.apiKey : '',
+    isLocal: r.isLocal === true,
+  }
+}
 // Providers whose OS-vault WRITE failed this session. partialize keeps their
 // obfuscated key in localStorage as a fallback so a flaky/locked credential
 // store can't silently drop the key on the next restart.
@@ -72,7 +115,7 @@ const _entryKeychainFailed = new Set<string>()
 // with `managed: true`. Ollama/LM Studio stay available as "Advanced", the user
 // can re-enable them from Settings → Providers. This default only applies to a
 // FRESH store; existing `lu-providers` persistence is untouched.
-const DEFAULT_PROVIDERS: Record<ProviderId, ProviderConfig> = {
+const DEFAULT_PROVIDERS: Record<FixedProviderId, ProviderConfig> = {
   ollama: {
     id: 'ollama',
     name: 'Ollama',
@@ -289,6 +332,16 @@ interface ProviderState {
    * Keeps stored API keys and the LU Cloud enabled flag: keys are data, and
    * cloud-enabled is account state owned by useCloudAuth, not backend config. */
   resetProvidersToDefaults: () => void
+  /**
+   * Creates an extra OpenAI-compatible slot, or updates name and address of
+   * the one that already has this slug. Returns its id (`openai-<slug>`), or
+   * null when the slug or the address is not usable. A new slot starts
+   * switched off and without a key. The shared `openai` slot is never
+   * touched, so on a phone the on device engine keeps its place.
+   */
+  addCompatProvider: (input: { slug: string; name: string; baseUrl: string; isLocal?: boolean }) => CompatProviderId | null
+  /** Removes an extra slot together with its key. A fixed slot is ignored. */
+  removeCompatProvider: (id: ProviderId) => void
   setHideBackendSelector: (hide: boolean) => void
   /** Marks (or clears) the deliberate opt-out above. The five pick UIs call
    *  this with `true`; nothing else needs to call it with `false`, since
@@ -365,8 +418,72 @@ export const useProviderStore = create<ProviderState>()(
       setHideBackendSelector: (hide) => set({ hideBackendSelector: hide }),
       setEngineOptedOut: (optedOut) => set({ engineOptedOut: optedOut }),
 
+      addCompatProvider: ({ slug, name, baseUrl, isLocal }) => {
+        const id = compatProviderId(slug)
+        if (!id) return null
+        const existing = get().providers[id]
+        const next = sanitizeCompatSlot(id, {
+          ...existing,
+          name,
+          baseUrl,
+          isLocal: isLocal === true,
+        })
+        if (!next) return null
+        // A changed address with the old key still attached would send that
+        // key to the new host on the next request. The key was typed for the
+        // old address, so it goes with it.
+        const moved = !!existing && !!existing.baseUrl && existing.baseUrl !== next.baseUrl
+        if (moved) {
+          next.apiKey = ''
+          next.enabled = false
+          if (keychainReady) void vaultDelete(id).catch(() => { /* best effort */ })
+        }
+        set((state) => ({ providers: { ...state.providers, [id]: next } }))
+        clearProviderCache()
+        if (moved && existing.enabled) {
+          announceDarkenedSlots(() => (get().providers[id]?.enabled ? [] : [id]))
+        }
+        return id
+      },
+
+      removeCompatProvider: (id) => {
+        if (!isCompatProviderId(id)) return
+        const before = get().providers[id]
+        if (!before) return
+        set((state) => {
+          const providers = { ...state.providers }
+          delete providers[id]
+          return { providers }
+        })
+        _keychainFailed.delete(id)
+        if (keychainReady) void vaultDelete(id).catch(() => { /* vault delete best-effort */ })
+        clearProviderCache()
+        // A pick served by this slot is unservable from here on.
+        if (before.enabled) {
+          announceDarkenedSlots(() => (get().providers[id]?.enabled ? [] : [id]))
+        }
+      },
+
       setProviderConfig: (id, updates) => {
         const before = get().providers[id]
+        // An extra slot exists only once addCompatProvider made it. Writing
+        // into one that is not there would create a half entry without an
+        // address.
+        if (!before && isCompatProviderId(id)) return
+        if (before && isCompatProviderId(id)) {
+          // The fields of the shared slot have no meaning here, and the id is
+          // the map key. An address change goes through addCompatProvider,
+          // which also drops the key typed for the old host.
+          const { enabled, name, disabledByUser } = updates
+          const patch: Partial<ProviderConfig> = {}
+          if (enabled !== undefined) patch.enabled = enabled && !!before.baseUrl
+          if (typeof name === 'string' && name.trim()) patch.name = name.trim().slice(0, 80)
+          if (disabledByUser !== undefined) patch.disabledByUser = disabledByUser
+          set((state) => ({ providers: { ...state.providers, [id]: { ...before, ...patch } } }))
+          clearProviderCache()
+          dropPicksForDarkenedSlots({ [id]: before }, { [id]: get().providers[id] })
+          return
+        }
         set((state) => ({
           providers: {
             ...state.providers,
@@ -395,6 +512,7 @@ export const useProviderStore = create<ProviderState>()(
       },
 
       setProviderApiKey: (id, key) => {
+        if (isCompatProviderId(id) && !get().providers[id]) return
         set((state) => ({
           providers: {
             ...state.providers,
@@ -408,7 +526,7 @@ export const useProviderStore = create<ProviderState>()(
         // trace (the in-memory value only serves this session).
         if (keychainReady) {
           _keychainFailed.delete(id)
-          secretSet(id, key).catch(() => {
+          vaultSet(id, key).catch(() => {
             _keychainFailed.add(id)
             set((s) => ({ providers: { ...s.providers } })) // re-persist with the fallback retained
           })
@@ -433,6 +551,12 @@ export const useProviderStore = create<ProviderState>()(
       },
 
       resetProvider: (id) => {
+        // An extra slot has no shipped default to go back to: resetting it
+        // is removing it.
+        if (isCompatProviderId(id)) {
+          get().removeCompatProvider(id)
+          return
+        }
         const before = get().providers[id]
         set((state) => ({
           providers: {
@@ -450,7 +574,7 @@ export const useProviderStore = create<ProviderState>()(
         if (id === 'openai') set({ engineOptedOut: false })
         if (id === 'openai') onLocalSlotChanged(before, get().providers.openai)
         if (keychainReady) {
-          void secretDelete(id).catch(() => { /* vault delete best-effort */ })
+          void vaultDelete(id).catch(() => { /* vault delete best-effort */ })
         }
         clearProviderCache()
         // A single-slot reset can switch that slot off too (ollama and
@@ -462,7 +586,13 @@ export const useProviderStore = create<ProviderState>()(
         const before = get().providers
         set((state) => {
           const next = {} as Record<ProviderId, ProviderConfig>
-          for (const id of Object.keys(DEFAULT_PROVIDERS) as ProviderId[]) {
+          // Extra slots are the user's own saved providers, not backend
+          // configuration that has a shipped default: they stay as they are,
+          // for the same reason stored API keys do.
+          for (const id of Object.keys(state.providers) as ProviderId[]) {
+            if (isCompatProviderId(id)) next[id] = state.providers[id]
+          }
+          for (const id of Object.keys(DEFAULT_PROVIDERS) as FixedProviderId[]) {
             next[id] = {
               ...DEFAULT_PROVIDERS[id],
               apiKey: state.providers[id]?.apiKey ?? '',
@@ -500,9 +630,13 @@ export const useProviderStore = create<ProviderState>()(
         // "unsupported") → stay on the localStorage path and do nothing.
         const loaded: Partial<Record<ProviderId, string>> = {}
         let usable: boolean | null = null
-        for (const id of PROVIDER_IDS) {
+        // The extra slots after the fixed ones: the first probe decides
+        // whether there is a vault at all, and that question belongs to a
+        // fixed entry, not to the parked namespace.
+        const extra = (Object.keys(get().providers) as ProviderId[]).filter(isCompatProviderId)
+        for (const id of [...PROVIDER_IDS, ...extra]) {
           try {
-            const stored = await secretGet(id)
+            const stored = await vaultGet(id)
             usable = true
             if (stored != null && stored !== '') {
               loaded[id] = stored
@@ -515,7 +649,7 @@ export const useProviderStore = create<ProviderState>()(
               if (existing) {
                 // Migrate the old localStorage key into the vault. If the write
                 // fails, mark it so partialize keeps the localStorage copy (no loss).
-                try { await secretSet(id, existing) } catch { _keychainFailed.add(id) }
+                try { await vaultSet(id, existing) } catch { _keychainFailed.add(id) }
               }
             }
           } catch {
@@ -584,7 +718,15 @@ export const useProviderStore = create<ProviderState>()(
       // hit an undefined config after an update.
       merge: (persisted: unknown, current: ProviderState): ProviderState => {
         const p = (persisted ?? {}) as Partial<ProviderState>
-        const merged = { ...DEFAULT_PROVIDERS, ...(p.providers ?? {}) }
+        const merged: Record<ProviderId, ProviderConfig> = { ...DEFAULT_PROVIDERS, ...(p.providers ?? {}) }
+        // Extra slots: checked before anything reads them, and an entry that
+        // does not pass is dropped rather than repaired.
+        for (const id of Object.keys(merged) as ProviderId[]) {
+          if (!isCompatProviderId(id)) continue
+          const clean = sanitizeCompatSlot(id, merged[id])
+          if (clean) merged[id] = clean
+          else delete merged[id]
+        }
         // 2.6.8 (A14): every store written before the rename carries the label
         // "Built-in Engine" on the openai slot, and a second copy of it in the
         // `displaced` memory when another backend pushed the engine aside. Both

@@ -118,6 +118,17 @@ describe('each sniffed family builds its official template graph', () => {
     expect(Object.values(wf).filter((n) => n.class_type === 'LoadImage')).toHaveLength(1)
   })
 
+  // Discord help-18, 23.10.2026: the node labels its images "Picture 1: ",
+  // "Picture 2: ", so the prompt names them so, on both sides.
+  it('Qwen-Image-Edit: the prompt names the images as the node labels them, Picture 2', async () => {
+    const wf = await buildDynamicWorkflow(run('qwen_image_edit_2509_fp8_e4m3fn.safetensors', {
+      inputImage: 'house.png', denoise: 0.7, referenceImages: ['door.png'],
+      prompt: 'put the door from IMAGE 2. on the house in image1, not image 3', negativePrompt: 'pic 2 twice',
+    }), 'qwenimage1')
+    const edits = Object.values(wf).filter((n) => n.class_type === 'TextEncodeQwenImageEditPlus')
+    expect(edits.map((n) => n.inputs!.prompt)).toEqual(['put the door from Picture 2. on the house in Picture 1, not image 3', 'Picture 2 twice'])
+  })
+
   it('Qwen-Image-Edit: the source goes through TextEncodeQwenImageEditPlus on both sides, denoise 1, CFGNorm, shift 3', async () => {
     const wf = await buildDynamicWorkflow(run('qwen_image_edit_2509_fp8_e4m3fn.safetensors', { inputImage: 'house.png', denoise: 0.7 }), 'qwenimage1')
     const edits = Object.values(wf).filter((n) => n.class_type === 'TextEncodeQwenImageEditPlus')

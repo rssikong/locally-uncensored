@@ -1,6 +1,7 @@
 import { useEffect, useImperativeHandle, useRef, type Ref } from "react"
 import { Mic, MicOff, Loader2 } from "lucide-react"
 import { useVoice } from "../../hooks/useVoice"
+import { platformText } from "../../lib/platform-text"
 import { useVoiceStore } from "../../stores/voiceStore"
 import { useSettingsStore } from "../../stores/settingsStore"
 
@@ -25,9 +26,7 @@ import { useSettingsStore } from "../../stores/settingsStore"
  *    out is the account, not an install.
  */
 export function micUnavailableHint(cloudMode: boolean): string {
-  return cloudMode
-    ? "Cloud dictation needs a signed-in account with credits. Sign in under Settings → Account."
-    : "Speech-to-text is not installed. Install faster-whisper in Settings → Voice & Remote."
+  return cloudMode ? platformText("micHintCloud") : platformText("micHintLocal")
 }
 
 /** What the composer can ask of the microphone. */
@@ -146,7 +145,7 @@ export function VoiceButton({ ref, onTranscript, onInterim, onRecordingChange, d
         >
           <MicOff size={14} />
         </button>
-        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 w-max max-w-[240px] bg-gray-800 dark:bg-gray-700 text-white t-micro leading-snug rounded text-center opacity-0 group-hover/mic:opacity-100 transition-opacity pointer-events-none">
+        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 w-max max-w-[240px] bg-gray-800 dark:bg-gray-700 !text-white t-micro leading-snug rounded text-center opacity-0 group-hover/mic:opacity-100 transition-opacity pointer-events-none">
           {hint}
         </div>
       </div>

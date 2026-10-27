@@ -1,0 +1,1236 @@
+/* Styles of the strand "create" (prefix m-k-).
+   ADAPTER, see mobile-docs/geruest-wuensche/create.md point 2: styles/ belongs
+   to the scaffold and has no classes for a tool grid, a stage, a gallery or
+   a painting canvas. Until it has, they live here. Colours and measures come
+   from the tokens, text sizes are in rem, distances in px. */
+
+/* ---------- tool row (K1.3, K1.4) ---------- */
+.m-k-toolrow {
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding-bottom: 4px;
+}
+.m-k-toolrow > .m-chip {
+  margin-left: var(--m-gutter);
+}
+.m-k-toolrow > .m-chips {
+  flex: 1;
+  min-width: 0;
+  padding-left: var(--m-s2);
+}
+
+/* ---------- stage ---------- */
+.m-k-stage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s3);
+  padding-top: var(--m-s2);
+}
+.m-k-stage > .m-note,
+.m-k-stage > .m-k-pad {
+  margin-left: var(--m-gutter);
+  margin-right: var(--m-gutter);
+}
+.m-k-box {
+  margin: 0 var(--m-gutter);
+  border-radius: var(--m-r-xl);
+  overflow: hidden;
+  background: var(--m-surface);
+  border: 1px solid var(--m-hair);
+}
+.m-k-box--pad {
+  padding: var(--m-s5) var(--m-s4);
+}
+.m-app .m-k-media {
+  display: block;
+  width: 100%;
+  background: var(--m-fill);
+  position: relative;
+}
+.m-k-media img,
+.m-k-media video {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 70vh;
+  object-fit: contain;
+  background: #000000;
+}
+.m-k-media audio {
+  display: block;
+  width: calc(100% - 32px);
+  margin: var(--m-s5) auto;
+}
+.m-k-media-state {
+  min-height: calc(9 * var(--m-u));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--m-s2);
+  padding: var(--m-s4);
+  text-align: center;
+  color: var(--m-t3);
+  font-size: var(--m-text-caption);
+}
+.m-k-racts {
+  display: flex;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--m-hair);
+}
+.m-app .m-k-racts > button {
+  flex: 1 1 var(--m-touch);
+  min-width: var(--m-touch);
+  min-height: var(--m-row);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: var(--m-s1) 2px;
+  color: var(--m-t2);
+  font-size: min(0.6875rem, calc(15px / var(--m-zoom)));
+  line-height: 1.2;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.m-app .m-k-racts > button:disabled {
+  opacity: 0.4;
+}
+.m-k-strip {
+  display: flex;
+  gap: var(--m-s2);
+  padding: 0 var(--m-gutter);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.m-k-strip::-webkit-scrollbar {
+  display: none;
+}
+.m-app .m-k-thumb {
+  flex: none;
+  position: relative;
+  width: 64px;
+  height: 64px;
+  border-radius: var(--m-r-md);
+  overflow: hidden;
+  background: var(--m-fill);
+  border: 1px solid var(--m-hair);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--m-t3);
+}
+.m-app .m-k-thumb[aria-pressed='true'],
+.m-app .m-k-thumb[aria-current='true'] {
+  border-color: var(--m-accent);
+  box-shadow: inset 0 0 0 1px var(--m-accent);
+}
+.m-k-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.m-k-run {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--m-s3);
+}
+.m-k-run-line {
+  font-family: var(--m-font-mono);
+  font-size: var(--m-text-mono);
+  color: var(--m-t3);
+  overflow-wrap: anywhere;
+}
+.m-k-run .m-btn {
+  align-self: center;
+}
+.m-k-run-ring {
+  display: flex;
+  justify-content: center;
+}
+
+/* ---------- input cards on the stage ---------- */
+.m-k-card {
+  margin: 0 var(--m-gutter);
+  /* Round 57: less room above and below; the controls inside bring their own 44 px. */
+  padding: var(--m-s2) var(--m-s3);
+  background: var(--m-surface);
+  border: 1px solid var(--m-card-edge);
+  border-radius: var(--m-r-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s2);
+}
+/* Music (round 57, David): no card at all. The choices stand on the stage, in line with the prompt field. */
+.m-k-card--flat {
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 0;
+}
+/* An empty input is one card that is one button (round 45): a small tile, what it wants, a plus. */
+.m-k-card--add {
+  padding: 0;
+  gap: 0;
+}
+.m-k-card--add > .m-note {
+  margin: 0 var(--m-s3) var(--m-s3);
+}
+.m-app .m-k-addcard {
+  display: flex;
+  align-items: center;
+  gap: var(--m-s3);
+  width: 100%;
+  min-height: 44px;
+  padding: var(--m-s3);
+  text-align: left;
+  color: inherit;
+  border-radius: inherit;
+}
+.m-app .m-k-addcard > .m-k-thumb {
+  width: 48px;
+  height: 48px;
+  color: var(--m-accent);
+}
+.m-k-addcard-go {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: var(--m-fill-2);
+  color: var(--m-t1);
+}
+.m-app .m-k-addcard:disabled {
+  opacity: 0.5;
+}
+
+/* A card with one short choice: its name and the choice share a line while they fit (round 45). */
+.m-k-card--inline {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.m-k-card--inline > .m-k-card-title {
+  flex: 1 1 auto;
+}
+.m-k-card--inline > .m-seg {
+  flex: 1 1 calc(12 * var(--m-u));
+}
+
+/* Talking: the words for the voice start two lines high and grow while typing (round 45). */
+.m-k-voice {
+  gap: var(--m-s2);
+}
+.m-k-voice .m-textarea textarea {
+  min-height: calc(3 * var(--m-u));
+}
+/* The paid button has a line of its own, the two ways without cost share the next one. */
+.m-k-voice > .m-k-card-actions > .m-btn:first-child {
+  flex-basis: 100%;
+}
+
+/* The one sentence of a tool without inputs of its own, in the middle of the stage (round 45). */
+.m-k-hint {
+  margin: 0 var(--m-gutter);
+  padding: var(--m-s2) 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--m-s2);
+  text-align: center;
+  color: var(--m-t2);
+  font-size: var(--m-text-body);
+  line-height: 1.4;
+}
+.m-k-hint > svg {
+  color: var(--m-t3);
+}
+
+.m-k-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--m-s3);
+}
+.m-k-card-head > .m-k-thumb {
+  width: 72px;
+  height: 72px;
+}
+.m-k-card-text {
+  flex: 1 1 calc(6 * var(--m-u));
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.m-k-card-title {
+  font-size: var(--m-text-control);
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.m-k-card-sub {
+  font-size: var(--m-text-caption);
+  line-height: 1.4;
+  color: var(--m-t3);
+  overflow-wrap: anywhere;
+}
+.m-k-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--m-s2);
+}
+.m-k-card-actions > .m-btn {
+  flex: 1 1 calc(8 * var(--m-u));
+}
+.m-k-label {
+  padding: 0 var(--m-s5);
+}
+.m-k-refs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--m-s2);
+}
+.m-k-ref {
+  position: relative;
+  width: 64px;
+  height: 64px;
+}
+.m-k-ref > .m-k-thumb {
+  width: 64px;
+  height: 64px;
+}
+/* The target of the cross must not reach the middle of its picture. Hung 10 px over the corner on both sides,
+   a target of 48 px (Android) lay over the middle of a picture of 72: a tap on the picture removed it instead
+   of opening it. To the side there is no more room (the last picture of a row stands at the gutter), so the
+   target moves up with its size: its lower edge ends 8 px above its own middle line, 32 px into the picture
+   on Android and 30 on iOS. The cross itself stands where it stood, 4 px over the corner. */
+.m-app .m-k-x {
+  position: absolute;
+  top: calc(8px - var(--m-touch) / 2);
+  right: -10px;
+  width: var(--m-touch);
+  height: var(--m-touch);
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding: calc(var(--m-touch) / 2 - 12px) 6px 0 0;
+}
+.m-k-x > span {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--m-t1);
+  color: var(--m-canvas);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.m-k-x svg {
+  width: 14px;
+  height: 14px;
+}
+.m-app .m-k-addtile {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--m-r-md);
+  border: 1px dashed var(--m-edge);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--m-t2);
+}
+
+/* ---------- composer of Create ---------- */
+.m-k-composer-note {
+  margin: 0 var(--m-s1) var(--m-s2);
+}
+.m-app .m-k-summary {
+  width: 100%;
+  min-height: var(--m-touch);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px var(--m-s3);
+  padding: var(--m-s1) 14px;
+  color: var(--m-t3);
+  font-family: var(--m-font-mono);
+  font-size: var(--m-text-mono);
+  line-height: 1.3;
+  text-align: left;
+}
+.m-k-summary-line {
+  flex: 1 1 calc(8 * var(--m-u));
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.m-k-summary-price {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--m-cloud);
+}
+.m-k-summary-price[data-short] {
+  color: var(--m-err);
+}
+.m-k-blocked {
+  padding: 0 14px var(--m-s1);
+  font-size: var(--m-text-caption);
+  line-height: 1.4;
+  color: var(--m-t3);
+}
+.m-k-composer-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px 4px;
+}
+.m-k-composer-row > .m-mchip,
+.m-k-composer-row > .m-k-fixedmodel {
+  flex: 1 1 calc(5 * var(--m-u));
+  min-width: 0;
+}
+.m-k-fixedmodel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--m-touch);
+  padding: 0 var(--m-s2);
+  color: var(--m-t3);
+  font-size: var(--m-text-caption);
+}
+.m-app .m-k-composer-row > .m-btn {
+  flex: none;
+  margin-left: auto;
+  border-radius: var(--m-r-pill);
+}
+@container (max-width: 17rem) {
+  .m-k-composer-row > .m-mchip,
+  .m-k-composer-row > .m-k-fixedmodel {
+    order: -1;
+    flex: 1 0 100%;
+  }
+}
+
+/* ---------- rail of prompt styles (K1.22) ---------- */
+.m-app .m-k-style {
+  flex: none;
+  min-height: var(--m-touch);
+  max-width: calc(14 * var(--m-u));
+  padding: var(--m-s2) var(--m-s3);
+  border-radius: var(--m-r-md);
+  background: var(--m-fill);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  text-align: left;
+}
+.m-k-style b {
+  font-size: var(--m-text-control);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.m-k-style span {
+  font-size: var(--m-text-caption);
+  color: var(--m-t3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: calc(12 * var(--m-u));
+}
+
+/* ---------- tool grid (K2) ---------- */
+.m-k-tools {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, max(96px, calc(6.5 * var(--m-u)))), 1fr));
+  gap: var(--m-s2);
+  padding: 0 var(--m-gutter) var(--m-s4);
+}
+.m-app .m-k-tools > button {
+  min-height: 76px;
+  border-radius: var(--m-r-lg);
+  background: var(--m-fill);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: var(--m-s2);
+  color: var(--m-t2);
+  font-size: var(--m-text-caption);
+  line-height: 1.25;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.m-app .m-k-tools > button[aria-checked='true'] {
+  background: var(--m-accent-soft);
+  color: var(--m-t1);
+  box-shadow: inset 0 0 0 1px var(--m-accent);
+}
+
+/* ---------- model rows (K3) ---------- */
+.m-k-price {
+  font-family: var(--m-font-mono);
+  font-size: var(--m-text-mono);
+  color: var(--m-cloud);
+  white-space: nowrap;
+}
+.m-k-rowtags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+/* A mark that describes the model while the account setting still decides. */
+.m-k-pale {
+  display: inline-flex;
+  opacity: 0.55;
+}
+.m-k-foot-price {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 2px var(--m-s3);
+}
+.m-k-foot-price > b {
+  font-family: var(--m-font-mono);
+  font-size: var(--m-text-control);
+  font-weight: 600;
+  color: var(--m-cloud);
+}
+.m-k-foot-price[data-short] > b {
+  color: var(--m-err);
+}
+.m-k-sec {
+  padding: 0 var(--m-gutter) var(--m-s4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s2);
+}
+.m-k-sec > .m-label {
+  padding: 0 var(--m-s1);
+}
+
+/* ---------- gallery (K6) ---------- */
+/* Three tiles in a row where a tile is then at least twice a touch target high, else two. "Remove" on an
+   expired tile is a bar of one touch target at the foot: on a tile of 90 px (320 wide, three in a row) it
+   reached over the middle, and a tap on the tile removed the entry instead of opening it. */
+.m-k-gal {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(max(calc(2 * var(--m-touch) + 4px), calc((100% - 2 * var(--m-s2) - 1px) / 3)), 1fr));
+  gap: var(--m-s2);
+  padding: 0 var(--m-gutter) var(--m-s4);
+}
+@media (min-width: 600px) {
+  .m-k-gal {
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  }
+}
+.m-k-tile {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  border-radius: var(--m-r-md);
+  overflow: hidden;
+  background: var(--m-fill);
+  /* Tiles far from the screen are not laid out or painted: 200 entries scroll like 20. */
+  content-visibility: auto;
+  contain-intrinsic-size: 110px 110px;
+}
+.m-app .m-k-tile > button.m-k-tile-main {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: var(--m-t3);
+  font-size: var(--m-text-label);
+  text-align: center;
+}
+.m-k-tile img,
+.m-k-tile video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.m-k-tile-badge {
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #ffffff;
+  font-size: var(--m-text-label);
+  line-height: 1.3;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  pointer-events: none;
+}
+.m-k-tile-badge svg {
+  width: 12px;
+  height: 12px;
+}
+.m-k-tile-check {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+  background: rgba(0, 0, 0, 0.35);
+  color: #111827;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.m-k-tile[data-selected] .m-k-tile-check {
+  background: var(--m-accent);
+  border-color: var(--m-accent);
+}
+.m-k-tile-check svg {
+  width: 14px;
+  height: 14px;
+}
+.m-k-tile[data-selected] {
+  outline: 2px solid var(--m-accent);
+  outline-offset: -2px;
+}
+.m-app .m-k-tile-remove {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  min-height: var(--m-touch);
+  background: rgba(0, 0, 0, 0.6);
+  color: #ffffff;
+  font-size: var(--m-text-caption);
+  text-align: center;
+}
+/* A tile with "Remove" carries two targets, one above the other. Each keeps its own room: the tile is at least
+   two targets high and the tile itself ends where "Remove" begins. On a 320 px phone a tile is 91 px, and the
+   48 px strip of Android lay over its middle, so a tap on the tile removed the entry. */
+.m-k-tile:has(> .m-k-tile-remove) {
+  min-height: calc(2 * var(--m-touch));
+}
+.m-app .m-k-tile:has(> .m-k-tile-remove) > button.m-k-tile-main {
+  bottom: var(--m-touch);
+  height: auto;
+}
+.m-k-selbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--m-s2);
+}
+.m-k-selbar > .m-btn {
+  flex: 1 1 calc(5.5 * var(--m-u));
+}
+.m-k-selbar > .m-cap {
+  flex: 1 0 100%;
+}
+
+/* ---------- viewer (K7) ---------- */
+.m-k-viewer-foot {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s2);
+  padding: var(--m-s2) var(--m-s3) var(--m-s3);
+  max-height: 45%;
+  overflow-y: auto;
+}
+.m-k-viewer-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--m-s2);
+  color: #d1d5db;
+  font-family: var(--m-font-mono);
+  font-size: var(--m-text-mono);
+}
+.m-k-viewer-nav > span {
+  flex: 1;
+  text-align: center;
+}
+.m-k-viewer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--m-s2);
+}
+.m-k-viewer-actions > .m-btn {
+  flex: 1 1 calc(7 * var(--m-u));
+}
+.m-viewer .m-btn {
+  color: #f3f4f6;
+  border-color: rgba(255, 255, 255, 0.25);
+}
+.m-viewer .m-btn.m-btn--cloud {
+  border-color: var(--m-cloud-edge);
+}
+.m-k-viewer-prompt {
+  padding: var(--m-s3);
+  border-radius: var(--m-r-md);
+  background: rgba(255, 255, 255, 0.08);
+  color: #e5e7eb;
+  font-size: var(--m-text-caption);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s2);
+}
+.m-k-viewer-prompt .m-btn {
+  align-self: flex-start;
+}
+.m-k-viewer-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--m-s3);
+  padding: var(--m-s5);
+  text-align: center;
+  color: #d1d5db;
+}
+.m-k-zoomable {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  transform-origin: center;
+  will-change: transform;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+/* ---------- mask editor (K9) ---------- */
+.m-k-mask {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  background: var(--m-canvas);
+  padding: var(--m-safe-top) var(--m-safe-right) var(--m-safe-bottom) var(--m-safe-left);
+}
+.m-k-mask-bar {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--m-s1);
+  min-height: var(--m-touch);
+  padding: var(--m-s1) var(--m-s2);
+}
+.m-k-mask-title {
+  flex: 1 1 calc(4 * var(--m-u));
+  min-width: 0;
+  text-align: center;
+  font-size: var(--m-text-title);
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.m-k-mask-frame {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+  background: #0b0b0b;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.m-k-mask-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+.m-k-mask-layer canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.m-k-mask-layer canvas[data-layer='mask'] {
+  opacity: 0.55;
+}
+.m-k-mask-hint {
+  position: absolute;
+  left: 50%;
+  top: var(--m-s2);
+  transform: translateX(-50%);
+  max-width: calc(100% - 24px);
+  max-height: calc(100% - 2 * var(--m-s2));
+  overflow: hidden;
+  padding: 4px 10px;
+  border-radius: var(--m-u);
+  background: rgba(0, 0, 0, 0.6);
+  color: #f3f4f6;
+  font-size: var(--m-text-caption);
+  text-align: center;
+  pointer-events: none;
+}
+.m-k-mask-tools {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s2);
+  padding: var(--m-s2) var(--m-s3) var(--m-s3);
+  border-top: 1px solid var(--m-hair);
+  max-height: 55%;
+  overflow-y: auto;
+}
+.m-k-mask-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--m-s1) var(--m-s2);
+}
+.m-k-mask-row > .m-seg {
+  flex: 1 1 calc(9 * var(--m-u));
+}
+.m-k-mask-row > .m-btn {
+  flex: 1 1 calc(5 * var(--m-u));
+}
+.m-k-mask-tools .m-slider {
+  padding: 0;
+}
+/* Landscape: the tools stand next to the image, so the image keeps its height. */
+.m-app[data-orient='land'] .m-k-mask-body {
+  flex-direction: row;
+}
+.m-app[data-orient='land'] .m-k-mask-tools {
+  width: min(46%, calc(22 * var(--m-u)));
+  max-height: none;
+  border-top: 0;
+  border-left: 1px solid var(--m-hair);
+}
+/* Low screen (small phone with large text): the image keeps more than half the height, the tools scroll. */
+.m-k-mask[data-shape='low'] .m-k-mask-tools {
+  max-height: 40%;
+}
+.m-k-mask-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- photos of a new character (K11) ---------- */
+.m-k-photos {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+  gap: var(--m-s3);
+  padding: var(--m-s2) var(--m-gutter) var(--m-s3);
+}
+.m-k-photo {
+  position: relative;
+  aspect-ratio: 1 / 1;
+}
+.m-k-photo > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: var(--m-r-md);
+  display: block;
+  background: var(--m-fill);
+}
+.m-app .m-k-photo-add {
+  aspect-ratio: 1 / 1;
+  min-height: var(--m-touch);
+  border-radius: var(--m-r-md);
+  border: 1px dashed var(--m-edge);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: var(--m-t2);
+  font-size: var(--m-text-label);
+  text-align: center;
+}
+
+/* ---------- showcase (K13) ---------- */
+.m-k-show {
+  margin: 0 var(--m-gutter) var(--m-s3);
+  border-radius: var(--m-r-lg);
+  overflow: hidden;
+  background: var(--m-surface);
+  border: 1px solid var(--m-card-edge);
+}
+.m-k-show-art {
+  aspect-ratio: 16 / 9;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  background: linear-gradient(140deg, #1c2340, #4a3b6b 55%, #c9705a);
+}
+.m-k-show-art[data-tone='b'] {
+  background: linear-gradient(160deg, #0f3d3e, #2e8b6f 55%, #e2c26a);
+}
+.m-k-show-art[data-tone='c'] {
+  background: linear-gradient(200deg, #3b1d5e, #c2416b 60%, #f6a45c);
+}
+.m-k-show-art[data-tone='d'] {
+  background: linear-gradient(140deg, #0b1e3f, #2f6fb5 55%, #d7e9f7);
+}
+.m-k-show-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.m-k-show-art .m-icon {
+  width: 40px;
+  height: 40px;
+}
+.m-k-show-text {
+  padding: var(--m-s3) var(--m-s4) var(--m-s4);
+}
+.m-k-show-text h2 {
+  font-size: var(--m-text-title);
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 0 0 2px;
+}
+.m-k-show-text p {
+  margin: 0;
+  color: var(--m-t2);
+  font-size: var(--m-text-control);
+  line-height: 1.45;
+}
+
+/* ---------- small helpers ---------- */
+.m-k-pad {
+  padding-left: var(--m-gutter);
+  padding-right: var(--m-gutter);
+}
+.m-k-gap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s3);
+}
+.m-k-center {
+  display: flex;
+  justify-content: center;
+  padding: var(--m-s5);
+}
+.m-k-frames {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--m-s3);
+  padding: var(--m-s2) 0;
+}
+.m-k-video {
+  width: 100%;
+  max-height: 40vh;
+  border-radius: var(--m-r-md);
+  background: #000000;
+  display: block;
+}
+.m-k-batch-thumb {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--m-r-sm);
+  object-fit: cover;
+  background: var(--m-fill);
+}
+
+/* A chip with a very short label ("1:1") is still a full target. */
+.m-app .m-k-gap .m-chip {
+  min-width: var(--m-touch);
+  justify-content: center;
+}
+
+/* A text block that is a row of a column card takes its own height, not a share of the card. */
+.m-k-card > .m-k-card-text {
+  flex: none;
+}
+
+/* ---------- viewer: media fill the stage, small results are scaled up ---------- */
+.m-app .m-viewer-stage .m-k-zoomable,
+.m-app .m-viewer-stage .m-k-viewer-media {
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.m-k-viewer-foot > * {
+  flex: none;
+}
+
+/* ---------- K1 on a low screen ---------- */
+/* One scrolling column, the composer first (very large text). */
+/* Very large text: Create stands fixed below the scrolling column, its price before it (round 45). */
+.m-k-startbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--m-s2) var(--m-s3);
+}
+.m-k-startbar > .m-btn {
+  flex: 1 1 auto;
+}
+.m-k-low {
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s3);
+}
+/* Side by side (a phone on its side): the stage scrolls, the composer stays in view. */
+.m-k-wide {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, calc(24 * var(--m-u)));
+  align-items: start;
+}
+.m-k-wide > .m-k-layout-main {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+}
+.m-k-wide > .m-k-layout-side {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  position: sticky;
+  top: 0;
+}
+.m-k-layout-main {
+  scroll-margin-top: var(--m-s2);
+}
+
+.m-k-intro {
+  margin: 0 0 var(--m-s3);
+}
+.m-k-form {
+  padding-top: var(--m-s2);
+  padding-bottom: var(--m-s4);
+}
+
+/* ---------- presenter with faces (K4.8, parts/SchemaFields.tsx) ---------- */
+.m-k-face-thumb {
+  flex: none;
+  width: 64px;
+  height: 36px;
+  border-radius: var(--m-r-sm);
+  overflow: hidden;
+  background: var(--m-fill);
+  border: 1px solid var(--m-hair);
+}
+.m-k-face-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.m-k-faces {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(calc(8.5 * var(--m-u)), 1fr));
+  gap: var(--m-s2);
+  padding: 0 var(--m-gutter);
+}
+.m-app .m-k-face {
+  min-height: var(--m-touch);
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 4px;
+  border-radius: var(--m-r-md);
+  background: var(--m-surface);
+  border: 1px solid var(--m-hair);
+  text-align: left;
+}
+.m-app .m-k-face[aria-checked='true'] {
+  border-color: var(--m-cloud);
+  box-shadow: inset 0 0 0 1px var(--m-cloud);
+  background: var(--m-cloud-soft);
+}
+.m-k-face-img {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--m-r-sm);
+  overflow: hidden;
+  background: var(--m-fill);
+}
+.m-k-face-img img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.m-k-face-name {
+  font-size: var(--m-text-caption);
+  color: var(--m-t1);
+  overflow-wrap: anywhere;
+  padding: 0 2px 2px;
+}
+
+/* ---------- guided presets (K12, PresetsPage and PresetRunPage) ---------- */
+.m-k-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.m-k-presets {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(calc(16 * var(--m-u)), 1fr));
+  gap: var(--m-s3);
+  padding: 0 var(--m-gutter);
+}
+.m-app .m-k-preset {
+  min-width: 0;
+  min-height: var(--m-touch);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  text-align: left;
+  border-radius: var(--m-r-lg);
+  overflow: hidden;
+  background: var(--m-surface);
+  border: 1px solid var(--m-card-edge);
+}
+.m-k-preset-art {
+  display: block;
+  aspect-ratio: 16 / 9;
+  background: var(--m-fill);
+}
+.m-k-preset-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.m-k-preset-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--m-s3);
+}
+.m-k-preset-facts {
+  font-size: var(--m-text-caption);
+  color: var(--m-cloud);
+  overflow-wrap: anywhere;
+}
+.m-k-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--m-gutter);
+  display: flex;
+  flex-direction: column;
+  gap: var(--m-s1);
+}
+.m-k-steps > li {
+  display: flex;
+  align-items: center;
+  gap: var(--m-s2);
+  font-size: var(--m-text-caption);
+  line-height: 1.4;
+  color: var(--m-t3);
+  overflow-wrap: anywhere;
+}
+.m-k-steps > li[data-state='now'] {
+  color: var(--m-t1);
+  font-weight: 600;
+}
+.m-k-steps-n {
+  flex: none;
+  width: calc(1.5 * var(--m-u));
+  height: calc(1.5 * var(--m-u));
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--m-font-mono);
+  font-size: var(--m-text-caption);
+  background: var(--m-fill);
+  border: 1px solid var(--m-hair);
+}
+.m-k-steps-n > svg {
+  width: calc(0.875 * var(--m-u));
+  height: calc(0.875 * var(--m-u));
+}
+.m-k-steps > li[data-state='now'] > .m-k-steps-n {
+  border-color: var(--m-cloud);
+  color: var(--m-cloud);
+}
+.m-k-steps > li[data-state='done'] > .m-k-steps-n {
+  background: var(--m-cloud-soft);
+  color: var(--m-cloud);
+}
+.m-k-guided {
+  padding-top: var(--m-s3);
+  padding-bottom: var(--m-s4);
+}
+.m-k-guided-title {
+  margin: 0 0 var(--m-s1);
+  font-size: var(--m-text-body);
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.m-k-trouble {
+  margin: 0;
+  color: var(--m-err);
+}
+.m-k-result-note {
+  padding-top: var(--m-s2);
+  padding-bottom: var(--m-s2);
+}
+.m-k-thumb video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* ---------- see-through results (Remove background): a checkerboard under the picture ---------- */
+.m-app .m-viewer-stage {
+  position: relative;
+}
+.m-app .m-k-checker {
+  position: absolute;
+  pointer-events: none;
+  transform-origin: center;
+  background-color: #ffffff;
+  background-image: conic-gradient(#cccccc 25%, transparent 0 50%, #cccccc 0 75%, transparent 0);
+  background-size: 16px 16px;
+}
+.m-app .m-k-media img.m-k-see-through,
+.m-app .m-viewer-stage img.m-k-see-through {
+  position: relative;
+  background: transparent;
+}

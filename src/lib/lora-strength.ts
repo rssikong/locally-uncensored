@@ -6,10 +6,11 @@
  *  take strength_model and strength_clip from -100 to 100 in steps of 0.01
  *  (nodes.py), and say themselves that the value can be negative. Slider LoRAs
  *  are made for a wide range around zero (Discord 2026-10-02:
- *  Krea 2 LoRAs meant for -10 to 10), so the number field takes that range.
+ *  Krea 2 LoRAs meant for -10 to 10; Discord 2026-10-23: some are
+ *  used from -10 to 15), so the number field takes -20 to 20.
  *  The slider keeps the usual 0 to 2. */
-export const LORA_STRENGTH_MIN = -10
-export const LORA_STRENGTH_MAX = 10
+export const LORA_STRENGTH_MIN = -20
+export const LORA_STRENGTH_MAX = 20
 export const LORA_STRENGTH_STEP = 0.05
 export const LORA_SLIDER_MIN = 0
 export const LORA_SLIDER_MAX = 2

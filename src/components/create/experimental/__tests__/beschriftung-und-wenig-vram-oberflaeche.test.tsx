@@ -125,7 +125,7 @@ describe('Normal / Low VRAM (D20)', () => {
   it('auf dem Mac gibt es weder Schalter noch Vorschlag (D20 gilt nur fuer CUDA)', async () => {
     h.mac = true
     render(<SpecialControls intent="character" />)
-    await screen.findByTestId(/mac-train/)
+    await screen.findAllByTestId(/mac-train/)
     expect(screen.queryByRole('radio', { name: 'Low VRAM' })).toBeNull()
     expect(screen.queryByTestId('low-vram-suggestion')).toBeNull()
   })

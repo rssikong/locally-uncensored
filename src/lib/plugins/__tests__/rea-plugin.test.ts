@@ -111,7 +111,7 @@ vi.mock('../../../api/mcp/external-client', () => ({
   },
 }))
 
-import { startRea, stopRea, useReaRuntime } from '../rea-runtime'
+import { startRea, stopRea, useReaRuntime, REA_NODE_RETRY } from '../rea-runtime'
 import { toolRegistry } from '../../../api/mcp/tool-registry'
 
 const reaTools = () => toolRegistry.getAll().filter((t) => t.serverId === REA_PLUGIN.serverId)
@@ -167,6 +167,45 @@ describe('the REA switch', () => {
     expect(reaTools()).toHaveLength(0)
     expect(useReaRuntime.getState().phase).toBe('error')
     expect(useReaRuntime.getState().error).toMatch(/stopped on its own/)
+  })
+
+  it('a start that finds no Node looks again before it gives up (A37: on at app start)', async () => {
+    const saved = { ...REA_NODE_RETRY }
+    REA_NODE_RETRY.delayMs = 1
+    let looks = 0
+    fake.status = { ...ready, node: null, nodeOk: false }
+    const backend = await import('../../../api/backend')
+    vi.mocked(backend.backendCall).mockImplementation(async (cmd: string) => {
+      looks++
+      // The first look comes too early; the second finds the user's Node.
+      if (cmd === 'plugin_rea_status' && looks >= 2) return { ...ready, node: 'v24.22.0', nodeOk: true }
+      return fake.status
+    })
+    try {
+      await startRea()
+      expect(useReaRuntime.getState()).toMatchObject({ phase: 'on', error: null })
+      expect(fake.connects).toBe(1)
+    } finally {
+      Object.assign(REA_NODE_RETRY, saved)
+      vi.mocked(backend.backendCall).mockImplementation(async (cmd: string) => {
+        if (cmd === 'plugin_rea_fetch' || cmd === 'plugin_rea_status') return fake.status
+        throw new Error(`unexpected ${cmd}`)
+      })
+    }
+  })
+
+  it('a Node that is not there at all still ends in the message, after the second look', async () => {
+    const saved = { ...REA_NODE_RETRY }
+    REA_NODE_RETRY.delayMs = 1
+    fake.status = { ...ready, node: null, nodeOk: false }
+    try {
+      await startRea()
+      expect(useReaRuntime.getState().phase).toBe('error')
+      expect(useReaRuntime.getState().error).toMatch(/start LU from that terminal/)
+      expect(fake.connects).toBe(0)
+    } finally {
+      Object.assign(REA_NODE_RETRY, saved)
+    }
   })
 
   it('a start that a stop overtook leaves nothing running', async () => {

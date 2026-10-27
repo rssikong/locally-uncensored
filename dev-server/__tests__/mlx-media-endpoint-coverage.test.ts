@@ -7,7 +7,7 @@
  * unconditionally reached the moment MlxMediaSettings renders on a Mac.
  *
  * This is the systematic check the fix is built on, kept as a live test so
- * it holds going forward: it reads src-tauri/src/main.rs for every
+ * it holds going forward: it reads src-tauri/src/lib.rs for every
  * registered Tauri command, greps src/ for every literal command name
  * actually passed to `backendCall(...)` / `invokeMedia(...)` (the same
  * two-pass method used to find this gap), and asserts every one of those
@@ -36,9 +36,9 @@ const REPO_ROOT = join(HERE, '..', '..')
 
 /** Every command name registered in tauri::generate_handler![...]. */
 function rustCommands(): Set<string> {
-  const mainRs = readFileSync(join(REPO_ROOT, 'src-tauri', 'src', 'main.rs'), 'utf-8')
+  const mainRs = readFileSync(join(REPO_ROOT, 'src-tauri', 'src', 'lib.rs'), 'utf-8')
   const m = mainRs.match(/\.invoke_handler\(tauri::generate_handler!\[([\s\S]*?)\n\s*\]\)/)
-  if (!m) throw new Error('Could not find tauri::generate_handler![...] block in main.rs. Has the invoke_handler setup moved?')
+  if (!m) throw new Error('Could not find tauri::generate_handler![...] block in lib.rs. Has the invoke_handler setup moved?')
   const names = new Set<string>()
   for (let line of m[1].split('\n')) {
     line = line.split('//')[0].trim().replace(/,$/, '')
@@ -132,7 +132,7 @@ describe('endpointMap covers every backendCall/invokeMedia site the frontend can
   // pick individual ones off it later (the owner/orchestrator to prioritize; a
   // few look like real drift worth a closer look on their own, e.g.
   // local_api_status/restart_remote_server/revoke_remote_memory landed in
-  // main.rs after remote-stubs.ts's list was last updated). The test still
+  // lib.rs after remote-stubs.ts's list was last updated). The test still
   // fails the moment ANY command outside this list, including a brand new
   // one, is called from the frontend without an endpointMap entry.
   const PRE_EXISTING_UNMAPPED_GAPS = new Set([
@@ -173,6 +173,22 @@ describe('endpointMap covers every backendCall/invokeMedia site the frontend can
     // #143, api/discover.ts comfyModelTarget). A missing route answers
     // "local", which is what the dev server always is.
     'comfy_model_target',
+    // Delete one file of the agent folder of a chat (mobile round 2, the file
+    // viewer of the phone, screens/chat/parts/workspace-files.ts). The only
+    // call site is the phone shell. Without a route the browser answers
+    // "Unknown backend command", which the viewer reads as "this build cannot
+    // delete" and says so. A dev route would be a way to delete files on the
+    // developer machine that nothing needs, so there is none on purpose.
+    'fs_delete',
+    // The native copy of the saved characters of Create beside the store
+    // backup (mobile round 38, gap L3, mobile/lib/saved-characters-backup.ts).
+    // Registered on a phone only (lib.rs, #[cfg(mobile)]); every call runs
+    // after installSavedCharactersBackup(), which needs isTauri() and
+    // isMobile(). The browser build keeps the characters in IndexedDB and has
+    // no native side to copy them to, so there is no dev route to add.
+    'saved_characters_backup_missing', 'saved_characters_backup_put',
+    'saved_characters_backup_read_index', 'saved_characters_backup_read_photo',
+    'saved_characters_backup_write_index',
     // Ends a running `lmstudio_load_model` (api/lmstudio.ts). The load itself
     // has no dev route (it is in the list below), so there is nothing a dev
     // route for its cancel could end.
@@ -182,6 +198,14 @@ describe('endpointMap covers every backendCall/invokeMedia site the frontend can
     // behind isTauri(): the browser build has no voice engine and no Python
     // of its own to place, so there is no dev route to add.
     'move_runtime_folder', 'runtime_folder_status', 'set_runtime_folder',
+    // What LU installs into a ComfyUI environment on this machine (3.0.8,
+    // components/settings/HardwareSettings.tsx). Asked only behind isTauri():
+    // the browser build never builds a ComfyUI environment.
+    'comfy_torch_plan',
+    // Settings, Storage folder (components/settings/StorageFolderSetting.tsx):
+    // behind isTauri() for the same reason, the browser build has no files of
+    // its own to place.
+    'storage_apply', 'storage_cancel', 'storage_plan', 'storage_status',
     'exit_app', 'file_read', 'find_orphan_downloads', 'fix_comfyui_cors', 'funnel_ping',
     'get_comfy_gpu_status', 'get_current_time', 'import_local_model', 'install_character_trainer',
     'install_lmstudio', 'install_lmstudio_status', 'install_method', 'install_python',

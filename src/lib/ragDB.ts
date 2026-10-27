@@ -54,10 +54,43 @@ function idbRequest<T>(req: IDBRequest<T>): Promise<T> {
   })
 }
 
+/**
+ * Counts every write to the chunk store in this session. The backup asks it
+ * whether anything changed since the last one (lib/rag-backup.ts) instead of
+ * exporting and rewriting every vector on a timer. Bumped before the write,
+ * so a write that fails costs one needless check, never a missed backup.
+ */
+let revision = 0
+export function ragChunksRevision(): number {
+  return revision
+}
+
+const savedListeners = new Set<() => void>()
+
+/**
+ * Called after the chunks of a document are in IndexedDB. The phone writes
+ * its native backup right then instead of on the next 30 s beat (gap L2,
+ * mobile-docs/r38/luecken.md). The desktop registers nothing.
+ */
+export function onChunksSaved(fn: () => void): () => void {
+  savedListeners.add(fn)
+  return () => {
+    savedListeners.delete(fn)
+  }
+}
+
 /** Save chunks for a document (overwrites if exists) */
 export async function saveChunks(documentId: string, chunks: TextChunk[]): Promise<void> {
+  revision += 1
   const store = await tx("readwrite")
   await idbRequest(store.put(chunks, documentId))
+  for (const fn of savedListeners) {
+    try {
+      fn()
+    } catch {
+      /* a listener must not fail the save */
+    }
+  }
 }
 
 /** Load chunks for specific document IDs */
@@ -77,12 +110,14 @@ export async function loadChunks(documentIds: string[]): Promise<TextChunk[]> {
 
 /** Delete chunks for a document */
 export async function deleteChunks(documentId: string): Promise<void> {
+  revision += 1
   const store = await tx("readwrite")
   await idbRequest(store.delete(documentId))
 }
 
 /** Delete all chunks (e.g., when clearing all data) */
 export async function clearAllChunks(): Promise<void> {
+  revision += 1
   const store = await tx("readwrite")
   await idbRequest(store.clear())
 }
@@ -126,6 +161,7 @@ export async function exportAllChunks(): Promise<Record<string, TextChunk[]>> {
 export async function importAllChunks(snapshot: Record<string, TextChunk[]>): Promise<number> {
   const ids = Object.keys(snapshot)
   if (ids.length === 0) return 0
+  revision += 1
   const store = await tx("readwrite")
   let restored = 0
   for (const id of ids) {

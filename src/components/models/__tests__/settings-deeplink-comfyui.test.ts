@@ -101,6 +101,6 @@ describe('the hint button walks the whole route', () => {
     // is open by default, and it was before.
     expect(settingsPage).toMatch(/<Section title="Providers" defaultOpen>/)
     expect(settingsPage).not.toMatch(/<Section title="ComfyUI \(Image & Video\)" defaultOpen>/)
-    expect(settingsPage).toMatch(/<Section title="Model Storage">/)
+    expect(settingsPage).toMatch(/<Section title="Storage">/)
   })
 })

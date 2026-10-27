@@ -1,13 +1,16 @@
-import { Gauge, Boxes, FlaskConical, RotateCcw, HelpCircle, RectangleHorizontal, RectangleVertical, X, FolderOpen } from 'lucide-react'
+import { useCallback, useRef, useState } from 'react'
+import { Gauge, Boxes, FlaskConical, RotateCcw, HelpCircle, RectangleHorizontal, RectangleVertical, X, FolderOpen, Search, Copy, Check } from 'lucide-react'
 import { VIDEO_RES_PRESETS, ASPECT_RATIOS, applyAspect, presetForOrientation, matchesPreset } from '../../../lib/create-resolution'
 import { useCreateStore } from '../../../stores/createStore'
 import { useCreateExp } from './CreateContext'
 import { cloudModelById, defaultCloudModel } from '../../../stores/cloudCatalogStore'
 import { classifyModel } from '../../../api/comfyui'
-import { nativeHiresFinalSize, type HiresUpscaleMethod } from '../../../api/hires-fix'
+import { editIgnoresStrength } from '../../../lib/edit-references'
+import { latentDownscale, nativeHiresFinalSize, type HiresUpscaleMethod } from '../../../api/hires-fix'
 import { isMlxImageHost } from '../../../api/mlx-image'
 import { macHiresPass } from '../../../lib/mac-hires'
-import { MAC_EDIT_DEAD_SIDE, laneImageModel, macEditSide, runsAtOwnSampling, takesMlxLoras } from '../../../lib/image-engines'
+import { editHiresBase } from '../../../lib/edit-hires'
+import { MAC_EDIT_DEAD_SIDE, editCanvas, laneImageModel, macEditSide, runsAtOwnSampling, takesMlxLoras } from '../../../lib/image-engines'
 import { qwenEditResolution } from '../../../api/dynamic-workflow'
 import { openMlxLoraFolder, mlxLoraAlphaNote, mlxLoraRefusal } from '../../../api/mlx-loras'
 import { MLX_VIDEO_MIN_FRAMES, mlxFramesOnGrid, mlxVideoLaneEntry, mlxVideoMaxFrames, mlxVideoRunSize } from '../../../api/mlx-video'
@@ -21,7 +24,8 @@ import { Button } from '../ui/Button'
 import { Tooltip } from '../ui/Tooltip'
 import { cn } from '../ui/cn'
 import { HINWEIS_TEXT } from '../../../lib/hinweis'
-import { lorasForRun, loraRows } from '../../../lib/lora-stack'
+import { filterLoraRows, loraCopyText, lorasForRun, loraRows } from '../../../lib/lora-stack'
+import { loraStackView, setLoraStackQuery, setLoraStackScroll } from './loraStackView'
 import { LoraStrength } from './LoraStrength'
 import { MOTION_OWN_WORKFLOW_NOTE, useMotionOwnWorkflow } from './motionWorkflow'
 import { supportsTransparent } from '../../../lib/transparent-image'
@@ -107,6 +111,22 @@ export function ParamGroups() {
   const laneType = (isVideo ? s.videoModelList : s.imageModelList).find((m) => m.name === laneModel)?.type ?? classifyModel(laneModel)
   const activeLoras = lorasForRun(s.selectedLoras, loraList, laneType).use.length
   const stackRows = loraRows(loraList, s.selectedLoras, laneType)
+  // The search and the scroll position outlive the drawer (loraStackView.ts).
+  const [loraQuery, setLoraQuery] = useState(() => loraStackView().query)
+  const shownRows = filterLoraRows(stackRows, loraQuery)
+  const loraListRef = useRef<HTMLDivElement | null>(null)
+  // A callback ref: the list mounts later than the drawer when the Expert
+  // section is opened after it, and it is put back where it was left then.
+  const restoreLoraScroll = useCallback((el: HTMLDivElement | null) => {
+    loraListRef.current = el
+    if (el) el.scrollTop = loraStackView().scrollTop
+  }, [])
+  const [copiedLora, setCopiedLora] = useState<string | null>(null)
+  const copyLoraName = (name: string) => {
+    void navigator.clipboard?.writeText(loraCopyText(name))?.catch(() => null)
+    setCopiedLora(name)
+    setTimeout(() => setCopiedLora((c) => (c === name ? null : c)), 2000)
+  }
   // Which naming the Mac's video engine reads (api/mlx-loras mlxLoraRefusal).
   const macVideoEngine = macClip ? (laneType === 'wan' ? 'wan' as const : 'ltx' as const) : undefined
 
@@ -147,24 +167,43 @@ export function ParamGroups() {
   const showSteps = !(isCloud && isVideo) && !ownSampling && (!macVideo || macSteps) && !macMusic
   const showSize = !isAudio && (!macVideo || macSize)
   const showCfg = isCloud ? cloudModelById(cloudModelId)?.cfg === true : !ownSampling && !macVideo && !macMusic
-  // Native HiRes rewrites the local ComfyUI text-to-image graph. It has no
-  // cloud, video or Edit path, so keep the control honest and scoped to the
-  // lanes that can execute it. On the Mac that is a model that edits
+  // Native HiRes rewrites the local ComfyUI image graph: text to image, and
+  // since 3.0.8 Edit too (Discord feature request 21.10.2026). It has no
+  // cloud or video path, so keep the control honest and scoped to the lanes
+  // that can execute it. On the Mac that is a model that edits
   // (Qwen-Image 2.1): its second pass is an edit of the finished picture at
   // the larger size (lib/mac-hires).
-  const macHires = isMlxLocal && meta.id === 'image'
+  const hiresLane = meta.id === 'image' || isEdit
+  const macHires = isMlxLocal && hiresLane
     && (s.imageModelList.find((m) => m.name === laneModel)?.editImages ?? 0) > 0
-  const showHiresFix = !isCloud && !isVideo && meta.id === 'image' && (!isMlxLocal || macHires)
+  const showHiresFix = !isCloud && !isVideo && hiresLane && (!isMlxLocal || macHires)
+  // In Edit the picture comes out in the shape of the source, not of the
+  // sliders (lib/edit-hires). Without a source there is nothing to name yet.
+  const hiresBase = isEdit && !macHires
+    ? editHiresBase({ source: s.source, width: s.width, height: s.height, modelType: laneType, modelName: laneModel })
+    : isEdit && macHires
+      // The Mac's edit comes back in the shape of the source, on the canvas
+      // the engine runs (1056 where the sliders say 1024, lib/image-engines).
+      ? (s.source ? editCanvas(macEditSide(qwenEditResolution(s.width, s.height)), s.source) : null)
+      : { width: s.width, height: s.height }
+  // The grid a typed width or height is rounded to: the local model's latent
+  // cell. The cloud keeps the 64 its providers were checked against.
+  const sizeGrid = isCloud ? 64 : latentDownscale(laneType)
   let hiresFinal: { width: number; height: number } | null = null
   let hiresSizeError: string | null = null
-  if (showHiresFix && s.hiresFixEnabled && macHires) {
+  if (showHiresFix && s.hiresFixEnabled && isEdit && !macHires && s.mask) {
+    // ComfyUI's masked edit is an inpaint latent; api/hires-fix refuses it.
+    hiresSizeError = 'Native HiRes runs on edits of the whole picture. Clear the mask to use it.'
+  } else if (showHiresFix && s.hiresFixEnabled && !hiresBase) {
+    hiresSizeError = 'Add the picture to edit, then the final size shows here.'
+  } else if (showHiresFix && s.hiresFixEnabled && hiresBase && macHires) {
     // The Mac's second pass lands on the engine's grid and limit.
-    const pass = macHiresPass(s.width, s.height, { scale: s.hiresScale, steps: s.hiresSteps, denoise: s.hiresDenoise })
+    const pass = macHiresPass(hiresBase.width, hiresBase.height, { scale: s.hiresScale, steps: s.hiresSteps, denoise: s.hiresDenoise })
     if (pass) hiresFinal = { width: pass.width, height: pass.height }
     else hiresSizeError = 'This size is already as large as the engine makes it.'
-  } else if (showHiresFix && s.hiresFixEnabled) {
+  } else if (showHiresFix && s.hiresFixEnabled && hiresBase) {
     try {
-      hiresFinal = nativeHiresFinalSize(s.width, s.height, s.hiresScale)
+      hiresFinal = nativeHiresFinalSize(hiresBase.width, hiresBase.height, s.hiresScale, latentDownscale(laneType))
     } catch (error) {
       hiresSizeError = error instanceof Error ? error.message : String(error)
     }
@@ -216,9 +255,11 @@ export function ParamGroups() {
             <NumberField label="Height" value={s.height} min={macClip.minSide} max={macClip.maxSide} step={macClip.sizeGrid} mono onChange={(v) => s.setSize(s.width, v)} suffix="px" />
           </div>
         ) : (
+        // A typed size lands on the model's own grid (16 for Qwen-Image 2.1,
+        // so 1360 stays 1360); the arrows still move by 64.
         <div className="grid grid-cols-2 gap-2">
-          <NumberField label="Width" value={s.width} min={64} max={4096} step={64} mono onChange={(v) => s.setSize(v, s.height)} suffix="px" />
-          <NumberField label="Height" value={s.height} min={64} max={4096} step={64} mono onChange={(v) => s.setSize(s.width, v)} suffix="px" />
+          <NumberField label="Width" value={s.width} min={64} max={4096} step={64} grid={sizeGrid} mono onChange={(v) => s.setSize(v, s.height)} suffix="px" />
+          <NumberField label="Height" value={s.height} min={64} max={4096} step={64} grid={sizeGrid} mono onChange={(v) => s.setSize(s.width, v)} suffix="px" />
         </div>
         ))}
         {macSize && macClip && macRunSize && (
@@ -283,7 +324,7 @@ export function ParamGroups() {
             >
               <span>
                 <span className="block t-control text-gray-300">Native HiRes</span>
-                <span className="block text-[11px] leading-4 text-gray-600">{macHires ? 'A second pass over the picture at a larger size' : 'Latent upscale plus a native refinement pass'}</span>
+                <span className="block text-[11px] leading-4 text-gray-600">{isEdit ? 'A second pass over the edited picture at a larger size' : macHires ? 'A second pass over the picture at a larger size' : 'Latent upscale plus a native refinement pass'}</span>
               </span>
               <span className={cn('t-mono text-xs', s.hiresFixEnabled ? 'text-emerald-400' : 'text-gray-600')}>
                 {s.hiresFixEnabled ? 'on' : 'off'}
@@ -295,7 +336,7 @@ export function ParamGroups() {
                 <div className="rounded-md bg-black/20 px-2.5 py-2 text-[11px] text-gray-500">
                   {hiresFinal ? (
                     <>
-                      <span className="t-mono text-gray-400">{s.width}×{s.height}</span>
+                      <span className="t-mono text-gray-400">{hiresBase?.width ?? s.width}×{hiresBase?.height ?? s.height}</span>
                       <span className="px-1.5 text-gray-700">→</span>
                       <span className="t-mono text-gray-200">{hiresFinal.width}×{hiresFinal.height}</span>
                     </>
@@ -429,7 +470,7 @@ export function ParamGroups() {
           </>
         )}
 
-        {isEdit && !isMlxLocal && (
+        {isEdit && !isMlxLocal && !(!isCloud && editIgnoresStrength(laneType, laneModel)) && (
           <Slider label="Denoise (raw)" min={0.05} max={1} step={0.05} value={s.denoise} onChange={s.setDenoise} format={(v) => v.toFixed(2)} />
         )}
         {macEdit && (
@@ -478,7 +519,32 @@ export function ParamGroups() {
             ) : stackRows.length === 0 ? (
               <div className="t-control text-gray-600">The LoRAs in {isMlxLocal ? 'the LoRA folder' : 'models/loras'} are made for other models. Pick the model they belong to, or drop in a LoRA for this one and hit Rescan.</div>
             ) : (
-            <div className="space-y-1 max-h-44 overflow-y-auto scrollbar-thin">
+            <>
+            {/* A text field in the role of a search box: type="search" empties
+                itself on Escape, and Escape also closes the drawer, so the
+                search was gone with the drawer it was meant to outlive. */}
+            <div className="relative">
+              <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-600 pointer-events-none" />
+              <input
+                type="text"
+                role="searchbox"
+                value={loraQuery}
+                onChange={(e) => {
+                  setLoraQuery(e.target.value)
+                  setLoraStackQuery(e.target.value)
+                  if (loraListRef.current) loraListRef.current.scrollTop = 0
+                }}
+                placeholder="Search LoRAs"
+                aria-label="Search LoRAs"
+                autoComplete="off"
+                spellCheck={false}
+                className="w-full h-7 pl-7 pr-2 rounded-[var(--radius-control)] bg-white/[0.04] border border-white/[0.08] focus:border-white/20 outline-none t-control text-gray-200 placeholder:text-gray-600"
+              />
+            </div>
+            {shownRows.length === 0 ? (
+              <div className="t-control text-gray-600">No LoRA matches &quot;{loraQuery.trim()}&quot;.</div>
+            ) : (
+            <div ref={restoreLoraScroll} onScroll={(e) => setLoraStackScroll(e.currentTarget.scrollTop)} data-testid="lora-stack-list" className="space-y-1 max-h-44 overflow-y-auto scrollbar-thin">
               {/* Gegenprobe 8 (02.10.): "Z-Image only" showed only after a
                   click, and the strength had no number next to it.
                   03.10.: the H3 turbo LoRA was offered on an image model, and
@@ -488,7 +554,7 @@ export function ParamGroups() {
                   GitHub discussion #150: a long name was cut off at the
                   drawer's width, so two LoRAs that start alike read the
                   same. A name takes as many lines as it needs. */}
-              {stackRows.map(({ name, label, file, fits, familyLabel }) => {
+              {shownRows.map(({ name, label, file, fits, familyLabel }) => {
                 const active = s.selectedLoras.find((l) => l.name === name)
                 // The Mac knows from the folder listing what the run would
                 // refuse after the click (a Kohya file on Qwen-Image 2.1, a
@@ -499,15 +565,18 @@ export function ParamGroups() {
                 if (refused) {
                   return (
                     <div key={name} data-testid="lora-stack-refused" className={cn('rounded-md border transition-colors', active ? 'border-white/15 bg-white/[0.06]' : 'border-white/[0.06]')}>
-                      <button
-                        onClick={() => { if (active) s.toggleLora(name) }}
-                        aria-disabled={!active}
-                        title={active ? `${refused.title} Click to turn it off.` : refused.title}
-                        className={cn('w-full flex items-center justify-between gap-2 px-2.5 py-1.5 t-control text-left', active ? 'text-gray-300' : 'text-gray-500 cursor-default')}
-                      >
-                        <span className="min-w-0 [overflow-wrap:anywhere]">{label}</span>
-                        <span className={cn('t-mono shrink-0', active ? HINWEIS_TEXT.fehler : 'text-gray-600')}>{active ? `on, ${refused.label}` : refused.label}</span>
-                      </button>
+                      <div className="flex items-stretch">
+                        <button
+                          onClick={() => { if (active) s.toggleLora(name) }}
+                          aria-disabled={!active}
+                          title={active ? `${refused.title} Click to turn it off.` : refused.title}
+                          className={cn('flex-1 min-w-0 flex items-center justify-between gap-2 pl-2.5 pr-1 py-1.5 t-control text-left', active ? 'text-gray-300' : 'text-gray-500 cursor-default')}
+                        >
+                          <span className="min-w-0 [overflow-wrap:anywhere]">{label}</span>
+                          <span className={cn('t-mono shrink-0', active ? HINWEIS_TEXT.fehler : 'text-gray-600')}>{active ? `on, ${refused.label}` : refused.label}</span>
+                        </button>
+                        <CopyLoraName name={name} copied={copiedLora === name} onCopy={copyLoraName} />
+                      </div>
                     </div>
                   )
                 }
@@ -517,10 +586,13 @@ export function ParamGroups() {
                 const alphaNote = isMlxLocal && laneType === 'qwenimage' ? mlxLoraAlphaNote(loraAlpha?.[name]) : null
                 return (
                   <div key={name} className={cn('rounded-md border transition-colors', active ? 'border-white/15 bg-white/[0.06]' : 'border-white/[0.06]')}>
-                    <button onClick={() => s.toggleLora(name)} title={file} className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 t-control text-left text-gray-300">
-                      <span className="min-w-0 [overflow-wrap:anywhere]">{label}</span>
-                      <span className={cn('t-mono shrink-0', active && fits ? (isMlxLocal ? 'text-emerald-600 dark:text-emerald-400' : 'text-emerald-400') : 'text-gray-600')}>{fits ? (active ? 'on' : 'off') : `${familyLabel} only`}</span>
-                    </button>
+                    <div className="flex items-stretch">
+                      <button onClick={() => s.toggleLora(name)} title={file} className="flex-1 min-w-0 flex items-center justify-between gap-2 pl-2.5 pr-1 py-1.5 t-control text-left text-gray-300">
+                        <span className="min-w-0 [overflow-wrap:anywhere]">{label}</span>
+                        <span className={cn('t-mono shrink-0', active && fits ? (isMlxLocal ? 'text-emerald-600 dark:text-emerald-400' : 'text-emerald-400') : 'text-gray-600')}>{fits ? (active ? 'on' : 'off') : `${familyLabel} only`}</span>
+                      </button>
+                      <CopyLoraName name={name} copied={copiedLora === name} onCopy={copyLoraName} />
+                    </div>
                     {active && fits && (
                       <div className="px-2.5 pb-2">
                         <LoraStrength name={label} value={active.strength} onChange={(v) => s.setLoraStrengthFor(name, v)} />
@@ -531,6 +603,8 @@ export function ParamGroups() {
                 )
               })}
             </div>
+            )}
+            </>
             )}
           </div>
         )}
@@ -551,6 +625,23 @@ export function ParamGroups() {
       </Section>
       )}
     </div>
+  )
+}
+
+/** Copies the file name of a row (Discord 2026-10-23: trigger words are kept
+ *  in the file name). Beside the row's own button, since a button cannot hold
+ *  another one. Its accessible name leaves the LoRA out, so a search for a
+ *  row by its name still finds the row alone. */
+function CopyLoraName({ name, copied, onCopy }: { name: string; copied: boolean; onCopy: (name: string) => void }) {
+  return (
+    <button
+      onClick={() => onCopy(name)}
+      title={copied ? 'Copied' : `Copy "${loraCopyText(name)}"`}
+      aria-label={copied ? 'Copied' : 'Copy file name'}
+      className="shrink-0 px-2 text-gray-600 hover:text-gray-300 transition-colors"
+    >
+      {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+    </button>
   )
 }
 

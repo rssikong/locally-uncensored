@@ -60,8 +60,84 @@ export const SAMPLING_DEFAULTS: CoreSampling = {
   maxTokens: DEFAULT_SETTINGS.maxTokens,
 }
 
+/**
+ * A33 (3.0.8, Discord "help lol"): the highest temperature LU sends to any
+ * backend. The sliders used to run to 2.0, and a customer whose chat sat at
+ * 1.9 got nothing but mixed-language noise from every model, local and cloud,
+ * while one cloud backend refused the request outright (it takes 0 to 1).
+ * Above about 1.5 no model writes readable text, so a higher number is never
+ * a style choice, only a broken chat.
+ */
+export const TEMPERATURE_MAX = 1.5
+
+/** From here on the controls warn that the answer turns into random text. */
+export const TEMPERATURE_WARN = 1.2
+
+/** The one sentence every warning shows, in the Settings page, the chat
+ *  popup and the persona editor alike. */
+export const HIGH_TEMPERATURE_WARNING = 'High values make the model produce random text.'
+
+/**
+ * The most Agent turns use, whatever the chat, the persona or the Settings
+ * page say. A tool call is a JSON object that must parse; a run of them at
+ * a creative temperature breaks long before plain chat does.
+ */
+export const AGENT_TEMPERATURE_MAX = 1.0
+
+/**
+ * The temperature an Agent turn sends (A33). Small-Model Mode keeps its own
+ * low cap (Knob 6, never raises). Otherwise the chat's value goes out as in
+ * plain chat, held at AGENT_TEMPERATURE_MAX; a field left at the default stays
+ * off the wire, so the backend still picks its own.
+ */
+export function agentTemperature(
+  effective: number,
+  sent: number | undefined,
+  smallModelMode: boolean,
+): number | undefined {
+  if (smallModelMode) return Math.min(effective, 0.3)
+  if (sent === undefined) return undefined
+  return Math.min(sent, AGENT_TEMPERATURE_MAX)
+}
+
+/** The top P a temperature above 1 goes out with when nothing else holds the
+ *  tail back. Same number as the app default. */
+export const HIGH_TEMPERATURE_TOP_P = 0.9
+
+/**
+ * The top P an OpenAI compatible request carries (A33). Above temperature 1
+ * the long tail of unlikely tokens gets enough weight to take over, and a
+ * backend that applies no top K of its own (LU Cloud gets none from us, most
+ * hosted APIs default to top P 1.0) then writes noise: measured on Qwen 3.5
+ * 9B with nothing cut off, 1.2 still reads, 1.3 slips, 1.5 is gibberish; with
+ * top P 0.9, 1.5 reads. So a top P that is missing or wider than 0.9 is
+ * narrowed to 0.9 there, and left alone at 1 and below.
+ */
+export function topPForTemperature(temperature: number | undefined, topP: number | undefined): number | undefined {
+  if (temperature === undefined || temperature <= 1) return topP
+  return topP === undefined ? HIGH_TEMPERATURE_TOP_P : Math.min(topP, HIGH_TEMPERATURE_TOP_P)
+}
+
+/** Whether a temperature is high enough for the warning. */
+export function isHighTemperature(value: number | undefined): boolean {
+  return typeof value === 'number' && value >= TEMPERATURE_WARN
+}
+
+/**
+ * A stored temperature as the request may carry it: a finite number within
+ * 0..TEMPERATURE_MAX, or undefined for anything else. Used on load (A33): a
+ * value above the limit was written by a build whose slider ran to 2.0, and
+ * it goes, so the field falls back to the next level and finally the
+ * default, instead of being pinned to the ceiling.
+ */
+export function storedTemperature(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined
+  if (value < 0 || value > TEMPERATURE_MAX) return undefined
+  return value
+}
+
 const BOUNDS: Record<keyof SamplingOverrides, [number, number]> = {
-  temperature: [0, 2],
+  temperature: [0, TEMPERATURE_MAX],
   topP: [0, 1],
   // A cap above any context window served is the same as no cap; the ceiling
   // here only stops a hand-edited store from putting nonsense on the wire.
@@ -102,8 +178,12 @@ export function effectiveSampling(
   overrides?: SamplingOverrides,
   preset?: SamplingOverrides,
 ): CoreSampling {
+  // Clamped here as well as on every write and on load (A33), so a value
+  // that reached a store by any other way still never leaves the app above
+  // the limit.
+  const temperature = overrides?.temperature ?? preset?.temperature ?? settings.temperature ?? SAMPLING_DEFAULTS.temperature
   return {
-    temperature: overrides?.temperature ?? preset?.temperature ?? settings.temperature ?? SAMPLING_DEFAULTS.temperature,
+    temperature: Number.isFinite(temperature) ? Math.min(TEMPERATURE_MAX, Math.max(0, temperature)) : SAMPLING_DEFAULTS.temperature,
     topP: overrides?.topP ?? preset?.topP ?? settings.topP ?? SAMPLING_DEFAULTS.topP,
     maxTokens: overrides?.maxTokens ?? preset?.maxTokens ?? settings.maxTokens ?? SAMPLING_DEFAULTS.maxTokens,
   }

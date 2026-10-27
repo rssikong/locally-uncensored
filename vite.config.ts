@@ -1,4 +1,4 @@
-import { defineConfig, parseAst, type Plugin } from 'vite'
+import { defineConfig, loadEnv, parseAst, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { resolve, dirname } from 'path'
@@ -10,7 +10,10 @@ import {
   collectConsoleRemovals,
   isStrippableModule,
 } from './src/dev/console-strip'
+import { assertStoreBuild } from './src/dev/store-build-check'
 import { ABSENT_PACKAGES } from './src/dev/absent-packages'
+import { WEBVIEW_BUILD_TARGET, checkBundle, describeViolations, type BuiltFile } from './src/dev/webview-target'
+import { PHONE_VERSION_CONSTANT, phoneVersionDefine, withPhoneVersionMeta } from './src/dev/phone-version'
 // ── Der Dev-Server steht nicht mehr hier ────────────────────────────────────
 //
 // Bis ZB-7 waren 2 120 der 2 536 Zeilen dieser Datei ein vollständiger
@@ -62,6 +65,76 @@ const DEV_PORT = Number(process.env.LU_DEV_PORT) || 5273
 // Bleibt hier, wo der Rest der Build-Konfiguration steht: `apply: 'build'`, es
 // läuft also NICHT im Dev-Server, und seine Logik liegt ohnehin schon getestet
 // in src/dev/console-strip.ts.
+// A store build of the phone app that cannot keep its promises is not built
+// (durchsicht-mobile M4, M5): the preset `play` or `appstore` without the
+// address of the report service, or a preset the app does not know. The rule
+// and its test live in src/dev/store-build-check.ts. `apply: 'build'`: the dev
+// server and vitest never ask.
+function storeBuildCheckPlugin(): Plugin {
+  return {
+    name: 'lu-store-build-check',
+    apply: 'build',
+    config(_config, { mode }) {
+      // What the bundle will see: .env files of the mode, then the shell.
+      const env = { ...loadEnv(mode, __dirname, 'VITE_LU_'), ...process.env }
+      assertStoreBuild({
+        VITE_LU_STORE_PRESET: env.VITE_LU_STORE_PRESET,
+        VITE_LU_REPORT_URL: env.VITE_LU_REPORT_URL,
+        VITE_LU_BUILD_TARGET: env.VITE_LU_BUILD_TARGET,
+        TAURI_ENV_PLATFORM: env.TAURI_ENV_PLATFORM,
+      })
+    },
+  }
+}
+
+// The phone bundle is the build that names itself: the phone build scripts and
+// the phone configuration of Tauri set VITE_LU_BUILD_TARGET=mobile. A build
+// without the variable is the desktop package (src/main.tsx).
+const PHONE_BUNDLE = process.env.VITE_LU_BUILD_TARGET === 'mobile'
+
+// The oldest web view the phone app is built for (src/dev/webview-target.ts).
+// The build target lowers syntax to it. A FUNCTION the web view does not have
+// is not lowered by anybody, so this reads every built file and stops the
+// build when one is used above the floor without a polyfill or a guard:
+// "Promise.withResolvers is not a function" on Android System WebView 113
+// was found on a phone (acceptance Android 8 GB, B5), and belongs here.
+// The desktop package is not asked: its web views are not the phone's.
+function webviewTargetPlugin(): Plugin {
+  return {
+    name: 'lu-webview-target',
+    apply: 'build',
+    generateBundle(_options, bundle) {
+      if (!PHONE_BUNDLE) return
+      const files: BuiltFile[] = []
+      for (const [name, item] of Object.entries(bundle)) {
+        if (!/\.(?:m?js|css)$/.test(name)) continue
+        const body = item.type === 'chunk' ? item.code : item.source
+        files.push({ name, text: typeof body === 'string' ? body : Buffer.from(body).toString('utf8') })
+      }
+      const violations = checkBundle(files)
+      if (violations.length > 0) this.error(describeViolations(violations))
+    },
+  }
+}
+
+// The phone app shows the version of the PHONE package, which need not be the
+// desktop's (src/dev/phone-version.ts). The phone bundle gets it as a build
+// constant, read from the same field Tauri turns into versionName and
+// CFBundleShortVersionString, and says it once more in index.html, so the
+// release scripts can check a finished page against the package it went into.
+// The desktop bundle gets neither: nothing is defined, nothing is added.
+const PHONE_DEFINE = phoneVersionDefine(__dirname, { VITE_LU_BUILD_TARGET: process.env.VITE_LU_BUILD_TARGET, TAURI_ENV_PLATFORM: process.env.TAURI_ENV_PLATFORM })
+
+function phoneVersionPlugin(): Plugin {
+  return {
+    name: 'lu-phone-version',
+    transformIndexHtml(html) {
+      const version = PHONE_DEFINE[PHONE_VERSION_CONSTANT]
+      return version ? withPhoneVersionMeta(html, JSON.parse(version) as string) : html
+    },
+  }
+}
+
 function stripConsolePlugin(): Plugin {
   return {
     name: 'lu-strip-console',
@@ -123,7 +196,10 @@ export default defineConfig({
   // Packages a dependency imports and LU must not ship (the Daily call client
   // with Sentry). The same list is in vitest.config.ts.
   resolve: { alias: ABSENT_PACKAGES },
-  plugins: [react(), tailwindcss(), stripConsolePlugin(), devServerPlugin({ port: DEV_PORT }), ...(E2E_CSP ? [appCspPlugin()] : [])],
+  plugins: [react(), tailwindcss(), storeBuildCheckPlugin(), stripConsolePlugin(), webviewTargetPlugin(), phoneVersionPlugin(), devServerPlugin({ port: DEV_PORT }), ...(E2E_CSP ? [appCspPlugin()] : [])],
+  // The phone bundle names the web view it is built for. The desktop package
+  // keeps the default of Vite, as before.
+  ...(PHONE_BUNDLE ? { build: { target: WEBVIEW_BUILD_TARGET }, define: PHONE_DEFINE } : {}),
   server: {
     ...(E2E_CSP ? { hmr: false } : {}),
     // The Rust build tree churns thousands of files per `cargo build`; watching

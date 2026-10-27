@@ -11,6 +11,7 @@
  */
 
 import type { AIModel } from '../../types/models'
+import { isCompatProviderId } from '../providers/compat-id'
 import { useProviderStore } from '../../stores/providerStore'
 import { openaiEntryOfModel } from '../providers/model-name'
 
@@ -39,6 +40,11 @@ export function isLocalModel(model: AIModel): boolean {
   if (model.provider === 'openai') {
     return openaiIsLocal('providerEntry' in model ? model.providerEntry : undefined)
   }
+  if (model.provider && isCompatProviderId(model.provider)) {
+    // An extra OpenAI-compatible slot of a phone answers from its own
+    // configured endpoint (providers/compat-id.ts).
+    return useProviderStore.getState().providers[model.provider]?.isLocal === true
+  }
   return false
 }
 
@@ -51,6 +57,9 @@ export function isLocalModelByName(name: string): boolean {
   const entryId = openaiEntryOfModel(name)
   if (providerId === 'openai' || entryId) {
     return openaiIsLocal(entryId)
+  }
+  if (isCompatProviderId(providerId)) {
+    return useProviderStore.getState().providers[providerId]?.isLocal === true
   }
   return false
 }

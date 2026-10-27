@@ -31,7 +31,12 @@ vi.mock('pdfjs-dist/legacy/build/pdf.mjs', () => ({
     return {
       promise: Promise.resolve({
         numPages: 1,
-        getPage: async () => ({ getTextContent: async () => ({ items: [{ str: 'ok' }] }) }),
+        // rag.ts reads the text stream with a reader loop (fix/308-pdf-webkit).
+        getPage: async () => ({
+          streamTextContent: () => new ReadableStream({
+            start(c) { c.enqueue({ items: [{ str: 'ok' }] }); c.close() },
+          }),
+        }),
       }),
     }
   },

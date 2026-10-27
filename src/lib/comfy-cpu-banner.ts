@@ -40,6 +40,12 @@ export interface ComfyCpuBannerFacts {
   hasAmd: boolean
   /** Host is Linux. The AMD answer differs per OS and always has. */
   isLinux: boolean
+  /**
+   * LU installs the ROCm build of PyTorch for the AMD card on this machine
+   * (`amdRocmServed` from `get_comfy_gpu_status`, 3.0.8). Then the answer is
+   * Repair environment, not a ComfyUI of the user's own.
+   */
+  amdRocmServed?: boolean
 }
 
 /** Normalise whatever the backend handed us into the three known modes. */
@@ -58,7 +64,13 @@ export function asComfyGpuMode(value: unknown): ComfyGpuModeName {
  * It is a separate export because it is now CONDITIONAL: a machine with no AMD
  * card never reads it. That was the second half of the R12/R13 finding.
  */
-export function amdCpuAdvice(isLinux: boolean): string {
+export function amdCpuAdvice(isLinux: boolean, rocmServed = false): string {
+  // kinghebes (RX 9070 XT, 3.0.7): the card is one LU builds the ROCm
+  // environment for, his environment simply predates that. Sending him to a
+  // ZLUDA ComfyUI of his own was the wrong door.
+  if (!isLinux && rocmServed) {
+    return " AMD GPU? LU installs AMD's own ROCm build of PyTorch for your card on Windows, and this ComfyUI environment does not have it yet. Press Repair environment in Settings → ComfyUI (about 1.5 GB, models and outputs stay), keep Settings → Hardware → ComfyUI GPU on Auto, and keep your AMD graphics driver current."
+  }
   return isLinux
     ? ' AMD GPU? LU installs the ROCm build of PyTorch for AMD cards now. Reinstall the ComfyUI environment from Settings → ComfyUI, then set Settings → Hardware → ComfyUI GPU to Auto.'
     : " AMD GPU? LU installs AMD's own ROCm build of PyTorch for RX 7000 and RX 9000 cards on Windows. Reinstall the ComfyUI environment from Settings → ComfyUI to try that again. For any other AMD card you need a ZLUDA ComfyUI of your own: point LU at it and set Settings → Hardware → ComfyUI GPU to force GPU."
@@ -101,5 +113,5 @@ export function comfyCpuBannerText(facts: ComfyCpuBannerFacts | null | undefined
   //    the true one. The AMD paragraph rides along only where there is an AMD
   //    card to talk about.
   const head = `ComfyUI is running on the CPU (no usable GPU detected). ${SLOW}`
-  return facts.hasAmd ? head + amdCpuAdvice(facts.isLinux) : head
+  return facts.hasAmd ? head + amdCpuAdvice(facts.isLinux, facts.amdRocmServed === true) : head
 }

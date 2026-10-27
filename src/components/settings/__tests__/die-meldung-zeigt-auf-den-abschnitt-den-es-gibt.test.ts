@@ -4,12 +4,12 @@
  * Discord #bug-reports 2026-08-28: "the field for the CivitAI
  * API key is gone from the UI". The field came back (CivitaiApiKeySetting), and
  * then it MOVED: the A14 Windows review found a tester saving a folder path as
- * his API key, because the key sat directly under the Model Storage folder
+ * his API key, because the key sat directly under the Storage folder
  * field, two bare text boxes in a row. A credential and a folder do not belong
  * in one list, so the key got a section of its own.
  *
  * The message a refused CivitAI download prints did not move with it. It kept
- * saying "Settings > AI Backends > Model Storage", the folder settings, where
+ * saying "Settings > AI Backends > Storage", the folder settings, where
  * the key field is not. The one sentence a user gets at the moment he needs the
  * field sent him to the wrong section, which is the same complaint as the
  * original report, one turn later.
@@ -84,7 +84,7 @@ describe('a download failure points at a section the app really has', () => {
       downloadRs.indexOf('http_error_message(status, filename)\n}'),
     )
     expect(civitai).toContain('Settings > AI Backends > CivitAI API key')
-    expect(civitai).not.toContain('Settings > AI Backends > Model Storage')
+    expect(civitai).not.toContain('Settings > AI Backends > Storage')
     expect(sectionsFor('backends', {
       gpuPicker: true, builtinExpert: true, comfyui: true,
       agentMode: true, agentWorkflows: true, mediaTimeouts: true,

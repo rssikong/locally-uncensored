@@ -30,6 +30,14 @@ export function canUseLocally(lora: Pick<CloudLora, 'base_family'>): boolean {
 export const ONLY_ZIMAGE_LOCALLY =
   'Only Z-Image characters run locally. This one was trained for another model, so it stays in LU Cloud.'
 
+/** The fixed label on a cloud character of another family (3.0.8). */
+export const CLOUD_ONLY_LABEL = 'Cloud only'
+
+/** Under the model pick of cloud training (3.0.8): which characters can come
+ *  to this computer is said before the training, not after it. */
+export const CLOUD_TRAINING_FAMILY_NOTE =
+  'Characters trained on Flux or Qwen run in LU Cloud only. Pick Z-Image to use the character on your machine too.'
+
 /** The line under a saved import, or null when nothing needs saying. */
 export function keyFormatNote(format: KeyFormat): string | null {
   if (format === 'unknown') {

@@ -1,0 +1,125 @@
+{
+ "name": "/setup/documents",
+ "art": "seite",
+ "quelle": "integ-306",
+ "route": "/setup/documents",
+ "strang": "onboarding",
+ "code": "A3",
+ "lage": {
+  "route": "/setup/documents",
+  "screen": "m-onboarding-documents-screen",
+  "blaetter": [],
+  "dialog": [],
+  "reiter": null,
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back-under",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-onboarding-documents-screen",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-onboarding-steps",
+   "tag": "div",
+   "rolle": "img",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "2",
+   "box": [
+    390,
+    3
+   ]
+  },
+  {
+   "id": "m-onboarding-documents-intro",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "idle",
+   "box": [
+    390,
+    168
+   ]
+  },
+  {
+   "id": "m-onboarding-documents-install",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Install 80.2 MB",
+   "el": "A3.2",
+   "box": [
+    358,
+    48
+   ]
+  },
+  {
+   "id": "m-onboarding-skip",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Skip for now",
+   "el": "A3.3",
+   "box": [
+    358,
+    48
+   ]
+  }
+ ]
+}

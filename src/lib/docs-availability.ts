@@ -28,6 +28,7 @@
  *     opposite of what happens.
  */
 import type { AppMode } from '../types/settings'
+import { platformText } from './platform-text'
 import type { EmbedLane, EmbedLaneInfo } from '../api/embed-availability'
 
 export interface DocsAvailability {
@@ -48,8 +49,7 @@ export const DOCS_TITLE_PLAIN = 'Document Chat (RAG)'
 
 /** Cloud mode, indexing on this machine. Short on purpose (review N2); the
  *  panel carries the full statement once it is open. */
-export const DOCS_TITLE_CLOUD_LOCAL =
-  'Document Chat (RAG). Files stay on this computer, only matching passages go to the cloud model.'
+export const DOCS_TITLE_CLOUD_LOCAL = platformText('docsTitleCloudLocal')
 
 /** Cloud mode, indexing on a remote Ollama. Names the host, because that is
  *  where whole documents would go (B2). */
@@ -58,8 +58,7 @@ export function docsTitleRemote(endpoint: string | null): string {
 }
 
 /** No embedding lane. The wording the owner asked for, plus the way out. */
-export const DOCS_TITLE_NO_EMBEDDINGS =
-  'Documents need the local embeddings engine. Click to install it.'
+export const DOCS_TITLE_NO_EMBEDDINGS = platformText('docsTitleNoEmbeddings')
 
 /**
  * @param appMode  the global Local/Cloud switch

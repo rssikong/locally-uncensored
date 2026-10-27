@@ -20,13 +20,13 @@ export const SETTINGS_TAB_RESET_KEYS: Record<SettingsTab, (keyof Settings)[]> = 
     'gpuVendor', 'gpuIndices',
     'imageGenTimeoutMinutes', 'videoGenTimeoutMinutes', 'chatFirstReplyTimeoutSeconds',
   ],
-  backends: ['apiEndpoint', 'hfDownloadPathOverride', 'downloadLimitMBps', 'exclusiveVramMode', 'builtinEngine'],
+  backends: ['apiEndpoint', 'hfDownloadPathOverride', 'downloadLimitMBps', 'exclusiveVramMode', 'builtinEngine', 'engineIdleUnloadMinutes'],
   agent: [
     'personasEnabled', 'defaultWorkspace',
     'agentMaxToolCalls', 'agentMaxIterations',
-    'searchProvider', 'braveApiKey', 'tavilyApiKey', 'searchUserAgent',
+    'searchProvider', 'braveApiKey', 'tavilyApiKey', 'exaApiKey', 'searchUserAgent',
     'codexArchitectMode', 'codexArchitectModel', 'codexArchitectAllowCloud',
     'codexRepoMapEnabled', 'codexRepoMapLimit', 'codexAutoApply', 'codexReviewMode',
   ],
-  'voice-remote': ['remotePageTitle'],
+  'voice-remote': ['remotePageTitle', 'shareNewChatsWithPhone'],
 }

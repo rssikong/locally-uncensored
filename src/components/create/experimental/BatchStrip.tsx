@@ -3,10 +3,10 @@
 // as small tiles, "Add more images", "Add a folder", and in the cloud the price
 // of the whole list as one sum. While it runs, the same tiles are the queue.
 import { useRef, useState } from 'react'
-import { AlertTriangle, Check, FolderOpen, ImagePlus, X } from 'lucide-react'
+import { AlertTriangle, Check, FolderOpen, ImagePlus, RotateCcw, X } from 'lucide-react'
 import { useCreateStore } from '../../../stores/createStore'
 import { MAX_BATCH_IMAGES, batchCoverage } from '../../../lib/batch-edit'
-import { addBatchFiles, clearBatch, removeBatchEntry, useBatchOffered } from './batchRun'
+import { addBatchFiles, clearBatch, removeBatchEntry, useBatchOffered, useBatchOriginalOffer } from './batchRun'
 import { useRunCredits } from './useRunCredits'
 import { topLevelFiles } from './batchFiles'
 import { useCreateExp } from './CreateContext'
@@ -93,10 +93,10 @@ export function BatchStrip() {
           {batch.map((img, i) => (
             <div key={img.url} className="relative shrink-0 w-12 h-12">
               <img src={img.url} alt={img.name} title={img.name} className="w-12 h-12 rounded-md object-cover border border-white/[0.06]" />
-              <span className="absolute bottom-0.5 left-0.5 t-micro text-gray-200 bg-black/60 px-1 rounded">{i + 1}</span>
+              <span className="lu-on-dark absolute bottom-0.5 left-0.5 t-micro text-gray-200 bg-black/60 px-1 rounded">{i + 1}</span>
               <button
                 onClick={() => { void removeBatchEntry(i) }}
-                className="absolute top-0.5 right-0.5 w-4 h-4 flex items-center justify-center rounded bg-black/60 text-gray-300 hover:text-white"
+                className="lu-on-dark absolute top-0.5 right-0.5 w-4 h-4 flex items-center justify-center rounded bg-black/60 text-gray-300 hover:text-white"
                 title={`Remove ${img.name}`}
                 aria-label={`Remove ${img.name}`}
               >
@@ -134,6 +134,23 @@ export function BatchStrip() {
   )
 }
 
+/** After a batch: puts the image the list was made from back on the Stage. */
+export function UseOriginalButton() {
+  const original = useBatchOriginalOffer()
+  const setSource = useCreateStore((s) => s.setSource)
+  if (!original) return null
+  return (
+    <Button
+      variant="ghost"
+      icon={RotateCcw}
+      onClick={() => setSource(original)}
+      title={`Put ${original.name || 'the original image'} back as the image to work on`}
+    >
+      Use the original
+    </Button>
+  )
+}
+
 /** While a batch runs: which image is on, and how the others stand. */
 export function BatchQueue() {
   const run = useCreateStore((s) => s.batchRun)
@@ -157,7 +174,7 @@ export function BatchQueue() {
             )}
           >
             <img src={run.thumbs[i]} alt="" className="w-full h-full object-cover" />
-            {status === 'done' && <span className="absolute inset-0 flex items-center justify-center bg-black/45 text-gray-100"><Check size={12} /></span>}
+            {status === 'done' && <span className="lu-on-dark absolute inset-0 flex items-center justify-center bg-black/45 text-gray-100"><Check size={12} /></span>}
             {status === 'failed' && <span className="absolute inset-0 flex items-center justify-center bg-black/55 text-red-300"><AlertTriangle size={12} /></span>}
           </div>
         ))}

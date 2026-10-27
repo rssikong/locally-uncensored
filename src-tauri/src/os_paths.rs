@@ -7,6 +7,7 @@
 //! einen Suffix, damit der Experiment-Build die Daten der echten App weder
 //! liest noch überschreibt — die Begründung steht in `app_identity`.
 
+#[cfg_attr(mobile, allow(unused_imports))]
 use crate::app_identity::{AGENT_WORKSPACE_DIR, APP_CONFIG_DIR, APP_DIR, APP_DISPLAY_DIR};
 use std::path::PathBuf;
 
@@ -15,11 +16,13 @@ use std::path::PathBuf;
 // (`agent_workspace_root` sits behind cfg(not(test)), `find_lms_cli` behind
 // cfg(not(target_os = "windows"))) and the function was gated out there; with
 // that gate the Windows test build did not compile (d307-k, 19.10.2026).
+// A phone has its own `home` further down.
+#[cfg(any(desktop, test))]
 pub fn home() -> PathBuf {
     dirs::home_dir().unwrap_or_else(|| PathBuf::from("."))
 }
 
-#[cfg(not(test))]
+#[cfg(all(not(test), desktop))]
 pub fn data_dir() -> PathBuf {
     dirs::data_local_dir()
         .or_else(dirs::data_dir)
@@ -27,7 +30,7 @@ pub fn data_dir() -> PathBuf {
         .join(APP_DIR)
 }
 
-#[cfg(not(test))]
+#[cfg(all(not(test), desktop))]
 pub fn cache_dir() -> PathBuf {
     dirs::cache_dir()
         .unwrap_or_else(|| PathBuf::from("."))
@@ -38,7 +41,7 @@ pub fn cache_dir() -> PathBuf {
 /// mit [`data_dir`] zusammen, unter Linux ist es `~/.config/<APP_DIR>` — dort
 /// liegen die erzeugten Bilder (`commands::mlx`) und Videos
 /// (`commands::video`).
-#[cfg(not(test))]
+#[cfg(all(not(test), desktop))]
 pub fn config_root() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))
@@ -48,7 +51,7 @@ pub fn config_root() -> PathBuf {
 /// Ordner der `config.json` (ComfyUI-Pfad/-Port, Ollama-Basis, Trainer-Root).
 /// Historisch ein anderer Name als [`data_dir`] — deshalb eine eigene
 /// Konstante statt eines zweiten Literals.
-#[cfg(not(test))]
+#[cfg(all(not(test), desktop))]
 pub fn app_config_dir() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))
@@ -61,7 +64,7 @@ pub fn app_config_json() -> PathBuf {
 }
 
 /// Ablage für Hilfsbinaries, die die App selbst herunterlädt (`cloudflared`).
-#[cfg(not(test))]
+#[cfg(all(not(test), desktop))]
 pub fn tools_bin_dir() -> PathBuf {
     dirs::data_local_dir()
         .unwrap_or_else(|| PathBuf::from("."))
@@ -72,7 +75,7 @@ pub fn tools_bin_dir() -> PathBuf {
 /// Modellordner der eingebauten Engine. Bewusst `dirs::data_dir()` (unter
 /// Windows also `%APPDATA%`, nicht `%LOCALAPPDATA%`) — das ist der Pfad, den
 /// `detect_model_path("builtin")` seit jeher zurückgibt.
-#[cfg(not(test))]
+#[cfg(all(not(test), desktop))]
 pub fn builtin_models_dir() -> PathBuf {
     dirs::data_dir()
         .unwrap_or_else(|| PathBuf::from("."))
@@ -82,9 +85,151 @@ pub fn builtin_models_dir() -> PathBuf {
 
 /// Sandkasten-Wurzel der Agenten. Pro Chat entsteht darin ein Unterordner;
 /// `commands::filesystem::contain_within` lässt nichts darüber hinaus.
-#[cfg(not(test))]
+#[cfg(all(not(test), desktop))]
 pub fn agent_workspace_root() -> PathBuf {
     home().join(AGENT_WORKSPACE_DIR)
+}
+
+// ── Android and iOS ──────────────────────────────────────────────────────────
+//
+// A phone has no home folder the `dirs` crate could answer from. On Android
+// the process has no HOME and no XDG variable and its working directory is
+// `/`, so every function above would come back as `./<name>` against a root
+// the app cannot write, and fail without a word: no model folder, no store
+// backup, no agent workspace (old Android branch, findings F2 and A14). iOS
+// does have a container HOME, but the two phones get ONE rule on purpose.
+//
+// The rule: the system hands the app one data folder and one cache folder
+// (`app.path().app_data_dir()` and `app_cache_dir()`), `lib.rs` stores them
+// here in `setup`, and every path helper of this module derives from them.
+// Nothing else in the crate may build an app-owned path from `dirs`.
+//
+// Where things land under the data folder is the layout the old Android
+// branch already used (`models`, `stores`, `agent-workspace`), so an update
+// from that app finds its files again.
+
+/// The two folders a phone gives the app, and everything derived from them.
+/// Pure, so the layout is tested on a desktop (`mobile_layout_tests`).
+#[cfg(any(mobile, test))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct MobileLayout {
+    pub home: PathBuf,
+    pub data_dir: PathBuf,
+    pub cache_dir: PathBuf,
+    pub config_root: PathBuf,
+    pub app_config_dir: PathBuf,
+    pub tools_bin_dir: PathBuf,
+    pub builtin_models_dir: PathBuf,
+    pub agent_workspace_root: PathBuf,
+}
+
+#[cfg(any(mobile, test))]
+pub(crate) fn mobile_layout(data: &std::path::Path, cache: &std::path::Path) -> MobileLayout {
+    MobileLayout {
+        // There is no home. Code that asks for one gets the app's own folder,
+        // which is the only place it may look in anyway.
+        home: data.to_path_buf(),
+        data_dir: data.to_path_buf(),
+        cache_dir: cache.join(APP_DIR),
+        config_root: data.to_path_buf(),
+        app_config_dir: data.join("config"),
+        tools_bin_dir: data.join("bin"),
+        builtin_models_dir: data.join("models"),
+        agent_workspace_root: data.join(AGENT_WORKSPACE_DIR),
+    }
+}
+
+#[cfg(mobile)]
+static MOBILE_DIRS: std::sync::OnceLock<(PathBuf, PathBuf)> = std::sync::OnceLock::new();
+
+/// Called once from `setup` in `lib.rs`. A folder the system could not name
+/// leaves the fallback below in place; the first value wins.
+#[cfg(mobile)]
+pub fn set_mobile_dirs(data: Option<PathBuf>, cache: Option<PathBuf>) {
+    let Some(data) = data else {
+        tracing::error!("the system named no app data folder, models and chats cannot be stored");
+        return;
+    };
+    let cache = cache.unwrap_or_else(|| data.join("cache"));
+    tracing::info!(data = %data.display(), cache = %cache.display(), "app folders");
+    let _ = MOBILE_DIRS.set((data, cache));
+}
+
+/// The layout for this run. Before `setup` has stored the folders (nothing
+/// that writes runs that early) this answers from the temp folder instead of
+/// from `/`, so a too-early caller fails in a place that is at least app-owned
+/// on iOS and visibly wrong on Android.
+#[cfg(all(not(test), mobile))]
+fn mobile() -> MobileLayout {
+    match MOBILE_DIRS.get() {
+        Some((data, cache)) => mobile_layout(data, cache),
+        None => {
+            let tmp = std::env::temp_dir().join(APP_DIR);
+            mobile_layout(&tmp, &tmp.join("cache"))
+        }
+    }
+}
+
+#[cfg(all(not(test), mobile))]
+pub fn home() -> PathBuf { mobile().home }
+#[cfg(all(not(test), mobile))]
+pub fn data_dir() -> PathBuf { mobile().data_dir }
+#[cfg(all(not(test), mobile))]
+pub fn cache_dir() -> PathBuf { mobile().cache_dir }
+#[cfg(all(not(test), mobile))]
+pub fn config_root() -> PathBuf { mobile().config_root }
+#[cfg(all(not(test), mobile))]
+pub fn app_config_dir() -> PathBuf { mobile().app_config_dir }
+#[cfg(all(not(test), mobile))]
+pub fn tools_bin_dir() -> PathBuf { mobile().tools_bin_dir }
+#[cfg(all(not(test), mobile))]
+pub fn builtin_models_dir() -> PathBuf { mobile().builtin_models_dir }
+#[cfg(all(not(test), mobile))]
+pub fn agent_workspace_root() -> PathBuf { mobile().agent_workspace_root }
+
+#[cfg(test)]
+mod mobile_layout_tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn everything_a_phone_stores_hangs_under_the_two_folders_it_was_given() {
+        let data = Path::new("/data/user/0/com.example.app");
+        let cache = Path::new("/data/user/0/com.example.app/cache");
+        let l = mobile_layout(data, cache);
+        for p in [&l.home, &l.data_dir, &l.config_root, &l.app_config_dir, &l.tools_bin_dir,
+            &l.builtin_models_dir, &l.agent_workspace_root] {
+            assert!(p.starts_with(data), "{} left the app data folder", p.display());
+        }
+        assert!(l.cache_dir.starts_with(cache));
+        // The model folder the old Android app used, so an update keeps its
+        // models, and the one `detect_model_path("builtin")` answers with.
+        assert_eq!(l.builtin_models_dir, data.join("models"));
+        assert_eq!(l.agent_workspace_root, data.join(AGENT_WORKSPACE_DIR));
+        // Never relative: `./models` against a cwd of `/` is the old bug.
+        // `has_root`, not `is_absolute`: on a Windows host `/data/...` has a
+        // root but no drive, and this test runs there too.
+        assert!(l.builtin_models_dir.has_root() && l.data_dir.has_root());
+    }
+
+    /// Every app-owned path function has a phone twin, and none of the twins
+    /// reaches for `dirs`. A function added later without one compiles for
+    /// the desktop and breaks the phone build, or worse, answers `./x`.
+    #[test]
+    fn every_path_helper_has_a_phone_arm_that_does_not_ask_dirs() {
+        let src = include_str!("os_paths.rs");
+        for name in ["home", "data_dir", "cache_dir", "config_root", "app_config_dir",
+            "tools_bin_dir", "builtin_models_dir", "agent_workspace_root"] {
+            let twin = format!("#[cfg(all(not(test), mobile))]\npub fn {name}() -> PathBuf {{ mobile().");
+            assert!(src.contains(&twin), "{name}() has no phone arm");
+        }
+        let resolver = &src[src.find("fn mobile() -> MobileLayout {").expect("exists")..];
+        let resolver = &resolver[..resolver.find("\n}\n").expect("ends")];
+        assert!(!resolver.contains("dirs::"), "the phone resolver must not ask the dirs crate:\n{resolver}");
+        let layout = &src[src.find("pub(crate) fn mobile_layout(").expect("exists")..];
+        let layout = &layout[..layout.find("\n}\n").expect("ends")];
+        assert!(!layout.contains("dirs::"), "{layout}");
+    }
 }
 
 #[cfg(test)]
@@ -189,7 +334,7 @@ pub(crate) mod test_storage {
     }
 }
 
-/// Where the rolling application log is written (`init_tracing` in main.rs,
+/// Where the rolling application log is written (`init_tracing` in lib.rs,
 /// read back by the `log_file_path` command).
 ///
 /// Deliberately NOT Tauri's `app_log_dir()`, for two reasons:
@@ -465,7 +610,7 @@ pub fn find_lms_cli() -> Option<PathBuf> {
 // `find_*_app` functions).
 //
 // The three named ones were counted before removing: no Rust caller, no
-// `#[tauri::command]` wrapper, no line in `main.rs`, and no occurrence of the
+// `#[tauri::command]` wrapper, no line in `lib.rs`, and no occurrence of the
 // NAME as a string anywhere under `src/`, `dev-server/`, `e2e/` or
 // `mobile-client/`. The three helpers had exactly one caller each, and that
 // caller was one of the three.

@@ -26,6 +26,7 @@ const unlisten = vi.fn()
 vi.mock('../../../api/backend', () => ({
   isTauri: () => true,
   isMacOS: () => false,
+  isWindows: () => false,
   backendCall: vi.fn(async () => null),
 }))
 vi.mock('../../../api/engine', async () => {

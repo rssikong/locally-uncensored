@@ -1,7 +1,7 @@
 import type { Connect } from 'vite'
 import type { RouteMount } from './routes'
 
-/** Die dreizehn Remote-Access-Endpunkte, die es im reinen Vite-Prozess nicht gibt. */
+/** Die vierunddreissig Remote-Access-Endpunkte, die es im reinen Vite-Prozess nicht gibt. */
 export function registerRemoteStubs(routes: RouteMount): void {
   // ─── Remote Access stubs (dev mode) ───────────────────────────
   // Reported by a user on v2.4.2: clicking LAN/Internet from
@@ -38,6 +38,30 @@ export function registerRemoteStubs(routes: RouteMount): void {
     '/local-api/start-tunnel',
     '/local-api/stop-tunnel',
     '/local-api/tunnel-status',
+    '/local-api/remote-pairing-qr',
+    '/local-api/remote-pairing-window',
+    '/local-api/remote-paired-devices',
+    '/local-api/remote-forget-device',
+    '/local-api/remote-set-device-rights',
+    '/local-api/remote-set-new-device-rights',
+    '/local-api/remote-firewall-status',
+    '/local-api/remote-firewall-allow',
+    '/local-api/remote-pair-decide',
+    '/local-api/remote-pair-requests',
+    '/local-api/remote-set-anywhere',
+    '/local-api/remote-set-legacy-access',
+    '/local-api/remote-signin-requests',
+    '/local-api/remote-signin-decide',
+    '/local-api/remote-create-progress',
+    '/local-api/remote-create-finish',
+    '/local-api/remote-create-capabilities-reply',
+    '/local-api/remote-create-gallery-reply',
+    '/local-api/remote-e2e-mode',
+    '/local-api/remote-chats-sync',
+    '/local-api/remote-chats-event',
+    '/local-api/remote-chats-reply',
+    '/local-api/remote-create-cancel',
+    '/local-api/remote-create-snapshot',
   ]
   const remoteDevModeStub: Connect.SimpleHandleFunction = (_req, res) => {
     res.writeHead(501, { 'Content-Type': 'application/json' })
@@ -61,12 +85,21 @@ export function registerRemoteStubs(routes: RouteMount): void {
   // The node pack manager (list_custom_nodes, remove_custom_node,
   // custom_node_log) too: listing, the trash and the install log are Rust.
   // Check files and Repair of the Model Manager (GH #113): the digest job
-  // and the Trash are Rust.
+  // and the Trash are Rust. So is the idle unload of the LU Engine
+  // (set_engine_idle_unload), which the app sends only from the desktop app.
+  // The card per task (3.0.8, A2) too: only the Rust process starts ComfyUI
+  // and the chat engine that read it.
+  // Remove refusals (A14) as well: its runs are Python processes the Rust
+  // side starts, reads and stops.
   for (const path of [
     '/local-api/local-api-usage', '/local-api/set-download-limit', '/local-api/character-photos', '/local-api/pick-gguf-file',
     '/local-api/list-custom-nodes', '/local-api/remove-custom-node', '/local-api/custom-node-log',
     '/local-api/verify-model-files', '/local-api/verify-model-files-status', '/local-api/verify-model-files-cancel',
-    '/local-api/trash-model-file',
+    '/local-api/trash-model-file', '/local-api/set-engine-idle-unload',
+    '/local-api/set-gpu-roles', '/local-api/describe-gpu-roles',
+    '/local-api/abliterate-plan', '/local-api/abliterate-start', '/local-api/abliterate-status',
+    '/local-api/abliterate-cancel', '/local-api/abliterate-dismiss', '/local-api/abliterate-runs',
+    '/local-api/abliterate-trash-copy',
   ]) {
     routes.use(path, (_req, res) => {
       res.writeHead(501, { 'Content-Type': 'application/json' })

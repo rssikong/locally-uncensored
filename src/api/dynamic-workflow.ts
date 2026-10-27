@@ -1,6 +1,6 @@
 import { transparentPrompt } from '../lib/transparent-image'
 import {
-  classifyModel, ref2vFamily, ref2vRefusal, findMatchingVAE, findMatchingCLIP, findFluxCLIPPair, findMiniMaxAudioVAE, findLtx25AudioVAE, isFastH3,
+  classifyModel, ref2vFamily, ref2vRefusal, findMatchingVAE, findMatchingCLIP, findFluxCLIPPair, findMiniMaxAudioVAE, findLtx25AudioVAE, isFastH3, wan22LowNoisePartner,
   findMatchingAudioEncoder, findMatchingClipVision, findFramePackCLIPPair, getSystemVRAM,
 } from './comfyui'
 import { isMacOS } from './backend'
@@ -59,8 +59,9 @@ function specDefault(spec: ComfyInputValue | undefined): ComfyInputValue | undef
 // promptFilenamePrefix und videoDecodeNode wohnen in comfyui-graph.ts (siehe
 // dort). Re-Export, damit bestehende Importpfade unverändert bleiben.
 export { promptFilenamePrefix, videoDecodeNode } from './comfyui-graph'
-import { promptFilenamePrefix, videoDecodeNode } from './comfyui-graph'
+import { promptFilenamePrefix, videoDecodeNode, addVideoSave } from './comfyui-graph'
 import { extraReferenceSlots, isQwenImageEditModel, referenceSide } from '../lib/edit-references'
+import { canonicalImageRefs } from '../lib/image-ref-names'
 import { nativeUpscaleScale, upscaleTarget, type UpscaleFactor } from '../lib/local-upscale'
 
 // ─── Strategy Detection ───
@@ -453,13 +454,17 @@ function registrySpecsNamedIn(type: ModelType, message: string): ComponentSpec[]
 export async function checkVideoOutputCapability(): Promise<{ mp4Capable: boolean; webpOnly: boolean; missingNodes: string[] }> {
   const allNodes = await getAllNodeInfo()
   const cats = categorizeNodes(allNodes)
+  // The core's CreateVideo + SaveVideo write mp4 on their own (A19), so VHS is
+  // only missing when the core can't do it either.
+  const hasCoreMp4 = cats.videoSavers.includes('CreateVideo') && cats.videoSavers.includes('SaveVideo')
   const hasVHS = cats.videoSavers.includes('VHS_VideoCombine')
   const hasWebp = cats.videoSavers.includes('SaveAnimatedWEBP')
+  const mp4Capable = hasCoreMp4 || hasVHS
   const missing: string[] = []
-  if (!hasVHS) missing.push('VHS_VideoCombine (ComfyUI-VideoHelperSuite)')
+  if (!mp4Capable) missing.push('VHS_VideoCombine (ComfyUI-VideoHelperSuite)')
   return {
-    mp4Capable: hasVHS,
-    webpOnly: !hasVHS && hasWebp,
+    mp4Capable,
+    webpOnly: !mp4Capable && hasWebp,
     missingNodes: missing,
   }
 }
@@ -1140,8 +1145,14 @@ export async function buildDynamicWorkflow(
       // prompt is wrapped the way the official template says, and SaveImage
       // below keeps it (lib/transparent-image.ts). An edit takes its picture
       // from the reference, so the wrapper stays out of it.
-      prompt: gp.transparent && !isQwenEdit ? transparentPrompt(params.prompt) : params.prompt,
-      negative_prompt: params.negativePrompt || '',
+      // An edit names its images the way the encoder labels them, <image2>,
+      // however the user spelled them (lib/image-ref-names).
+      prompt: isQwenEdit
+        ? canonicalImageRefs(params.prompt, 1 + references.length, 'qwen21')
+        : gp.transparent ? transparentPrompt(params.prompt) : params.prompt,
+      negative_prompt: isQwenEdit
+        ? canonicalImageRefs(params.negativePrompt || '', 1 + references.length, 'qwen21')
+        : params.negativePrompt || '',
       // With more images in an edit than the card carries at full size
       // (four, fewer on a card under 24 GB) they share a pixel budget
       // (referenceSide in lib/edit-references, lib/comfy-edit-memory).
@@ -1184,8 +1195,11 @@ export async function buildDynamicWorkflow(
     const editInputs = (prompt: string): ComfyNodeInputs => ({
       clip: [clipSourceId, clipOutputSlot], prompt, vae: [vaeSourceId, vaeOutputSlot], image1: qwen1EditImageRef!, ...refInputs,
     })
-    workflow[posId] = { class_type: 'TextEncodeQwenImageEditPlus', inputs: editInputs(params.prompt) }
-    workflow[negId] = { class_type: 'TextEncodeQwenImageEditPlus', inputs: editInputs(params.negativePrompt || '') }
+    // The node labels its images "Picture 1: ", "Picture 2: ", so the prompt
+    // names them that way too (lib/image-ref-names).
+    const pictures = (text: string) => canonicalImageRefs(text, 1 + references.length, 'qwenEditPlus')
+    workflow[posId] = { class_type: 'TextEncodeQwenImageEditPlus', inputs: editInputs(pictures(params.prompt)) }
+    workflow[negId] = { class_type: 'TextEncodeQwenImageEditPlus', inputs: editInputs(pictures(params.negativePrompt || '')) }
   } else {
     workflow[posId] = {
       class_type: 'CLIPTextEncode',
@@ -1528,9 +1542,45 @@ export async function buildDynamicWorkflow(
 
   // ─── Phase 4: Sampling ───
 
+  // Wan 2.2 A14B (GH #193): the high noise half lays out the clip, the low
+  // noise half finishes it, the split ComfyUI's own template runs (two
+  // KSamplerAdvanced, the first returns its leftover noise). Only when the
+  // picked file is the high half and its partner sits in the same loader
+  // list; otherwise the one file runs alone as before. LoRAs stay on the
+  // picked half.
+  const lowNoisePartner = isVideo && type === 'wan' && !fromCheckpoint && !!allNodes['KSamplerAdvanced']
+    ? wan22LowNoisePartner(params.model, listedUnets)
+    : null
+  let highNoiseStage: { id: string; lowId: string; split: number } | null = null
+  if (lowNoisePartner) {
+    highNoiseStage = { lowId: String(n++), id: String(n++), split: Math.max(1, Math.floor(params.steps / 2)) }
+    const { id, lowId, split } = highNoiseStage
+    addUnetLoader(workflow, lowId, lowNoisePartner, allNodes)
+    workflow[id] = {
+      class_type: 'KSamplerAdvanced',
+      inputs: {
+        model: [samplerModelId, 0], add_noise: 'enable', noise_seed: seed,
+        steps: params.steps, cfg: params.cfgScale, sampler_name: params.sampler, scheduler: params.scheduler,
+        positive: positiveRef, negative: negativeRef, latent_image: latentRef,
+        start_at_step: 0, end_at_step: split, return_with_leftover_noise: 'enable',
+      },
+      _meta: { title: 'Wan 2.2 high noise' },
+    }
+    log.info(`[dynamic-workflow] Wan 2.2 A14B pair: ${params.model} → ${lowNoisePartner}, split at step ${split}`)
+  }
+
   const samplerId = String(n++)
 
-  workflow[samplerId] = {
+  workflow[samplerId] = highNoiseStage ? {
+    class_type: 'KSamplerAdvanced',
+    inputs: {
+      model: [highNoiseStage.lowId, 0], add_noise: 'disable', noise_seed: seed,
+      steps: params.steps, cfg: params.cfgScale, sampler_name: params.sampler, scheduler: params.scheduler,
+      positive: positiveRef, negative: negativeRef, latent_image: [highNoiseStage.id, 0],
+      start_at_step: highNoiseStage.split, end_at_step: 10000, return_with_leftover_noise: 'disable',
+    },
+    _meta: { title: 'Wan 2.2 low noise' },
+  } : {
     class_type: 'KSampler',
     inputs: {
       model: [samplerModelId, 0],
@@ -1562,47 +1612,11 @@ export async function buildDynamicWorkflow(
 
   // ─── Phase 6: Output ───
 
-  const saveId = String(n++)
-
   if (isVideo) {
-    // Video output: prefer VHS > SaveAnimatedWEBP > SaveImage
-    const vidPrefix = promptFilenamePrefix(params.prompt, true)
-    if (nodes.videoSavers.includes('VHS_VideoCombine')) {
-      workflow[saveId] = {
-        class_type: 'VHS_VideoCombine',
-        inputs: {
-          images: [decodeId, 0],
-          frame_rate: videoParams.fps,
-          loop_count: 0,
-          filename_prefix: vidPrefix,
-          format: 'video/h264-mp4',
-          pingpong: false,
-          save_output: true,
-        },
-      }
-    } else if (nodes.videoSavers.includes('SaveAnimatedWEBP')) {
-      workflow[saveId] = {
-        class_type: 'SaveAnimatedWEBP',
-        inputs: {
-          images: [decodeId, 0],
-          filename_prefix: vidPrefix,
-          fps: videoParams.fps,
-          lossless: false,
-          quality: 90,
-          method: 'default',
-        },
-      }
-    } else {
-      workflow[saveId] = {
-        class_type: 'SaveImage',
-        inputs: {
-          images: [decodeId, 0],
-          filename_prefix: vidPrefix,
-        },
-      }
-    }
+    // Video output: core SaveVideo (mp4) > VHS > SaveAnimatedWEBP > SaveImage (A19)
+    addVideoSave(workflow, n, [decodeId, 0], videoParams.fps, promptFilenamePrefix(params.prompt, true), (c) => nodes.videoSavers.includes(c))
   } else {
-    workflow[saveId] = {
+    workflow[String(n)] = {
       class_type: 'SaveImage',
       inputs: {
         images: [decodeId, 0],
@@ -1761,25 +1775,7 @@ function rmbgWidgetDefault(
 
 
 function addVideoOutput(workflow: ComfyApiGraph, n: number, decodeId: string, fps: number, nodes: CategorizedNodes, prompt?: string): number {
-  const saveId = String(n++)
-  const prefix = promptFilenamePrefix(prompt, true)
-  if (nodes.videoSavers.includes('VHS_VideoCombine')) {
-    workflow[saveId] = {
-      class_type: 'VHS_VideoCombine',
-      inputs: { images: [decodeId, 0], frame_rate: fps, loop_count: 0, filename_prefix: prefix, format: 'video/h264-mp4', pingpong: false, save_output: true },
-    }
-  } else if (nodes.videoSavers.includes('SaveAnimatedWEBP')) {
-    workflow[saveId] = {
-      class_type: 'SaveAnimatedWEBP',
-      inputs: { images: [decodeId, 0], filename_prefix: prefix, fps, lossless: false, quality: 90, method: 'default' },
-    }
-  } else {
-    workflow[saveId] = {
-      class_type: 'SaveImage',
-      inputs: { images: [decodeId, 0], filename_prefix: prefix },
-    }
-  }
-  return n
+  return addVideoSave(workflow, n, [decodeId, 0], fps, promptFilenamePrefix(prompt, true), (c) => nodes.videoSavers.includes(c))
 }
 
 // buildCogVideoWorkflow deleted 2026-07-24 (D#88). It emitted CogVideoXCLIPLoader,

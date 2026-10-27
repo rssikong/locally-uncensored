@@ -22,6 +22,7 @@
  * smaller allocation than before (that would only trade money for a trim
  * loop).
  */
+import { isCompatProviderId } from '../api/providers/compat-id'
 
 /**
  * Providers where a token sent is a token billed.
@@ -98,7 +99,9 @@ export interface SendWindowInput {
 export function isPaidProvider(providerId: string, localBackend?: boolean): boolean {
   // A server in the next room bills nobody, whichever protocol it speaks.
   if (localBackend === true) return false
-  return PAID_PROVIDER_IDS.has(providerId)
+  // An extra OpenAI-compatible slot (`openai-<slug>`) is a hosted API with
+  // the user's own key unless `localBackend` already said otherwise above.
+  return PAID_PROVIDER_IDS.has(providerId) || isCompatProviderId(providerId)
 }
 
 /**

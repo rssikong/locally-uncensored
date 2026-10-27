@@ -16,6 +16,7 @@
  */
 
 import type {
+  ChatBilling,
   ChatMessage,
   ChatOptions,
   ProviderClient,
@@ -30,6 +31,7 @@ export interface StreamedProviderTurn {
   promptEvalCount?: number
   evalCount?: number
   finishReason?: string
+  billing?: ChatBilling
 }
 
 /**
@@ -70,6 +72,7 @@ export async function streamProviderTurn(
       turn.promptEvalCount = chunk.promptEvalCount
       turn.evalCount = chunk.evalCount
       turn.finishReason = chunk.finishReason
+      turn.billing = chunk.billing
     }
   }
   turn.content = content

@@ -1020,8 +1020,9 @@ test('power user: the LoRA stack says on the row what the run would refuse, and 
   const refused = drawer.getByTestId('lora-stack-refused')
   await expect(refused).toHaveText(['sliderKohya format', 'brokennot readable'])
   // The rows are marked as disabled; a press on one all the same turns nothing on.
-  await refused.first().getByRole('button').click({ force: true })
-  await refused.last().getByRole('button').click({ force: true })
+  // (Each row also carries a Copy file name button since 3.0.8.)
+  await refused.first().locator('button[aria-disabled="true"]').click({ force: true })
+  await refused.last().locator('button[aria-disabled="true"]').click({ force: true })
   await expect(drawer.getByText(/active/)).toHaveCount(0)
 
   // One that fits goes on, and with Clear in the head no label breaks.

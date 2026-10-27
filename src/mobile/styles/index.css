@@ -1,0 +1,8 @@
+/* LU Mobile: one stylesheet for the whole shell.
+   Loaded only from src/mobile/boot, so it lands in the lazy mobile chunk and
+   never in the desktop bundle. Plain CSS with classes m-* and variables --m-*,
+   no Tailwind utilities (mobile-docs/design/ARCHITEKTUR.md 2.4). */
+@import './tokens.css';
+@import './reset.css';
+@import './base.css';
+@import './components.css';

@@ -224,6 +224,69 @@ fn scan_header(path: &str, need_blocks: bool) -> Option<HeaderFacts> {
     })
 }
 
+/// The `general.*` part of a header: what the file says about itself.
+///
+/// The refusal-removal tool (`commands::abliterate`) reads where a GGUF came
+/// from (`general.source.*`, `general.license.link`, `general.base_model.*`),
+/// what it is called, its license and its quantization (`general.file_type`),
+/// and whether LU made it (`general.description`). Strings only, plus the one
+/// number; everything else is skipped. Same rules as above: bounded, never
+/// panics, and a file that is not a GGUF answers with nothing.
+#[derive(Debug, Default, PartialEq)]
+pub struct GeneralFacts {
+    pub strings: std::collections::BTreeMap<String, String>,
+    pub file_type: Option<u32>,
+}
+
+impl GeneralFacts {
+    pub fn get(&self, key: &str) -> Option<&str> {
+        self.strings.get(key).map(String::as_str).filter(|s| !s.trim().is_empty())
+    }
+}
+
+/// One pass up to the tokenizer. Writers put `general.*` first and the
+/// tokenizer last, and `general.file_type` sits between the architecture's
+/// numbers and the vocabulary, so the vocabulary is never read.
+pub fn read_general(path: &str) -> GeneralFacts {
+    scan_general(path).unwrap_or_default()
+}
+
+fn scan_general(path: &str) -> Option<GeneralFacts> {
+    let file = File::open(path).ok()?;
+    let mut buf = BufReader::new(file);
+    let mut r = R(&mut buf);
+    let mut magic = [0u8; 4];
+    r.0.read_exact(&mut magic).ok()?;
+    if &magic != GGUF_MAGIC {
+        return None;
+    }
+    let version = r.u32()?;
+    if !(2..=3).contains(&version) {
+        return None;
+    }
+    let _tensor_count = r.u64()?;
+    let kv_count = r.u64()?;
+    if kv_count > MAX_KV {
+        return None;
+    }
+    let mut facts = GeneralFacts::default();
+    for _ in 0..kv_count {
+        let key = r.string(MAX_STR)?;
+        if key.starts_with("tokenizer.") {
+            break;
+        }
+        let ty = r.u32()?;
+        match read_value(&mut r, ty)? {
+            Val::Str(s) if key.starts_with("general.") => {
+                facts.strings.insert(key, s);
+            }
+            Val::UInt(n) if key == "general.file_type" => facts.file_type = u32::try_from(n).ok(),
+            _ => {}
+        }
+    }
+    Some(facts)
+}
+
 /// True when `found` is the key this architecture would write.
 fn matches_arch(found: &Option<(String, u64)>, arch: &str, suffix: &str) -> bool {
     matches!(found, Some((k, _)) if k == &format!("{arch}.{suffix}"))
@@ -240,9 +303,324 @@ fn resolve(arch: Option<&str>, found: Option<(String, u64)>, suffix: &str) -> Op
     }
 }
 
+// ── The whole head: every key and the tensor table (3.0.8, A25) ──────────
+//
+// The VRAM plan (vram_plan.rs) needs more than two numbers. How much graphics
+// memory a start takes is the weights of the layers that go to the card, the
+// KV cache those layers keep, and the work buffers, and every one of those is
+// written in the head: the KV heads per layer (an array when they differ,
+// Gemma 4), the key and value widths (separate ones for the sliding window
+// layers), the window and which layers use it, the state of the recurrent
+// layers of a hybrid, the latent width of an MLA model, and the size and type
+// of every tensor. The weights of a layer are summed from its own tensors, not
+// taken as the file size over the layer count: the embedding and the output
+// head of a model with a 262k vocabulary are a gigabyte each and belong to no
+// layer, and an MoE layer is mostly experts.
+//
+// Same rules as above: bounded, never panics, `None` for anything that is not
+// a readable head. The tokenizer arrays are skipped and only counted.
+
+/// Numeric arrays longer than this are skipped (and only counted): per-layer
+/// arrays are a few hundred entries, the tokenizer's are a hundred thousand.
+const MAX_KEPT_ARRAY: u64 = 8192;
+/// More tensors than any model has (DeepSeek V3 with every expert split out
+/// has a few thousand).
+const MAX_TENSORS: u64 = 1_000_000;
+/// The longest tensor name we accept (llama.cpp's own limit is 64).
+const MAX_TENSOR_NAME: u64 = 512;
+
+/// One metadata value, as far as the plan needs it.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Meta {
+    /// Any unsigned or signed integer, or a bool (0/1).
+    Int(i64),
+    Float(f64),
+    Str(String),
+    /// An integer or bool array short enough to keep.
+    Ints(Vec<i64>),
+    /// Any other array: its element count, nothing else.
+    Array(u64),
+}
+
+/// One entry of the tensor table.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TensorInfo {
+    pub name: String,
+    /// `ne[0..n]`, innermost first, as the file lists them.
+    pub dims: Vec<u64>,
+    /// The ggml type number (`GGML_TYPE_*`).
+    pub ggml_type: u32,
+}
+
+impl TensorInfo {
+    /// Bytes this tensor takes in memory, `None` for a type this table does
+    /// not know (a GGUF from a newer llama.cpp than the one LU ships).
+    pub fn bytes(&self) -> Option<u64> {
+        let (block, size) = ggml_type_block(self.ggml_type)?;
+        let first = *self.dims.first().unwrap_or(&1);
+        let rest: u64 = self.dims.iter().skip(1).try_fold(1u64, |a, d| a.checked_mul(*d))?;
+        first.div_ceil(block).checked_mul(size)?.checked_mul(rest)
+    }
+}
+
+/// (elements per block, bytes per block) of a ggml type, as ggml.c's
+/// `type_traits` define them for the pinned llama.cpp (b9949). The block
+/// sizes were measured with `sizeof(block_*)` from ggml-common.h of that
+/// tree, not copied from documentation.
+pub fn ggml_type_block(t: u32) -> Option<(u64, u64)> {
+    Some(match t {
+        0 => (1, 4),     // F32
+        1 => (1, 2),     // F16
+        2 => (32, 18),   // Q4_0
+        3 => (32, 20),   // Q4_1
+        6 => (32, 22),   // Q5_0
+        7 => (32, 24),   // Q5_1
+        8 => (32, 34),   // Q8_0
+        9 => (32, 36),   // Q8_1
+        10 => (256, 84), // Q2_K
+        11 => (256, 110), // Q3_K
+        12 => (256, 144), // Q4_K
+        13 => (256, 176), // Q5_K
+        14 => (256, 210), // Q6_K
+        15 => (256, 292), // Q8_K
+        16 => (256, 66), // IQ2_XXS
+        17 => (256, 74), // IQ2_XS
+        18 => (256, 98), // IQ3_XXS
+        19 => (256, 50), // IQ1_S
+        20 => (32, 18),  // IQ4_NL
+        21 => (256, 110), // IQ3_S
+        22 => (256, 82), // IQ2_S
+        23 => (256, 136), // IQ4_XS
+        24 => (1, 1),    // I8
+        25 => (1, 2),    // I16
+        26 => (1, 4),    // I32
+        27 => (1, 8),    // I64
+        28 => (1, 8),    // F64
+        29 => (256, 56), // IQ1_M
+        30 => (1, 2),    // BF16
+        34 => (256, 54), // TQ1_0
+        35 => (256, 66), // TQ2_0
+        39 => (32, 17),  // MXFP4
+        40 => (64, 36),  // NVFP4
+        41 => (128, 18), // Q1_0
+        42 => (64, 18),  // Q2_0
+        _ => return None,
+    })
+}
+
+/// A GGUF head read whole: its keys and its tensor table.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct GgufHead {
+    pub keys: std::collections::BTreeMap<String, Meta>,
+    pub tensors: Vec<TensorInfo>,
+}
+
+impl GgufHead {
+    pub fn arch(&self) -> Option<&str> {
+        match self.keys.get("general.architecture") {
+            Some(Meta::Str(s)) => Some(s.as_str()),
+            _ => None,
+        }
+    }
+
+    /// `<arch>.<suffix>` as an integer.
+    pub fn arch_int(&self, suffix: &str) -> Option<i64> {
+        let arch = self.arch()?;
+        match self.keys.get(&format!("{arch}.{suffix}"))? {
+            Meta::Int(n) => Some(*n),
+            Meta::Float(f) if f.fract() == 0.0 => Some(*f as i64),
+            _ => None,
+        }
+    }
+
+    /// `<arch>.<suffix>` as one integer per layer: an array read as it is,
+    /// a single value repeated (`get_key_or_arr` in llama.cpp). `None` when
+    /// the key is missing or an array has the wrong length.
+    pub fn arch_per_layer(&self, suffix: &str, n_layer: usize) -> Option<Vec<i64>> {
+        let arch = self.arch()?;
+        match self.keys.get(&format!("{arch}.{suffix}"))? {
+            Meta::Int(n) => Some(vec![*n; n_layer]),
+            Meta::Ints(v) if v.len() >= n_layer => Some(v[..n_layer].to_vec()),
+            _ => None,
+        }
+    }
+
+    /// Whether `<arch>.<suffix>` is an array (rather than a single value).
+    pub fn arch_is_array(&self, suffix: &str) -> bool {
+        self.arch()
+            .and_then(|a| self.keys.get(&format!("{a}.{suffix}")))
+            .is_some_and(|m| matches!(m, Meta::Ints(_) | Meta::Array(_)))
+    }
+
+    /// `split.count`, 1 for a model in one file.
+    pub fn split_count(&self) -> u64 {
+        match self.keys.get("split.count") {
+            Some(Meta::Int(n)) if *n > 1 => *n as u64,
+            _ => 1,
+        }
+    }
+}
+
+fn read_meta(r: &mut R, ty: u32) -> Option<Meta> {
+    Some(match ty {
+        0 => Meta::Int(r.u8()? as i64),
+        1 => Meta::Int(r.u8()? as i8 as i64),
+        2 | 3 => {
+            let mut b = [0u8; 2];
+            r.0.read_exact(&mut b).ok()?;
+            if ty == 2 { Meta::Int(u16::from_le_bytes(b) as i64) } else { Meta::Int(i16::from_le_bytes(b) as i64) }
+        }
+        4 => Meta::Int(r.u32()? as i64),
+        5 => Meta::Int(r.u32()? as i32 as i64),
+        6 => Meta::Float(f32::from_bits(r.u32()?) as f64),
+        7 => Meta::Int((r.u8()? != 0) as i64),
+        8 => Meta::Str(r.string(MAX_STR)?),
+        10 => Meta::Int(i64::try_from(r.u64()?).ok()?),
+        11 => Meta::Int(r.u64()? as i64),
+        12 => Meta::Float(f64::from_bits(r.u64()?)),
+        9 => {
+            let elem = r.u32()?;
+            let count = r.u64()?;
+            if count > MAX_ARR {
+                return None;
+            }
+            let int_elem = matches!(elem, 0..=5 | 7 | 10 | 11);
+            if int_elem && count <= MAX_KEPT_ARRAY {
+                let mut v = Vec::with_capacity(count as usize);
+                for _ in 0..count {
+                    match read_meta(r, elem)? {
+                        Meta::Int(n) => v.push(n),
+                        _ => return None,
+                    }
+                }
+                Meta::Ints(v)
+            } else {
+                // Skip it exactly as `read_value` does.
+                if let Some(sz) = fixed_size(elem) {
+                    r.skip(count.checked_mul(sz)?)?;
+                } else if elem == 8 {
+                    for _ in 0..count {
+                        let len = r.u64()?;
+                        if len > MAX_STR {
+                            return None;
+                        }
+                        r.skip(len)?;
+                    }
+                } else {
+                    return None;
+                }
+                Meta::Array(count)
+            }
+        }
+        _ => return None,
+    })
+}
+
+/// Read a GGUF head from any reader: every key and the tensor table, nothing
+/// of the data behind it.
+pub fn parse_head(reader: &mut dyn Read) -> Option<GgufHead> {
+    let mut r = R(reader);
+    let mut magic = [0u8; 4];
+    r.0.read_exact(&mut magic).ok()?;
+    if &magic != GGUF_MAGIC {
+        return None;
+    }
+    let version = r.u32()?;
+    if !(2..=3).contains(&version) {
+        return None;
+    }
+    let tensor_count = r.u64()?;
+    let kv_count = r.u64()?;
+    if kv_count > MAX_KV || tensor_count > MAX_TENSORS {
+        return None;
+    }
+    let mut head = GgufHead::default();
+    for _ in 0..kv_count {
+        let key = r.string(MAX_STR)?;
+        let ty = r.u32()?;
+        let val = read_meta(&mut r, ty)?;
+        head.keys.insert(key, val);
+    }
+    head.tensors.reserve(tensor_count.min(65_536) as usize);
+    for _ in 0..tensor_count {
+        let name = r.string(MAX_TENSOR_NAME)?;
+        let n_dims = r.u32()?;
+        if n_dims > 8 {
+            return None;
+        }
+        let mut dims = Vec::with_capacity(n_dims as usize);
+        for _ in 0..n_dims {
+            dims.push(r.u64()?);
+        }
+        let ggml_type = r.u32()?;
+        let _offset = r.u64()?;
+        head.tensors.push(TensorInfo { name, dims, ggml_type });
+    }
+    Some(head)
+}
+
+/// The sibling parts of a split model (`name-00001-of-00003.gguf`), in order,
+/// the given file first. Just the given file when the name is not a split
+/// name; `None` when a named part is missing.
+fn split_parts(path: &std::path::Path, count: u64) -> Option<Vec<std::path::PathBuf>> {
+    let file = path.file_name()?.to_str()?;
+    let lower = file.to_ascii_lowercase();
+    let at = lower.rfind("-of-")?;
+    // `-00001-of-00003.gguf`: five digits before `-of-`, five after.
+    let (num_start, rest) = (at.checked_sub(5)?, &file[at + 4..]);
+    if file.as_bytes().get(num_start.checked_sub(1)?) != Some(&b'-') {
+        return None;
+    }
+    let width = rest.find('.')?;
+    let stem = &file[..num_start];
+    let tail = &rest[width..];
+    (1..=count)
+        .map(|i| {
+            let p = path.with_file_name(format!("{stem}{i:0w$}-of-{count:0w$}{tail}", w = width));
+            p.is_file().then_some(p)
+        })
+        .collect()
+}
+
+/// The head of a model on disk, with the tensor tables of every part when it
+/// is split. `None` when the file cannot be read as a GGUF head.
+pub fn read_model_head(path: &str) -> Option<GgufHead> {
+    let mut buf = BufReader::new(File::open(path).ok()?);
+    let mut head = parse_head(&mut buf)?;
+    let parts = head.split_count();
+    if parts > 1 {
+        if let Some(files) = split_parts(std::path::Path::new(path), parts) {
+            for extra in files.iter().skip(1) {
+                if let Some(h) = File::open(extra).ok().and_then(|f| parse_head(&mut BufReader::new(f))) {
+                    head.tensors.extend(h.tensors);
+                }
+            }
+        }
+    }
+    Some(head)
+}
+
+/// Bytes on disk of a model and all its parts, given its head.
+pub fn model_file_bytes_of(path: &str, head: Option<&GgufHead>) -> u64 {
+    let own = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    let parts = head.map(|h| h.split_count()).unwrap_or(1);
+    if parts <= 1 {
+        return own;
+    }
+    split_parts(std::path::Path::new(path), parts)
+        .map(|files| files.iter().filter_map(|p| std::fs::metadata(p).ok()).map(|m| m.len()).sum())
+        .unwrap_or(own)
+}
+
+/// Bytes on disk of a model and all its parts.
+#[cfg(test)]
+pub fn model_file_bytes(path: &str) -> u64 {
+    model_file_bytes_of(path, read_model_head(path).as_ref())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{context_length, read_header, HeaderFacts};
+    use super::{context_length, read_general, read_header, HeaderFacts};
     use std::io::Write;
 
     // Tiny hand-rolled GGUF v3 writer — just enough for the header path.
@@ -307,6 +685,33 @@ mod tests {
     /// directory is removed when it is dropped.
     fn fixtures(tag: &str) -> crate::os_paths::TestDir {
         crate::os_paths::test_dir(&format!("gguf-{tag}"))
+    }
+
+    #[test]
+    fn reads_the_general_strings_and_stops_at_the_tokenizer() {
+        let dir = fixtures("general");
+        let mut w = W::new(6);
+        w.str_field("general.architecture", "qwen2");
+        w.str_field("general.name", "Qwen2.5 0.5B Instruct");
+        w.str_field("general.license.link", "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/blob/main/LICENSE");
+        w.u32_field("qwen2.context_length", 32768);
+        w.u32_field("general.file_type", 7);
+        w.arr_str_field("tokenizer.ggml.tokens", &["a", "b"]);
+        let p = dir.join("general.gguf");
+        w.write_to(&p);
+        let facts = read_general(p.to_str().unwrap());
+        assert_eq!(facts.get("general.name"), Some("Qwen2.5 0.5B Instruct"));
+        assert_eq!(facts.get("general.architecture"), Some("qwen2"));
+        assert_eq!(facts.file_type, Some(7));
+        assert!(facts.get("general.description").is_none());
+    }
+
+    #[test]
+    fn general_facts_of_a_file_that_is_not_a_gguf_are_empty() {
+        let dir = fixtures("general-not");
+        let p = dir.join("not.gguf");
+        std::fs::write(&p, b"not a model").unwrap();
+        assert_eq!(read_general(p.to_str().unwrap()), Default::default());
     }
 
     #[test]
@@ -498,4 +903,69 @@ mod tests {
             }
         }
     }
+
+    /// A head with keys and one tensor, written by hand.
+    fn head_with_tensor(split: Option<(u16, u16)>, tensor: &str) -> Vec<u8> {
+        let mut v = Vec::new();
+        v.extend_from_slice(b"GGUF");
+        v.extend_from_slice(&3u32.to_le_bytes());
+        v.extend_from_slice(&1u64.to_le_bytes()); // one tensor
+        let kv: u64 = if split.is_some() { 2 } else { 1 };
+        v.extend_from_slice(&kv.to_le_bytes());
+        let key = |v: &mut Vec<u8>, k: &str| {
+            v.extend_from_slice(&(k.len() as u64).to_le_bytes());
+            v.extend_from_slice(k.as_bytes());
+        };
+        key(&mut v, "general.architecture");
+        v.extend_from_slice(&8u32.to_le_bytes());
+        v.extend_from_slice(&5u64.to_le_bytes());
+        v.extend_from_slice(b"llama");
+        if let Some((_, count)) = split {
+            key(&mut v, "split.count");
+            v.extend_from_slice(&2u32.to_le_bytes()); // u16
+            v.extend_from_slice(&count.to_le_bytes());
+        }
+        key(&mut v, tensor);
+        v.extend_from_slice(&2u32.to_le_bytes()); // two dims
+        v.extend_from_slice(&4096u64.to_le_bytes());
+        v.extend_from_slice(&4096u64.to_le_bytes());
+        v.extend_from_slice(&12u32.to_le_bytes()); // Q4_K
+        v.extend_from_slice(&0u64.to_le_bytes());
+        v
+    }
+
+    #[test]
+    fn the_whole_head_reads_keys_and_the_tensor_table_and_sizes_the_tensors() {
+        let raw = head_with_tensor(None, "blk.0.ffn_up.weight");
+        let h = super::parse_head(&mut &raw[..]).expect("parses");
+        assert_eq!(h.arch(), Some("llama"));
+        assert_eq!(h.tensors.len(), 1);
+        // 4096 x 4096 in Q4_K: 16 blocks of 256 per row at 144 bytes.
+        assert_eq!(h.tensors[0].bytes(), Some(4096 * 16 * 144));
+        // An unknown ggml type has no size, it is not guessed.
+        let mut t = h.tensors[0].clone();
+        t.ggml_type = 99;
+        assert_eq!(t.bytes(), None);
+        // A truncated head is not a head.
+        assert!(super::parse_head(&mut &raw[..raw.len() - 3]).is_none());
+    }
+
+    #[test]
+    fn a_split_model_is_read_with_the_tensors_of_every_part() {
+        let dir = fixtures("split");
+        let p1 = dir.join("big-00001-of-00002.gguf");
+        let p2 = dir.join("big-00002-of-00002.gguf");
+        std::fs::write(&p1, head_with_tensor(Some((1, 2)), "blk.0.ffn_up.weight")).unwrap();
+        std::fs::write(&p2, head_with_tensor(Some((2, 2)), "blk.1.ffn_up.weight")).unwrap();
+        let h = super::read_model_head(p1.to_str().unwrap()).expect("head");
+        assert_eq!(h.split_count(), 2);
+        let names: Vec<&str> = h.tensors.iter().map(|t| t.name.as_str()).collect();
+        assert_eq!(names, ["blk.0.ffn_up.weight", "blk.1.ffn_up.weight"]);
+        let both = std::fs::metadata(&p1).unwrap().len() + std::fs::metadata(&p2).unwrap().len();
+        assert_eq!(super::model_file_bytes(p1.to_str().unwrap()), both);
+        // A part missing: what is there is read, nothing is made up.
+        std::fs::remove_file(&p2).unwrap();
+        assert_eq!(super::read_model_head(p1.to_str().unwrap()).unwrap().tensors.len(), 1);
+    }
+
 }

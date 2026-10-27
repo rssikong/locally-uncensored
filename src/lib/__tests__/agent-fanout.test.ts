@@ -221,7 +221,11 @@ describe('die Anweisung erreicht den Lauf wirklich', () => {
     // doch startet. „Nimm glm 5.2" mit qwen zu beantworten sieht aus wie
     // Erfolg und ist keiner.
     const s = quelle('api/agents/sub-agent.ts')
-    expect(s).toContain('resolveRequestedModel')
+    // Seit der Handy-Runde 6 fragt der Lauf lib/delegate-model.ts, und die
+    // fragt resolveRequestedModel: am Desktop dieselbe Regel, nur einen
+    // Schritt weiter (ein Handy hat einen Modellplatz und faellt dort zurueck).
+    expect(s).toContain('chooseSubAgentModel(')
+    expect(quelle('lib/delegate-model.ts')).toContain('resolveRequestedModel(wish, installed)')
     expect(s).toMatch(/is not installed here, so this sub-agent did not run/)
   })
 

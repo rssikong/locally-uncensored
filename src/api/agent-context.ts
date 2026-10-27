@@ -126,6 +126,14 @@ export interface AgentRunContext {
    */
   heldLocalLane?: HeldLocalLane | null
   /**
+   * This surface draws the confirmation card of set_setting in its tool calls
+   * (A11): the chat, Agent and Code. Unset for a voice session, a workflow and
+   * every caller outside a loop, so a change of an app setting there is
+   * refused instead of waiting for a card nobody sees. A sub-agent inherits
+   * its parent's run and is refused in sub-agent.ts by name.
+   */
+  settingsCard?: boolean
+  /**
    * A long tool says how far it is, in one short line. Set by a surface that
    * can pass it on while the call runs (the voice session hands it to the
    * model's context). Undefined elsewhere; a tool calls it and never needs it.
@@ -136,6 +144,13 @@ export interface AgentRunContext {
    * in the conversation). Set per call by the executor, see `runForCall`.
    */
   toolCallId?: string
+  /**
+   * Who owns a generation this call starts, in vram-handoff's cancel book.
+   * Unset: the conversation, so the turn's Stop reaches it. Set for a call
+   * that may go on in the background (lib/background-tools.ts): a Stop of a
+   * later turn in the same chat must not cancel it.
+   */
+  generationOwner?: string
 }
 
 /**
@@ -194,6 +209,7 @@ export function beginAgentRun(init: {
   artifactMode?: boolean
   readOnlyShellTurn?: boolean
   mode?: string | null
+  settingsCard?: boolean
 }): AgentRunContext {
   _runSeq += 1
   const run: AgentRunContext = {
@@ -206,6 +222,7 @@ export function beginAgentRun(init: {
     readOnlyShellTurn: init.readOnlyShellTurn === true,
     mode: init.mode ?? null,
     artifacts: [],
+    ...(init.settingsCard ? { settingsCard: true } : {}),
   }
   openRuns.add(run.token)
   ctx.runToken = run.token

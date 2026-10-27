@@ -88,6 +88,8 @@ export function rewriteUpdater(conf, dryPubkey) {
   return { conf: next, receipt: { dryRunEndpoint: DRY_RUN_ENDPOINT, dryRunPubkey: pubkey, publicEndpoints, releasePubkey } }
 }
 
+const PHONE_OVERLAYS = new Set(['tauri.android.conf.json', 'tauri.ios.conf.json'])
+
 function cmdRewriteUpdater(pubkeyFile, receiptFile) {
   if (!pubkeyFile || !receiptFile) fail('usage: rewrite-updater <pubkey-file> <receipt-file>')
   const confDir = join(ROOT, 'src-tauri')
@@ -98,7 +100,11 @@ function cmdRewriteUpdater(pubkeyFile, receiptFile) {
   // address back after this rewrite.
   for (const name of readdirSync(confDir)) {
     if (!/^tauri\..+\.conf\.json$/.test(name)) continue
-    if (readJson(join(confDir, name))?.plugins?.updater !== undefined) {
+    const updater = readJson(join(confDir, name))?.plugins?.updater
+    // The two phone files take the updater out of a phone build (`null`). No
+    // desktop build reads them, and `null` names no address.
+    if (updater === null && PHONE_OVERLAYS.has(name)) continue
+    if (updater !== undefined) {
       fail(`src-tauri/${name} sets plugins.updater; it would override the dry run endpoint`)
     }
   }

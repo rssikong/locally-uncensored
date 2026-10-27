@@ -4,7 +4,7 @@
  * A14 (2.6.8), der Inhaber: "es muss klar sein, ob der Ordner fuer LM Studio, Ollama
  * oder die LU Engine gilt."
  *
- * Before this, Model Storage was one field labelled "(auto-detect)" over a
+ * Before this, Storage was one field labelled "(auto-detect)" over a
  * paragraph that named all three backends at once. A user setting that field
  * had no way to tell whose folder he was setting, and the honest answer is
  * that it is one backend's folder and not the other two's. It is three named

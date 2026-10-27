@@ -1,0 +1,165 @@
+{
+ "name": "/create",
+ "art": "seite",
+ "quelle": "integ-306",
+ "route": "/create",
+ "strang": "create",
+ "code": "K1",
+ "lage": {
+  "route": "/create",
+  "screen": "m-create-screen",
+  "blaetter": [],
+  "dialog": [],
+  "reiter": "create",
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    791
+   ]
+  },
+  {
+   "id": "m-create-screen",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    791
+   ]
+  },
+  {
+   "id": "m-cloud-switch",
+   "tag": "button",
+   "rolle": "switch",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Cloud, off",
+   "el": "G11",
+   "box": [
+    115,
+    48
+   ]
+  },
+  {
+   "id": "m-create-gate",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "state": "signed-out",
+   "box": [
+    390,
+    332
+   ]
+  },
+  {
+   "id": "m-create-gate-action",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Sign in to LU Cloud",
+   "el": "K1.24",
+   "box": [
+    320,
+    48
+   ]
+  },
+  {
+   "id": "m-create-gate-showcase",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "See what you can make",
+   "el": "K1.25",
+   "box": [
+    320,
+    48
+   ]
+  },
+  {
+   "id": "m-nav",
+   "tag": "nav",
+   "rolle": "tablist",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    53
+   ]
+  },
+  {
+   "id": "m-nav-chat",
+   "tag": "button",
+   "rolle": "tab",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Chat",
+   "el": "G1.1",
+   "box": [
+    98,
+    52
+   ]
+  },
+  {
+   "id": "m-nav-create",
+   "tag": "button",
+   "rolle": "tab",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Create",
+   "el": "G1.2",
+   "box": [
+    98,
+    52
+   ]
+  },
+  {
+   "id": "m-nav-models",
+   "tag": "button",
+   "rolle": "tab",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Models",
+   "el": "G1.3",
+   "box": [
+    98,
+    52
+   ]
+  },
+  {
+   "id": "m-nav-settings",
+   "tag": "button",
+   "rolle": "tab",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Settings",
+   "el": "G1.4",
+   "box": [
+    98,
+    52
+   ]
+  }
+ ]
+}

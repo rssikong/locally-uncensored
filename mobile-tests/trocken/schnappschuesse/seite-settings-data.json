@@ -1,0 +1,168 @@
+{
+ "name": "/settings/data",
+ "art": "seite",
+ "quelle": "integ-306",
+ "route": "/settings/data",
+ "strang": "settings",
+ "code": "E16",
+ "lage": {
+  "route": "/settings/data",
+  "screen": "m-settings-data-screen",
+  "blaetter": [],
+  "dialog": [],
+  "reiter": null,
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back-under",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-data-screen",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-data-backup-save",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Save backup to this phone You pick the folder. Restore finds the file there.",
+   "el": "E16.1",
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-settings-data-backup",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Share backup Send the file to another app or device",
+   "risiko": "leaves-app",
+   "el": "E16.1",
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-settings-data-restore",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Restore from a backup file Pick a backup made by LU",
+   "el": "E16.2",
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-settings-data-import",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Import from ChatGPT, Claude or Gemini Bring over an export from another app",
+   "el": "E16.3",
+   "box": [
+    356,
+    81
+   ]
+  },
+  {
+   "id": "m-settings-data-auto",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "el": "E16.4",
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-settings-data-auto-now",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Back up now",
+   "el": "E16.4",
+   "box": [
+    358,
+    48
+   ]
+  },
+  {
+   "id": "m-settings-data-all-delete",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Delete all chats There are no chats",
+   "risiko": "destructive",
+   "el": "E16.5",
+   "deaktiviert": true,
+   "box": [
+    356,
+    57
+   ]
+  }
+ ]
+}

@@ -61,7 +61,7 @@ describe('handing the folder to ComfyUI', () => {
   })
 })
 
-describe('the Model Storage copy tells the truth', () => {
+describe('the Storage copy tells the truth', () => {
   const src = readFileSync(
     join(process.cwd(), 'src/components/settings/SettingsPage.tsx'),
     'utf8',

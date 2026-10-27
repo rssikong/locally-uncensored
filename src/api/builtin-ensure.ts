@@ -17,6 +17,7 @@
 import { backendCall } from './backend'
 import { trackEngineSwap, waitForEngineSwap } from './engine-swap-gate'
 import { log } from '../lib/logger'
+import { platformText } from '../lib/platform-text'
 import { useProviderStore } from '../stores/providerStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { builtinSlotStatus, type SlotStatus } from '../lib/builtin-slot-status'
@@ -32,12 +33,18 @@ import {
 import { hostOf, isLocalTransportFailure } from '../lib/local-backend-transport'
 import { announceEngineCpuFallback } from '../lib/engine-offload'
 import { customModelDirs } from '../lib/custom-model-dirs'
+import { singleModelSlot } from '../lib/capabilities'
+import { claimSlotForChatLoad, getMobileContextCap } from '../lib/model-slot'
 
 interface EngineStatusLite {
   running: boolean
   healthy: boolean
   /** The `--ctx-size` the chat engine was started with (ENG-3). */
   ctx?: number | null
+  /** The context that start ASKED for (3.0.8, A25). A context nobody chose
+   *  is the VRAM plan's to pick: `ctx` can be more (the card had room) or
+   *  less (the asked one would have cost layers) than this. */
+  ctxRequested?: number | null
   /** Absolute path of the GGUF the engine was started with, null when it is
    *  not running. The ONLY honest answer to "which model is loaded": the
    *  `model` field of a request is a label llama-server ignores. */
@@ -54,7 +61,7 @@ interface BundledList {
 }
 
 /** The GGUFs the engine can be started on: the app models dir AND the folder
- *  named under Model Storage, exactly the set the picker lists.
+ *  named under Storage, exactly the set the picker lists.
  *
  *  Discord 2026-10-01 (3.0.3, RTX 4090): a group chat of two models
  *  from that folder answered with the loaded one only. The other speaker got
@@ -121,7 +128,7 @@ export function explainEngineTransportMessage(message: string, baseUrl: string):
   // now instead of in the chat bubble. House rule: no raw Rust error in front
   // of a user.
   log.warn('[builtin-engine] transport failure hidden behind a plain sentence', { raw: msg, host })
-  return `The LU Engine is not answering on ${host}. It is either still loading a model, failed to start, or was shut down. Wait for the model to finish loading and send again, or open Settings, AI Backends, LU Engine and start it there.`
+  return platformText('engineNotAnswering', { host })
 }
 
 /** True when the `openai` slot is the app-managed built-in engine. */
@@ -146,8 +153,7 @@ export function builtinSlotSwitchedOff(): boolean {
 }
 
 /** What the chat says when the send was aimed at a switched-off engine. */
-export const BUILTIN_SLOT_OFF_MESSAGE =
-  'The LU Engine is switched off in Settings, AI Backends. Turn it back on there, or pick a model from another provider.'
+export const BUILTIN_SLOT_OFF_MESSAGE = platformText('engineSwitchedOff')
 
 /**
  * Point the managed slot at the port the engine really came up on.
@@ -222,6 +228,25 @@ export async function ensureBuiltinEngineAlive(modelName: string): Promise<void>
   // (counter-check P1, 2026-09-04).
   if (builtinSlotSwitchedOff()) throw new Error(BUILTIN_SLOT_OFF_MESSAGE)
   if (!isManagedBuiltinSlot()) return
+  // One model slot: while a document is being read the chat model stays out
+  // (lib/model-slot.ts). Loading it now would put it next to the document
+  // model, and the reading would unload it again under the answer. Resolves
+  // at once on a desktop and whenever the slot is free.
+  //
+  // The engine gives a load 120 seconds. That limit starts when the engine is
+  // asked, which is below this line: a send that waits a minute for a long
+  // document spends none of it (acceptance Android 8 GB, B4). From here to
+  // the end of the load a reading does not start either (claimSlotForChatLoad).
+  const loadDone = singleModelSlot() ? await claimSlotForChatLoad() : null
+  try {
+    await ensureWithSlot(modelName)
+  } finally {
+    loadDone?.()
+  }
+}
+
+/** `ensureBuiltinEngineAlive` once the slot is this caller's. */
+async function ensureWithSlot(modelName: string): Promise<void> {
   // Self-heal before an error message: a swap the app itself started is still
   // tearing down and restarting llama-server, and a send fired into that gap
   // is a guaranteed transport failure. Wait it out, then probe. The wait has a
@@ -291,7 +316,7 @@ async function loadBuiltinModel(modelName: string): Promise<void> {
     // on Windows 10 — they gave up on the built-in engine and moved to
     // Ollama). Say what is actually wrong instead.
     throw new Error(
-      `The LU Engine has no model file named "${bare}". It may have been deleted, moved, or the download did not finish. Open Models, Get new and download it again, then pick it in the chat.`,
+      platformText('engineModelFileMissing', { name: bare }),
     )
   }
 
@@ -306,7 +331,10 @@ async function loadBuiltinModel(modelName: string): Promise<void> {
   const keepCtx = preservedSwapCtx({
     tuningCtx: settingsTuning?.ctx,
     tuningChosen: settingsTuning?.ctxChosen,
-    currentCtx: status?.ctx,
+    // What the running engine was asked for, not what the plan gave it: a
+    // context the plan raised because one model's card had room is no
+    // promise for the next model (3.0.8, A25).
+    currentCtx: status?.ctxRequested ?? status?.ctx,
     ctxTrain: hit.ctx_train,
   })
   const tuning = keepCtx ? { ...(settingsTuning ?? {}), ctx: keepCtx } : settingsTuning
@@ -366,6 +394,10 @@ export function __resetAgentCtxStateForTests(): void {
  */
 export async function ensureBuiltinAgentCtx(modelName: string): Promise<void> {
   if (!isManagedBuiltinSlot()) return
+  // A phone raises only as far as the injected cap allows, and not at all
+  // until the shell has set one (lib/model-slot.ts, setMobileContextCap).
+  const mobileCap = singleModelSlot() ? getMobileContextCap() : null
+  if (mobileCap !== null && mobileCap <= 0) return
   const settings = useSettingsStore.getState().settings
   const tuning = settings.builtinEngine as (typeof settings.builtinEngine) | undefined
   // GH #129: die Marke zuerst. Ohne sie war "Nutzer hat 8K gewaehlt" von "nie
@@ -404,10 +436,17 @@ export async function ensureBuiltinAgentCtx(modelName: string): Promise<void> {
   } else {
     return // the GGUF does not state a trained context, never raise on a guess
   }
+  // On a phone the cap wins over everything above, the user's override and
+  // the 8192 floor included: it is what the device can hold, not a preference.
+  if (mobileCap !== null) want = Math.min(want, mobileCap)
 
   if (refusedCtxByPath.get(hit.path) === want) return
   const current = status?.running && typeof status.ctx === 'number' && status.ctx > 0 ? status.ctx : 0
   if (current >= want) return
+  // Asked for already: the plan answered with less because the full raise
+  // would have cost layers on the card (3.0.8, A25). Asking again would
+  // restart the engine on every turn for the same answer.
+  if (status?.running && typeof status.ctxRequested === 'number' && status.ctxRequested >= want) return
 
   const raised = { ...(tuning ?? {}), ctx: want }
   try {
@@ -511,7 +550,7 @@ export async function diagnoseBuiltinEngine(
       ok: false,
       repaired: false,
       reason:
-        'The LU Engine is installed but has no chat model to load yet. Open Models, Get new and install one, then test again.',
+        platformText('engineNoChatModel'),
     }
   }
 
@@ -537,7 +576,7 @@ export async function diagnoseBuiltinEngine(
     return {
       ok: false,
       repaired: false,
-      reason: `The LU Engine has no model file named "${bare}". It may have been deleted, moved, or the download did not finish. Open Models, Get new and download it again.`,
+      reason: platformText('engineModelFileMissingShort', { name: bare }),
     }
   }
   try {

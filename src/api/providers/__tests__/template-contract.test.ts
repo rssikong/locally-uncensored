@@ -464,7 +464,7 @@ describe('a stored tool call survives the rebuild of the history', () => {
   it('the coding agent writes it for the transport too', () => {
     const codex = src('hooks/useCodex.ts')
     const transport = codex.indexOf("if (strategy === 'hermes_xml') {")
-    const byProvider = codex.indexOf("} else if (providerId === 'openai' || providerId === 'anthropic' || providerId === 'lu-cloud') {")
+    const byProvider = codex.indexOf("} else if (speaksOpenAIProtocol(providerId) || providerId === 'anthropic') {")
     expect(transport).toBeGreaterThan(-1)
     expect(byProvider).toBeGreaterThan(-1)
     expect(transport).toBeLessThan(byProvider)
@@ -476,7 +476,7 @@ describe('a stored tool call survives the rebuild of the history', () => {
     // driving the model by prompt. That is the payload the engine died on.
     const agent = src('hooks/useAgentChat.ts')
     const transport = agent.indexOf("if (strategy === 'hermes_xml') {")
-    const byProvider = agent.indexOf("} else if (providerId === 'openai' || providerId === 'anthropic' || providerId === 'lu-cloud') {")
+    const byProvider = agent.indexOf("} else if (speaksOpenAIProtocol(providerId) || providerId === 'anthropic') {")
     expect(transport).toBeGreaterThan(-1)
     expect(byProvider).toBeGreaterThan(-1)
     expect(transport).toBeLessThan(byProvider)

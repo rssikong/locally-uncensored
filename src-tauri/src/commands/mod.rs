@@ -1,22 +1,52 @@
+pub mod abliterate;
 pub mod agent;
 pub mod bg_tasks;
 pub mod chat_attachments;
 pub mod character_files;
+// Saves through a file dialog (rfd), which a phone does not have.
+#[cfg(desktop)]
 pub mod cloud_file;
 pub mod repo_map;
 pub mod comfy_folders;
 pub mod comfy_user_paths;
 pub mod comfy_ws;
+// Astra computer use reads the screen and moves mouse and keyboard. Its
+// crates (enigo, xcap, the global shortcut plugin) are desktop-only in
+// Cargo.toml, and a phone has nothing for it to act on.
+#[cfg(desktop)]
 pub mod computer;
 pub mod custom_models;
 pub mod download;
+// The same download commands on a phone, where the transfer belongs to the
+// operating system (plugins/lu-native).
+pub mod download_mobile;
 pub mod engine;
+pub mod engine_idle;
 pub mod engine_key;
+// The engine of a phone, where no sidecar can be started. Also built into a
+// macOS build with the feature `inproc-engine`, to test its Metal path.
+#[cfg(any(mobile, all(target_os = "macos", feature = "inproc-engine")))]
+pub mod engine_inproc;
+// Going on with a cut answer in the in-process engine. Built everywhere,
+// used only where that engine runs.
+pub mod engine_continue;
 pub mod engine_sanity;
+// The access token of the in-process engine. Built everywhere, used only
+// where that engine runs.
+pub mod engine_token;
 pub mod filesystem;
 pub mod gguf;
 pub mod gpu;
+pub mod gpu_roles;
+pub mod vram_plan;
+#[cfg(test)]
+mod vram_plan_live;
 pub mod health;
+// The installers stay compiled on a phone because other modules use their
+// helpers, but every per-platform arm in them is a desktop one, and what only
+// those arms use is unused there. None of their commands is registered on a
+// phone (lib.rs).
+#[cfg_attr(mobile, allow(unused_imports, unused_variables))]
 pub mod install;
 pub mod install_method;
 pub mod install_method_cmd;
@@ -28,18 +58,43 @@ pub mod media_cmds;
 pub mod mlx;
 pub mod mlx_cutout;
 pub mod mlx_loras;
+// Moves a render of the Mac engines to the system Trash. No such engine on a
+// phone, and the `trash` crate does not compile there.
+#[cfg(desktop)]
 pub mod mlx_outputs;
+pub mod os_trash;
 pub mod mlx_snapshot;
 pub mod music;
 pub mod plugin_rea;
+// What a phone must not run, and the check in front of every command.
+pub mod mobile_guard;
+// Secure storage, the save picker and the memory warning of a phone.
+pub mod mobile_native;
 pub mod model_sniff;
 pub mod model_verify;
 pub mod oauth;
 pub mod process;
 pub mod proxy;
+pub mod lan_address;
 pub mod remote;
+pub mod remote_chats;
+pub mod remote_create;
+pub mod video_thumb;
+pub mod win_firewall;
+pub mod remote_sealed;
 pub mod runtime_folder;
+pub mod storage;
+// The phone end of the sealed remote channel (REMOTE-PROTOKOLL v2). The
+// commands are registered on a phone only; the core is tested everywhere.
+// The desktop end is remote_sealed above.
+pub mod remote_sealed_phone;
+// The saved characters of Create beside the store backup. Registered on a
+// phone only (lib.rs); built for the tests everywhere.
+#[cfg(any(mobile, test))]
+#[cfg_attr(not(mobile), allow(dead_code))]
+pub mod saved_characters_backup;
 pub mod search;
+pub mod search_tiers;
 pub mod secret;
 pub mod shell;
 pub mod system;
@@ -51,6 +106,9 @@ pub mod voice_loop;
 pub mod web_body;
 pub mod web_reach;
 pub mod funnel;
+// Moves a ComfyUI render to the system trash. No ComfyUI and no trash on a
+// phone, and the `trash` crate does not compile there.
+#[cfg(desktop)]
 pub mod gallery_files;
 pub mod whisper;
 

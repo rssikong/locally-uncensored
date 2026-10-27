@@ -1,4 +1,5 @@
 import { checkComfyConnection, getImageUrl } from '../../../api/comfyui'
+import { platformText } from '../../../lib/platform-text'
 import { refreshResultUrl, resolveResultUrl } from '../../../api/cloud/jobs'
 import { backendCall, fetchLocalhostBytes, isTauri } from '../../../api/backend'
 import { useCreateStore, type GalleryItem } from '../../../stores/createStore'
@@ -12,6 +13,14 @@ export function galleryItemUrl(item: GalleryItem): string {
   const view = getImageUrl(item.filename, item.subfolder, item.comfyType ?? 'output')
   // A new URL per retry, or the element never asks again (setComfyRunning).
   return item.reloadKey ? `${view}${view.includes('?') ? '&' : '?'}lu_retry=${item.reloadKey}` : view
+}
+
+/** Does this gallery entry play in a <video>. A clip saved as an animated
+ *  picture (.webp, .gif, or single .png frames from cores without a video
+ *  saver) stays a picture: Wan 2.1 wrote .webp until 3.0.8 (A19), a <video>
+ *  shows those as a broken player, an <img> animates them. */
+export function playsAsVideo(item: Pick<GalleryItem, 'type' | 'filename'>): boolean {
+  return item.type === 'video' && !/\.(webp|gif|png)$/i.test(item.filename)
 }
 
 // Cloud signed URLs expire ~1 h after the last read, so a persisted item's
@@ -214,7 +223,7 @@ export async function fetchGalleryItemBlob(item: GalleryItem): Promise<Blob> {
         useCreateStore.getState().updateGalleryItem(item.id, { remoteUrl: fresh, unavailable: undefined })
         return tryFetch(fresh)
       }
-      throw new Error('The cloud copy of this render is no longer available. Pick another image, or upload one from disk.')
+      throw new Error(platformText('cloudCopyGone'))
     }
     if (!item.remoteUrl && !item.dataUrl) {
       throw new Error('This image lives in your local ComfyUI output, which is not running right now. Switch to Local (or start ComfyUI) to use it, or upload the file from disk.')

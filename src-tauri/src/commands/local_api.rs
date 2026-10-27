@@ -1092,7 +1092,7 @@ async fn handle_health(AxumState(state): AxumState<LocalApiState>) -> Response {
 /// beide Server. Das ist eine Aufgabe fuer sich, mit eigenen Sperren.
 fn lu_werkzeuge() -> serde_json::Value {
     // (Name, Erlaubnis, was es tut) — Erlaubnis `null` heisst: immer offen.
-    let liste: [(&str, Option<&str>, &str); 13] = [
+    let liste: [(&str, Option<&str>, &str); 14] = [
         ("file_read",     Some("filesystem"),      "Read a file, windowed by offset/limit."),
         ("file_write",    Some("filesystem"),      "Write a file inside the agent workspace."),
         ("file_list",     Some("filesystem"),      "List a directory."),
@@ -1100,7 +1100,8 @@ fn lu_werkzeuge() -> serde_json::Value {
         ("screenshot",    Some("filesystem"),      "Capture the screen."),
         ("shell_execute", Some("shell"),           "Run a shell command. RCE-class, off by default."),
         ("code_execute",  Some("shell"),           "Run code. RCE-class, off by default."),
-        ("image_generate", Some("process_control"), "Generate an image via the local pipeline."),
+        ("image_generate", Some("create"),       "Generate an image via the local pipeline."),
+        ("video_generate", Some("create"),       "Generate a video via the local pipeline."),
         ("web_search",    None,                    "Search the web."),
         ("web_fetch",     None,                    "Read a URL."),
         ("process_list",  Some("process_control"), "List running processes."),

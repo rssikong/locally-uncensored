@@ -1,3 +1,4 @@
+import { isCompatProviderId } from '../api/providers/compat-id'
 import { create } from 'zustand'
 import { yieldSilentLocalRuns } from '../lib/silent-runs'
 import { noteModelSwitch } from '../lib/model-switch-stop'
@@ -27,6 +28,7 @@ import { offloadWhenLocalLaneFree } from '../lib/cloud-offload-defer'
 // clear a pick that the send path would then route to a dead backend.
 import { modelBackendKey } from '../api/providers/model-name'
 import { onProviderSlotsDarkened, type BackendKey } from '../lib/provider-slot-darkening'
+import { setChatModelSource } from '../lib/phone-sub-agents'
 import {
   announceChatPickLostItsEngine,
   onBuiltinSlotLostToForeignBackend,
@@ -314,7 +316,10 @@ export const useModelStore = create<ModelState>()(
           const inCloud = useSettingsStore.getState().settings.appMode === 'cloud'
           const firstChat = inCloud
             ? undefined
-            : models.find((m) => m.provider !== 'lu-cloud' && canAutoSelectChat(m))
+            // Nor a model of an extra slot with the user's own key
+            // (`openai-<slug>`): it bills per message, and on a phone it
+            // would win over the model that runs on the device itself.
+            : models.find((m) => m.provider !== 'lu-cloud' && !isCompatProviderId(m.provider ?? '') && canAutoSelectChat(m))
           return {
             models,
             inventoryLoaded: true,
@@ -716,3 +721,8 @@ onBuiltinSlotLostToForeignBackend((taker) => {
 onBuiltinSlotRegained(() => {
   void useModelStore.getState().reviveBuiltinEngineForActivePick()
 })
+
+// The tool registry asks lib/phone-sub-agents.ts which model the chat runs on
+// (a phone offers no sub agents to a model of its own engine). The rule cannot
+// import this store, so the store hands itself over, like the two above.
+setChatModelSource(() => useModelStore.getState().activeModel)

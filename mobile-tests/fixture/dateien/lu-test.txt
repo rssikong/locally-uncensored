@@ -1,0 +1,5 @@
+LU test document
+
+This file belongs to the acceptance run of LU Mobile.
+The secret word is HARLEKIN.
+The opening hours are Monday to Friday from nine to five.

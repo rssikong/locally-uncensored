@@ -1,5 +1,5 @@
 /**
- * The stack keeps one strength per LoRA, from -10 to 10, and remembers it
+ * The stack keeps one strength per LoRA, from -20 to 20, and remembers it
  * while the LoRA is off (Discord 2026-10-02).
  *
  * Run: npx vitest run src/stores/__tests__/lora-strength-je-lora.test.ts
@@ -27,16 +27,20 @@ describe('the range the store lets through', () => {
     expect(strengthOf(A)).toBe(7.5)
     s().setLoraStrengthFor(A, -10)
     expect(strengthOf(A)).toBe(-10)
-    s().setLoraStrengthFor(A, 10)
-    expect(strengthOf(A)).toBe(10)
+    s().setLoraStrengthFor(A, 15)
+    expect(strengthOf(A)).toBe(15)
+    s().setLoraStrengthFor(A, -20)
+    expect(strengthOf(A)).toBe(-20)
+    s().setLoraStrengthFor(A, 20)
+    expect(strengthOf(A)).toBe(20)
   })
 
   it('pulls anything further out to the ends and ignores what is not a number', () => {
     s().toggleLora(A)
     s().setLoraStrengthFor(A, 42)
-    expect(strengthOf(A)).toBe(10)
+    expect(strengthOf(A)).toBe(20)
     s().setLoraStrengthFor(A, -42)
-    expect(strengthOf(A)).toBe(-10)
+    expect(strengthOf(A)).toBe(-20)
     s().setLoraStrengthFor(A, 1.5)
     s().setLoraStrengthFor(A, Number.NaN)
     s().setLoraStrengthFor(A, Number.POSITIVE_INFINITY)

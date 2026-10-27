@@ -638,7 +638,7 @@ export function ProviderSettings() {
                   className="group flex items-center"
                   title="Enable provider"
                 >
-                  <Power size={10} className="text-gray-500 group-hover:text-green-400 transition-colors" />
+                  <Power size={10} className="text-gray-500 group-hover:text-green-600 dark:group-hover:text-green-400 transition-colors" />
                 </button>
                 <div className="flex-1 flex items-center gap-2 min-w-0">
                   <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-gray-600" />
@@ -677,7 +677,7 @@ export function ProviderSettings() {
                 className="group flex items-center"
                 title={config.enabled ? 'Disable provider' : 'Enable provider'}
               >
-                <Power size={10} className="text-green-400 group-hover:text-red-400 transition-colors" />
+                <Power size={10} className="text-green-600 dark:text-green-400 group-hover:text-red-600 dark:group-hover:text-red-400 transition-colors" />
               </button>
               <button
                 onClick={() => setExpandedProvider(isExpanded ? null : id)}
@@ -861,7 +861,7 @@ export function ProviderSettings() {
         <div className="rounded-lg border border-white/8 bg-white/[0.01] overflow-hidden">
           <div className="flex items-center gap-2 px-2 py-1.5">
             <button onClick={handBackSlot} className="group flex items-center" title={standbyOff ? 'Switch this backend back on and give it the local slot' : 'Put this backend back in the local slot'}>
-              <Power size={10} className="text-gray-500 group-hover:text-green-400 transition-colors" />
+              <Power size={10} className="text-gray-500 group-hover:text-green-600 dark:group-hover:text-green-400 transition-colors" />
             </button>
             <div className="flex-1 flex items-center gap-2 min-w-0">
               <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-gray-600" />
@@ -1092,8 +1092,8 @@ export function ProviderSettings() {
  * es diesen dritten Ton nicht mehr gibt, steht in lib/hinweis.ts.
  */
 const SLOT_TEXTE: Partial<Record<SlotStatus, { text: string; ton: string; testid?: string; title?: string }>> = {
-  connected: { text: 'Connected', ton: 'text-green-400' },
-  failed: { text: 'Failed', ton: 'text-red-400' },
+  connected: { text: 'Connected', ton: 'text-green-600 dark:text-green-400' },
+  failed: { text: 'Failed', ton: 'text-red-600 dark:text-red-400' },
   stopped: {
     text: 'Not running',
     ton: HINWEIS_TEXT.ruhig,
@@ -1311,7 +1311,7 @@ function OpenAIEntryRow({ entry, expanded, onToggleExpanded }: {
       <div data-testid="openai-entry-row" data-entry={entryId} className="rounded-lg border border-white/8 bg-white/[0.01] overflow-hidden">
         <div className="flex items-center gap-2 px-2 py-1.5">
           <button onClick={toggle} className="group flex items-center" title="Enable provider">
-            <Power size={10} className="text-gray-500 group-hover:text-green-400 transition-colors" />
+            <Power size={10} className="text-gray-500 group-hover:text-green-600 dark:group-hover:text-green-400 transition-colors" />
           </button>
           <div className="flex-1 flex items-center gap-2 min-w-0">
             <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-gray-600" />
@@ -1346,7 +1346,7 @@ function OpenAIEntryRow({ entry, expanded, onToggleExpanded }: {
     <div data-testid="openai-entry-row" data-entry={entryId} className="rounded-lg border border-white/8 bg-white/[0.02] overflow-hidden">
       <div className="flex items-center gap-2 px-2 py-1.5">
         <button onClick={toggle} className="group flex items-center" title="Disable provider">
-          <Power size={10} className="text-green-400 group-hover:text-red-400 transition-colors" />
+          <Power size={10} className="text-green-600 dark:text-green-400 group-hover:text-red-600 dark:group-hover:text-red-400 transition-colors" />
         </button>
         <button onClick={onToggleExpanded} className="flex-1 flex items-center justify-between min-w-0">
           <div className="flex items-center gap-2 min-w-0">

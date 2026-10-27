@@ -743,7 +743,7 @@ mod tests {
     fn the_old_sanitiser_cannot_do_any_of_this() {
         // Die rote Gegenprobe zu den drei Faellen oben: `sanitize_os_wording`
         // kennt nur die Marke "(os error N)" und laesst alle drei unveraendert.
-        // Sie bleibt trotzdem, `main.rs` braucht sie; dieser Test haelt fest,
+        // Sie bleibt trotzdem, `lib.rs` braucht sie; dieser Test haelt fest,
         // dass die neue Funktion etwas kann, was die alte nicht kann, und
         // schuetzt gegen ein spaeteres Zusammenlegen.
         for line in [

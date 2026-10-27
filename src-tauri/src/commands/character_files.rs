@@ -19,8 +19,13 @@
 //!    photos of an older or a failed run are never handed out for another
 //!    file of the same name.
 
+// The download through cloud_file is desktop-only (it saves through a file
+// dialog crate a phone does not have); so are the two functions using it.
+#[cfg(desktop)]
 use crate::commands::cloud_file::{fetch_to_file, token_may_go_to, Outcome, PROGRESS_EVENT};
+#[cfg(desktop)]
 use crate::commands::proxy::validate_public_url;
+#[cfg(desktop)]
 use crate::os_error;
 use crate::state::AppState;
 use base64::Engine;
@@ -28,6 +33,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
+#[cfg(desktop)]
 use tauri::Emitter;
 
 /// The marker file in a training set folder.
@@ -319,6 +325,7 @@ pub async fn character_photos(
 /// Downloads to the staging file, reads the header, then puts the file in
 /// place. Answers the outcome and the key layout. A file whose header cannot
 /// be read is our own broken download and is removed again.
+#[cfg(desktop)]
 async fn import_into(
     url: &str,
     token: &str,
@@ -368,6 +375,7 @@ fn local_loras_dir(state: &AppState) -> Option<PathBuf> {
 /// `{status: "refused", code}`, `{status: "stopped"}` after
 /// `cancel_cloud_file`, or `{status: "no_comfy"}` when there is no LoRA
 /// folder to put it in (no ComfyUI found).
+#[cfg(desktop)]
 #[tauri::command]
 #[allow(non_snake_case, clippy::too_many_arguments)]
 pub async fn import_cloud_character(

@@ -1,0 +1,19 @@
+/* The ground colour of the phone shell from the first frame, light or dark.
+   public/first-paint.js marks <html> on a phone, and only there: nothing in
+   this file matches on a desktop.
+
+   A file of its own and not a <style> block in index.html, for the content
+   security policy. The policy allows inline styles ('unsafe-inline' in
+   style-src), and the page needs that: index.html styles its loading screen
+   with style attributes. Tauri gives every <style> element of the page a
+   nonce and writes that nonce into style-src, and a browser ignores
+   'unsafe-inline' as soon as a nonce is there. One <style> block here
+   therefore switched inline styles off for the whole app: every start wrote
+   "Refused to apply inline style ..." into the console (round 10, N16), and
+   the loading screen lost its layout. */
+html.lu-first-light body,
+html.lu-first-light #splash { background: #f3f4f6 !important; }
+html.lu-first-light #splash img { filter: invert(1); }
+html.lu-first-light #splash div { color: #6b7280 !important; }
+html.lu-first-dark body,
+html.lu-first-dark #splash { background: #141414 !important; }

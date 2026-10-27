@@ -71,17 +71,17 @@ describe('chatStore: setConversationSampling / resetConversationSampling', () =>
 
   it('clamps out-of-range and non-finite values on write', () => {
     useChatStore.getState().setConversationSampling('c1', { temperature: 99, topP: Number.NaN })
-    expect(chat('c1')?.sampling).toEqual({ temperature: 2 })
+    expect(chat('c1')?.sampling).toEqual({ temperature: 1.5 })
   })
 
   it('resetConversationSampling DELETES the field rather than writing defaults into it', () => {
-    useChatStore.getState().setConversationSampling('c1', { temperature: 1.9, topP: 0.3 })
+    useChatStore.getState().setConversationSampling('c1', { temperature: 1.1, topP: 0.3 })
     useChatStore.getState().resetConversationSampling('c1')
     expect(chat('c1')).not.toHaveProperty('sampling')
   })
 
   it('NEGATIVKONTROLLE: reset only touches the named conversation', () => {
-    useChatStore.getState().setConversationSampling('c1', { temperature: 1.9 })
+    useChatStore.getState().setConversationSampling('c1', { temperature: 1.1 })
     useChatStore.getState().setConversationSampling('c2', { temperature: 0.4 })
     useChatStore.getState().resetConversationSampling('c1')
     expect(chat('c1')?.sampling).toBeUndefined()

@@ -4,7 +4,7 @@
  * permission denied (os error 5)" or "ComfyUI path not set", and the node pack
  * install with "ComfyUI not found".
  *
- * The files land on this machine now, in the Model Storage folder and in
+ * The files land on this machine now, in the Storage folder and in
  * ComfyUI's layout (download.rs remote_comfy, tested there), and the Model
  * Manager says where they went and what is left to do on the other machine,
  * instead of trying to install a node pack into a ComfyUI that is not here.

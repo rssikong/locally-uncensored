@@ -1,4 +1,5 @@
 import type { PlanGap } from '../../lib/plan-reconcile'
+import { isMobile } from '../../lib/device-kind'
 
 /**
  * Ein Zug, den das Modell nicht selbst beendet hat, und der Satz dafuer.
@@ -26,7 +27,10 @@ import type { PlanGap } from '../../lib/plan-reconcile'
 export function codexCutoffNote(finishReason: string | undefined, gap: PlanGap | null): string | null {
   if (finishReason !== 'length') return null
   const head = 'The model ran out of tokens in the middle of this step, so it never sent the next tool call.'
-  const tail = 'Raise Max Tokens in Settings, or give the model a larger context, then send "continue".'
+  // The phone names the setting as its own screens do (acceptance on the small iPhone, N16).
+  const tail = isMobile()
+    ? 'Raise Max length in the options of this chat, or give the model a larger context, then send "continue".'
+    : 'Raise Max Tokens in Settings, or give the model a larger context, then send "continue".'
   return gap
     ? `${head} The plan stands at ${gap.done} of ${gap.total}, still open: "${gap.next}". ${tail}`
     : `${head} ${tail}`

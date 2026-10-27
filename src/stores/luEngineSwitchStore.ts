@@ -16,6 +16,7 @@
  */
 
 import { create } from 'zustand'
+import type { FitAction } from '../lib/engine-fit'
 
 /** How long an INFO line stays before it clears itself. Long enough to read
  *  twice, short enough that it is gone by the time the user sends his next
@@ -57,7 +58,13 @@ interface LuEngineSwitchState {
    * zurueck, denn ein neuer Satz ist ungelesen.
    */
   gesehen: boolean
-  announce: (note: string, tone?: LuEngineNoteTone, holdWhile?: () => boolean) => void
+  /**
+   * 3.0.8 (A25): the buttons under a fit sentence ("Context 16K", "KV
+   * q8_0"), and the model they restart. Empty for every other line.
+   */
+  actions: FitAction[]
+  actionModel: string | null
+  announce: (note: string, tone?: LuEngineNoteTone, holdWhile?: () => boolean, actions?: { list: FitAction[]; model: string | null }) => void
   /** Der Satz ist gerade als Satz zu sehen. Idempotent, darf aus einem Effekt
    *  kommen, der bei jedem Aufklappen erneut laeuft. */
   alsGesehenMarkieren: () => void
@@ -83,14 +90,16 @@ export const useLuEngineSwitchStore = create<LuEngineSwitchState>((set, get) => 
   tone: 'info',
   generation: 0,
   gesehen: false,
+  actions: [],
+  actionModel: null,
   alsGesehenMarkieren: () => {
     if (get().gesehen) return
     set({ gesehen: true })
   },
-  announce: (note, tone = 'info', holdWhile) => {
+  announce: (note, tone = 'info', holdWhile, actions) => {
     cancelPending()
     const generation = get().generation + 1
-    set({ note, tone, generation, gesehen: false })
+    set({ note, tone, generation, gesehen: false, actions: actions?.list ?? [], actionModel: actions?.model ?? null })
     // A14 fourth review: the self-clear was armed for both tones, so a failed
     // engine start faded out after twelve seconds exactly like the harmless
     // switch line. The two are not the same kind of sentence. The switch line
@@ -132,7 +141,7 @@ export const useLuEngineSwitchStore = create<LuEngineSwitchState>((set, get) => 
       pending = setTimeout(() => {
         pending = null
         if (get().generation !== generation) return
-        set({ note: null, tone: 'info', gesehen: false })
+        set({ note: null, tone: 'info', gesehen: false, actions: [], actionModel: null })
       }, LU_ENGINE_SWITCH_NOTE_MS)
     }
     if (holdWhile?.()) wartenAufWahrheit()
@@ -140,6 +149,6 @@ export const useLuEngineSwitchStore = create<LuEngineSwitchState>((set, get) => 
   },
   dismiss: () => {
     cancelPending()
-    set({ note: null, tone: 'info', generation: get().generation + 1, gesehen: false })
+    set({ note: null, tone: 'info', generation: get().generation + 1, gesehen: false, actions: [], actionModel: null })
   },
 }))

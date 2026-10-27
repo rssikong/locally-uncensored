@@ -1,7 +1,7 @@
 import { test, expect, type Locator } from '@playwright/test'
 import { Rec, HOWTO_OUT } from './rec'
 
-// Where models go: Settings, AI Backends, Model Storage and the ComfyUI path.
+// Where models go: Settings, AI Backends, Storage and the ComfyUI path.
 // Captions are the panel's own statements (components/settings/SettingsPage.tsx):
 //  - HfDownloadPathSetting: "LU downloads GGUFs here ... Leave it empty and LU
 //    uses its own folder", the placeholder "LU's own folder: <path>"
@@ -27,7 +27,7 @@ import { Rec, HOWTO_OUT } from './rec'
 //    Names, paths and sizes are examples.
 //  - import_local_model answers success; no file is linked.
 //  - runtime_folder_status (the "Voice and Python folder" row that 3.0.7 adds
-//    to Model Storage) answers what runtime_folder.rs reports on a machine
+//    to Storage) answers what runtime_folder.rs reports on a machine
 //    where none of the three is installed yet: no folder chosen, the default
 //    data folder, and the voice engine, LU's own Python and the read-aloud
 //    voices each "Not installed". Without it the rig never answers and the
@@ -77,13 +77,13 @@ test('storage', async ({ page }) => {
     },
   })
 
-  // Into Settings, AI Backends, with Providers folded and Model Storage open.
+  // Into Settings, AI Backends, with Providers folded and Storage open.
   // Done before the film starts, through the real controls.
   await page.getByRole('button', { name: 'Settings' }).first().click()
   await page.getByRole('button', { name: 'AI Backends', exact: true }).first().click()
   const providers = page.getByRole('button', { name: /^Providers/ }).first()
   if ((await providers.getAttribute('aria-expanded')) === 'true') await providers.click()
-  const storage = page.getByRole('button', { name: /Model Storage/ }).first()
+  const storage = page.getByRole('button', { name: /Storage/ }).first()
   if ((await storage.getAttribute('aria-expanded')) === 'false') await storage.click()
   const folder = page.getByLabel('LU Engine folder')
   await expect(folder).toHaveAttribute('placeholder', /LU's own folder: C:/)

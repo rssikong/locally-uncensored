@@ -165,7 +165,7 @@ describe('the surface of the Mac\'s Edit is the one Windows has, less what the e
     expect(screen.getByTestId('reference-strip').querySelectorAll('img')).toHaveLength(9)
     expect(screen.queryByText(/Reference/)).toBeNull()
     // The Mac keeps its canvas, so it does not say the edit comes out smaller.
-    expect(screen.getByText('Name them in the prompt as image 2 to image 10. With this many images, say what each one brings, for example "the scarf from image 3".')).toBeTruthy()
+    expect(screen.getByText('Name them in the prompt as image 2 to image 10. The image above is image 1. With this many images, say what each one brings, for example "the scarf from image 3".')).toBeTruthy()
   })
 
   it('takes a painted mask and asks for no ComfyUI node: the button is there, no install card', () => {
@@ -195,9 +195,12 @@ describe('the surface of the Mac\'s Edit is the one Windows has, less what the e
     expect(screen.getByText('CFG scale')).toBeTruthy()
     expect(screen.getByText('Batch size')).toBeTruthy()
     // What the engine has no flag for is not offered.
-    for (const label of ['Sampler', 'Scheduler', 'VAE', 'Skip CLIP layers', 'Denoise (raw)', 'Mask edge feather', 'Native HiRes']) {
+    for (const label of ['Sampler', 'Scheduler', 'VAE', 'Skip CLIP layers', 'Denoise (raw)', 'Mask edge feather']) {
       expect(screen.queryByText(label), label).toBeNull()
     }
+    // Since 3.0.8 Edit has Native HiRes on the Mac too: a second edit of the
+    // edited picture at the larger size (Discord feature request 21.10.2026).
+    expect(screen.getByText('Native HiRes')).toBeTruthy()
     q.unmount()
 
     onEdit(TURBO)
@@ -214,8 +217,11 @@ describe('the surface of the Mac\'s Edit is the one Windows has, less what the e
     useCreateStore.getState().setIntent('edit')
     useCreateStore.setState({ expertOpen: true } as never)
     render(<ParamGroups />)
-    for (const label of ['Steps', 'CFG scale', 'Batch size', 'Sampler', 'Scheduler', 'Denoise (raw)', 'Mask edge feather', 'VAE', 'Skip CLIP layers']) {
+    for (const label of ['Steps', 'CFG scale', 'Batch size', 'Sampler', 'Scheduler', 'Mask edge feather', 'VAE', 'Skip CLIP layers']) {
       expect(screen.getByText(label), label).toBeTruthy()
     }
+    // The Qwen-Image 2.1 edit samples at denoise 1.0 through ComfyUI too, so
+    // the raw denoise is not offered there either (Discord #general 23.10.2026).
+    expect(screen.queryByText('Denoise (raw)')).toBeNull()
   })
 })

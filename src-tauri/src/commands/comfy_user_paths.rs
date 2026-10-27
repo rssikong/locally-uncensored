@@ -523,7 +523,35 @@ impl UserComfyPaths {
     /// Everything for the ComfyUI in `comfy_dir` (the folder with `main.py`).
     /// Never fails: a file that cannot be used is noted and skipped.
     pub fn discover(comfy_dir: &Path) -> Self {
-        Self::discover_with(comfy_dir, &Env::real())
+        let mut me = Self::discover_with(comfy_dir, &Env::real());
+        me.take_lu_storage(&crate::commands::storage::lu_choice(), &crate::os_paths::app_config_json());
+        me
+    }
+
+    /// Settings → Storage (commands/storage.rs): the folders chosen in LU come
+    /// last and win, because they are the newest explicit choice. ComfyUI
+    /// downloads go below the model folder, in the layout that is there, and
+    /// the gallery is ComfyUI's output folder. What the user configured for
+    /// ComfyUI itself stays in the lists, so a file there is still found and
+    /// still deleted from where it is.
+    pub(crate) fn take_lu_storage(&mut self, choice: &crate::commands::storage::LuChoice, source: &Path) {
+        if let Some(root) = &choice.downloads_root {
+            for key in crate::commands::custom_models::COMFY_MODEL_FOLDERS {
+                let dir = crate::commands::storage::comfy_dir_below(root, key);
+                // The two old key names only for a folder that is there:
+                // they map onto the new names and would shadow them.
+                if (*key == "clip" || *key == "unet") && !dir.is_dir() {
+                    continue;
+                }
+                self.entries.push(ConfigEntry { key: map_legacy(key), path: dir, is_default: true, source: source.to_path_buf() });
+            }
+            if !self.sources.iter().any(|s| s == source) {
+                self.sources.push(source.to_path_buf());
+            }
+        }
+        if let Some(gallery) = &choice.gallery {
+            self.output_dir = Some(gallery.clone());
+        }
     }
 
     pub(crate) fn discover_with(comfy_dir: &Path, env: &Env) -> Self {
@@ -1003,6 +1031,57 @@ comfyui:
         assert!(args.contains(&"--output-directory".to_string()), "{args:?}");
         assert!(!args.iter().any(|a| a == "--base-directory"));
         assert!(u.problems.is_empty(), "{:?}", u.problems);
+    }
+
+    /// Settings → Storage: the folder chosen in LU takes the ComfyUI downloads
+    /// and the gallery, ahead of what the user set up for ComfyUI itself,
+    /// which stays in the lists so files there are still found.
+    #[test]
+    fn the_lu_storage_folder_takes_the_downloads_and_the_gallery() {
+        let root = scratch("lu-storage");
+        let comfy = root.join("ComfyUI");
+        let shared = root.join("shared");
+        std::fs::create_dir_all(shared.join("loras")).unwrap();
+        std::fs::create_dir_all(&comfy).unwrap();
+        std::fs::write(
+            comfy.join("extra_model_paths.yaml"),
+            format!("mine:\n  base_path: '{}'\n  loras: loras\n", shared.display()),
+        )
+        .unwrap();
+        let models = root.join("D").join("LU").join("Models");
+        let gallery = root.join("D").join("LU").join("Gallery");
+        std::fs::create_dir_all(models.join("loras")).unwrap();
+        std::fs::create_dir_all(&gallery).unwrap();
+        let config = root.join("config.json");
+
+        let mut u = UserComfyPaths::discover_with(&comfy, &test_env());
+        assert_eq!(u.write_dir("loras"), Some(shared.join("loras")), "before: the user's own folder");
+        let choice = crate::commands::storage::LuChoice { downloads_root: Some(models.clone()), gallery: Some(gallery.clone()) };
+        u.take_lu_storage(&choice, &config);
+        assert_eq!(u.write_dir("loras"), Some(models.join("loras")));
+        // A folder not made yet, below a model folder that is there.
+        assert_eq!(u.write_dir("vae"), Some(models.join("vae")));
+        assert_eq!(u.write_dir("text_encoders"), Some(models.join("text_encoders")));
+        // The user's folder is still searched.
+        assert!(u.dirs_for("loras").contains(&shared.join("loras")));
+        assert!(u.all_dirs().contains(&shared.join("loras")));
+        assert_eq!(u.output_dir_or(&comfy), gallery);
+        let args = u.launch_args();
+        let at = args.iter().position(|a| a == "--output-directory").expect("the gallery is handed to ComfyUI");
+        assert_eq!(args[at + 1], gallery.to_string_lossy());
+        assert_eq!(args.iter().filter(|a| *a == "--output-directory").count(), 1);
+    }
+
+    #[test]
+    fn without_a_choice_nothing_changes() {
+        let root = scratch("lu-storage-none");
+        let comfy = root.join("ComfyUI");
+        std::fs::create_dir_all(&comfy).unwrap();
+        let mut u = UserComfyPaths::discover_with(&comfy, &test_env());
+        u.take_lu_storage(&crate::commands::storage::LuChoice::default(), &root.join("config.json"));
+        assert!(u.entries().is_empty());
+        assert_eq!(u.output_dir_or(&comfy), comfy.join("output"));
+        assert!(u.launch_args().is_empty());
     }
 
     /// Missing, broken, or pointing at an unplugged drive: the instance stays

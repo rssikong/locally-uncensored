@@ -51,8 +51,11 @@ const GROUPS: Group[] = [
   },
   {
     words: /disassembl|decompil|\bfunction|procedure|\bbinary\b|native|ghidra|hopper|\bida\b|assembly|xref/,
-    tools: ['open_binary', 'binary_session', 'list_procedures', 'procedure_pseudo_code', 'search_strings',
-      'xrefs', 'analyze_function', 'get_call_graph', 'close_binary'],
+    // search_procedures and procedure_address find one function by name in
+    // a binary of thousands; without them the model had list_procedures
+    // only, which LU cuts, and could not reach main (A37, xxcoder 26.10.2026).
+    tools: ['open_binary', 'binary_session', 'search_procedures', 'procedure_address', 'procedure_info',
+      'list_procedures', 'procedure_pseudo_code', 'search_strings', 'xrefs', 'analyze_function', 'get_call_graph', 'close_binary'],
   },
   { words: /pcap|packet|network capture|wireshark/, tools: ['inspect_packet_capture', 'inspect_pcap_capture', 'inspect_packet_fields'] },
   { words: /firmware/, tools: ['inspect_firmware_regions', 'extract_firmware'] },
@@ -68,6 +71,20 @@ const GROUPS: Group[] = [
 
 /** Words that make a turn about reverse engineering, beyond the groups. */
 const ABOUT_IT = /\brea\b|reverse[- ]engineer|reverse engineering|untersuch|analys|analyz|inspect|what (does|is) (this|the) (app|file|program)|wie funktioniert/
+
+/** How many earlier user messages still count for REA's routing. */
+export const REA_ROUTING_HISTORY = 8
+
+/**
+ * The text REA's tools are routed on: this message and the user's last few
+ * before it (A37, xxcoder 26.10.2026). Routed on the newest message alone, a
+ * follow-up after a stopped run ("go on", "start making the project") got no
+ * REA tool at all, and the model said "I don't have that tool directly
+ * available" in a conversation that had been using them a minute earlier.
+ */
+export function reaRoutingText(message: string, earlierUserTexts: readonly string[]): string {
+  return [...earlierUserTexts.slice(-REA_ROUTING_HISTORY), message].join('\n')
+}
 
 /** The names of REA's tools this turn is offered, from the user's message. */
 export function reaToolsFor(message: string, available: readonly string[]): string[] {

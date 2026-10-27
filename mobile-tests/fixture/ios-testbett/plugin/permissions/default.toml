@@ -1,0 +1,9 @@
+[default]
+description = "Standardrechte des Harness-Plugins"
+permissions = [
+  "allow-simulate-memory-warning",
+  "allow-lifecycle-log",
+  "allow-back-gesture",
+  "allow-registerListener",
+  "allow-remove-listener",
+]

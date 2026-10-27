@@ -86,3 +86,30 @@ describe('settingsStore migration (Mac cloud-lock → local)', () => {
     expect(store.getState().personas.some(p => p.isBuiltIn)).toBe(true)
   })
 })
+
+// Mobile groundwork, point 1: the migration carried its own copy of the Mac
+// check, with iPhone and iPad in it. A phone profile below v19 that sat in
+// Cloud mode was thrown back to local on the first start of the new app.
+describe('settingsStore migration on a phone', () => {
+  beforeEach(() => backing.clear())
+  afterEach(() => vi.unstubAllGlobals())
+
+  const IPHONE_NAV = {
+    platform: 'iPhone',
+    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
+    maxTouchPoints: 5,
+  }
+  const IPAD_NAV = { ...MAC_NAV, maxTouchPoints: 5 }
+
+  it('leaves an iPhone profile on its cloud choice', async () => {
+    seed({ appMode: 'cloud' }, CURRENT - 1)
+    const store = await freshStore(IPHONE_NAV)
+    expect(store.getState().settings.appMode).toBe('cloud')
+  })
+
+  it('leaves an iPad profile on its cloud choice, although it reports itself as a Mac', async () => {
+    seed({ appMode: 'cloud' }, CURRENT - 1)
+    const store = await freshStore(IPAD_NAV)
+    expect(store.getState().settings.appMode).toBe('cloud')
+  })
+})

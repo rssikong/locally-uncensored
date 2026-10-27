@@ -30,8 +30,8 @@ import { lipsyncFitLine } from './lipsyncFit'
 import { useGraphicsCardGb } from '../../../hooks/useGraphicsMemory'
 import { ReferenceStrip } from './ReferenceStrip'
 import { FitStage, FIT_SIDE_FROM } from './FitStage'
-import { BatchStrip, useBatchPickers } from './BatchStrip'
-import { addBatchFiles, useBatchOffered } from './batchRun'
+import { BatchStrip, UseOriginalButton, useBatchPickers } from './BatchStrip'
+import { addBatchFiles, useBatchOffered, useBatchOriginalOffer } from './batchRun'
 import { filesFromDrop } from './batchFiles'
 import { DEFAULT_CUTOUT_MODEL_SIZE } from '../../../api/cutout-model'
 import { useReferenceSlots } from './referenceSlots'
@@ -58,13 +58,15 @@ interface Props {
    *  as onEditResult above. */
   onAnimateResult?: (item: GalleryItem) => void
   onFullscreen: (item: GalleryItem) => void
+  /** The large view with the prompt unfolded (the Prompt word in the facts). */
+  onShowPrompt?: (item: GalleryItem) => void
   /** Pick frames of a finished video and save them as a character. */
   onSaveCharacter?: (item: GalleryItem) => void
   /** ComfyUI is coming up: no setup card in that window (./stageGate). */
   comfyStarting?: boolean
 }
 
-export function Stage({ displayed, onOpenMaskEditor, onEditResult, onAnimateResult, onFullscreen, onSaveCharacter, comfyStarting }: Props) {
+export function Stage({ displayed, onOpenMaskEditor, onEditResult, onAnimateResult, onFullscreen, onShowPrompt, onSaveCharacter, comfyStarting }: Props) {
   const intent = useCreateStore((s) => s.intent())
   const meta = INTENT_MAP[intent]
   // The width of the stage, for the how-to line at its foot (footLine below).
@@ -188,6 +190,7 @@ export function Stage({ displayed, onOpenMaskEditor, onEditResult, onAnimateResu
       <ResultView
         item={displayed}
         onFullscreen={() => onFullscreen(displayed)}
+        onShowPrompt={onShowPrompt ? () => onShowPrompt(displayed) : undefined}
         onSendToEditor={displayed.type === 'image' && onEditResult ? () => onEditResult(displayed) : undefined}
         onAnimate={displayed.type === 'image' && onAnimateResult ? () => onAnimateResult(displayed) : undefined}
         onSaveCharacter={displayed.type === 'video' && onSaveCharacter ? () => onSaveCharacter(displayed) : undefined}
@@ -316,6 +319,9 @@ function InputSlot() {
   // offers the recent gallery images as an EXPLICIT pick, next to drag&drop
   // and the file picker ("aus Galerie ODER vom Desktop").
   const galleryImages = gallery.filter((g) => g.type === 'image' && !g.unavailable).slice(0, 8)
+  // The image a list was made from is not in the gallery, and a batch can push
+  // every older result out of the strip. It stays pinned at the front.
+  const original = useBatchOriginalOffer()
 
   const adoptFromGallery = async (item: GalleryItem) => {
     setLoading(true)
@@ -427,10 +433,22 @@ function InputSlot() {
             />
           </div>
         )}
-        {galleryImages.length > 0 && (
+        {(galleryImages.length > 0 || original) && (
           <div className="mt-4 w-full">
-            <div className="t-label text-gray-600 mb-2 text-center">or pick from your gallery</div>
+            <div className="t-label text-gray-600 mb-2 text-center">{galleryImages.length > 0 ? 'or pick from your gallery' : 'or pick the original again'}</div>
             <div className="flex justify-center gap-1.5 overflow-x-auto pb-1">
+              {original && (
+                <button
+                  onClick={() => { if (!loading) setSource(original) }}
+                  className="relative shrink-0 w-12 h-12 rounded-md overflow-hidden border border-lu-accent/60 hover:border-lu-accent transition-colors"
+                  title={`Use ${original.name || 'the original image'} again`}
+                  aria-label="Use the original image as the source"
+                  data-testid="pick-original"
+                >
+                  <img src={original.url} alt="" className="w-full h-full object-cover" />
+                  <span className="absolute bottom-0 inset-x-0 t-micro text-gray-100 bg-black/60 text-center">Original</span>
+                </button>
+              )}
               {galleryImages.map((g) => (
                 <button
                   key={g.id}
@@ -494,11 +512,11 @@ function SourcePreview({ onOpenMaskEditor }: { onOpenMaskEditor: () => void }) {
             style={maxHeight ? { maxHeight } : undefined}
           />
           {mask && !noMask && (
-            <div className="absolute top-2 left-2 t-label text-gray-300 bg-black/50 px-2 py-1 rounded-md">mask painted</div>
+            <div className="lu-on-dark absolute top-2 left-2 t-label text-gray-300 bg-black/50 px-2 py-1 rounded-md">mask painted</div>
           )}
           <button
             onClick={() => { setSource(null); setMask(null) }}
-            className="absolute top-2 right-2 w-7 h-7 flex items-center justify-center rounded-lg bg-black/50 text-gray-300 hover:text-white"
+            className="lu-on-dark absolute top-2 right-2 w-7 h-7 flex items-center justify-center rounded-lg bg-black/50 text-gray-300 hover:text-white"
             title="Remove image"
           >
             <X size={14} />
@@ -514,6 +532,7 @@ function SourcePreview({ onOpenMaskEditor }: { onOpenMaskEditor: () => void }) {
               <Button variant="secondary" icon={Wand2} onClick={onOpenMaskEditor}>{mask ? 'Edit mask' : 'Paint mask'}</Button>
             )}
             <ChangeImageButton onChange={(r) => setSource(r)} />
+            <UseOriginalButton />
           </div>
         )}
         <BatchStrip />
@@ -579,6 +598,7 @@ function ResultInputs() {
               : 'Create runs on this image again.'}
           </p>
           {!batchOn && <ChangeImageButton onChange={(r) => setSource(r)} />}
+          {!batchOn && <UseOriginalButton />}
         </div>
       </div>
       <ReferenceStrip />
@@ -1014,7 +1034,7 @@ export function TrainSetBoard() {
                     <img src={img.url} alt="" className="w-full h-full object-cover" />
                     <button
                       onClick={() => removeTrainImage(img.name)}
-                      className="absolute top-1 right-1 p-1 rounded-md bg-black/60 text-gray-300 opacity-0 group-hover:opacity-100 hover:text-white transition-opacity"
+                      className="lu-on-dark absolute top-1 right-1 p-1 rounded-md bg-black/60 text-gray-300 opacity-0 group-hover:opacity-100 hover:text-white transition-opacity"
                       title="Remove"
                       aria-label="Remove"
                     >

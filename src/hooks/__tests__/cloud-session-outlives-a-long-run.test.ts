@@ -15,6 +15,7 @@
  *
  * Run: npx vitest run src/hooks/__tests__/cloud-session-outlives-a-long-run.test.ts
  */
+import { PLATFORM_TEXTS } from '../../lib/platform-text'
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -49,7 +50,10 @@ describe('the dead end says the true thing', () => {
     const generic = agent.indexOf("'\\n\\nAgent error: ' + errorMsg")
     expect(branch).toBeGreaterThan(-1)
     expect(branch).toBeLessThan(generic)
-    expect(agent).toContain('Your LU Cloud session ended and could not be renewed')
+    // The sentence itself lives in lib/platform-text.ts since the phone work
+    // (it has a phone wording there); the branch asks for it by key.
+    expect(agent).toContain("platformText('cloudSessionEndedMidRun') + planLine")
+    expect(PLATFORM_TEXTS.cloudSessionEndedMidRun.desktop).toContain('Your LU Cloud session ended and could not be renewed')
     // Same treatment as an empty wallet: a /loop must not run on into it.
     expect(agent).toContain("loopHalt = 'signed out of LU Cloud'")
   })

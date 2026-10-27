@@ -13,6 +13,7 @@
 // lib/dev-fs-jail.ts. Its wording is pinned there; this only recognises it.
 
 import { isRecovered } from './recovered-failure'
+import { platformText } from './platform-text'
 
 /** Both jail refusals: a path that leaves the working folder, and a working
  *  folder the jail does not accept at all. */
@@ -36,5 +37,4 @@ export function hasUnrecoveredOutsideRefusal(
 }
 
 /** The line above the chat, in the words of the buttons the user sees. */
-export const OUTSIDE_WORKSPACE_NOTICE =
-  'The agent can only work with files in this chat\'s folder. To let it use another place, click the Sandbox or folder button next to Agent, choose "Pick a folder…" and select that folder, then ask again.'
+export const OUTSIDE_WORKSPACE_NOTICE = platformText('outsideWorkspaceNotice')

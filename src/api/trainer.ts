@@ -119,6 +119,33 @@ export function missingBasesLine(missing: readonly { label: string; bytes: numbe
 }
 
 /**
+ * What the panel says when "Download base files" started nothing (Discord
+ * 25.10.2026, Comfy Desktop). `download_model` answers "exists" for a file it
+ * finds in a ComfyUI model folder and an error object for one it refuses, and
+ * the panel used to drop both: it read "Starting the downloads..." forever and
+ * the Downloads tray stayed empty.
+ */
+export function baseStartFailedNote(
+  alreadyThere: readonly { label: string }[],
+  problems: readonly string[],
+): string {
+  const lines: string[] = []
+  if (alreadyThere.length) {
+    const one = alreadyThere.length === 1
+    lines.push(`${alreadyThere.map((f) => f.label).join(', ')} ${one ? 'is' : 'are'} already in a ComfyUI model folder, but the trainer does not find ${one ? 'it' : 'them'} there. Open Settings, AI Backends, ComfyUI and check that the path is the folder with ComfyUI's main.py and models folder, press Connect, then come back to this tab.`)
+  }
+  for (const p of problems) lines.push(`Did not start: ${p}`)
+  return lines.join('\n')
+}
+
+/** The base downloads stopped (finished, paused or gone) and the trainer
+ *  still misses files: say which, instead of a button that keeps spinning. */
+export function basesStillMissingNote(missing: readonly { label: string }[]): string {
+  const names = missing.length ? missing.map((f) => f.label).join(', ') : 'the base files'
+  return `The trainer still misses ${names}. Resume a paused download in the Downloads tray, or check Settings, AI Backends, ComfyUI (the folder with ComfyUI's main.py), then press Download base files again.`
+}
+
+/**
  * Is one of the base files still coming in? The download outlives the
  * Character Studio panel: leave the tab while 19 GB flow and come back, and
  * the button read "Download base files" again with no note while the tray kept

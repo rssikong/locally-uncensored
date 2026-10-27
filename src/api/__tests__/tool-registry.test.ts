@@ -25,7 +25,7 @@ const offeredDefNames = AGENT_TOOL_DEFS
 // ── AGENT_TOOL_DEFS ─────────────────────────────────────────────
 
 describe('AGENT_TOOL_DEFS', () => {
-  it('contains exactly 17 tool definitions', () => {
+  it('contains exactly 19 tool definitions', () => {
     // 2.6.6 tool merge (plan section E): the twelve typed shell wrappers,
     // system_info, process_list and get_current_time folded into
     // shell_execute plus the environment block in the system prompt, so the
@@ -37,7 +37,11 @@ describe('AGENT_TOOL_DEFS', () => {
     // Katalogtext in JEDEM Prompt und eine Wahl mehr, die ein kleines Modell
     // treffen muss. Wer hier hochzaehlt, soll begruenden, warum sein Fall
     // nicht in ein vorhandenes Werkzeug passt.
-    expect(AGENT_TOOL_DEFS).toHaveLength(17)
+    //
+    // 3.0.8 (A11): +2, get_settings und set_setting. Sie stehen in keinem
+    // Prompt, der nicht nach Einstellungen fragt: im Chat und in Agent nur
+    // ueber SETTINGS_KEYWORDS, in Code hinter dem Tor (GATE_KEYWORDS).
+    expect(AGENT_TOOL_DEFS).toHaveLength(19)
   })
 
   const expectedTools = [
@@ -88,8 +92,11 @@ describe('AGENT_TOOL_DEFS', () => {
     // Werkzeug, das wirklich etwas STARTET, ist delegate_task, und das bleibt
     // unter 'confirm'. Eine Rueckfrage fuer "zaehl deine eigenen Aufgaben auf"
     // waere Zeremonie, und Zeremonie stumpft die echten Rueckfragen ab.
+    // 3.0.8 (A11): get_settings liest nur, set_setting fragt mit seiner
+    // eigenen Karte (alt -> neu), auch im Bypass. Eine zweite Rueckfrage
+    // davor fragte doppelt, wie bei create_order.
     expect(autoNames).toEqual([
-      'check_tasks', 'message_agent', 'todo_write', 'web_fetch', 'web_search',
+      'check_tasks', 'get_settings', 'message_agent', 'set_setting', 'todo_write', 'web_fetch', 'web_search',
     ])
   })
 

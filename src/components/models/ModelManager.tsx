@@ -11,6 +11,9 @@ import { useModelStore } from '../../stores/modelStore'
 import { useUIStore } from '../../stores/uiStore'
 import { useProviderStore } from '../../stores/providerStore'
 import { ModelCard } from './ModelCard'
+import { RemoveRefusalsDialog } from './RemoveRefusalsDialog'
+import { useAbliterateStore } from '../../stores/abliterateStore'
+import { prefixModelName } from '../../api/providers/model-name'
 import { PullModelDialog } from './PullModelDialog'
 import { DiscoverModels } from './DiscoverModels'
 import { CivitaiSearchPanel } from './CivitaiSearchPanel'
@@ -75,6 +78,17 @@ export function ModelManager() {
     categoryFilter, setCategoryFilter, inventoryLoaded, inventoryRefreshing,
   } = useModels()
   const { setView, openSettingsAt } = useUIStore()
+  // A14: the refusal-removal run, if one is going. The store keeps polling
+  // while it runs, whichever page is open, so leaving this page and coming
+  // back finds it there without a call of its own.
+  const ablStatus = useAbliterateStore((s) => s.status)
+  const openRemoveRefusals = useAbliterateStore((s) => s.openDialog)
+  const ablDialogOpen = useAbliterateStore((s) => s.dialogPath !== null)
+  const useFinishedCopy = async (outputPath: string) => {
+    await fetchModels()
+    const stem = (outputPath.split(/[\\/]/).pop() ?? '').replace(/\.gguf$/i, '')
+    if (stem) await setActiveModel(prefixModelName('openai', stem))
+  }
   const ollamaEnabled = useProviderStore(s => s.providers.ollama.enabled)
   // A14: whether the LU Engine itself is serving the chat. Decides whether its
   // group needs a heading even when it is the only group (review 7).
@@ -213,7 +227,7 @@ export function ModelManager() {
       if (model && (model.type === 'image' || model.type === 'video')) {
         // ComfyUI file model (Discord): delete the file from
         // the models tree, then rescan so the enum and the list drop it.
-        // The folder the user named under Model Storage goes along: ComfyUI
+        // The folder the user named under Storage goes along: ComfyUI
         // lists files from it now (GH #122) and LU does not delete out of it,
         // so the backend needs it to say that instead of "was not found".
         await backendCall('delete_comfy_model', { filename: name, extraDirs: customModelDirs() })
@@ -378,6 +392,14 @@ export function ModelManager() {
 
           {!showMlxPanel && !showMacLoras && tab === 'installed' && (
             <>
+              {ablStatus?.status === 'running' && !ablDialogOpen && (
+                <skin.QuietLine>
+                  <span data-testid="remove-refusals-strip">
+                    Removing refusals from {ablStatus.modelName}: {ablStatus.phaseLabel || 'starting'}.{' '}
+                    <button type="button" className="underline" onClick={() => openRemoveRefusals(ablStatus.sourcePath)}>Open</button>
+                  </span>
+                </skin.QuietLine>
+              )}
               {counterView(installedCount, inventoryState).kind === 'loading' ? (
                 // The empty state is the same claim the counter makes, in
                 // words: you own none of these. It waits for the count for
@@ -520,6 +542,13 @@ export function ModelManager() {
                               engineStopped={engineRuht}
                               onDelete={() => setConfirmDelete(model.name)}
                               onInfo={() => handleInfo(model.name)}
+                              // A14: where the file names its original weights
+                              // and is not itself a copy the tool made.
+                              onRemoveRefusals={
+                                luEngineFile(model) && 'sourceRepo' in model && model.sourceRepo && !model.refusalsRemoved
+                                  ? () => openRemoveRefusals(model.path)
+                                  : undefined
+                              }
                               infoTitle={externalTextModel(model) ? `Details. ${externalDeleteHint('providerName' in model ? model.providerName : undefined)}` : undefined}
                               canDelete={
                                 // Ollama text models via the Ollama API; image/video
@@ -578,6 +607,8 @@ export function ModelManager() {
       </skin.ManagerFrame>
 
       <PullModelDialog open={pullOpen} onClose={() => setPullOpen(false)} />
+
+      <RemoveRefusalsDialog onUse={useFinishedCopy} onModelsChanged={async () => { await fetchModels() }} />
 
       <Modal open={!!confirmDelete} onClose={() => setConfirmDelete(null)} title="Delete Model">
         <p className="text-[0.7rem] text-gray-600 dark:text-gray-300 mb-3">

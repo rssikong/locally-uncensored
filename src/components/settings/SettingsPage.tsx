@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, type ReactNode, type ChangeEvent } from 'react'
+import { compactThresholdFromPercent } from '../../lib/settings-catalog'
 import { withDetail } from '../../lib/error-text'
 // `X` steht hier weiterhin, obwohl der Sprachabschnitt mit seinen Symbolen
 // nach ./SpeechSettings.tsx gezogen ist: der Dismiss-Knopf der ComfyUI-Notiz
@@ -34,7 +35,7 @@ import { ModalActions, ModalButton } from '../ui/ModalActions'
 // AS-09: PIPER_VOICES und CLOUD_TTS_VOICES sind mit dem Abschnitt, der sie
 // benutzt, nach ./SpeechSettings.tsx gezogen.
 import { useAgentModeStore } from '../../stores/agentModeStore'
-import { FEATURE_FLAGS } from '../../lib/constants'
+import { DEFAULT_SETTINGS, FEATURE_FLAGS } from '../../lib/constants'
 import { MemorySettings } from './MemorySettings'
 import { ChatBackupSettings } from './ChatBackupSettings'
 import { ImportScanSkeleton } from '../layout/ViewSkeletons'
@@ -46,6 +47,7 @@ import { AppleHardwareInfo } from './AppleHardwareInfo'
 import { DataFolderWhere, DataFolderAfterword } from './DataFolderWhere'
 import { DownloadLimitSetting } from './DownloadLimitSetting'
 import { RuntimeFolderSetting } from './RuntimeFolderSetting'
+import { StorageFolderSetting } from './StorageFolderSetting'
 import { ComfyFolderTargets } from './ComfyFolderTargets'
 import { ChatbotImporter } from '../import/ChatbotImporter'
 import { ProviderSettings } from './ProviderConfig'
@@ -81,8 +83,11 @@ import { CivitaiApiKeySetting } from './CivitaiApiKeySetting'
 import { HfTokenSetting } from './HfTokenSetting'
 import { HINWEIS_TEXT, PUNKT_FARBE } from '../../lib/hinweis'
 import { userAgentProblem } from '../../lib/search-user-agent'
+import { SEARCH_PROVIDERS, normalizeSearchProvider } from '../../lib/search-providers'
 import { ContentPolicySettings } from './ContentPolicySettings'
 import { isLmStudioProvider } from '../../lib/hf-to-provider'
+import { TEMPERATURE_MAX } from '../../lib/sampling'
+import { HighTemperatureWarning } from '../chat/HighTemperatureWarning'
 
 // ── User profile picture (Appearance) ───────────────────────────
 // Self-contained like HfDownloadPathSetting. Stores the picture as a
@@ -274,7 +279,7 @@ function WorkflowSection() {
   )
 }
 
-// ── Model Storage (the user's own model folder) ─────────────────
+// ── Storage (the user's own model folder) ─────────────────
 //
 // GH #122 + Discord "Read me first": this folder was a
 // download TARGET and nothing else. Models already sitting in it were never
@@ -580,7 +585,7 @@ function CustomModelDirNote({ result }: { result: CustomModelDirResult }) {
 // download them a second time. The backend hard links the GGUF into the app
 // models dir, zero copy; Ollama and LM Studio keep working untouched.
 
-// ── Model Storage, row 2: LM Studio's folder ────────────────────
+// ── Storage, row 2: LM Studio's folder ────────────────────
 //
 // Read-only on purpose. LU does not own this folder and cannot move it, so a
 // field here would be a lie with a Browse button on it. What the user needs is
@@ -611,7 +616,7 @@ export function LmStudioFolderSetting() {
   )
 }
 
-// ── Model Storage, row 3: Ollama ────────────────────────────────
+// ── Storage, row 3: Ollama ────────────────────────────────
 //
 // No path at all, and that is the point of the row. Ollama keeps its models in
 // a content-addressed blob store under names no human picked, so there is
@@ -1553,7 +1558,7 @@ function CodexAgentSettings() {
 // sync with LU-Aufgaben.md / IMPLEMENTATION_NOTES.md):
 //
 //   General      → Appearance · Generation · Privacy · Onboarding · Updates
-//   AI Backends  → Providers · Model Storage · ComfyUI
+//   AI Backends  → Providers · Storage · ComfyUI
 //   Agent        → Personas · Memory · Agent Permissions ·
 //                  Agent Workflows · MCP Servers · Search Provider
 //   Voice & Remote → Speech · Remote Access
@@ -1982,7 +1987,13 @@ export function SettingsPage() {
           </Section>
 
           <Section title="Generation">
-            <SliderControl label="Temperature" value={settings.temperature} min={0} max={2} step={0.1} onChange={(v) => updateSettings({ temperature: v })} />
+            <SliderControl label="Temperature" value={settings.temperature} min={0} max={TEMPERATURE_MAX} step={0.1} onChange={(v) => updateSettings({ temperature: v })} />
+            {/* A33: every chat that never moved its own slider follows this
+                one, so a high value here turns all of them into noise. */}
+            <HighTemperatureWarning
+              temperature={settings.temperature}
+              onReset={() => updateSettings({ temperature: DEFAULT_SETTINGS.temperature })}
+            />
             <SliderControl label="Top P" value={settings.topP} min={0} max={1} step={0.05} onChange={(v) => updateSettings({ topP: v })} />
             <SliderControl label="Top K" value={settings.topK} min={1} max={100} step={1} onChange={(v) => updateSettings({ topK: v })} />
             {/* Die drei Zahlenzeilen dieser Sektion stehen auf der Leiter statt
@@ -2069,8 +2080,8 @@ export function SettingsPage() {
                   value={Math.round((settings.autoCompactThreshold || 0) * 100)}
                   disabled={settings.autoCompact === false}
                   onChange={(e) => {
-                    const pct = Math.max(0, Math.min(95, parseInt(e.target.value) || 0))
-                    updateSettings({ autoCompactThreshold: pct < 30 ? 0 : pct / 100 })
+                    // Same rule as set_setting from the chat (lib/settings-catalog.ts).
+                    updateSettings({ autoCompactThreshold: compactThresholdFromPercent(parseInt(e.target.value) || 0) })
                   }}
                   min={0}
                   max={95}
@@ -2182,6 +2193,21 @@ export function SettingsPage() {
           </Section>
           )}
 
+          {/* 3.0.8 (A2): a long picture or video from the chat goes on in the
+              background and the chat stays usable (lib/background-tools.ts). */}
+          {settings.appMode !== 'cloud' && (
+          <Section title="Pictures and Video from the Chat">
+            <InlineToggle
+              label="Keep chatting while it renders"
+              enabled={settings.backgroundMediaTools !== false}
+              onChange={() => updateSettings({ backgroundMediaTools: settings.backgroundMediaTools === false })}
+            />
+            <div className="t-micro text-gray-500 dark:text-gray-500 leading-relaxed pt-0.5">
+              A picture or video that takes longer than a few seconds goes on in the background. You can write on, and it appears in the message that started it when it is done. Off: the chat waits for every render.
+            </div>
+          </Section>
+          )}
+
           <Section title="Privacy">
             {settings.appMode === 'cloud' ? (
               /* Cloud mode: the 100%-local pledge doesn't hold, say so
@@ -2271,8 +2297,13 @@ export function SettingsPage() {
             <ProviderSettings />
           </Section>
 
-          <Section title="Model Storage">
+          <Section title="Storage">
             <HowtoRow topic="storage" />
+            {/* Discord "Storage Management": one folder for the models, the
+                gallery and the runtime, and a safe move of what is there. The
+                rows below place each part on its own. Desktop only. */}
+            {isTauri() && <StorageFolderSetting />}
+            {isTauri() && <p className="t-micro font-semibold text-gray-500 pt-2 border-t border-white/5 mt-2">Each part on its own</p>}
             <HfDownloadPathSetting />
             <DownloadLimitSetting />
             <LmStudioFolderSetting />
@@ -2285,7 +2316,7 @@ export function SettingsPage() {
           {/* A user (Discord #bug-reports, 2026-08-28): the store knew
               the key, the changelog named it, and no component ever set it.
               A14 review 8, Windows follow-up: it then sat directly under the
-              Model Storage folder field, two bare text boxes in a row, and a
+              Storage folder field, two bare text boxes in a row, and a
               tester saved a filesystem path as his API key. A credential and a
               folder do not belong in one list, so the key has a section of its
               own now, and the field says what a key looks like. */}
@@ -2442,22 +2473,28 @@ export function SettingsPage() {
             <Section title="Search Provider">
               <div className="space-y-3">
                 <div>
-                  <span className="text-[0.6rem] text-gray-500 block mb-1">Provider for Agent web_search</span>
-                  <div className="flex gap-1.5">
-                    {(['auto', 'brave', 'tavily'] as const).map(p => (
+                  <span className="t-micro text-gray-500 block mb-1">Web search asks first</span>
+                  <div className="flex flex-wrap gap-1.5" role="group" aria-label="Web search service">
+                    {SEARCH_PROVIDERS.map(p => (
                       <button
-                        key={p}
-                        onClick={() => updateSettings({ searchProvider: p })}
+                        key={p.id}
+                        data-testid={`search-provider-${p.id}`}
+                        aria-pressed={normalizeSearchProvider(settings.searchProvider) === p.id}
+                        onClick={() => updateSettings({ searchProvider: p.id })}
                         className={`px-2.5 py-1 rounded-md text-[0.6rem] font-medium transition-all ${
-                          settings.searchProvider === p
+                          normalizeSearchProvider(settings.searchProvider) === p.id
                             ? 'bg-white dark:bg-white/10 text-gray-900 dark:text-white shadow-sm border border-gray-200 dark:border-white/15'
                             : 'text-gray-500 hover:text-gray-700 dark:hover:text-white bg-gray-100 dark:bg-white/5'
                         }`}
                       >
-                        {p === 'auto' ? 'Auto (SearXNG > DDG)' : p === 'brave' ? 'Brave Search' : 'Tavily'}
+                        {p.label}
                       </button>
                     ))}
                   </div>
+                  <span className="t-micro text-gray-500 mt-1 block" data-testid="search-provider-hint">
+                    {SEARCH_PROVIDERS.find(p => p.id === normalizeSearchProvider(settings.searchProvider))?.hint}
+                    {' '}Searches run on this computer, also for LU Cloud chats. Keys stay on this computer.
+                  </span>
                 </div>
                 <div>
                   <label className="text-[0.6rem] text-gray-500 block mb-1">Brave Search API Key</label>
@@ -2480,6 +2517,19 @@ export function SettingsPage() {
                     className="w-full px-2.5 py-1.5 rounded-lg bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-[0.65rem] text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:border-gray-400 dark:focus:border-white/25"
                   />
                   <span className="text-[0.5rem] text-gray-500 mt-0.5 block">AI-optimized search. Free tier: 1000 queries/month. Get key at tavily.com</span>
+                </div>
+                <div>
+                  <label htmlFor="search-exa-key" className="t-micro text-gray-500 block mb-1">Exa API Key (optional)</label>
+                  <input
+                    id="search-exa-key"
+                    type="password"
+                    value={settings.exaApiKey ?? ''}
+                    onChange={(e) => updateSettings({ exaApiKey: e.target.value })}
+                    placeholder="Empty = free without a key"
+                    autoComplete="off"
+                    className="w-full px-2.5 py-1.5 rounded-lg bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-[0.65rem] text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:border-gray-400 dark:focus:border-white/25"
+                  />
+                  <span className="t-micro text-gray-500 mt-0.5 block">Exa works without a key. Your own key lifts its rate limit. Get one at exa.ai</span>
                 </div>
                 <div>
                   {/* D16 (3.0.7): the User-Agent of the free tiers and of
@@ -2595,7 +2645,7 @@ export function UpdateSection() {
         {showUpdate ? (
           <div className="rounded-lg bg-emerald-500/[0.08] border border-emerald-500/20 p-3">
             <div className="flex items-center gap-2 mb-2">
-              <ArrowUpCircle size={14} className="text-emerald-400" />
+              <ArrowUpCircle size={14} className="text-emerald-600 dark:text-emerald-400" />
               <span className="text-[0.65rem] font-medium text-emerald-400">Update available!</span>
             </div>
             {releaseNotes && downloadStatus !== 'downloading' && downloadStatus !== 'downloaded' && (

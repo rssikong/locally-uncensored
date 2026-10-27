@@ -37,8 +37,17 @@ describe('what a fresh installation starts with', () => {
 })
 
 describe('which tools the model is shown', () => {
-  it('shows none with the agent off, whatever the level', () => {
-    for (const name of ['web_search', 'file_read', 'shell_execute', 'computer_task']) expect(toolInScope(name, OFF)).toBe(false)
+  it('shows only the web pair with the agent off, as the plain chat has it (GitHub #187)', () => {
+    for (const name of ['file_read', 'file_write', 'shell_execute', 'computer_task', 'computer_use', 'screenshot']) expect(toolInScope(name, OFF)).toBe(false)
+    for (const name of ['web_search', 'web_fetch']) expect(toolInScope(name, OFF)).toBe(true)
+    expect(toolInScope('web_search', { agent: false, scope: 'workspace' })).toBe(true)
+  })
+
+  it('leaves the permission of a web tool as the user set it with the agent off', () => {
+    expect(levelInScope('web_search', 'auto', OFF)).toBe('auto')
+    expect(levelInScope('web_fetch', 'confirm', OFF)).toBe('confirm')
+    expect(levelInScope('web_search', 'blocked', OFF)).toBe('blocked')
+    expect(levelInScope('shell_execute', 'auto', OFF)).toBe('blocked')
   })
 
   it('keeps the screen out of the workspace level and offers it on the whole computer', () => {
@@ -64,7 +73,7 @@ describe('the level of a tool only ever narrows', () => {
 
   it('blocks what is out of reach', () => {
     expect(levelInScope('computer_task', 'auto', WORKSPACE)).toBe('blocked')
-    expect(levelInScope('web_search', 'auto', OFF)).toBe('blocked')
+    expect(levelInScope('file_read', 'auto', OFF)).toBe('blocked')
   })
 })
 
@@ -137,12 +146,17 @@ describe('what a refused call is told', () => {
     expect(toolInScope('screenshot', COMPUTER)).toBe(true)
   })
 
-  it('refuses every call once the agent is off, also one the model was offered a minute ago', () => {
-    expect(scopeRefusal({ name: 'web_search', args: { query: 'x' } }, OFF, ROOT)).toBe(AGENT_OFF_REFUSAL)
+  it('refuses every call but the web once the agent is off, also one the model was offered a minute ago', () => {
+    expect(scopeRefusal({ name: 'web_search', args: { query: 'x' } }, OFF, ROOT)).toBeNull()
+    expect(scopeRefusal({ name: 'web_fetch', args: { url: 'https://example.com' } }, OFF, ROOT)).toBeNull()
+    expect(scopeRefusal({ name: 'file_read', args: { path: 'a.txt' } }, OFF, ROOT)).toBe(AGENT_OFF_REFUSAL)
+    expect(scopeRefusal({ name: 'shell_execute', args: { command: 'ls' } }, OFF, ROOT)).toBe(AGENT_OFF_REFUSAL)
+    expect(AGENT_OFF_REFUSAL).toContain('Agent switch')
   })
 
   it('tells the model where it stands', () => {
-    expect(scopePromptLine(OFF)).toBe('')
+    expect(scopePromptLine(OFF)).toContain('look things up on the web')
+    expect(scopePromptLine(OFF)).toContain('Agent switch')
     expect(scopePromptLine(WORKSPACE)).toContain('only work inside the workspace folder')
     expect(scopePromptLine(COMPUTER)).toContain('whole computer')
   })

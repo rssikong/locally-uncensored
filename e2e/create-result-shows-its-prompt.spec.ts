@@ -83,11 +83,14 @@ test('local engine: a result shows its prompt in the big view and in the lightbo
   await expect(under.getByRole('button', COPY_PROMPT)).toHaveText('Copied')
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(LONG.trim())
 
-  // The lightbox: the same box, unfolded, under the picture and never on it,
-  // and the whole of it inside the window even for a long prompt.
+  // The lightbox: the same box, under the picture and never on it, and the
+  // whole of it inside the window even for a long prompt. It opens folded as
+  // on the stage (3.0.8, fix/308-bugs-runde2); one click unfolds it.
   // A click on the picture opens it.
   await bigView(page).locator('img').first().click()
   const box = lightbox(page).getByTestId('prompt-details')
+  await expect(box.getByTestId('prompt-text')).toBeHidden()
+  await box.getByText(FOLD, { exact: true }).click()
   await expect(box.getByTestId('prompt-text')).toBeVisible()
   await expect(box.getByTestId('prompt-text')).toHaveText(LONG.trim())
   const picture = (await lightbox(page).locator('img').boundingBox())!
@@ -135,6 +138,9 @@ test('mac: a picture made by the local engine carries its prompt into the big vi
 
   await expect(bigView(page).getByTestId('prompt-text')).toHaveText('a red apple on a wooden table')
   await openFullscreen(page)
+  // Folded, as on the stage (3.0.8); one click unfolds it.
+  await expect(lightbox(page).getByTestId('prompt-text')).toBeHidden()
+  await lightbox(page).getByText(FOLD, { exact: true }).click()
   await expect(lightbox(page).getByTestId('prompt-text')).toBeVisible()
   await expect(lightbox(page).getByTestId('prompt-text')).toHaveText('a red apple on a wooden table')
   await expect(lightbox(page).getByRole('button', COPY_PROMPT)).toBeVisible()
@@ -156,6 +162,9 @@ test('cloud: a picture made in the cloud carries its prompt into the big view an
 
   await expect(bigView(page).getByTestId('prompt-text')).toHaveText('a lighthouse at dusk, cinematic')
   await openFullscreen(page)
+  // Folded, as on the stage (3.0.8); one click unfolds it.
+  await expect(lightbox(page).getByTestId('prompt-text')).toBeHidden()
+  await lightbox(page).getByText(FOLD, { exact: true }).click()
   await expect(lightbox(page).getByTestId('prompt-text')).toBeVisible()
   await expect(lightbox(page).getByTestId('prompt-text')).toHaveText('a lighthouse at dusk, cinematic')
   await expect(lightbox(page).getByRole('button', COPY_PROMPT)).toBeVisible()

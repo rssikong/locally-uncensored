@@ -110,6 +110,9 @@ function CreateExperimentalInner() {
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [maskOpen, setMaskOpen] = useState(false)
   const [lightbox, setLightbox] = useState<GalleryItem | null>(null)
+  // The large view opens with the prompt folded; the Prompt word in the
+  // facts asks for the prompt, so it opens it unfolded.
+  const [lightboxPrompt, setLightboxPrompt] = useState(false)
   // The video whose frames are being saved as a character (SaveCharacterModal).
   const [characterFrom, setCharacterFrom] = useState<GalleryItem | null>(null)
   const [panelOpen, setPanelOpen] = useState(false)
@@ -471,7 +474,8 @@ function CreateExperimentalInner() {
           onOpenMaskEditor={() => setMaskOpen(true)}
           onEditResult={editAvailable ? (it) => { void editResultWithMask(it) } : undefined}
           onAnimateResult={animateAvailable ? (it) => { void animateResult(it) } : undefined}
-          onFullscreen={(it) => setLightbox(it)}
+          onFullscreen={(it) => { setLightboxPrompt(false); setLightbox(it) }}
+          onShowPrompt={(it) => { setLightboxPrompt(true); setLightbox(it) }}
           onSaveCharacter={setCharacterFrom}
           comfyStarting={comfyStarting}
         />
@@ -539,7 +543,7 @@ function CreateExperimentalInner() {
         </Modal>
       )}
 
-      <Lightbox item={lightbox} onClose={() => setLightbox(null)} onSaveCharacter={setCharacterFrom} />
+      <Lightbox item={lightbox} promptOpen={lightboxPrompt} onClose={() => { setLightbox(null); setLightboxPrompt(false) }} onSaveCharacter={setCharacterFrom} onNavigate={(it) => { setLightboxPrompt(false); setLightbox(it) }} />
       <SaveCharacterModal item={characterFrom} onClose={() => setCharacterFrom(null)} />
       <VhsInstallModal />
     </div>

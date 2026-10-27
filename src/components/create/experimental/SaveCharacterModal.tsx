@@ -251,12 +251,12 @@ function SaveCharacterBody({ item, onClose }: { item: GalleryItem; onClose: () =
                     className={`w-20 h-20 object-cover border rounded-lg transition-opacity ${f.picked ? 'border-white/40' : 'border-white/[0.06] opacity-35'}`}
                   />
                   {f.picked && (
-                    <span className="absolute bottom-1 left-1 w-4 h-4 flex items-center justify-center rounded bg-black/70 text-gray-100"><Check size={10} /></span>
+                    <span className="lu-on-dark absolute bottom-1 left-1 w-4 h-4 flex items-center justify-center rounded bg-black/70 text-gray-100"><Check size={10} /></span>
                   )}
                 </button>
                 <button
                   onClick={() => setFrames((list) => list.filter((x) => x.url !== f.url))}
-                  className="absolute top-1 right-1 w-5 h-5 flex items-center justify-center rounded-md bg-black/60 text-gray-300 hover:text-white"
+                  className="lu-on-dark absolute top-1 right-1 w-5 h-5 flex items-center justify-center rounded-md bg-black/60 text-gray-300 hover:text-white"
                   title={`Remove frame ${i + 1}`}
                   aria-label={`Remove frame ${i + 1}`}
                 >

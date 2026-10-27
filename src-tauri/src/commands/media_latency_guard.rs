@@ -96,8 +96,8 @@ fn a_click_is_answered_before_anything_slow_starts() {
     // place: the thread `spawn_install` starts.
     let slow = [
         "hub_get(", "fetch_repo_revision(", "fetch_repo_listing(", "fetch_model_index(", "reqwest::",
-        "python_command(", "python_has_module(", "mlx_video_imports(", "interpreter_runs(", "python_version(",
-        "locate_base_python(", "locate_python_311(", "ensure_python_module(", "run_streamed(", "run_hub_step(",
+        "python_command(", "python_has_module(", "mlx_video_imports(", "interpreter_fits(", "venv_python_fits(", "python_version(",
+        "locate_base_python(", "locate_engine_python(", "ensure_python_module(", "run_streamed(", "run_hub_step(",
     ];
     let commands = [
         ("mlx_image_install_model", body(mlx, "pub fn mlx_image_install_model(")),

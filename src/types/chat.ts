@@ -45,6 +45,10 @@ export interface FileAttachment {
   /** Path inside the chat's working folder, set once the file was put there
    *  (Agent and Code only). */
   workspacePath?: string
+  /** The same file as a full path on this computer (3.0.8). Tools that do not
+   *  work in the chat's folder, such as the REA plugin, need it. Absent on
+   *  attachments stored before. */
+  absolutePath?: string
   /** A text file: how many characters its text has (GH #171). Absent on a
    *  binary, on a text too long to be read in whole, and on attachments
    *  stored before 3.0.7. */
@@ -70,10 +74,37 @@ export interface ChatArtifact {
   mime: string
 }
 
+/** Why a run ended in an error, by kind. The chat hook writes it; a screen
+ *  reads it instead of guessing from the text of the answer. */
+export type MessageErrorKind = 'credits' | 'session' | 'limit' | 'network' | 'engine' | 'interrupted' | 'generic'
+
+/**
+ * The error of an assistant turn, as a field (mobile round 2, audit L12).
+ *
+ * `content` still carries the sentence the desktop bubble shows, exactly as
+ * before, so nothing on the desktop changes. `at` is the length of the text
+ * that had arrived before the error sentence was appended: a reader that
+ * draws its own error box shows `content.slice(0, at)` and the box.
+ */
+export interface MessageError {
+  kind: MessageErrorKind
+  /** The reason in plain words, empty when the kind says it all. */
+  detail: string
+  /** Characters of `content` that are the answer itself. */
+  at: number
+}
+
 export interface Message {
   id: string
   role: Role
   content: string
+  /** Written on the paired phone (shared chats, lib/remote-chats-bridge). */
+  fromPhone?: true
+  /** Set by the chat hook when the run failed. See MessageError. */
+  error?: MessageError
+  /** How long the model thought before its first word of answer, in
+   *  milliseconds. Written once, when the answer starts or the run ends. */
+  thinkingMs?: number
   /** When set, the UI renders THIS instead of `content` for a user message.
    *  Agent slash commands (v2.5.3): the user sees the short "/commit" they
    *  typed, while `content` holds the full expanded instruction the model
@@ -136,6 +167,12 @@ export interface Message {
   // of only the visible messages); it flips to false once the model reports the
   // exact prompt_eval_count / usage.prompt_tokens.
   usage?: { promptTokens: number; completionTokens: number; totalTokens: number; estimated?: boolean }
+  /** What this one request cost, for the line under the answer and `/usage`.
+   *  `usage` above is the context anchor and keeps only the LAST model call;
+   *  an agent answer makes several, so this is their sum. Real provider
+   *  counts only, never an estimate: absent when the backend reported none.
+   *  See lib/request-usage.ts. */
+  requestUsage?: RequestUsage
   /** An app notice, not a model turn: the coding view renders it as a plain
    *  line instead of an assistant bubble, because putting it in a bubble would
    *  claim the model said it. 'warn' is for a notice the user has to act on,
@@ -148,6 +185,11 @@ export interface Message {
    *  a truncated answer is not shown as if it were complete (parity with the
    *  benchmark screen). Absent or 'stop' on a clean finish. */
   finishReason?: string
+  /** Phone only (round 10, lib/continue-answer.ts): this answer is the direct
+   *  continuation of the answer before it. The engine wrote it inside that
+   *  answer's open turn, so the two join without anything between them.
+   *  Absent everywhere else. */
+  continuation?: 'exact'
   /** Z36 finding 3: URLs in this agent answer that appear nowhere in what the
    *  model was shown this run (system prompt, history, tool results), so no
    *  tool returned them. Set only after the one corrective steer was ignored.
@@ -223,6 +265,9 @@ export interface Conversation {
   model: string
   systemPrompt: string
   mode?: 'lu' | 'codex' | 'openclaw' | 'remote'
+  /** Shared with the paired phones ("Continue on phone", CHATS-V1.md): the
+   *  phone lists it, reads it live and writes into it. */
+  remoteShared?: boolean
   /** Per-chat persona toggle. Mirrors the mobile chat's `personaEnabled`
    *  flag so the user can flip the persona on/off for each chat
    *  individually without losing the selection in Settings. Undefined
@@ -276,4 +321,14 @@ export interface Conversation {
   importedFrom?: { fingerprint: string; version: number }
   createdAt: number
   updatedAt: number
+}
+
+/** The sum of every model call one answer made. `calls` counts the calls
+ *  that reported numbers. `billing` is LU Cloud's own word for the request:
+ *  'flash' drew no credits, 'credits' did (one call on credits is enough). */
+export interface RequestUsage {
+  inputTokens: number
+  outputTokens: number
+  calls: number
+  billing?: 'flash' | 'credits'
 }

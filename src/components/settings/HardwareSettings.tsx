@@ -11,6 +11,7 @@ import { restartComfyForNewNodes } from '../../api/comfy-restart'
 import { Cpu, RefreshCw, AlertTriangle, RotateCcw } from 'lucide-react'
 import { Hinweis } from '../ui/Hinweis'
 import { HINWEIS_TEXT } from '../../lib/hinweis'
+import { GpuRolesPicker } from './GpuRolesPicker'
 
 interface DetectedGpu {
   index: number
@@ -103,6 +104,19 @@ export function HardwareSettings() {
     updateSettings({ gpuIndices: next })
     setShowRestartHint(true)
   }
+
+  // 3.0.8: what LU installs into a ComfyUI environment on this machine, read
+  // from the same plan the installer uses, so the line cannot promise a build
+  // the install would not fetch. Desktop only, no network behind it.
+  const [torchPlan, setTorchPlan] = useState<{ kind: string; summary: string } | null>(null)
+  useEffect(() => {
+    if (!isTauri() || isMlxImageHost()) return
+    let cancelled = false
+    backendCall<{ kind?: string; summary?: string }>('comfy_torch_plan')
+      .then((p) => { if (!cancelled && p?.summary) setTorchPlan({ kind: String(p.kind ?? ''), summary: p.summary }) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
 
   const comfyGpuMode = (settings.comfyGpuMode || 'auto') as 'auto' | 'cpu' | 'gpu'
   const setComfyGpuMode = (mode: 'auto' | 'cpu' | 'gpu') => {
@@ -241,6 +255,10 @@ export function HardwareSettings() {
         )}
       </div>
 
+      {/* 3.0.8 (A2): a card per task, only with two or more cards and never
+          on the Mac (one GPU, and ComfyUI does not run there). */}
+      {!isMlxImageHost() && <GpuRolesPicker gpus={gpus} />}
+
       {/* ComfyUI GPU selection is meaningless on the Mac — MLX runs on Metal and
           ComfyUI never launches there. */}
       {!isMlxImageHost() && (
@@ -248,8 +266,8 @@ export function HardwareSettings() {
         <div className="text-[0.7rem] text-gray-700 dark:text-gray-300 font-medium mb-1">ComfyUI GPU (image / video)</div>
         <div className="grid grid-cols-1 gap-1">
           {([
-            ['auto', 'Auto (recommended)', 'NVIDIA runs on the GPU. On an AMD / other card LU checks whether your ComfyUI has a GPU-capable torch (ROCm or ZLUDA) and uses it, otherwise falls back to CPU.'],
-            ['gpu', 'Force GPU', 'Never fall back to CPU. Use if you run a ROCm or ZLUDA ComfyUI of your own that LU cannot auto-detect. If your ComfyUI has no working GPU torch it will fail to start.'],
+            ['auto', 'Auto (recommended)', 'NVIDIA runs on the GPU. On an AMD, Intel Arc or other card LU checks whether your ComfyUI has a GPU-capable torch (ROCm, ZLUDA or Intel XPU) and uses it, otherwise falls back to CPU.'],
+            ['gpu', 'Force GPU', 'Never fall back to CPU. Use if you run a ComfyUI of your own whose GPU torch LU cannot detect. If your ComfyUI has no working GPU torch it will fail to start. The ComfyUI log then says why and what fixes it.'],
             ['cpu', 'Force CPU', 'Always run image / video on the CPU. Slow but stable, useful if generation crashes your GPU by running out of VRAM.'],
           ] as const).map(([val, label, help]) => (
             <label key={val} className="flex items-start gap-2 cursor-pointer p-1.5 rounded hover:bg-white/[0.04] border border-transparent has-[input:checked]:border-white/10 has-[input:checked]:bg-white/[0.03]">
@@ -273,11 +291,19 @@ export function HardwareSettings() {
             his own that the app has already installed for him. The families no
             wheel carries kernels for are named too, because staying on the
             processor there is a decision and not a failure. */}
+        {torchPlan && (
+          <div className="text-[0.55rem] text-gray-400 mt-1 leading-relaxed" data-testid="comfy-torch-plan">
+            <span className="text-gray-300">What LU installs on this machine:</span> {torchPlan.summary}
+          </div>
+        )}
         <div className="text-[0.55rem] text-gray-500 mt-1 leading-relaxed">
           AMD image / video: on Linux LU installs the ROCm build of PyTorch, except for the cards
           no ROCm wheel carries kernels for, which stay on the processor build on purpose. On
-          Windows LU installs AMD's own ROCm build for RX 7000 and RX 9000 cards, and the
-          processor build for everything else. Takes effect on next ComfyUI start.
+          Windows LU installs AMD's own ROCm build for RX 7000 and RX 9000 cards (also Radeon PRO
+          W7000, AI PRO R9700 and Ryzen AI APUs), and the processor build for everything else.
+          Intel Arc gets the XPU build of PyTorch. This applies when the ComfyUI environment is
+          built: Install ComfyUI, or Repair environment in Settings, ComfyUI for an environment
+          that already exists. Takes effect on next ComfyUI start.
         </div>
         {comfyModeChanged && (
           <div className="mt-2 space-y-1" data-testid="comfy-gpu-restart-hint">

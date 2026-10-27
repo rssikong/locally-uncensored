@@ -12,6 +12,11 @@
 
 import { dataUrlToBlob } from '../lib/render/data-url'
 import { useCallback } from 'react'
+import { isMobile } from '../lib/device-kind'
+import { limitSentence } from '../lib/limit-sentence'
+import { platformText } from '../lib/platform-text'
+import { forgetPendingCloudJob, noteCloudSubmitIntent, notePendingCloudJob, settleCloudSubmitIntent, unwatchCloudJob } from '../lib/pending-cloud-jobs'
+import type { CloudSubmitIntent } from '../lib/pending-cloud-jobs'
 import { useCreateStore, type GalleryItem } from '../stores/createStore'
 import { intentToJob, galleryItemFromJob } from '../lib/render/cloud-jobs'
 import {
@@ -28,6 +33,7 @@ import {
 import { defaultCloudModel, editNeedsMask, modelForOp, utilityOpModel, resolveOpPick, cloudModelById, cloudMediaLive, resolveCharacterModel, lengthCredits, lengthPrice } from '../stores/cloudCatalogStore'
 import { checkPromptSafety, blockMessageFor, type SafetyVerdict } from '../lib/render/safety'
 import { contentPolicySnapshot, loadContentPolicy } from './useContentPolicy'
+import { effectiveContentPolicy } from '../lib/content-policy-cap'
 import { signalCreditsExhausted } from '../lib/credits-exhausted'
 import { resolveRunSeed } from '../lib/run-seed'
 import { intentRoles, intentRequiredInputs, isStudioModel, resolveIntentPick, studioExtraPhotoSlots } from '../lib/render/create-studio'
@@ -43,7 +49,11 @@ import { improvePrompt } from '../lib/render/improve-prompt-run'
 import { currentChatModelList, currentHelperModel } from '../lib/cloud-helper-model'
 import { bookedVideoSeconds } from '../lib/render/video-duration'
 import { studioQuote, StudioQuoteChangedError } from '../api/cloud/studio'
+// LU Cloud outage (lib/cloud-outage.ts): a request that failed reads the
+// server's sentence instead of the raw error while one is announced.
+import { outageAfterFailure } from '../lib/cloud-outage-watch'
 import { MIN_TRAIN_IMAGES, maxTrainImages } from '../lib/train-image-cap'
+import { forgetStaged, stagedMayBeStale, uploadTrainPhotos } from '../lib/train-upload'
 
 // B3 (review-w2ui.md, 18.09.2026): the CSAM floor above runs regardless of
 // tier, but the adult half of safety.ts (ADULT_SOFT_TERMS/ADULT_HARD_TERMS)
@@ -56,8 +66,13 @@ import { MIN_TRAIN_IMAGES, maxTrainImages } from '../lib/train-image-cap'
 // never block on a guessed rule, the server is the authority for the rest,
 // same reasoning as the web app's own comment on clientSafety().
 function clientSafety(text: string): SafetyVerdict {
-  const policy = contentPolicySnapshot()
-  if (!policy) void loadContentPolicy() // for the next run
+  const account = contentPolicySnapshot()
+  if (!account) void loadContentPolicy() // for the next run
+  // A store build of the phone app caps the level (lib/content-policy-cap.ts):
+  // an account set to Off on the website is still checked with the filtered
+  // level here, and an unknown level is the cap, never 'off'. No cap on the
+  // desktop: the line is what it was.
+  const policy = effectiveContentPolicy(account)
   return checkPromptSafety(text, { tier: 'cloud', policy: policy ?? 'off' })
 }
 
@@ -129,6 +144,9 @@ export function throttleMessage(err: CloudJobError): string {
       // (89055415, the web app).
       return 'Your included character trainings are used up. Top-up credits keep training going, or upgrade your plan.'
   }
+  // On a phone the server's own sentence is the message (lib/request-limit.ts
+  // through lib/limit-sentence.ts): only the server knows whose limit it was.
+  if (isMobile()) return limitSentence(err)
   const secs = err.retryAfterMs && err.retryAfterMs > 0 ? Math.ceil(err.retryAfterMs / 1000) : null
   return secs
     ? `Too many requests at once. Wait ${secs}s and try again.`
@@ -138,6 +156,79 @@ export function throttleMessage(err: CloudJobError): string {
 // Lives in lib/render/data-url.ts; exported from here for the Create tab's own callers.
 export { dataUrlToBlob }
 
+/** On a phone a staged upload ends with the run's own Cancel: a clip that
+ *  goes up over a phone line can take minutes, and nothing else could stop it.
+ *  The desktop call stays exactly the two arguments it always was. */
+function uploadEnds(ac: AbortController): [] | [{ signal: AbortSignal }] {
+  return isMobile() ? [{ signal: ac.signal }] : []
+}
+
+/** True for the rejection a cancelled upload leaves behind on a phone. It is
+ *  the user's own Stop, so it is not an error to show. */
+function uploadWasCancelled(err: unknown, ac: AbortController): boolean {
+  return isMobile() && ac.signal.aborted && !(err instanceof CloudJobError)
+}
+
+/** How long the live run waits for a job of this kind. */
+function runDeadlineMs(kind: string, op: string): number {
+  return kind === 'video' || op === 'lora-train' ? 45 * 60_000 : 15 * 60_000
+}
+
+/**
+ * submitCloudJob with its intent written down first (durchsicht-mobile H2).
+ *
+ * The client_request_id goes to disk BEFORE the request leaves, so a phone
+ * that kills the app between the tap and the answer still knows which job to
+ * ask the server for. A clear answer ends the intent here (a "no" booked
+ * nothing); a "yes" keeps it until the caller has written the jobs into the
+ * ledger and calls settleCloudSubmitIntent itself. An answer that leaves the
+ * fate of the booking open (line dropped, 5xx) keeps the intent, and the next
+ * resume pass asks for the id. No-op bookkeeping on a desktop.
+ */
+async function submitNoted(
+  submit: Parameters<typeof submitCloudJob>[0],
+  meta: Pick<CloudSubmitIntent, 'timeoutMs' | 'landing' | 'items'> & { op: string; prompt: string },
+): Promise<Awaited<ReturnType<typeof submitCloudJob>>> {
+  const requestId = submit.params.client_request_id
+  if (!requestId) return submitCloudJob(submit)
+  const count = typeof submit.params.count === 'number' && submit.params.count > 1 ? submit.params.count : 1
+  noteCloudSubmitIntent({
+    requestId, count, kind: submit.kind, op: meta.op, model: submit.model, prompt: meta.prompt,
+    sentAt: Date.now(), timeoutMs: meta.timeoutMs, landing: meta.landing, items: meta.items,
+  })
+  try {
+    return await submitCloudJob(submit)
+  } catch (err) {
+    const status = err instanceof CloudJobError ? err.status : 0
+    settleCloudSubmitIntent(requestId, status >= 400 && status < 500 && status !== 408)
+    throw err
+  }
+}
+
+/**
+ * pollJob, plus the bookkeeping of lib/pending-cloud-jobs.ts.
+ *
+ * A job that reached an end state is struck from the ledger, and so is one the
+ * server refuses for good. Everything else (the client deadline, a dead line,
+ * a Cancel whose answer never came) leaves the entry in place and only gives
+ * up the watch, so resumePendingCloudJobs() asks again later and lands or
+ * drops it by the server's own word. On a desktop the ledger is empty and both
+ * calls find nothing to do.
+ */
+async function pollTracked(id: string, opts: Parameters<typeof pollJob>[1]): Promise<CloudJob> {
+  try {
+    const job = await pollJob(id, opts)
+    forgetPendingCloudJob(id)
+    return job
+  } catch (err) {
+    const status = err instanceof CloudJobError ? err.status : 0
+    const definitive = status >= 400 && status < 500 && status !== 401 && status !== 408 && status !== 429
+    if (definitive) forgetPendingCloudJob(id)
+    else unwatchCloudJob(id)
+    throw err
+  }
+}
+
 // The in-flight job handle lives at module scope, matching the lifetime of the
 // generate() closure (which keeps polling across view switches). Instance refs
 // died with the Create view's remount, leaving the Cancel button a no-op
@@ -146,6 +237,9 @@ export { dataUrlToBlob }
 /** Shown when Cancel reaches a job a GPU already took. */
 export const RENDER_CANNOT_STOP =
   "This render already started and can't be stopped. It will finish, is charged, and lands in your gallery."
+
+/** Shown when the cloud answers 401 to a render, a voice or an enhance. */
+export const SIGN_IN_TO_RENDER = 'Sign in to your LU Cloud account to render in the cloud.'
 
 let activeJobId: string | null = null
 // Alle Auftraege eines Laufs mit mehreren Bildern; der erste steht auch in
@@ -262,7 +356,7 @@ export function useCloudCreate(opts: { onQuotaChange?: () => void } = {}) {
       return
     }
     if (characterUse && !model) {
-      s.setError('This character has no compatible generation model yet.')
+      s.setError('No generation model works with this character right now.')
       return
     }
     if (op === 'lora-train' && s.trainImages.length < MIN_TRAIN_IMAGES) {
@@ -429,7 +523,7 @@ export function useCloudCreate(opts: { onQuotaChange?: () => void } = {}) {
       // the SAME staged upload, studio-contract.ts just names it a schema
       // field instead of a fixed param.
       if (op !== 'generate' && s.source) {
-        params.source_path = await uploadInput(dataUrlToBlob(s.source.url), 'source')
+        params.source_path = await uploadInput(dataUrlToBlob(s.source.url), 'source', ...uploadEnds(ac))
         // Ein Studio-Modell, das eine Bilderliste liest (Edit mit mehreren
         // Vorlagen, Referenz zu Video), bekommt das Standbild der Oberflaeche als
         // einzigen Eintrag. Liest es kein source_path, geht das Bild nur dorthin.
@@ -444,7 +538,7 @@ export function useCloudCreate(opts: { onQuotaChange?: () => void } = {}) {
             for (const [i, ref] of extras.entries()) {
               if (ac.signal.aborted) return
               s.setProgress(6, `Uploading photos… ${i + 2}/${extras.length + 1}`)
-              more.push(await uploadInput(dataUrlToBlob(ref.url), 'source'))
+              more.push(await uploadInput(dataUrlToBlob(ref.url), 'source', ...uploadEnds(ac)))
             }
             params.image_paths = [params.source_path, ...more]
           }
@@ -461,17 +555,17 @@ export function useCloudCreate(opts: { onQuotaChange?: () => void } = {}) {
           s.setIsGenerating(false)
           return
         }
-        params.mask_path = await uploadInput(dataUrlToBlob(s.mask.url), 'mask')
+        params.mask_path = await uploadInput(dataUrlToBlob(s.mask.url), 'mask', ...uploadEnds(ac))
       }
       // ── 2.5.8 specialized inputs ──
       if ((op === 'lipsync' || op === 'motion') && s.videoInput) {
         s.setProgress(6, 'Uploading video…')
-        params.video_path = await uploadInput(s.videoInput.blob, 'video')
+        params.video_path = await uploadInput(s.videoInput.blob, 'video', ...uploadEnds(ac))
       }
       if (op === 'lipsync') {
         if (s.audioInput) {
           s.setProgress(8, 'Uploading audio…')
-          params.audio_path = await uploadInput(s.audioInput.blob, 'audio')
+          params.audio_path = await uploadInput(s.audioInput.blob, 'audio', ...uploadEnds(ac))
         } else if (s.voiceFromJob && studioModel) {
           // A Studio role's `audio` input is always a staged path
           // (studio-models.json never lists `audio_url`), re-upload rather
@@ -481,7 +575,7 @@ export function useCloudCreate(opts: { onQuotaChange?: () => void } = {}) {
           if (!vj.result_url) throw new Error('That voice has expired, generate it again first.')
           const res = await fetch(vj.result_url)
           if (!res.ok) throw new Error('Could not load the generated voice.')
-          params.audio_path = await uploadInput(await res.blob(), 'audio')
+          params.audio_path = await uploadInput(await res.blob(), 'audio', ...uploadEnds(ac))
         } else if (s.voiceFromJob) {
           // A prior own render (tts/music) — fresh signed URL, zero re-upload.
           const vj = await getJob(s.voiceFromJob.jobId)
@@ -490,13 +584,26 @@ export function useCloudCreate(opts: { onQuotaChange?: () => void } = {}) {
         }
       }
       if (op === 'lora-train') {
-        const paths: string[] = []
-        for (const [i, img] of s.trainImages.entries()) {
-          if (ac.signal.aborted) return
-          s.setProgress(5, `Uploading training photos… ${i + 1}/${s.trainImages.length}`)
-          paths.push(await uploadInput(img.blob, 'train'))
+        if (isMobile()) {
+          // On a phone the line drops. Photos that went up in an earlier
+          // attempt keep their staged path, so "Try again" goes on where it
+          // stopped (lib/train-upload.ts).
+          const paths = await uploadTrainPhotos(s.trainImages.map((img) => img.blob), {
+            upload: (photo) => uploadInput(photo, 'train', ...uploadEnds(ac)),
+            aborted: () => ac.signal.aborted,
+            onStep: ({ index, total }) => s.setProgress(5, `Uploading training photos… ${index + 1}/${total}`),
+          })
+          if (!paths) return
+          params.image_paths = paths
+        } else {
+          const paths: string[] = []
+          for (const [i, img] of s.trainImages.entries()) {
+            if (ac.signal.aborted) return
+            s.setProgress(5, `Uploading training photos… ${i + 1}/${s.trainImages.length}`)
+            paths.push(await uploadInput(img.blob, 'train', ...uploadEnds(ac)))
+          }
+          params.image_paths = paths
         }
-        params.image_paths = paths
       }
       if (op === 'extend' && s.extendSource) {
         const src = await getJob(s.extendSource.jobId)
@@ -508,7 +615,7 @@ export function useCloudCreate(opts: { onQuotaChange?: () => void } = {}) {
           s.setProgress(6, 'Fetching the clip to extend…')
           const res = await fetch(src.result_url)
           if (!res.ok) throw new Error('Could not load the clip to extend.')
-          params.video_path = await uploadInput(await res.blob(), 'video')
+          params.video_path = await uploadInput(await res.blob(), 'video', ...uploadEnds(ac))
         } else {
           params.source_url = src.result_url
         }
@@ -630,33 +737,10 @@ export function useCloudCreate(opts: { onQuotaChange?: () => void } = {}) {
       s.setProgress(10, 'Submitting to the render queue…')
       // Mehrere Bilder: der Server bucht jedes als eigenen Auftrag und nennt alle.
       if (count > 1) params.count = count
-      const submitted = await submitCloudJob({ kind, model, prompt: runPrompt, params })
-      const id = submitted.id
-      // Ein Server, der die Anzahl nicht kennt, bucht genau einen Auftrag und
-      // nennt keine Liste: dann laeuft ein Bild, und der Kunde erfaehrt es.
-      const ids = submitted.jobs?.map((j) => j.id) ?? [id]
-      const oneOnly = count > 1 && !submitted.jobs
-      // A Cancel during the submit round-trip saw activeJobId still null, so
-      // nothing was cancelled server-side. Now that the id exists, cancel the
-      // just-queued job so its claimed credits refund instead of orphaning a
-      // render we're no longer watching.
-      if (ac.signal.aborted) {
-        for (const jid of ids) cancelJob(jid).then(() => onQuotaChange?.()).catch(() => {})
-        return
-      }
-      activeJobId = id
-      activeJobIds = ids
-      onQuotaChange?.()
-      if (prompt.trim()) s.addToPromptHistory(prompt.trim())
-
-      const startedAt = Date.now()
-      // Video renders and character training routinely run several minutes
-      // and can queue behind other jobs on the shared fleet — give them a
-      // much longer client deadline than images.
-      const verb = opProgressVerb(op)
-      const timeoutMs = kind === 'video' || op === 'lora-train' ? 45 * 60_000 : 15 * 60_000
-      const addResult = (job: CloudJob, index = 0) => useCreateStore.getState().addToGallery({
-        ...galleryItemFromJob(job),
+      const timeoutMs = runDeadlineMs(kind, op)
+      // What this run adds to the bare job. One builder for the result that
+      // lands live and for the one a phone picks up after a restart.
+      const resultFields = (index = 0) => ({
         model: galleryModel,
         // The text that ran and nothing else: a lane without a prompt field
         // leaves this empty, and the name of such a run stands in `label`.
@@ -681,6 +765,62 @@ export function useCloudCreate(opts: { onQuotaChange?: () => void } = {}) {
         height: s.height,
         intent,
       })
+      let submitted: Awaited<ReturnType<typeof submitCloudJob>>
+      try {
+        submitted = await submitNoted({ kind, model, prompt: runPrompt, params }, {
+          op, prompt: OP_GALLERY_LABEL[op] ?? runPrompt, timeoutMs,
+          landing: op === 'lora-train' ? 'character' : 'gallery',
+          items: Array.from({ length: count }, (_, index) => resultFields(index)),
+        })
+      } catch (err) {
+        // The server did not take the training. An answer that may be about
+        // the staged photos themselves makes the next attempt upload them all
+        // again. Anything else (line dropped, wallet empty) keeps them.
+        if (op === 'lora-train' && err instanceof CloudJobError && stagedMayBeStale(err.status)) {
+          forgetStaged(s.trainImages.map((img) => img.blob))
+        }
+        throw err
+      }
+      // The server has the photos now: their staged paths are used up.
+      if (op === 'lora-train') forgetStaged(s.trainImages.map((img) => img.blob))
+      const id = submitted.id
+      // Ein Server, der die Anzahl nicht kennt, bucht genau einen Auftrag und
+      // nennt keine Liste: dann laeuft ein Bild, und der Kunde erfaehrt es.
+      const ids = submitted.jobs?.map((j) => j.id) ?? [id]
+      const oneOnly = count > 1 && !submitted.jobs
+      // A Cancel during the submit round-trip saw activeJobId still null, so
+      // nothing was cancelled server-side. Now that the id exists, cancel the
+      // just-queued job so its claimed credits refund instead of orphaning a
+      // render we're no longer watching.
+      if (ac.signal.aborted) {
+        settleCloudSubmitIntent(requestId, true)
+        for (const jid of ids) cancelJob(jid).then(() => onQuotaChange?.()).catch(() => {})
+        return
+      }
+      activeJobId = id
+      activeJobIds = ids
+      onQuotaChange?.()
+      if (prompt.trim()) s.addToPromptHistory(prompt.trim())
+
+      const startedAt = Date.now()
+      // Video renders and character training routinely run several minutes
+      // and can queue behind other jobs on the shared fleet — give them a
+      // much longer client deadline than images.
+      const verb = opProgressVerb(op)
+      const addResult = (job: CloudJob, index = 0) => useCreateStore.getState().addToGallery({
+        ...galleryItemFromJob(job),
+        ...resultFields(index),
+      })
+      // Written down before the first poll: from here on the job is paid, and
+      // a phone may freeze or kill the app at any line (no-op on a desktop).
+      ids.forEach((jid, index) => notePendingCloudJob({
+        id: jid, kind, op, model, prompt: OP_GALLERY_LABEL[op] ?? runPrompt,
+        startedAt, deadlineAt: startedAt + timeoutMs,
+        landing: op === 'lora-train' ? 'character' : 'gallery',
+        item: resultFields(index),
+      }))
+      // The ids are in the ledger: the intent written before the submit is done.
+      settleCloudSubmitIntent(requestId, true)
 
       if (ids.length > 1) {
         // Jedes Bild landet in der Galerie, sobald es fertig ist. Ein Auftrag,
@@ -691,7 +831,7 @@ export function useCloudCreate(opts: { onQuotaChange?: () => void } = {}) {
         }
         const finished = new Set<string>()
         const outcomes = await Promise.allSettled(ids.map(async (jid, index) => {
-          const job = await pollJob(jid, {
+          const job = await pollTracked(jid, {
             timeoutMs,
             signal: ac.signal,
             onTick: (j) => {
@@ -719,9 +859,9 @@ export function useCloudCreate(opts: { onQuotaChange?: () => void } = {}) {
         const notes: string[] = []
         if (failed.length) notes.push(`${failed.length} of ${ids.length} images failed${failed[0].error ? `: ${failed[0].error}` : ''}. Failed images are refunded.`)
         if (lost.some((e) => e instanceof CloudJobError && e.message === 'render timed out')) {
-          notes.push('Still rendering, some images are taking longer than expected. When they complete you can view them in your account at lu-labs.ai.')
+          notes.push(platformText('renderStillRunningSome'))
         } else if (lost.length) {
-          notes.push(lost[0] instanceof Error ? lost[0].message : String(lost[0]))
+          notes.push((await outageAfterFailure(lost[0])) ?? (lost[0] instanceof Error ? lost[0].message : String(lost[0])))
         }
         if (submitted.stopped) {
           notes.push(
@@ -734,7 +874,7 @@ export function useCloudCreate(opts: { onQuotaChange?: () => void } = {}) {
         return
       }
 
-      const job = await pollJob(id, {
+      const job = await pollTracked(id, {
         timeoutMs,
         signal: ac.signal,
         onTick: (j) => {
@@ -801,14 +941,16 @@ export function useCloudCreate(opts: { onQuotaChange?: () => void } = {}) {
           ? { reason: 'credits' }
           : { reason: 'throttle', retryAfterMs: err.retryAfterMs }
       } else if (err instanceof CloudJobError && err.status === 401) {
-        st.setError('Sign in to your LU Cloud account to render in the cloud.')
+        st.setError(SIGN_IN_TO_RENDER)
         lastRunStop = { reason: 'auth' }
       } else if (err instanceof CloudJobError && err.message === 'render timed out') {
         // The desktop app has no jobs-history view — point at the account
         // page instead of promising an in-app surface that doesn't exist.
-        st.setError('Still rendering, this is taking longer than expected. When it completes you can view it in your account at lu-labs.ai.')
+        st.setError(platformText('renderStillRunning'))
+      } else if (uploadWasCancelled(err, ac)) {
+        // The user's own Stop ended an upload. Nothing was booked, nothing to say.
       } else if (!(err instanceof CloudJobError && err.message === 'polling aborted')) {
-        st.setError(err instanceof Error ? err.message : String(err))
+        st.setError((await outageAfterFailure(err)) ?? (err instanceof Error ? err.message : String(err)))
       }
       onQuotaChange?.()
     } finally {
@@ -869,15 +1011,19 @@ export function useCloudCreate(opts: { onQuotaChange?: () => void } = {}) {
       activeAbort = ac
       try {
         const model = opts.mode === 'design' ? 'qwen3-tts-design' : 'qwen3-tts'
-        const params: CloudJobParams = { op: 'tts', client_request_id: crypto.randomUUID() }
+        const requestId = crypto.randomUUID()
+        const params: CloudJobParams = { op: 'tts', client_request_id: requestId }
         // The price on the button (SpecialIntentControls) is the price of
         // these characters, and it goes along as the ceiling: without one the
         // server starts only what the catalogue figure covers.
         if (lengthPrice(model, 'tts')) params.max_credits = lengthCredits(model, Array.from(text).length)
         if (opts.mode === 'speak' && opts.voice) params.voice = opts.voice
         if (opts.mode === 'design' && opts.description) params.voice_description = opts.description
-        const { id } = await submitCloudJob({ kind: 'audio', model, prompt: text, params })
+        const { id } = await submitNoted({ kind: 'audio', model, prompt: text, params }, {
+          op: 'tts', prompt: text, timeoutMs: 15 * 60_000, landing: 'voice', items: [{ prompt: text, intent: 'lipsync' }],
+        })
         if (ac.signal.aborted) {
+          settleCloudSubmitIntent(requestId, true)
           cancelJob(id).then(() => onQuotaChange?.()).catch(() => {})
           return
         }
@@ -885,7 +1031,13 @@ export function useCloudCreate(opts: { onQuotaChange?: () => void } = {}) {
         onQuotaChange?.()
 
         const startedAt = Date.now()
-        const job = await pollJob(id, {
+        notePendingCloudJob({
+          id, kind: 'audio', op: 'tts', model, prompt: text,
+          startedAt, deadlineAt: startedAt + 15 * 60_000,
+          landing: 'voice', item: { prompt: text, intent: 'lipsync' },
+        })
+        settleCloudSubmitIntent(requestId, true)
+        const job = await pollTracked(id, {
           timeoutMs: 15 * 60_000,
           signal: ac.signal,
           onTick: (j) => {
@@ -917,8 +1069,12 @@ export function useCloudCreate(opts: { onQuotaChange?: () => void } = {}) {
         const st = useCreateStore.getState()
         if (err instanceof CloudJobError && err.status === 429) {
           st.setError(throttleMessage(err))
+        } else if (err instanceof CloudJobError && err.status === 401) {
+          // Same sentence as generate(): the bare "not signed in" of the
+          // client named no next step.
+          st.setError(SIGN_IN_TO_RENDER)
         } else if (!(err instanceof CloudJobError && err.message === 'polling aborted')) {
-          st.setError(err instanceof Error ? err.message : String(err))
+          st.setError((await outageAfterFailure(err)) ?? (err instanceof Error ? err.message : String(err)))
         }
         onQuotaChange?.()
       } finally {
@@ -956,18 +1112,23 @@ export function useCloudCreate(opts: { onQuotaChange?: () => void } = {}) {
         if (ac.signal.aborted) return
 
         s.setProgress(10, 'Submitting to the render queue…')
-        const { id } = await submitCloudJob({
+        const requestId = crypto.randomUUID()
+        // The enhanced clip keeps the facts of the clip it was made from.
+        const { id: _id, jobId: _jobId, createdAt: _at, remoteUrl: _url, dataUrl: _data, attestation: _att,
+          unavailable: _un, unavailableReason: _why, reloadKey: _key, ...kept } = item
+        const { id } = await submitNoted({
           kind: 'video',
           model: item.model || 'wan-2.2-720p',
           prompt: '',
           params: {
             op: 'upscale', source_url: sourceJob.result_url, target_resolution: targetResolution,
-            client_request_id: crypto.randomUUID(),
+            client_request_id: requestId,
           },
-        })
+        }, { op: 'upscale', prompt: item.prompt ?? '', timeoutMs: 45 * 60_000, landing: 'gallery', items: [kept] })
         // Same submit-window race as generate(): cancel the just-queued job
         // if the user aborted while the POST was in flight.
         if (ac.signal.aborted) {
+          settleCloudSubmitIntent(requestId, true)
           cancelJob(id).then(() => onQuotaChange?.()).catch(() => {})
           return
         }
@@ -975,7 +1136,13 @@ export function useCloudCreate(opts: { onQuotaChange?: () => void } = {}) {
         onQuotaChange?.()
 
         const startedAt = Date.now()
-        const job = await pollJob(id, {
+        notePendingCloudJob({
+          id, kind: 'video', op: 'upscale', model: item.model || 'wan-2.2-720p', prompt: item.prompt ?? '',
+          startedAt, deadlineAt: startedAt + 45 * 60_000,
+          landing: 'gallery', item: kept,
+        })
+        settleCloudSubmitIntent(requestId, true)
+        const job = await pollTracked(id, {
           timeoutMs: 45 * 60_000,
           signal: ac.signal,
           onTick: (j) => {
@@ -1012,8 +1179,12 @@ export function useCloudCreate(opts: { onQuotaChange?: () => void } = {}) {
         const st = useCreateStore.getState()
         if (err instanceof CloudJobError && err.status === 429) {
           st.setError(throttleMessage(err))
+        } else if (err instanceof CloudJobError && err.status === 401) {
+          // Same sentence as generate(): the bare "not signed in" of the
+          // client named no next step.
+          st.setError(SIGN_IN_TO_RENDER)
         } else if (!(err instanceof CloudJobError && err.message === 'polling aborted')) {
-          st.setError(err instanceof Error ? err.message : String(err))
+          st.setError((await outageAfterFailure(err)) ?? (err instanceof Error ? err.message : String(err)))
         }
         onQuotaChange?.()
       } finally {

@@ -59,7 +59,10 @@ import { useAgentTaskStore } from '../stores/agentTaskStore'
 import { useGenerationStore } from '../stores/generationStore'
 import { useAgentLoopStore } from '../stores/agentLoopStore'
 import { stopRun } from './run-stop'
-import { isTauri } from '../api/backend'
+// Not `api/backend`: that one imports settingsStore, and this module is loaded
+// by main.tsx before the onboarding handover (api/in-tauri.ts).
+import { isTauri } from '../api/in-tauri'
+import { isMobile } from './device-kind'
 import { useBackgroundShutdownStore } from '../stores/backgroundShutdownStore'
 
 /**
@@ -94,7 +97,7 @@ export function stopAllBackgroundWork(): void {
 /**
  * Wie lange nach dem Verschwinden ins Tray gewartet wird, bevor
  * Hintergrundarbeit wirklich beendet wird. Dieselbe Frist und derselbe
- * Beweggrund wie `HIDE_OFFLOAD_GRACE` in main.rs, das nach dem gleichen X-
+ * Beweggrund wie `HIDE_OFFLOAD_GRACE` in lib.rs, das nach dem gleichen X-
  * Klick die lokalen Modelle aus dem VRAM raeumt: ein Fehlklick plus sofortiges
  * Wiederoeffnen kostet nichts, ein Fenster, das der Nutzer fuer weg haelt,
  * bezahlt keine unsichtbare Rechenzeit.
@@ -105,7 +108,7 @@ const HIDDEN_STOP_GRACE_MS = 30_000
  * Zaehlt jedes `app:hidden` hoch. Ein Verstecken-Zeigen-Verstecken laesst den
  * AELTEREN Zeitgeber stehen, und der darf NICHT die Arbeit der neueren
  * Sitzung beenden - dieselbe Generationslogik wie `hide_gen`/
- * `should_offload_after_hide` in main.rs, nur diesseits der Grenze.
+ * `should_offload_after_hide` in lib.rs, nur diesseits der Grenze.
  */
 let hideGeneration = 0
 
@@ -128,7 +131,7 @@ async function scheduleHiddenStop(): Promise<void> {
       if (await getCurrentWindow().isVisible()) return
     } catch {
       // Sichtbarkeit nicht zu ermitteln: im Zweifel stoppen, dieselbe
-      // Abwaegung wie das main.rs-Pendant (ein zaehlender Prozess ohne
+      // Abwaegung wie das lib.rs-Pendant (ein zaehlender Prozess ohne
       // Beweis, dass der Nutzer zurueck ist, wird beendet).
     }
   }
@@ -158,13 +161,13 @@ let installed: (() => void) | null = null
  * - keine Karenzzeit, es gibt niemanden mehr, der einen Hinweis noch saehe.
  *
  * ── Fenster schliessen ──────────────────────────────────────────────────
- * `app:hidden` IST `onCloseRequested`: main.rs sendet das Ereignis an GENAU
+ * `app:hidden` IST `onCloseRequested`: lib.rs sendet das Ereignis an GENAU
  * EINER Stelle, im `CloseRequested`-Arm, unmittelbar bevor es das Fenster in
  * den Tray versteckt (`w.hide()`). Ein eigener `onCloseRequested`-Horcher
  * hier waere also derselbe Klick ein zweites Mal beobachtet, nicht ein
  * anderer Moment. Die App lebt im Tray absichtlich weiter (Tray-Menue,
  * schnelles Show), aber nicht fuer unsichtbare bezahlte Rechenzeit: dieselbe
- * main.rs-Stelle raeumt seit dem 30.08. aus demselben Grund die lokalen
+ * lib.rs-Stelle raeumt seit dem 30.08. aus demselben Grund die lokalen
  * Modelle aus dem VRAM, mit derselben Karenzzeit gegen den Fehlklick. Diese
  * Datei zieht mit `scheduleHiddenStop` nach, statt ohne Frist abzubrechen.
  *
@@ -181,8 +184,15 @@ export function installBackgroundShutdown(): () => void {
   if (typeof window === 'undefined') return () => {}
 
   const onGone = () => stopAllBackgroundWork()
-  window.addEventListener('pagehide', onGone)
-  window.addEventListener('beforeunload', onGone)
+  // Not on a phone. There `pagehide` is not the process ending, it is the
+  // user switching to another app for a moment, and stopping every chat,
+  // agent and /loop for that would make the app unusable. A phone saves on
+  // the way out and resumes on the way back instead (lib/mobile-lifecycle.ts).
+  const stopOnDeparture = !isMobile()
+  if (stopOnDeparture) {
+    window.addEventListener('pagehide', onGone)
+    window.addEventListener('beforeunload', onGone)
+  }
 
   const onOffline = () => useBackgroundShutdownStore.getState().setNotice({ kind: 'offline' })
   const onOnline = () => {
@@ -203,8 +213,10 @@ export function installBackgroundShutdown(): () => void {
   }
 
   installed = () => {
-    window.removeEventListener('pagehide', onGone)
-    window.removeEventListener('beforeunload', onGone)
+    if (stopOnDeparture) {
+      window.removeEventListener('pagehide', onGone)
+      window.removeEventListener('beforeunload', onGone)
+    }
     window.removeEventListener('offline', onOffline)
     window.removeEventListener('online', onOnline)
     unlistenHidden?.()

@@ -12,7 +12,7 @@ import {
 } from '../lib/create/bridge/cloud-jobs'
 import {
   approveDifference, approveOrder, conversationSpent, declineOrder, executeOrder, interruptedRuns, markInterrupted,
-  orderIdFromToolResult, resumeInterrupted, settleInterrupted,
+  orderIdFromToolResult, resumeInterrupted, settleInterrupted, timeoutFor,
   type ExecuteDeps, type Order,
 } from '../lib/create/order'
 import type { HandleContext, HandleResult } from '../lib/create/handles'
@@ -37,7 +37,7 @@ interface CreateOrderState {
   run: (orderId: string, deps: Deps) => Promise<Order>
   isRunning: (orderId: string) => boolean
   stop: (orderId: string) => void
-  catchUp: (orderId: string, deps?: Pick<ExecuteDeps, 'getJob' | 'pollJob'>) => Promise<void>
+  catchUp: (orderId: string, deps?: Pick<ExecuteDeps, 'getJob' | 'pollJob'> & Partial<Pick<ExecuteDeps, 'cancelJob'>>) => Promise<void>
 }
 
 const controllers = new Map<string, AbortController>()
@@ -128,7 +128,7 @@ export const useCreateOrderStore = create<CreateOrderState>()(
         } finally {
           if (controllers.get(orderId) === controller) controllers.delete(orderId)
           const left = locate(get(), orderId)
-          if (left && interruptedRuns(left).length) void get().catchUp(orderId, { getJob: deps.getJob, pollJob: deps.pollJob })
+          if (left && interruptedRuns(left).length) void get().catchUp(orderId, { getJob: deps.getJob, pollJob: deps.pollJob, cancelJob: deps.cancelJob })
         }
       },
 
@@ -141,6 +141,8 @@ export const useCreateOrderStore = create<CreateOrderState>()(
       catchUp: async (orderId, deps = { getJob, pollJob }) => {
         if (catchingUp.has(orderId) || controllers.has(orderId)) return
         catchingUp.add(orderId)
+        const controller = new AbortController()
+        controllers.set(orderId, controller)
         try {
           for (const { n, index, jobId } of interruptedRuns(locate(get(), orderId) ?? ({ items: [] } as unknown as Order))) {
             try {
@@ -148,7 +150,14 @@ export const useCreateOrderStore = create<CreateOrderState>()(
               if (isActiveJob(job)) {
                 const now = locate(get(), orderId)
                 if (now) get().put(resumeInterrupted(now, n, index))
-                job = await deps.pollJob(jobId, {})
+                const run = locate(get(), orderId)?.items.find((i) => i.n === n)?.runs[index]
+                try {
+                  job = await deps.pollJob(jobId, { timeoutMs: run ? timeoutFor(run) : undefined, signal: controller.signal })
+                } catch (err) {
+                  if (!controller.signal.aborted) throw err
+                  await (deps.cancelJob ?? cancelJob)(jobId).catch(() => null)
+                  job = await deps.getJob(jobId)
+                }
               }
               const now = locate(get(), orderId)
               if (now) get().put(settleInterrupted(now, n, index, job))
@@ -159,6 +168,7 @@ export const useCreateOrderStore = create<CreateOrderState>()(
           }
         } finally {
           catchingUp.delete(orderId)
+          if (controllers.get(orderId) === controller) controllers.delete(orderId)
         }
       },
     }),

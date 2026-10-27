@@ -7,7 +7,7 @@ import { create } from 'zustand'
 import { toolRegistry } from '../../api/mcp/tool-registry'
 import type { MCPExternalClient } from '../../api/mcp/external-client'
 import { isTauri } from '../../api/backend'
-import { REA_PLUGIN, reaFetch, reaServerConfig } from './rea'
+import { REA_PLUGIN, reaFetch, reaServerConfig, reaStatus } from './rea'
 import { reaArgsFromModel, reaResultForModel, reaToolForModel } from './rea-model'
 
 export type ReaPhase = 'off' | 'fetching' | 'starting' | 'on' | 'error'
@@ -22,6 +22,15 @@ interface ReaRuntimeState {
 export const useReaRuntime = create<ReaRuntimeState>(() => ({ phase: 'off', tools: 0, error: null }))
 
 let client: MCPExternalClient | null = null
+
+/**
+ * A start that finds no Node asks again before it gives up (A37, xxcoder
+ * 26.10.2026: "it doesnt work if it was enabled at start", fine when switched
+ * on later). With REA on, the app's first seconds are where the check runs,
+ * next to everything else that starts; a second look a few seconds on costs
+ * a start that was going to fail anyway nothing else.
+ */
+export const REA_NODE_RETRY = { tries: 2, delayMs: 3000 }
 /** Bumped by every start and stop, so a start that a stop overtook gives up. */
 let turn = 0
 
@@ -34,8 +43,14 @@ export async function startRea(): Promise<void> {
   }
   try {
     set({ phase: 'fetching', tools: 0, error: null })
-    const status = await reaFetch()
+    let status = await reaFetch()
     if (mine !== turn) return
+    for (let i = 0; i < REA_NODE_RETRY.tries && !status.node; i++) {
+      await new Promise((r) => setTimeout(r, REA_NODE_RETRY.delayMs))
+      if (mine !== turn) return
+      status = await reaStatus()
+      if (mine !== turn) return
+    }
     const config = reaServerConfig(status)
     set({ phase: 'starting' })
     const { MCPExternalClient } = await import('../../api/mcp/external-client')
@@ -60,7 +75,7 @@ export async function startRea(): Promise<void> {
     toolRegistry.registerExternal(
       REA_PLUGIN.serverId,
       offered,
-      async (name, args) => reaResultForModel(await next.callTool(name, reaArgsFromModel(schemas.get(name), args) as typeof args)),
+      async (name, args) => reaResultForModel(await next.callTool(name, reaArgsFromModel(schemas.get(name), args) as typeof args), name),
     )
     set({ phase: 'on', tools: tools.length, error: null })
   } catch (err) {

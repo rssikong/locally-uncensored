@@ -46,6 +46,10 @@ button{-webkit-appearance:none;appearance:none}
 
 /* ── Shell ── */
 .app-shell{display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;position:relative}
+.app-hint{display:flex;align-items:center;gap:8px;padding:6px 10px 6px 14px;font-size:12px;line-height:1.35;color:#cfcfcf;background:rgba(255,255,255,0.04);border-bottom:1px solid rgba(255,255,255,0.06)}
+.app-hint-text{flex:1;min-width:0}
+.app-hint-link{color:#9ec5ff;text-decoration:none;white-space:nowrap;font-weight:600}
+.app-hint-close{display:flex;align-items:center;justify-content:center;width:28px;height:28px;border:0;background:none;color:#8a8a8a;border-radius:6px;flex-shrink:0}
 .app-header{position:sticky;top:0;z-index:90;display:flex;align-items:center;gap:2px;padding:0 10px;height:52px;padding-top:var(--safe-top);min-height:calc(52px + var(--safe-top));background:rgba(14,14,14,0.78);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);border-bottom:1px solid rgba(255,255,255,0.04)}
 .icon-btn{background:none;border:none;color:var(--text-primary);width:38px;height:38px;display:flex;align-items:center;justify-content:center;border-radius:var(--radius-md);cursor:pointer;transition:background 0.15s;flex-shrink:0}
 .icon-btn:active{background:var(--container)}
@@ -266,6 +270,8 @@ button{-webkit-appearance:none;appearance:none}
 .msg-action-btn{background:none;border:none;color:var(--text-tertiary);cursor:pointer;padding:4px;border-radius:var(--radius);display:flex;align-items:center;transition:color 0.15s}
 .msg-action-btn:active{color:var(--text-primary)}
 .msg-action-btn .material-symbols-outlined{font-size:15px}
+.copy-flash{font-size:0.7rem;font-weight:600;color:var(--text-primary);white-space:nowrap}
+.copy-flash-failed{color:var(--error)}
 .copy-btn{position:absolute;top:6px;right:6px;background:var(--container-highest);border:none;color:var(--text-tertiary);cursor:pointer;padding:4px;border-radius:var(--radius);display:flex;align-items:center;opacity:0.6}
 .copy-btn:active{opacity:1}
 .copy-btn .material-symbols-outlined{font-size:14px}

@@ -52,7 +52,7 @@
 <div class="breadcrumb"><a href="/">Home</a> &rsaquo; Privacy</div>
 <h1>Privacy</h1>
 <p class="subtitle">What this website loads when you read it, and what the Locally Uncensored desktop app sends over the network. The app keeps your chats, files and generations on your own computer unless you choose a cloud route.</p>
-<p class="small">Last updated: <time datetime="2026-10-19">19 October 2026</time></p>
+<p class="small">Last updated: <time datetime="2026-10-27">27 October 2026</time></p>
 <nav class="toc">
 <div class="toc-title">On this page</div>
 <a href="#who">Who is responsible</a>
@@ -100,7 +100,7 @@
 
 <h3 id="app-features">What leaves your machine when you use a feature</h3>
 <p><strong>Finding and downloading models.</strong> Searching for a model or downloading one contacts the site that hosts it: Hugging Face, Civitai or ollama.com. Installing an engine or its components downloads files from GitHub, python.org, pytorch.org and the Python Package Index (pypi.org); setting up voice also downloads its speech models from Hugging Face. Each of them sees your IP address and what you fetched.</p>
-<p><strong>Web search and page fetching.</strong> When you let a chat or the agent search the web, the search words go to a search service: a SearXNG instance on your own machine if you installed one, otherwise DuckDuckGo, with Wikipedia as a fallback. If you enter a Brave or Tavily key, the search goes to that service. Pages the agent reads are requested directly from your machine.</p>
+<p><strong>Web search and page fetching.</strong> When you let a chat or the agent search the web, the search words go to a search service, asked in turn until one answers: Exa, You.com, a SearXNG instance on your own machine if one is running, DuckDuckGo and Wikipedia. If you enter a Brave, Tavily or Exa key, that service is asked first. The search runs in the app on your machine, also when the chat itself runs on LU Cloud. Pages the agent reads are requested directly from your machine; only when a page cannot be read that way does LU ask Exa to read it, and Exa then sees the address of that page.</p>
 <p><strong>Providers you add with your own key.</strong> If you add OpenAI, Anthropic, OpenRouter, Groq, Together, DeepSeek, Mistral or another compatible address, your prompts go from your machine straight to that provider, under your key and their terms. The app keeps the key in your operating system's keychain where one is available, and otherwise in its own local storage.</p>
 <p><strong>Remote access.</strong> Remote access is off until you start it. In home network mode your phone talks to your PC directly. In internet mode the connection runs through a Cloudflare tunnel, so it passes through Cloudflare's network. The <a href="/remote-access/">remote access page</a> explains both modes.</p>
 

@@ -1,7 +1,8 @@
 /**
  * The strength of a LoRA in the stack (Discord 2026-10-02).
  * The stack stopped at 0 to 2; slider LoRAs, the Krea 2 ones above all, are
- * made for about -10 to 10. ComfyUI itself takes -100 to 100 on LoraLoader
+ * made for about -10 to 10, some for -10 to 15 (Discord 2026-10-23), so the
+ * field takes -20 to 20. ComfyUI itself takes -100 to 100 on LoraLoader
  * and LoraLoaderModelOnly (nodes.py, strength_model and strength_clip).
  *
  * Run: npx vitest run src/lib/__tests__/lora-strength.test.ts
@@ -13,20 +14,22 @@ import {
 } from '../lora-strength'
 
 describe('the range', () => {
-  it('is -10 to 10 in steps of 0.05, inside what ComfyUI accepts, and the slider keeps 0 to 2', () => {
-    expect([LORA_STRENGTH_MIN, LORA_STRENGTH_MAX, LORA_STRENGTH_STEP]).toEqual([-10, 10, 0.05])
+  it('is -20 to 20 in steps of 0.05, inside what ComfyUI accepts, and the slider keeps 0 to 2', () => {
+    expect([LORA_STRENGTH_MIN, LORA_STRENGTH_MAX, LORA_STRENGTH_STEP]).toEqual([-20, 20, 0.05])
     expect(LORA_STRENGTH_MIN).toBeGreaterThanOrEqual(-100)
     expect(LORA_STRENGTH_MAX).toBeLessThanOrEqual(100)
     expect([LORA_SLIDER_MIN, LORA_SLIDER_MAX]).toEqual([0, 2])
   })
 
   it('clamps at both ends and keeps two decimals', () => {
-    expect(clampLoraStrength(10)).toBe(10)
-    expect(clampLoraStrength(10.01)).toBe(10)
-    expect(clampLoraStrength(250)).toBe(10)
+    expect(clampLoraStrength(20)).toBe(20)
+    expect(clampLoraStrength(20.01)).toBe(20)
+    expect(clampLoraStrength(250)).toBe(20)
+    expect(clampLoraStrength(-20)).toBe(-20)
+    expect(clampLoraStrength(-20.01)).toBe(-20)
+    expect(clampLoraStrength(-999)).toBe(-20)
+    expect(clampLoraStrength(15)).toBe(15)
     expect(clampLoraStrength(-10)).toBe(-10)
-    expect(clampLoraStrength(-10.01)).toBe(-10)
-    expect(clampLoraStrength(-999)).toBe(-10)
     expect(clampLoraStrength(0.8)).toBe(0.8)
     expect(clampLoraStrength(-3.456)).toBe(-3.46)
     expect(clampLoraStrength(1.2345)).toBe(1.23)
@@ -58,9 +61,11 @@ describe('what a typed strength means', () => {
   })
 
   it('out of range is pulled to the nearest end', () => {
-    expect(parseLoraStrength('15')).toBe(10)
-    expect(parseLoraStrength('-15')).toBe(-10)
-    expect(parseLoraStrength('99999999999999999999')).toBe(10)
+    expect(parseLoraStrength('15')).toBe(15)
+    expect(parseLoraStrength('-15')).toBe(-15)
+    expect(parseLoraStrength('25')).toBe(20)
+    expect(parseLoraStrength('-25')).toBe(-20)
+    expect(parseLoraStrength('99999999999999999999')).toBe(20)
   })
 
   it('half typed values and typos are not a number', () => {
@@ -77,8 +82,8 @@ describe('the arrow keys', () => {
     expect(stepLoraStrength(0, -1)).toBe(-0.05)
     expect(stepLoraStrength(-0.05, 1)).toBe(0)
     expect(stepLoraStrength(0.1, 1)).toBe(0.15)
-    expect(stepLoraStrength(10, 1)).toBe(10)
-    expect(stepLoraStrength(-10, -1)).toBe(-10)
+    expect(stepLoraStrength(20, 1)).toBe(20)
+    expect(stepLoraStrength(-20, -1)).toBe(-20)
   })
 })
 

@@ -46,8 +46,11 @@ export const DEFAULT_SETTINGS: Settings = {
   searchProvider: 'auto',
   braveApiKey: '',
   tavilyApiKey: '',
+  exaApiKey: '',
   // D16: empty = each free search tier keeps its own User-Agent.
   searchUserAgent: '',
+  braveKeyStored: false,
+  tavilyKeyStored: false,
   // Agent budget — bumped in v2.5.0 (the web app live-test 2026-05-25, commit
   // 1af958b2): on a real scaffold-install-fix-verify loop with a 35B
   // local model, 25 iterations / 50 tool calls fired the cap while the
@@ -64,6 +67,7 @@ export const DEFAULT_SETTINGS: Settings = {
   loopMaxPasses: 0,
   hfDownloadPathOverride: '',
   downloadLimitMBps: 0,
+  engineIdleUnloadMinutes: 0,
   extraModelIds: {},
   // Generation timeouts (Bug P v2.4.7)
   imageGenTimeoutMinutes: 20,
@@ -72,6 +76,8 @@ export const DEFAULT_SETTINGS: Settings = {
   chatFirstReplyTimeoutSeconds: 600,
   // GitHub #19: empty means the page keeps its own name, AI Terminal.
   remotePageTitle: '',
+  // Shared chats: new chats are not shared with the phone unless asked.
+  shareNewChatsWithPhone: false,
   // Bug AA v2.5.0 — Ollama num_ctx override. 0 = use Ollama default (2048
   // on most builds). Users with RAG / long chats can bump this up.
   contextWindowOverride: 0,
@@ -130,6 +136,10 @@ export const DEFAULT_SETTINGS: Settings = {
   // 'auto' = evict the local text model only when it wouldn't co-exist with the
   // ComfyUI model in VRAM. Safest default (no eviction on unknown sizes).
   exclusiveVramMode: 'auto',
+  // 3.0.8 (A2): long generations from the chat go on in the background.
+  backgroundMediaTools: true,
+  // 3.0.8 (A2): no card per service until the user picks one.
+  gpuRoles: { chat: null, comfy: null },
   // ComfyUI GPU device policy (rhodium92 AMD RX 6600 XT, 2026-07-01). 'auto' =
   // NVIDIA fast-path, else probe the comfy python's torch and use the GPU if it
   // is a ROCm/ZLUDA build, otherwise CPU. Existing NVIDIA users are unaffected.
@@ -403,6 +413,12 @@ export const ONBOARDING_EMBED_MODEL = {
   downloadUrl: HF_OB('nomic-ai/nomic-embed-text-v1.5-GGUF', 'nomic-embed-text-v1.5.Q4_K_M.gguf'),
   filename: 'nomic-embed-text-v1.5.Q4_K_M.gguf',
   sizeGB: 0.084,
+  // What the host states for this file (`x-linked-size`, read 09.10.2026) and its SHA-256. `sizeGB`
+  // above is the rounded figure and gives 90,194,313 bytes: a card that showed it said "86.0 MB" next
+  // to a progress line that said "80.2 MB" (acceptance on the large iPhone, G7). The phone sends these
+  // two with the download; the desktop start is unchanged.
+  sizeBytes: 84106624,
+  sha256: 'd4e388894e09cf3816e8b0896d81d265b55e7a9fff9ab03fe8bf4ef5e11295ac',
 }
 
 // See the comment on the 'qwen3.5-9b' entry below for where this number

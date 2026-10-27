@@ -74,7 +74,7 @@ describe('Plugins moved out of the Code composer and into the header', () => {
   })
 
   it('is the icon form there, with the name in the tooltip', () => {
-    expect(CODEX).toMatch(/<PluginsDropdown iconOnly \/>/)
+    expect(CODEX).toMatch(/<PluginsDropdown iconOnly agentTools \/>/)
     expect(PLUGINS).toMatch(/iconOnly = false/)
     // The icon branch carries a tooltip and an accessible name and no label.
     const iconBranch = PLUGINS.slice(

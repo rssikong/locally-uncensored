@@ -640,6 +640,33 @@ import {
     el('retry-remote').onclick = function(){location.reload();};
   });
 
+  // The hint at the top: the LU app is the better way in (sealed channel,
+  // also away from home). Android gets the download page; the App Store link
+  // goes into APP_LINK_IOS once the app is out there, until then iPhones see
+  // no hint. Hidden for good with its close button.
+  var APP_LINK_ANDROID = 'https://lu-labs.ai/android';
+  var APP_LINK_IOS = '';
+  var APP_HINT_KEY = 'lu-remote-app-hint-hidden';
+  function appHintHtml(ua, hidden){
+    if(hidden) return '';
+    var ios = /iPhone|iPad|iPod/.test(ua || '');
+    var link = ios ? APP_LINK_IOS : APP_LINK_ANDROID;
+    if(!link) return '';
+    return '<div class="app-hint" id="app-hint" role="note">' +
+      '<span class="app-hint-text">The LU app does this better: end to end encrypted, also away from home.</span>' +
+      '<a class="app-hint-link" href="'+H(link)+'" target="_blank" rel="noopener noreferrer">Get the app</a>' +
+      '<button class="app-hint-close" onclick="window._hideAppHint()" aria-label="Hide this hint" title="Hide"><span class="material-symbols-outlined">'+svgIcon('close')+'</span></button>' +
+    '</div>';
+  }
+  function appHintHidden(){
+    try{ return localStorage.getItem(APP_HINT_KEY) === '1'; }catch(_){ return false; }
+  }
+  window._hideAppHint = function(){
+    try{ localStorage.setItem(APP_HINT_KEY, '1'); }catch(_){}
+    var h = el('app-hint');
+    if(h && h.parentNode) h.parentNode.removeChild(h);
+  };
+
   function renderShell(){
     var mode = getCurrentMode();
     var isCodex = mode === 'codex';
@@ -685,6 +712,7 @@ import {
             '<span class="material-symbols-outlined">'+svgIcon('extension')+'</span>' +
           '</button>' +
         '</div>' +
+        appHintHtml(navigator.userAgent, appHintHidden()) +
         '<div class="chat-area" id="chat-area"></div>' +
         '<div class="input-bar">' +
           '<div class="img-preview-row" id="img-preview-row" style="display:none"></div>' +
@@ -988,13 +1016,13 @@ import {
       if(isUser){
         html += '<div class="msg-actions msg-actions-user">';
         html += '<button class="msg-action-btn" title="Edit" onclick="window._editMsg(\''+m.id+'\')"><span class="material-symbols-outlined">'+svgIcon('pencil')+'</span></button>';
-        html += '<button class="msg-action-btn" title="Copy" onclick="window._copyMsg('+i+')"><span class="material-symbols-outlined">'+svgIcon('content_copy')+'</span></button>';
+        html += '<button class="msg-action-btn" title="Copy" onclick="window._copyMsg('+i+',this)"><span class="material-symbols-outlined">'+svgIcon('content_copy')+'</span></button>';
         html += '</div>';
       } else {
         html += '<div class="msg-model">'+H(currentModel)+'</div>';
         html += '<div class="msg-actions">';
         var canRegen = !streaming && !agentRunning;
-        html += '<button class="msg-action-btn" title="Copy" onclick="window._copyMsg('+i+')"><span class="material-symbols-outlined">'+svgIcon('content_copy')+'</span></button>';
+        html += '<button class="msg-action-btn" title="Copy" onclick="window._copyMsg('+i+',this)"><span class="material-symbols-outlined">'+svgIcon('content_copy')+'</span></button>';
         if(canRegen){
           html += '<button class="msg-action-btn" title="Regenerate" onclick="window._regenMsg(\''+m.id+'\')"><span class="material-symbols-outlined">'+svgIcon('refresh')+'</span></button>';
         }
@@ -1077,7 +1105,7 @@ import {
             '<span class="cb-lang">'+H(langLabel)+'</span>'+
             '<div class="cb-actions">'+
               previewBtn +
-              '<button class="cb-action" onclick="window._copyCodeKey(\''+key+'\')" aria-label="Copy"><span class="material-symbols-outlined">'+svgIcon('content_copy')+'</span><span class="cb-action-label">Copy</span></button>'+
+              '<button class="cb-action" onclick="window._copyCodeKey(\''+key+'\',this)" aria-label="Copy"><span class="material-symbols-outlined">'+svgIcon('content_copy')+'</span><span class="cb-action-label">Copy</span></button>'+
             '</div>'+
           '</div>'+
           '<pre class="cb-pre"><code>'+displayCode+'</code></pre>'+
@@ -1096,9 +1124,9 @@ import {
   };
   // Copy handler that reads from our cache (no DOM scraping → handles
   // collapsed blocks correctly).
-  window._copyCodeKey = function(key){
+  window._copyCodeKey = function(key, btn){
     var src = codeBlockSource[key];
-    if(src && src.code) navigator.clipboard.writeText(src.code).catch(function(){});
+    if(src && src.code) copyText(src.code, btn);
   };
   // Feature #8: full-screen sandboxed HTML preview. Opens an iframe with
   // `srcdoc` + sandbox flags so user-supplied JS can't reach the parent
@@ -1402,14 +1430,73 @@ import {
     });
   };
 
-  window._copyMsg = function(idx){
-    if(msgs[idx]) navigator.clipboard.writeText(msgs[idx].content).catch(function(){});
+  // Copy. On the plain http page in the Wi-Fi the browser has no
+  // navigator.clipboard at all (it is only there in a secure context), and
+  // calling it threw before any catch, so the button did nothing. The old
+  // way through a hidden textarea and execCommand('copy') still works there.
+  // Either way the button says what happened.
+  function copyText(text, btn){
+    var clip = null;
+    try { clip = (window.isSecureContext !== false && navigator.clipboard && navigator.clipboard.writeText) ? navigator.clipboard : null; } catch(e) { clip = null; }
+    if(clip){
+      var p = null;
+      try { p = clip.writeText(text); } catch(e) { p = null; }
+      if(p && typeof p.then === 'function'){
+        p.then(function(){ flashCopy(btn, true); }, function(){ flashCopy(btn, legacyCopy(text)); });
+        return;
+      }
+    }
+    flashCopy(btn, legacyCopy(text));
+  }
+  function legacyCopy(text){
+    var ta = document.createElement('textarea');
+    ta.value = String(text == null ? '' : text);
+    ta.setAttribute('readonly', '');
+    // Off screen, and 16px so iOS does not zoom in on focus.
+    ta.style.position = 'fixed';
+    ta.style.top = '0';
+    ta.style.left = '-9999px';
+    ta.style.opacity = '0';
+    ta.style.fontSize = '16px';
+    document.body.appendChild(ta);
+    var ok = false;
+    try {
+      ta.focus();
+      ta.select();
+      if(ta.setSelectionRange) ta.setSelectionRange(0, ta.value.length);
+      ok = !!document.execCommand('copy');
+    } catch(e) { ok = false; }
+    document.body.removeChild(ta);
+    return ok;
+  }
+  function flashCopy(btn, ok){
+    if(!btn) return;
+    if(btn._copyRestore){ clearTimeout(btn._copyTimer); btn._copyRestore(); }
+    var html = btn.innerHTML;
+    var title = btn.getAttribute('title');
+    var aria = btn.getAttribute('aria-label');
+    var word = ok ? 'Copied' : 'Copy failed';
+    btn.innerHTML = '<span class="copy-flash'+(ok ? '' : ' copy-flash-failed')+'">'+word+'</span>';
+    btn.setAttribute('title', word);
+    btn.setAttribute('aria-label', word);
+    btn.setAttribute('data-copy-state', ok ? 'copied' : 'failed');
+    btn._copyRestore = function(){
+      btn.innerHTML = html;
+      if(title === null) btn.removeAttribute('title'); else btn.setAttribute('title', title);
+      if(aria === null) btn.removeAttribute('aria-label'); else btn.setAttribute('aria-label', aria);
+      btn.removeAttribute('data-copy-state');
+      btn._copyRestore = null;
+    };
+    btn._copyTimer = setTimeout(function(){ if(btn._copyRestore) btn._copyRestore(); }, ok ? 1500 : 2500);
+  }
+  window._copyMsg = function(idx, btn){
+    if(msgs[idx]) copyText(msgs[idx].content, btn);
   };
   window._copyCode = function(btn){
     var pre = btn.parentElement;
     if(!pre) return;
     var code = pre.querySelector('code');
-    if(code) navigator.clipboard.writeText(code.textContent).catch(function(){});
+    if(code) copyText(code.textContent, btn);
   };
   window._toggleThink = function(msgId){
     for(var i=0;i<msgs.length;i++){

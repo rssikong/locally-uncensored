@@ -57,7 +57,7 @@ export function bookedVideoSeconds(model: string, params: Record<string, unknown
   const invalid = () => new Error(
     allowed.length
       ? `This model supports ${allowed.join(', ')} seconds in LU. Select a supported length before generating.`
-      : 'This model\'s supported lengths are not available yet. Try again in a moment.',
+      : 'LU could not load the supported lengths of this model. Try again in a moment.',
   )
   let seconds = 5
   if (params.frames !== undefined || params.fps !== undefined) {

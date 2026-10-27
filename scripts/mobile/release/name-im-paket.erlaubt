@@ -1,0 +1,34 @@
+# Erlaubte Stellen des langen Namens in einem Handy-Paket.
+#
+# Gelesen von pruefe-name-im-paket.sh. Je Zeile ein Perl-Muster (ohne
+# Beachtung von Gross und Klein), davor als Kommentar, was es ist und warum es
+# bleiben darf. Das Skript nimmt jede Stelle, auf die ein Muster passt, aus
+# dem Text und meldet, was danach vom langen Namen noch uebrig ist.
+#
+# Hier steht nur, was kein Nutzer, kein Pruefer in der App und kein fremder
+# Server zu sehen bekommt (Klasse c in mobile-docs/r19/name-im-programm.md).
+# Ein Satz, ein Dateikopf, ein Ordnername oder eine Kennung fuer ausgehende
+# Aufrufe gehoert NICHT hierher: die werden in src-tauri/src/app_identity.rs
+# fuer das Handy umgestellt.
+#
+# Der Waechter src/lib/__tests__/mobile-name-im-programm.test.ts haelt diese
+# Liste fest: ein neues Muster braucht dort einen Eintrag mit Grund.
+
+# Name der Rust-Bibliothek (Cargo.toml, [lib] name). Steht in Modulpfaden von
+# Protokollzeilen, in Symbolnamen und im Dateinamen der Android-Bibliothek.
+# Umbenennen waere ein Eingriff in den Desktop.
+locally_uncensored_lib
+
+# Paketname der Android-App. Bleibt, weil 3.0.7 die alte App 2.6.6 ueberspielt.
+# Steht als Kennung in der Tauri-Konfiguration, in JNI-Namen (mit Unterstrich),
+# im Dex (mit Schraegstrich) und im Manifest.
+purpledoubled[._/]locallyuncensored
+
+# Name des Cargo-Pakets (Cargo.toml, [package] name). Tauri legt ihn als
+# crate_name direkt hinter die Beschreibung des Pakets in das Programm. Die
+# App zeigt ihn nirgends und sendet ihn nirgendwohin.
+(?<=Private, local AI chat & image/video generation)locally-uncensored
+
+# Name des Android-Themes in den Ressourcen (Theme.locally_uncensored). Ein
+# Bezeichner in der Ressourcentabelle, kein Text.
+Theme\.locally_uncensored

@@ -9,7 +9,7 @@ import { blobFromUrl } from '../lib/render/data-url'
 // dynamischer Import, der nur den Zyklus comfyui ↔ dynamic-workflow
 // verdeckt hat. Beide sind reine Graph-Bausteine und wohnen jetzt in
 // comfyui-graph.ts, das nichts importiert.
-import { videoDecodeNode, promptFilenamePrefix, tagOutputPrefixes, newRunTag } from './comfyui-graph'
+import { videoDecodeNode, promptFilenamePrefix, tagOutputPrefixes, newRunTag, addVideoSave } from './comfyui-graph'
 import type { ComfyApiGraph, ComfyApiNode, ComfyHistoryEntry } from '../types/comfy-graph'
 import type { ComfyModelSource } from '../types/models'
 import { isRecord, asString, asRecordArray } from '../types/json-guards'
@@ -295,6 +295,34 @@ export function isFastH3(name: string): boolean {
   return name.toLowerCase().includes('fasth3')
 }
 
+/** Wan 2.2 A14B: the i2v/t2v pair in its high noise and low noise halves,
+ *  any quant (Comfy-Org fp8/fp16, QuantStack GGUF, Kijai). Wan 2.1
+ *  architecture under a 2.2 tag: WanImageToVideo and the 16-channel
+ *  wan_2.1_vae. Only the TI2V-5B uses the 48-channel wan2.2_vae (GH #193). A
+ *  2.2 name that says neither 14B nor high/low noise nor i2v/t2v stays on the
+ *  5B path it always took. */
+export function isWan22A14B(name: string): boolean {
+  const lower = name.toLowerCase()
+  if (!/wan[._-]?2[._-]?2/.test(lower)) return false
+  if (lower.includes('ti2v') || /(^|[^0-9])5b/.test(lower)) return false
+  return /(^|[^0-9])a?14b/.test(lower)
+    || /(high|low)[._-]?noise/.test(lower)
+    || /(^|[^a-z])[it]2v([^a-z]|$)/.test(lower)
+}
+
+/** The low noise half that finishes what this high noise A14B file starts,
+ *  from the names the loader lists, or null. Same name with the one "high"
+ *  turned into "low": high_noise → low_noise (Comfy-Org), HighNoise →
+ *  LowNoise (QuantStack GGUF), HIGH → LOW (Kijai). */
+export function wan22LowNoisePartner(name: string, listed: string[]): string | null {
+  if (!isWan22A14B(name)) return null
+  const lower = name.toLowerCase()
+  const at = lower.search(/high(?=[._-]?noise|[._-])/)
+  if (at < 0) return null
+  const want = lower.slice(0, at) + 'low' + lower.slice(at + 4)
+  return listed.find((n) => n.toLowerCase() === want) ?? null
+}
+
 export function classifyModel(name: string | null | undefined): ModelType {
   // Defensive: treat empty/missing names as unknown. Older installs can persist
   // stale model strings that no longer exist; callers should not crash on those.
@@ -321,6 +349,8 @@ export function classifyModel(name: string | null | undefined): ModelType {
   // architecture: classic WanImageToVideo graph + wan_2.1_vae — NOT the
   // TI2V-5B path the wan2.2 tag would otherwise route them onto.
   if (lower.includes('rapid') && lower.includes('aio')) return 'wan'
+  // The Wan 2.2 A14B pair is the same architecture (GH #193, see isWan22A14B).
+  if (isWan22A14B(lower)) return 'wan'
 
   // MiniMax H3 (Comfy-Org/MiniMax-H3): video with its own sound track, from
   // text, a first/last frame (fl2va) or references (ref2va). Before every
@@ -459,6 +489,8 @@ export function isI2VModel(name: string): boolean {
   const lower = name.toLowerCase()
   // FastH3 is text to video only (see isFastH3), whatever its H3 family says.
   if (isFastH3(lower)) return false
+  // An A14B half is one or the other, never both like the TI2V-5B.
+  if (isWan22A14B(lower)) return lower.includes('i2v') || !lower.includes('t2v')
   return lower.includes('i2v') || lower.includes('svd') || lower.includes('framepack')
     || lower.includes('ti2v') || lower.includes('wan2.2') || lower.includes('wan2_2') || lower.includes('wan22')
     || lower.includes('ltx') || lower.includes('video2world') || classifyModel(name) === 'minimaxh3'
@@ -478,6 +510,7 @@ export function isT2VCapable(name: string): boolean {
   // Merged i2v-only builds (rapid AIO) carry the wan2.2 tag but cannot run a
   // T2V graph — check before the generic wan2.2 pass-through.
   if (lower.includes('rapid') && lower.includes('i2v')) return false
+  if (isWan22A14B(lower)) return !lower.includes('i2v')
   if (lower.includes('ti2v') || lower.includes('wan2.2') || lower.includes('wan2_2') || lower.includes('wan22')) return true
   if (lower.includes('svd') || lower.includes('framepack')) return false
   if (lower.includes('video2world')) return false
@@ -891,6 +924,15 @@ async function nodeExists(nodeName: string): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+/** Which of the video save nodes this ComfyUI has, as the sync check
+ *  addVideoSave wants (A19). */
+async function videoSaverPresence(): Promise<(classType: string) => boolean> {
+  const names = ['CreateVideo', 'SaveVideo', 'VHS_VideoCombine', 'SaveAnimatedWEBP']
+  const present = await Promise.all(names.map((name) => nodeExists(name)))
+  const have = new Set(names.filter((_, i) => present[i]))
+  return (classType) => have.has(classType)
 }
 
 /** One /object_info call for one node, read through the shared combo reader.
@@ -2690,7 +2732,7 @@ export async function buildWanVideoWorkflow(params: VideoParams): Promise<ComfyA
   // Pre-check required nodes
   const hasLatent = await nodeExists('EmptyHunyuanLatentVideo')
   if (!hasLatent) throw new Error('EmptyHunyuanLatentVideo node not found. Update ComfyUI to latest version.')
-  const hasSaveWEBP = await nodeExists('SaveAnimatedWEBP')
+  const hasSaver = await videoSaverPresence()
 
   const vae = await findMatchingVAE('wan')
   const clip = await findMatchingCLIP('wan')
@@ -2714,21 +2756,12 @@ export async function buildWanVideoWorkflow(params: VideoParams): Promise<ComfyA
     '8': videoDecodeNode(['7', 0], ['3', 0], hasTiledDecode),
   }
 
-  // Use SaveAnimatedWEBP if available, otherwise fall back to SaveImage (frame
-  // sequence). Prompt-based prefix (2026-06-11) — the dynamic builder got
-  // this in c40d13f, this legacy T2V path still wrote locally_uncensored_vid.
-  const vidPrefix = promptFilenamePrefix(params.prompt, true)
-  if (hasSaveWEBP) {
-    workflow['9'] = {
-      class_type: 'SaveAnimatedWEBP',
-      inputs: { images: ['8', 0], filename_prefix: vidPrefix, fps: params.fps, lossless: false, quality: 90, method: 'default' },
-    }
-  } else {
-    workflow['9'] = {
-      class_type: 'SaveImage',
-      inputs: { images: ['8', 0], filename_prefix: vidPrefix },
-    }
-  }
+  // An mp4 the chat player and the gallery can play (A19): this path wrote a
+  // fixed SaveAnimatedWEBP, so Wan 2.1 in the chat came back as an animated
+  // picture without controls. Prompt-based prefix (2026-06-11) — the dynamic
+  // builder got this in c40d13f, this legacy T2V path still wrote
+  // locally_uncensored_vid.
+  addVideoSave(workflow, 9, ['8', 0], params.fps, promptFilenamePrefix(params.prompt, true), hasSaver)
 
   return workflow
 }
@@ -2741,7 +2774,7 @@ export async function buildAnimateDiffWorkflow(params: VideoParams): Promise<Com
   const motionModel = await findAnimateDiffModel()
 
   // AnimateDiff: batch_size=1, motion model handles temporal dimension
-  const hasVHS = await nodeExists('VHS_VideoCombine')
+  const hasSaver = await videoSaverPresence()
   const hasTiledDecode = await nodeExists('VAEDecodeTiled')
 
   const workflow: ComfyApiGraph = {
@@ -2763,26 +2796,8 @@ export async function buildAnimateDiffWorkflow(params: VideoParams): Promise<Com
     '9': videoDecodeNode(['8', 0], ['1', 2], hasTiledDecode),
   }
 
-  // Use VHS_VideoCombine if available (produces MP4), otherwise SaveAnimatedWEBP, otherwise SaveImage
-  if (hasVHS) {
-    workflow['10'] = {
-      class_type: 'VHS_VideoCombine',
-      inputs: { images: ['9', 0], frame_rate: params.fps, loop_count: 0, filename_prefix: 'locally_uncensored_vid', format: 'video/h264-mp4', pingpong: false, save_output: true },
-    }
-  } else {
-    const hasSaveWEBP = await nodeExists('SaveAnimatedWEBP')
-    if (hasSaveWEBP) {
-      workflow['10'] = {
-        class_type: 'SaveAnimatedWEBP',
-        inputs: { images: ['9', 0], filename_prefix: 'locally_uncensored_vid', fps: params.fps, lossless: false, quality: 90, method: 'default' },
-      }
-    } else {
-      workflow['10'] = {
-        class_type: 'SaveImage',
-        inputs: { images: ['9', 0], filename_prefix: 'locally_uncensored_vid' },
-      }
-    }
-  }
+  // Core SaveVideo or VHS (both MP4), otherwise SaveAnimatedWEBP, otherwise SaveImage (A19)
+  addVideoSave(workflow, 10, ['9', 0], params.fps, 'locally_uncensored_vid', hasSaver)
 
   return workflow
 }

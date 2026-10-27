@@ -85,8 +85,8 @@ describe('Agent', () => {
     fireEvent.click(agent)
     expect(useVoiceStore.getState().loopAgent).toBe(false)
     expect(agent.getAttribute('aria-pressed')).toBe('false')
-    expect(agent.getAttribute('title')).toContain('Conversation only')
-    // Without tools there is nothing to place.
+    expect(agent.getAttribute('title')).toContain('Conversation with web search')
+    // Without the agent there is nothing to place.
     expect((view.getByTestId('voice-scope') as HTMLButtonElement).disabled).toBe(true)
     fireEvent.click(agent)
     expect(useVoiceStore.getState().loopAgent).toBe(true)

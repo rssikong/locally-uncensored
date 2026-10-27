@@ -1,0 +1,8 @@
+{
+  "name": "lu-harness-testbett",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Wegwerf-App fuer den Selbsttest des iOS-Treibers. Kein Teil von LU.",
+  "scripts": { "tauri": "tauri" },
+  "devDependencies": { "@tauri-apps/cli": "^2" }
+}

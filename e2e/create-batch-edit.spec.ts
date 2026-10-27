@@ -142,3 +142,61 @@ test('the limit is 50 images, and a mask tab takes one image', async ({ page }) 
   await expect(page.getByTestId('batch-files-input')).toHaveCount(0)
   await expect(page.getByTestId('batch-strip')).toHaveCount(0)
 })
+
+// Discord, jazziinau 23.10.2026: after a batch the original image could not be
+// picked again, only the last image of the list was left. The original here is
+// 64 x 48 and the others 32 x 32, so the Stage shows which one it holds.
+const ORIGINAL = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAEAAAAAwCAIAAAAuKetIAAAAQ0lEQVR42u3PQQkAAAgEsMtpJnOawwp+hcEKLF3zWgQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQErhZJeJE8uNDXWwAAAABJRU5ErkJggg==',
+  'base64',
+)
+const OTHER = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAJ0lEQVR42u3NMQ0AAAwDoCqu/7MqdiwBA6THIhAIBAKBQCAQCL4EA2EcKExM7yeFAAAAAElFTkSuQmCC',
+  'base64',
+)
+const listWithOriginal = () => [
+  { name: 'a original.png', mimeType: 'image/png', buffer: ORIGINAL },
+  ...['b.png', 'c.png', 'd.png'].map((name) => ({ name, mimeType: 'image/png', buffer: OTHER })),
+]
+const shotDir = process.env.LU_SHOT_DIR
+const sourceWidth = (page: Page) =>
+  page.getByTestId('result-source-actions').locator('img[alt="source"]').evaluate((img) => (img as HTMLImageElement).naturalWidth)
+
+test('after a finished batch the original is the image the next Create runs on', async ({ page }) => {
+  await bootIntoCutout(page)
+  await routeJobs(page)
+  await page.getByTestId('batch-files-input').setInputFiles(listWithOriginal())
+  await expect(page.getByTestId('batch-count')).toContainText('4 images.')
+  await page.getByRole('button', { name: /^Create$/ }).last().click()
+
+  await expect(page.getByTestId('batch-queue')).toHaveCount(0, { timeout: 45_000 })
+  await expect(page.getByTestId('result-source-actions')).toBeVisible()
+  await expect.poll(() => sourceWidth(page)).toBe(64)
+  await expect(page.getByText('Use the original')).toHaveCount(0)
+  if (shotDir) await page.screenshot({ path: `${shotDir}/batch-original-after-run.png` })
+})
+
+test('a batch that stopped on another image offers the original back', async ({ page }) => {
+  await bootIntoCutout(page)
+  await routeJobs(page, { failNth: 4 })
+  await page.getByTestId('batch-files-input').setInputFiles(listWithOriginal())
+  await page.getByRole('button', { name: /^Create$/ }).last().click()
+
+  await expect(page.getByText(/3 of 4 images are done\. 1 failed: d\.png\./)).toBeVisible({ timeout: 45_000 })
+  const back = page.getByRole('button', { name: /back as the image to work on/ })
+  await expect(back).toBeVisible()
+  // The Stage fades in; the picture is for a person, the checks do not wait on it.
+  if (shotDir) { await page.waitForTimeout(500); await page.screenshot({ path: `${shotDir}/batch-original-offered.png` }) }
+  await back.click()
+  await expect(back).toHaveCount(0)
+  await expect(page.locator('img[alt="source"]').first()).toBeVisible()
+  await expect.poll(() => page.locator('img[alt="source"]').first().evaluate((img) => (img as HTMLImageElement).naturalWidth)).toBe(64)
+  if (shotDir) await page.screenshot({ path: `${shotDir}/batch-original-back.png` })
+
+  // Without an image on the Stage the original stays pinned in front of the results.
+  await page.getByTitle('Remove image').click()
+  await expect(page.getByTestId('pick-original')).toBeVisible()
+  if (shotDir) { await page.getByTestId('pick-original').scrollIntoViewIfNeeded(); await page.waitForTimeout(500); await page.screenshot({ path: `${shotDir}/batch-original-pinned.png` }) }
+  await page.getByTestId('pick-original').click()
+  await expect.poll(() => page.locator('img[alt="source"]').first().evaluate((img) => (img as HTMLImageElement).naturalWidth)).toBe(64)
+})

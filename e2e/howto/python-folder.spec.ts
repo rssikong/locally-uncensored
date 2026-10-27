@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { Rec, HOWTO_OUT } from './rec'
 
-// The Voice and Python folder (3.0.7): Settings, AI Backends, Model Storage.
+// The Voice and Python folder (3.0.7): Settings, AI Backends, Storage.
 // Captions are the row's own statements:
 //  - components/settings/RuntimeFolderSetting.tsx: "Where LU keeps the voice
 //    engine, the read-aloud voices and its own Python. Leave it empty and LU
@@ -78,13 +78,13 @@ test('python-folder', async ({ page }) => {
     },
   })
 
-  // Into Settings, AI Backends, with Providers folded and Model Storage open.
+  // Into Settings, AI Backends, with Providers folded and Storage open.
   // Done before the film starts, through the real controls.
   await page.getByRole('button', { name: 'Settings' }).first().click()
   await page.getByRole('button', { name: 'AI Backends', exact: true }).first().click()
   const providers = page.getByRole('button', { name: /^Providers/ }).first()
   if ((await providers.getAttribute('aria-expanded')) === 'true') await providers.click()
-  const storage = page.getByRole('button', { name: /Model Storage/ }).first()
+  const storage = page.getByRole('button', { name: /Storage/ }).first()
   if ((await storage.getAttribute('aria-expanded')) === 'false') await storage.click()
   const row = page.getByTestId('runtime-folder-setting')
   const field = page.getByLabel('Voice and Python folder')

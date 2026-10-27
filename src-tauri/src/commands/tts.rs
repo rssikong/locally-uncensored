@@ -350,7 +350,7 @@ pub async fn synthesize_external(
         .unwrap_or_else(|| "alloy".to_string());
 
     let client = reqwest::Client::builder()
-        .user_agent("LocallyUncensored/2.0")
+        .user_agent(crate::app_identity::outgoing_agent!("2.0"))
         .timeout(std::time::Duration::from_secs(120))
         .build()
         .map_err(|e| e.to_string())?;

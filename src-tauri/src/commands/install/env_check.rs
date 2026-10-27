@@ -983,7 +983,7 @@ fn is_bad_launch_value(why: &str) -> bool {
 fn rocm_index_for_this_os() -> String {
     if cfg!(target_os = "windows") {
         format!(
-            "{} with the device extra (torch[device-all])",
+            "{} with your card's device extra (torch[device-gfx...] and torchvision[device-gfx...])",
             torch_wheels::ROCM_WINDOWS_CHANNELS[0]
         )
     } else {

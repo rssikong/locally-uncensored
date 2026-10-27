@@ -20,10 +20,12 @@ export interface SidebarRow {
   /** The FORMATTED date, not `updatedAt`. The raw timestamp is rewritten on
    *  every token; "Just now" is not. */
   date: string
+  /** Shared with the paired phone ("Continue on phone"). */
+  shared: boolean
 }
 
 export function toSidebarRow(c: Conversation): SidebarRow {
-  return { id: c.id, title: c.title, mode: conversationMode(c), date: formatDate(c.updatedAt) }
+  return { id: c.id, title: c.title, mode: conversationMode(c), date: formatDate(c.updatedAt), shared: !!c.remoteShared }
 }
 
 /** Field-wise equality over two projections. The store selector returns the
@@ -32,7 +34,7 @@ export function sameSidebarRows(a: readonly SidebarRow[], b: readonly SidebarRow
   if (a.length !== b.length) return false
   for (let i = 0; i < a.length; i++) {
     const x = a[i], y = b[i]
-    if (x.id !== y.id || x.title !== y.title || x.mode !== y.mode || x.date !== y.date) return false
+    if (x.id !== y.id || x.title !== y.title || x.mode !== y.mode || x.date !== y.date || x.shared !== y.shared) return false
   }
   return true
 }

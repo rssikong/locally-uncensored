@@ -13,10 +13,12 @@
  * persona, memory and caveman, everything a cache could match stays
  * byte-identical from turn to turn (plan A5).
  *
- * Provider-independent by construction: the result is appended to the system
- * message, and a system message is the one thing Ollama, the built-in engine,
- * LM Studio and LU Cloud all take. That is why Document Chat works in Cloud
- * mode at all.
+ * A7 (3.0.8) took the last step: the end of the system prompt is still in
+ * front of the whole conversation, so a suffix there still cost the cache every
+ * message of the chat. The block now rides in the turn note behind the newest
+ * user message (lib/turn-context.ts). A user turn is, like the system message,
+ * something Ollama, the built-in engine, LM Studio and LU Cloud all take, so
+ * Document Chat still works in Cloud mode.
  */
 
 export const RAG_INSTRUCTION =
@@ -25,7 +27,7 @@ export const RAG_INSTRUCTION =
 
 /**
  * @param chunks the retrieved passages, already ranked and cut to the budget
- * @returns the suffix to append to the system prompt, or '' when there is
+ * @returns the block for the turn note (lib/turn-context.ts), or '' when there is
  *   nothing to say. Empty in, empty out: a turn without a hit must not spend
  *   tokens on an instruction pointing at no context.
  */

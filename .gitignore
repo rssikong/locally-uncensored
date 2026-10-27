@@ -1,6 +1,8 @@
 # Logs
 logs
 *.log
+# Belege der mobilen Abnahme sind Textprotokolle und gehoeren ins Repo
+!mobile-docs/belege/*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -93,6 +95,66 @@ SETUP_REPORT.md
 # webm/poster assets in public/teasers ship
 /assets-src/
 
+# Mobile: lokale Bauumgebung, Bauartefakte und Signatur (nie committen)
+/.android-env.sh
+LU_*_arm64.apk
+*.apk
+*.aab
+*.ipa
+key.properties
+*.jks
+*.keystore
+*.mobileprovision
+*.p12
+keystore.properties
+local.properties
+# gen/android ist eingecheckt (das Projekt aus `tauri android init` plus die
+# von Hand gepflegten Dateien). Was der Bau dort erzeugt und was nur auf
+# diesem Rechner gilt, bleibt draussen. Die feineren Regeln stehen in
+# src-tauri/gen/android/.gitignore und src-tauri/gen/android/app/.gitignore,
+# die Zeilen hier sind der zweite Riegel fuer alles, was ein Geheimnis oder
+# ein Bauartefakt sein kann.
+/src-tauri/gen/android/**/build/
+/src-tauri/gen/android/**/.gradle/
+/src-tauri/gen/android/.idea/
+/src-tauri/gen/android/**/*.iml
+/src-tauri/gen/android/**/.cxx/
+/src-tauri/gen/android/**/jniLibs/
+/src-tauri/gen/android/**/key.properties
+/src-tauri/gen/android/**/keystore.properties
+/src-tauri/gen/android/**/local.properties
+/src-tauri/gen/android/**/*.jks
+/src-tauri/gen/android/**/*.keystore
+/src-tauri/gen/android/**/*.apk
+/src-tauri/gen/android/**/*.aab
+# gen/apple ist eingecheckt (das Projekt aus `tauri ios init` plus Icons,
+# Startbild, Entitlements und Privacy Manifest). Draussen bleibt, was der Bau
+# erzeugt, was nur auf diesem Rechner gilt und alles, was zur Signatur
+# gehoert. Eine Team-ID steht nie im Projekt, sie kommt nur ueber die
+# Umgebungsvariable APPLE_DEVELOPMENT_TEAM.
+# Waechter: src/lib/__tests__/mobile-ios-fallen.test.ts
+/src-tauri/gen/apple/build/
+/src-tauri/gen/apple/Externals/
+/src-tauri/gen/apple/.tauri/
+/src-tauri/gen/apple/DerivedData/
+/src-tauri/gen/apple/Pods/
+/src-tauri/gen/apple/Podfile.lock
+/src-tauri/gen/apple/*.xcworkspace/
+/src-tauri/gen/apple/**/xcuserdata/
+/src-tauri/gen/apple/**/*.xcuserstate
+/src-tauri/gen/apple/**/*.mobileprovision
+/src-tauri/gen/apple/**/*.p12
+/src-tauri/gen/apple/**/*.p8
+/src-tauri/gen/apple/**/*.cer
+/src-tauri/gen/apple/**/*.ipa
+/src-tauri/gen/apple/**/*.xcarchive/
+# Schemata, die nur ein Handy-Bau erzeugt. Die Desktop-Schemata daneben sind
+# eingecheckt und kippen bei jedem Handy-Bau: danach zuruecksetzen mit
+#   git checkout -- src-tauri/gen/schemas
+/src-tauri/gen/schemas/android-schema.json
+/src-tauri/gen/schemas/iOS-schema.json
+/src-tauri/gen/schemas/mobile-schema.json
+
 # Working notes, proofs and hand-overs of the people who build this. They
 # live next to the tree while a release is made and are never part of it.
 BAUBUCH*.md
@@ -138,3 +200,9 @@ MAIL-ENTWURF*.md
 *.jks
 credentials*.json
 service-account*.json
+
+# The notes under mobile-docs/ are checked in on purpose: they are the record
+# of the phone build, and several are named like the working notes above
+# (INTEGRATION-306.md is one). Without this line a new note with such a name
+# would be left out without a word. Must stay below the block above.
+!/mobile-docs/**/*.md

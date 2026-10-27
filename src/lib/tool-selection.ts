@@ -76,6 +76,30 @@ const DELEGATE_KEYWORDS = [
 ]
 
 /**
+ * The words that bring get_settings and set_setting along (A11). Settings in
+ * general, in both languages, plus the names of the settings people ask for
+ * most. A false positive costs ~200 tokens on one turn; nothing changes
+ * without the user's yes on the card.
+ */
+export const SETTINGS_KEYWORDS = [
+  'setting', 'einstellung', 'preference', 'get_settings', 'set_setting',
+  'auto compact', 'auto-compact', 'autocompact', 'compact at', 'compact threshold',
+  'dark mode', 'light mode', 'darkmode', 'dark theme', 'light theme', 'dunkelmodus', 'dunklen modus', 'hellen modus', 'app theme',
+  'temperature', 'temperatur', 'top p', 'top_p', 'top k', 'top_k', 'max tokens',
+  'context window', 'kontextfenster', 'num_ctx', 'timeout', 'zeitlimit',
+  'reasoning effort', 'thinking budget', 'think budget', 'denkbudget', 'thinking mode',
+  'caveman', 'small model mode', 'small-model mode', 'emoji',
+  'search provider', 'suchanbieter', 'user agent', 'user-agent',
+  'gpu layers', 'flash attention', 'kv cache', 'download limit', 'repo map', 'review mode', 'architect mode',
+]
+
+/** True when a chat message is about LU's own settings. */
+export function asksAboutSettings(userMessage: string): boolean {
+  const msg = (userMessage || '').toLowerCase()
+  return SETTINGS_KEYWORDS.some((k) => msg.includes(k))
+}
+
+/**
  * The three tools that draw, film and automate. Everything else in the coding
  * catalog earns its place on every turn; these three cost 1.963 of the 6.186
  * tokens a coding step sends (measured 2026-08-12 through the real registry
@@ -110,6 +134,9 @@ const GATE_KEYWORDS: Record<string, readonly string[]> = {
   // Laufs — und dann kommen diese beiden mit, genau wenn sie gebraucht werden.
   check_tasks: DELEGATE_KEYWORDS,
   message_agent: DELEGATE_KEYWORDS,
+  // A11: in Code only on a message about settings, like everywhere else.
+  get_settings: SETTINGS_KEYWORDS,
+  set_setting: SETTINGS_KEYWORDS,
 }
 
 /**
@@ -203,6 +230,10 @@ const TOOL_GROUPS: ToolGroup[] = [
     keywords: WORKFLOW_KEYWORDS,
     tools: ['run_workflow'],
   },
+  {
+    keywords: SETTINGS_KEYWORDS,
+    tools: ['get_settings', 'set_setting'],
+  },
 ]
 
 // Tools that should always be available regardless of the prompt — they're
@@ -262,6 +293,9 @@ export function selectRelevantTools(
   allTools: MCPToolDefinition[],
   permissions: PermissionMap,
   maxTools?: number,
+  /** What REA's tools are routed on, when the caller knows the conversation
+   *  (rea-tools reaRoutingText). Falls back to this message alone. */
+  reaText?: string,
 ): MCPToolDefinition[] {
   const msg = userMessage.toLowerCase()
   const selectedNames = new Set<string>(ALWAYS_INCLUDE)
@@ -294,7 +328,7 @@ export function selectRelevantTools(
     if (t.source === 'external' && t.serverId !== REA_SERVER_ID) selectedNames.add(t.name)
   }
   const reaNames = allTools.filter((t) => t.serverId === REA_SERVER_ID).map((t) => t.name)
-  if (reaNames.length > 0) for (const n of reaToolsFor(userMessage, reaNames)) selectedNames.add(n)
+  if (reaNames.length > 0) for (const n of reaToolsFor(reaText ?? userMessage, reaNames)) selectedNames.add(n)
 
   // A tool the user names verbatim is always offered, builtin or external.
   for (const t of allTools) {
@@ -541,13 +575,13 @@ export async function selectRelevantToolsAsync(
   userMessage: string,
   allTools: MCPToolDefinition[],
   permissions: PermissionMap,
-  opts?: { embed?: EmbeddingFn; embeddingThreshold?: number; topN?: number; maxTools?: number },
+  opts?: { embed?: EmbeddingFn; embeddingThreshold?: number; topN?: number; maxTools?: number; reaText?: string },
 ): Promise<MCPToolDefinition[]> {
   const threshold = opts?.embeddingThreshold ?? EMBEDDING_ROUTING_THRESHOLD
   const available = allTools.filter((t) => permissions[t.category] !== 'blocked')
   const pinned = mentionedToolNames(userMessage, available)
   if (!opts?.embed || available.length <= threshold) {
-    return applyMaxTools(selectRelevantTools(userMessage, allTools, permissions), opts?.maxTools, undefined, pinned)
+    return applyMaxTools(selectRelevantTools(userMessage, allTools, permissions, undefined, opts?.reaText), opts?.maxTools, undefined, pinned)
   }
   try {
     const semanticNames = await selectToolsByEmbedding(
@@ -556,7 +590,7 @@ export async function selectRelevantToolsAsync(
       opts.embed,
       { topN: opts.topN ?? 10, alwaysInclude: ALWAYS_INCLUDE },
     )
-    const keyword = selectRelevantTools(userMessage, allTools, permissions)
+    const keyword = selectRelevantTools(userMessage, allTools, permissions, undefined, opts?.reaText)
     const union = new Set<string>([...semanticNames, ...keyword.map((t) => t.name)])
     const selected = available.filter((t) => union.has(t.name))
     // Small-Model Mode (Knob 1): cap the union to maxTools, filling from
@@ -566,6 +600,6 @@ export async function selectRelevantToolsAsync(
     // tools are pinned past the cap on both paths.
     return applyMaxTools(selected, opts.maxTools, semanticNames, pinned)
   } catch {
-    return applyMaxTools(selectRelevantTools(userMessage, allTools, permissions), opts?.maxTools, undefined, pinned)
+    return applyMaxTools(selectRelevantTools(userMessage, allTools, permissions, undefined, opts?.reaText), opts?.maxTools, undefined, pinned)
   }
 }

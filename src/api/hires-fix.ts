@@ -22,6 +22,12 @@ export interface NativeHiresFixOptions {
   denoise: number
   steps: number
   upscaleMethod: HiresUpscaleMethod
+  /**
+   * How many pixels one latent cell of this model covers (`latentDownscale`).
+   * It only names the result and keeps the 4096 limit: the node scales the
+   * latent the first pass made by `scale`, whatever its grid.
+   */
+  latentDownscale?: number
 }
 
 /**
@@ -51,6 +57,11 @@ export class NativeHiresFixError extends Error {
 
 const IMAGE_OUTPUT_NODES = new Set(['SaveImage', 'PreviewImage'])
 const IMAGE_DECODE_NODES = new Set(['VAEDecode', 'VAEDecodeTiled'])
+// A latent that carries a painted mask. A second pass over a larger copy of it
+// would refine only the masked part and leave the rest as a stretched latent,
+// and InpaintModelConditioning's concat image stays at the old size, so the
+// pass is refused for these instead of making a worse picture.
+const MASKED_LATENT_NODES = new Set(['VAEEncodeForInpaint', 'InpaintModelConditioning', 'SetLatentNoiseMask'])
 const UPSCALE_METHODS: ReadonlySet<HiresUpscaleMethod> = new Set([
   'nearest-exact',
   'bilinear',
@@ -84,14 +95,37 @@ function nextNodeId(workflow: ComfyApiGraph): string {
   return String(candidate)
 }
 
-function snapToLatentGrid(value: number): number {
-  return Math.max(64, Math.round(value / 8) * 8)
+/**
+ * Pixels per latent cell, per model family: `spacial_downscale_ratio` of the
+ * latent format ComfyUI 0.38.0 gives each model (comfy/latent_formats.py and
+ * supported_models.py, read on the box 22.10.2026). Qwen-Image 2.1 (and Noct
+ * Q, its finetune), FLUX 2 and ERNIE-Image compress 16x, Wan 2.2 TI2V-5B too.
+ * Every other family LU draws pictures with is 8x: SDXL, SD 1.5, FLUX 1 and
+ * Krea 1, Krea 2 and Qwen-Image 1 (Wan 2.1 VAE), Chroma, HiDream, SD 3.5,
+ * Lumina 2, Z-Image and Wan 2.1/2.2 14B.
+ */
+export function latentDownscale(modelType: string | undefined): number {
+  return modelType === 'qwenimage' || modelType === 'flux2' || modelType === 'ernie_image' || modelType === 'wan22' ? 16 : 8
+}
+
+/** Python's round(): halves go to the even neighbour (LatentUpscaleBy). */
+function roundHalfEven(value: number): number {
+  const down = Math.floor(value)
+  if (value - down !== 0.5) return Math.round(value)
+  return down % 2 === 0 ? down : down + 1
+}
+
+/** One side after the pass: the first pass's latent side times the factor,
+ *  rounded as LatentUpscaleBy rounds it, back in pixels. */
+function upscaledSide(base: number, scale: number, grid: number): number {
+  return Math.max(1, roundHalfEven(Math.floor(base / grid) * scale)) * grid
 }
 
 export function nativeHiresFinalSize(
   baseWidth: number,
   baseHeight: number,
   scale: number,
+  latentGrid = 8,
 ): { width: number; height: number } {
   if (!Number.isFinite(baseWidth) || !Number.isFinite(baseHeight) || baseWidth < 64 || baseHeight < 64) {
     throw new NativeHiresFixError('Native HiRes needs a valid base width and height of at least 64 px.')
@@ -100,8 +134,9 @@ export function nativeHiresFinalSize(
     throw new NativeHiresFixError('Native HiRes scale must be greater than 1.0 and no more than 3.0.')
   }
 
-  const width = snapToLatentGrid(baseWidth * scale)
-  const height = snapToLatentGrid(baseHeight * scale)
+  const grid = Number.isInteger(latentGrid) && latentGrid > 0 ? latentGrid : 8
+  const width = upscaledSide(baseWidth, scale, grid)
+  const height = upscaledSide(baseHeight, scale, grid)
 
   if (width > 4096 || height > 4096) {
     throw new NativeHiresFixError(
@@ -115,7 +150,16 @@ export function nativeHiresFinalSize(
 /**
  * Adds a native latent-upscale refinement pass to a simple image workflow:
  *
- *   KSampler → LatentUpscale → KSampler (low denoise) → VAEDecode → SaveImage
+ *   KSampler → LatentUpscaleBy → KSampler (low denoise) → VAEDecode → SaveImage
+ *
+ * The latent is scaled BY the factor, never TO a pixel size. ComfyUI's
+ * LatentUpscale divides the pixel size by 8 whatever the model, so on a
+ * model whose latent covers 16 pixels a cell it made the latent twice the
+ * asked size on each side, and the picture came out at four times the base
+ * (Discord #bug-reports 22.10.2026, Qwen-Image 2.1 and Noct Q: 768×1360 at
+ * 2x gave 3072×5440 with doubled faces). LatentUpscaleBy reads the latent it
+ * gets, so the same graph is right on every grid, Create and Edit alike (an
+ * edit's canvas follows the source, lib/edit-hires).
  *
  * The transform deliberately targets the terminal image decode rather than
  * assuming fixed node IDs, so it works with LU's dynamic/legacy image builders
@@ -147,6 +191,7 @@ export function applyNativeHiresFix(
     options.baseWidth,
     options.baseHeight,
     options.scale,
+    options.latentDownscale,
   )
   const workflow = cloneWorkflow(sourceWorkflow)
 
@@ -197,15 +242,21 @@ export function applyNativeHiresFix(
     throw new NativeHiresFixError(`The final KSampler is missing required inputs: ${missing.join(', ')}.`)
   }
 
+  const latentRef = nodeInput(firstSampler, 'latent_image')
+  const latentSource = isComfyLinkRef(latentRef) ? nodeAt(workflow, String(latentRef[0])) : undefined
+  if (latentSource && MASKED_LATENT_NODES.has(latentSource.class_type)) {
+    throw new NativeHiresFixError(
+      'Native HiRes runs on edits of the whole picture. Clear the mask, or turn Native HiRes off for this edit.',
+    )
+  }
+
   const upscaleNodeId = nextNodeId(workflow)
   const upscaleNode: HiresNode = {
-    class_type: 'LatentUpscale',
+    class_type: 'LatentUpscaleBy',
     inputs: {
       samples: [firstSamplerId, samplesRef[1]],
       upscale_method: options.upscaleMethod,
-      width,
-      height,
-      crop: 'disabled',
+      scale_by: options.scale,
     },
     _meta: {
       title: 'LU Native HiRes — latent upscale',

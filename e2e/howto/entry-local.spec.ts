@@ -4,7 +4,7 @@ import { Rec } from './rec'
 import { openChat } from './model'
 
 // Checks the how-to entries that are not on a Cloud Create stage: Settings
-// Model Storage, Onboarding, Speech and Personas, the Remote tab, the mark
+// Storage, Onboarding, Speech and Personas, the Remote tab, the mark
 // next to Agent in a local chat, the agent's folder dialog and
 // the local Character stage. Each opens its card, the film plays and the line
 // follows it, and the card names its handbook page. Fixture: the films are
@@ -39,12 +39,12 @@ test('local entries', async ({ page }) => {
     },
   })
 
-  // Settings, General, Onboarding, then AI Backends, Model Storage.
+  // Settings, General, Onboarding, then AI Backends, Storage.
   await page.getByRole('banner').getByRole('button', { name: 'Settings', exact: true }).click()
   await page.getByRole('button', { name: 'Onboarding' }).click()
   await openCard(page, 'beginners', 'settings-onboarding')
   await page.getByRole('button', { name: 'AI Backends' }).first().click()
-  const storage = page.getByRole('button', { name: 'Model Storage' })
+  const storage = page.getByRole('button', { name: 'Storage' })
   if ((await storage.getAttribute('aria-expanded')) !== 'true') await storage.click()
   await openCard(page, 'storage', 'settings-storage')
   await page.getByRole('button', { name: 'Voice & Remote' }).first().click()

@@ -1,0 +1,149 @@
+{
+ "name": "/create/gallery",
+ "art": "seite",
+ "quelle": "integ-306",
+ "route": "/create/gallery",
+ "strang": "create",
+ "code": "K6",
+ "lage": {
+  "route": "/create/gallery",
+  "screen": "m-create-gallery-screen",
+  "blaetter": [],
+  "dialog": [],
+  "reiter": null,
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back-under",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-create-gallery-screen",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-create-gallery-filters",
+   "tag": "div",
+   "rolle": "group",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    48
+   ]
+  },
+  {
+   "id": "m-create-gallery-filter-all",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "All",
+   "el": "K6.1",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-create-gallery-filter-image",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Images",
+   "el": "K6.1",
+   "box": [
+    78,
+    48
+   ]
+  },
+  {
+   "id": "m-create-gallery-filter-video",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Video",
+   "el": "K6.1",
+   "box": [
+    68,
+    48
+   ]
+  },
+  {
+   "id": "m-create-gallery-filter-audio",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Audio",
+   "el": "K6.1",
+   "box": [
+    68,
+    48
+   ]
+  },
+  {
+   "id": "m-create-gallery-empty",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    196
+   ]
+  }
+ ]
+}

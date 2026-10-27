@@ -11,6 +11,8 @@ Free and open source. In local mode everything runs on your own machine. No Dock
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![GitHub stars](https://img.shields.io/github/stars/PurpleDoubleD/locally-uncensored?style=social)](https://github.com/PurpleDoubleD/locally-uncensored/stargazers)
 [![GitHub last commit](https://img.shields.io/github/last-commit/PurpleDoubleD/locally-uncensored)](https://github.com/PurpleDoubleD/locally-uncensored/commits)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/PurpleDoubleD/locally-uncensored/badge)](https://scorecard.dev/viewer/?uri=github.com/PurpleDoubleD/locally-uncensored)
+[![CodeQL](https://github.com/PurpleDoubleD/locally-uncensored/actions/workflows/codeql.yml/badge.svg)](https://github.com/PurpleDoubleD/locally-uncensored/actions/workflows/codeql.yml)
 [![GitHub Discussions](https://img.shields.io/github/discussions/PurpleDoubleD/locally-uncensored)](https://github.com/PurpleDoubleD/locally-uncensored/discussions)
 [![Discord](https://img.shields.io/discord/1496087522042843146?style=flat-square&logo=discord&label=Discord&color=5865F2)](https://locallyuncensored.com/discord)
 [![Website](https://img.shields.io/badge/Website-locallyuncensored.com-8b5cf6)](https://locallyuncensored.com)
@@ -210,7 +212,10 @@ Yes. AGPL-3.0, no account, no usage limits. In local mode chat, agent runs and i
 Abliterated models have the trained in refusal behaviour removed from the weights, so it is not a jailbreak that can be patched or break. They answer directly, without refusals. [Full guide](https://locallyuncensored.com/blog/abliterated-models-guide.html).
 
 **What hardware do I need?**
-Chat runs a 3B model on 8 GB of system RAM with no GPU at all, and an 8B model comfortably on a 6 GB card. Image generation starts at 6 to 8 GB of VRAM, and so does video on AnimateDiff Lightning or FramePack F1; the Wan and Hunyuan models want 12 GB or more. The model manager marks what fits before you download.
+Chat runs a 3B model on 8 GB of system RAM with no GPU at all, and an 8B model comfortably on a 6 GB card. Image generation starts at 6 to 8 GB of VRAM, and so does video on AnimateDiff Lightning or FramePack F1; the Wan and Hunyuan models want 12 GB or more. The model manager marks what fits before you download. Chat runs on NVIDIA, AMD and Intel cards through the Vulkan build of the LU Engine on Windows and Linux. Images and video run on NVIDIA, on AMD with ROCm on Linux (RX 6800 and newer, RX 7000, RX 9000) and, from 3.0.8, on Windows for RX 7000 and RX 9000.
+
+**Can I run it on a Linux server, without a screen?**
+LU is a desktop app with a window, so it needs a graphical session: a desktop on the server, or one you reach over VNC or RDP. There is no `--host` flag. For other machines on your network, Settings, Voice & Remote, Local API with "Reachable on the network" gives every running local model an OpenAI compatible address on port 8129 (it binds all interfaces, needs a token, and serves the models that are loaded in LU, Ollama or LM Studio). "Start with LU" (3.0.8) brings it up on every launch. The full chat and agent window from another device is the Remote tab with LAN, on port 11435. On a server without a Vulkan driver the LU Engine runs on the processor; install `mesa-vulkan-drivers` (Debian, Ubuntu, Fedora) or `vulkan-radeon` (Arch) for an AMD card, and the app says so when it happens.
 
 **Can it replace ChatGPT or Claude?**
 For most chat, writing and coding, yes, with a good 8B to 14B local model, and it stays private and unlimited. Frontier cloud models are still stronger on the hardest reasoning. You can add them with your own API keys, or use the Cloud switch.

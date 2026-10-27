@@ -12,6 +12,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
+import { PLATFORM_TEXTS } from '../platform-text'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const read = (rel: string) => readFileSync(resolve(here, rel), 'utf8')
@@ -63,7 +64,10 @@ describe('the runtime refusal is a downgrade, not a dead end', () => {
 
   it('a local provider gets the fallback message, factually correct', () => {
     expect(agent).toContain("getProviderIdFromModel(activeModel) !== 'lu-cloud'")
-    expect(agent).toContain('LU has switched it to the prompt-based tool transport')
+    // The sentence lives in lib/platform-text.ts since the phone work; the
+    // branch asks for it by key.
+    expect(agent).toContain("? platformText('agentToolTransportSwitched')")
+    expect(PLATFORM_TEXTS.agentToolTransportSwitched.desktop).toContain('LU has switched it to the prompt-based tool transport')
   })
 
   it('the factually wrong gate text is gone', () => {
@@ -74,6 +78,7 @@ describe('the runtime refusal is a downgrade, not a dead end', () => {
   it('NEGATIVE CONTROL: an LU Cloud model with no transport at all stays blocked', () => {
     // The server already translates prompts itself; its refusal is final and
     // a client-side hermes retry would only burn paid tokens.
-    expect(agent).toContain("it can't run in Agent mode")
+    expect(agent).toContain(": platformText('agentNoToolSupport')")
+    expect(PLATFORM_TEXTS.agentNoToolSupport.desktop).toContain("it can't run in Agent mode")
   })
 })

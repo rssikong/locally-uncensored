@@ -144,6 +144,17 @@ describe('Agent mode: the file is in the working folder before the model is aske
     expect(useChatNoticeStore.getState().notices).toEqual([])
   })
 
+  // Discord feature request, 03.10.2026: a tool of a plugin (REA) runs in its own
+  // folder, so the model gets the full path the backend saved the file under.
+  it('the full path the backend saved the file under reaches the model and the chip', async () => {
+    const convId = seed()
+    uploadAnswer = () => new Response(JSON.stringify({ status: 'saved', path: '/home/me/agent-workspace/c1/mario.nes', bytes: 8 }), { status: 200 })
+    const { result } = renderHook(() => useAgentChat())
+    await act(async () => { await result.current.sendAgentMessage('what is this file?', undefined, { files: [attached()] }) })
+    expect(modelRequests[0]).toContain('Full path on this computer: /home/me/agent-workspace/c1/mario.nes')
+    expect(userMessage(convId).files![0]).toMatchObject({ workspacePath: 'mario.nes', absolutePath: '/home/me/agent-workspace/c1/mario.nes' })
+  })
+
   it('a picked project folder is where the file goes', async () => {
     const convId = seed()
     useAgentModeStore.setState({ workspaces: { [convId]: { kind: 'folder', path: '/home/me/project' } } })

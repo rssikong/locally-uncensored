@@ -5,6 +5,8 @@ export interface DocumentMeta {
   size: number
   addedAt: number
   chunkCount: number
+  /** SHA-256 of the file, hex. Written on a phone, where the same file must not be added twice. */
+  contentHash?: string
 }
 
 export interface TextChunk {

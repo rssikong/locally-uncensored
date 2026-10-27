@@ -16,6 +16,7 @@ import { BUILTIN_BACKEND_ID } from '../lib/onboarding-backend'
 import { customModelDirs } from './engine'
 import { extractGgufQuant, hfUrlToTreePath, parseHfUrl } from '../lib/hf-to-provider'
 import { IMAGE_PART } from './image-parts'
+import { kimiK3CatalogEntries } from './kimi-k3-catalog'
 import { imagePartFileName, isUpstreamImagePart, pickUpstreamImagePart } from '../lib/image-part'
 import {
   CUSTOM_NODE_REGISTRY,
@@ -182,6 +183,7 @@ export async function resumeDownload(id: string, url: string, subfolder: string,
     expectedBytes: expectedBytes ?? null,
     expectedSha256: sha256 ?? null,
     authToken: civitaiAuthToken(url),
+    ...titleArg(id),
   })
 }
 
@@ -1374,6 +1376,9 @@ export function getMainstreamTextModels(): DiscoverModel[] {
     // __tests__/katalog-architektur.live.test.ts.
     { name: 'GLM 5.3 744B IQ1', group: 'GLM 5.3 744B', description: 'ZhipuAI GLM 5.3 · same base as 5.2; the whole jump comes from post-training: +50% on Z.ai Code Bench, open-weights SOTA on Terminal Bench 3.0. 744B MoE (40B active), 1M context. Smallest quant, multi-part.', pulls: '74K+', tags: ['744B MoE', 'UD-IQ1_S', '217 GB', 'Multi-part'], updated: 'Hot', agent: true, released: '2026-08', downloadUrl: HF('unsloth/GLM-5.3-GGUF', 'UD-IQ1_S/GLM-5.3-UD-IQ1_S-00001-of-00006.gguf'), filename: 'GLM-5.3-UD-IQ1_S-00001-of-00006.gguf', sizeGB: 216.7 },
     { name: 'GLM 5.3 744B Q2', group: 'GLM 5.3 744B', description: 'ZhipuAI GLM 5.3 · Unsloth Dynamic Q2_K_XL, the quality/size sweet spot for this MoE. 744B MoE (40B active), 1M context, GLM-5.3 licence. Multi-part.', pulls: '74K+', tags: ['744B MoE', 'UD-Q2_K_XL', '254 GB', 'Multi-part'], updated: 'Hot', agent: true, released: '2026-08', downloadUrl: HF('unsloth/GLM-5.3-GGUF', 'UD-Q2_K_XL/GLM-5.3-UD-Q2_K_XL-00001-of-00007.gguf'), filename: 'GLM-5.3-UD-Q2_K_XL-00001-of-00007.gguf', sizeGB: 253.9 },
+    // Kimi K3 2.8T: fertig in api/kimi-k3-catalog.ts, erscheint aber erst, wenn
+    // die gepinnte Engine die Architektur `kimi-k3` oeffnet (b9949 kann es nicht).
+    ...kimiK3CatalogEntries(),
     { name: 'Kimi K2.7 Code 1T', description: 'Moonshot Kimi K2.7-Code · 1T MoE (32B active) coding flagship. Even the 2-bit quant is ~370 GB · multi-GPU / Mac-cluster territory. The newer Kimi K3 uses an architecture the LU Engine cannot open yet.', pulls: '392K+', tags: ['1T MoE', 'Vision', 'UD-Q2_K_XL', '371 GB', 'Multi-part'], updated: 'Hot', agent: true, released: '2026-06', downloadUrl: HF('unsloth/Kimi-K2.7-Code-GGUF', 'UD-Q2_K_XL/Kimi-K2.7-Code-UD-Q2_K_XL-00001-of-00008.gguf'), filename: 'Kimi-K2.7-Code-UD-Q2_K_XL-00001-of-00008.gguf', sizeGB: 371, ...IMAGE_PART['unsloth/Kimi-K2.7-Code-GGUF/mmproj-F16.gguf'] },
     // 2026-10-08 catalog refresh. Repos, file names and sizes read from the
     // Hugging Face tree API on that day; every architecture is one the pinned
@@ -1824,7 +1829,7 @@ export async function detectProviderModelPath(providerName: string): Promise<str
 /**
  * Wohin eine frisch heruntergeladene GGUF fuer die LU Engine gehoert.
  *
- * Der Ordner, den der Nutzer unter Model Storage gesetzt hat, wenn er einen
+ * Der Ordner, den der Nutzer unter Storage gesetzt hat, wenn er einen
  * gesetzt hat, sonst der eigene der Anwendung.
  *
  * Persona P2, 04.09.2026: der Text im Panel verspricht "LU downloads GGUFs
@@ -1843,6 +1848,28 @@ export async function luEngineDownloadDir(): Promise<string | null> {
   return await detectProviderModelPath(BUILTIN_BACKEND_ID)
 }
 
+/**
+ * Phone only: how a download is called in the notification of the system.
+ * The shell of the phone sets this once at its start (mobile/boot), with the
+ * name its pages show for the file. Nobody sets it on a desktop, so the call
+ * below carries exactly what it always carried there.
+ */
+let downloadTitleOf: ((filename: string) => string | undefined) | null = null
+export function setDownloadTitleResolver(resolver: ((filename: string) => string | undefined) | null): void {
+  downloadTitleOf = resolver
+}
+
+/** The name as an argument of the call, or nothing at all (every desktop). */
+function titleArg(filename: string): { title?: string } {
+  try {
+    const title = downloadTitleOf?.(filename)?.trim()
+    return title ? { title } : {}
+  } catch {
+    // A name is a nicety. Without one the notification shows the file name.
+    return {}
+  }
+}
+
 /** Download a GGUF model to a specific directory (for non-Ollama providers) */
 export async function startModelDownloadToPath(url: string, destDir: string, filename: string, expectedBytes?: number, sha256?: string): Promise<{ status: string; id: string; error?: string }> {
   // The CivitAI key goes along for a CivitAI address and no other (a LoRA
@@ -1852,6 +1879,7 @@ export async function startModelDownloadToPath(url: string, destDir: string, fil
   return backendCall('download_model_to_path', {
     url, destDir, filename, expectedBytes: expectedBytes ?? null, expectedSha256: sha256 ?? null,
     ...(authToken ? { authToken } : {}),
+    ...titleArg(filename),
   })
 }
 

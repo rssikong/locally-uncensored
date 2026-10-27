@@ -75,7 +75,7 @@
 <h3>Does it work on an AMD card?</h3>
 <p>Three answers, because three parts are involved.</p>
 <ul>
-<li>Chat: the LU Engine is built with Vulkan on Windows and Linux, so it runs on any card with a Vulkan driver, AMD included. On Windows the app reads AMD card memory from the HIP SDK; on Linux it reads it without ROCm.</li>
+<li>Chat: the LU Engine is built with Vulkan on Windows and Linux, so it runs on any card with a Vulkan driver, AMD included, an RX 7900 XTX too. On Windows the app reads AMD card memory from the HIP SDK; on Linux it reads it without ROCm. A Linux server or minimal install often has no Vulkan driver for the card; then the engine runs on the processor and the app says "Running on the CPU: the LU Engine found no graphics card it can use." with the package to install (<code>mesa-vulkan-drivers</code> on Debian, Ubuntu and Fedora, <code>vulkan-radeon</code> on Arch).</li>
 <li>Images and video: ComfyUI needs a PyTorch that can drive the card. On Linux the app installs the ROCm build for the cards ROCm supports (RX 6800 and up, RX 7000, RX 9000). For RX 5000 cards and RX 6000 cards below the 6800 no official ROCm build carries kernels, and the app says so and installs the processor build instead, with a note about the community route (<code>HSA_OVERRIDE_GFX_VERSION=10.3.0</code>) that it does not set for you. On Windows the app installs AMD's own Windows ROCm build for RX 7000 and RX 9000 cards; the status line adds "Researched, not proven: LU owns no AMD card, so this path has never run on our hardware." Other AMD cards on Windows get the processor build.</li>
 <li>Character training: NVIDIA, or Linux with a ROCm supported card. On Windows with an AMD card the trainer refuses before downloading anything and points at Cloud mode, which trains the same character.</li>
 </ul>
@@ -103,6 +103,9 @@
 
 <h3>Can other programs use my local models?</h3>
 <p>Yes. Settings, Voice &amp; Remote, Local API starts an OpenAI compatible server on port 8129 for every model on this machine. It needs a token, which every request must carry, and "Reachable on the network" decides whether other computers on your LAN may use it.</p>
+
+<h3>Can I run it on a Linux server without a screen?</h3>
+<p>LU is a desktop app with a window, so it needs a graphical session on the server: a desktop, or one you reach over VNC or RDP. There is no <code>--host</code> flag and no headless mode. Once it runs, Settings, Voice &amp; Remote, Local API with "Reachable on the network" gives other machines an OpenAI compatible address, <code>http://&lt;server address&gt;:8129/v1</code>, with the token on every request. It listens on all network interfaces, not on one chosen address, so use the firewall to narrow it down. It serves the models that are running: a model loaded in LU, or Ollama and LM Studio. "Start with LU" starts it every time LU opens, so it survives a reboot of the server. For the whole chat and agent window in a browser on another device, use the sidebar's "Remote" tab with "LAN" (port 11435). Open ports 8129 and 11435 in the server's firewall if one is active.</p>
 
 <h3>Can I point it at my own server?</h3>
 <p>Yes. "Add Provider" under Settings, AI Backends, Providers with the preset "Custom (OpenAI-compat)" takes any address that speaks the OpenAI API. The app asks llama.cpp, vLLM, KoboldCpp and LM Studio servers what context they run with and shows it in the context dropdown with the label "from server".</p>

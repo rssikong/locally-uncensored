@@ -1,0 +1,175 @@
+{
+ "name": "/create/characters/new",
+ "art": "seite",
+ "quelle": "integ-306",
+ "route": "/create/characters/new",
+ "strang": "create",
+ "code": "K11",
+ "lage": {
+  "route": "/create/characters/new",
+  "screen": "m-create-character-new-screen",
+  "blaetter": [],
+  "dialog": [],
+  "reiter": null,
+  "alter": null
+ },
+ "kennungen": [
+  {
+   "id": "m-app",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-stack",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back-under",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": false,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-create-character-new-screen",
+   "tag": "section",
+   "rolle": "section",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    390,
+    844
+   ]
+  },
+  {
+   "id": "m-page-back",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Back",
+   "box": [
+    48,
+    48
+   ]
+  },
+  {
+   "id": "m-create-char-name",
+   "tag": "input",
+   "rolle": "textbox",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Name",
+   "el": "K11.1",
+   "box": [
+    324,
+    48
+   ]
+  },
+  {
+   "id": "m-create-char-count",
+   "tag": "span",
+   "rolle": "span",
+   "sichtbar": true,
+   "bedienbar": false,
+   "box": [
+    53,
+    15
+   ]
+  },
+  {
+   "id": "m-create-char-add",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Add photos",
+   "risiko": "sensor",
+   "el": "K11.2",
+   "box": [
+    81,
+    81
+   ]
+  },
+  {
+   "id": "m-create-char-base",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Z-Image Character Training The character works with models of this family",
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-create-char-base",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Flux Character Training The character works with models of this family",
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-create-char-base",
+   "tag": "button",
+   "rolle": "radio",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Qwen Character Training The character works with models of this family",
+   "box": [
+    356,
+    57
+   ]
+  },
+  {
+   "id": "m-create-char-data",
+   "tag": "div",
+   "rolle": "div",
+   "sichtbar": true,
+   "bedienbar": false,
+   "el": "K11.5",
+   "box": [
+    390,
+    71
+   ]
+  },
+  {
+   "id": "m-create-train",
+   "tag": "button",
+   "rolle": "button",
+   "sichtbar": true,
+   "bedienbar": true,
+   "name": "Train",
+   "risiko": "paid",
+   "el": "K11.4",
+   "box": [
+    358,
+    48
+   ]
+  }
+ ]
+}
