@@ -2733,6 +2733,7 @@ impl<S: Send + Sync> axum::extract::FromRequestParts<S> for Caller {
 /// The device's own right (sealed channel), then the global switch, then the
 /// caller. All behind `auth_middleware`, which checks the device right for
 /// these paths already; this is the second lock on the same door.
+#[allow(clippy::result_large_err)]
 async fn guard(ctx: &CreateCtx, caller: &Caller) -> Result<String, Response> {
     if let Some(sealed) = &caller.sealed {
         if !sealed.rights.create {
@@ -2996,6 +2997,7 @@ pub(crate) async fn handle_gallery(AxumState(ctx): AxumState<CreateCtx>, caller:
 }
 
 /// The entry's hash, made once and then remembered.
+#[allow(clippy::result_large_err)]
 async fn gallery_hash(ctx: &CreateCtx, entry: &GalleryEntry) -> Result<String, Response> {
     if !entry.file.sha256.is_empty() {
         return Ok(entry.file.sha256.clone());

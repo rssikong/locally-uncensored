@@ -824,6 +824,7 @@ pub(crate) struct Device {
     caller: SealedCaller,
 }
 
+#[allow(clippy::result_large_err)]
 async fn guard(ctx: &ChatsCtx, parts: (Option<axum::Extension<SealedCaller>>, Option<axum::Extension<CallerDevice>>)) -> Result<Device, Response> {
     let (sealed, device) = parts;
     let Some(axum::Extension(caller)) = sealed else {
