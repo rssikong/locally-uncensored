@@ -63,6 +63,17 @@ function isUsablePattern(key, value) {
   if (/[?&][a-z_]+=/.test(staticText)) return false
   if (/^[.?&/]/.test(staticText.trim())) return false
   if (!/[A-Za-z]{2}/.test(staticText)) return false
+  // A pattern that maps a string to itself does nothing at runtime: the bridge
+  // writes the same text back. It also costs real money in review: every entry
+  // sits in `src/lib/i18n/zh-CN.ts`, and that file is scanned as UI copy by
+  // `die-typo-leiter-und-ihre-umgehung.test.ts` — `text-[0.55rem] {0}` was the
+  // 821st arbitrary font size in a tree upstream caps at 820, and it failed the
+  // 3.0.8 release gate.
+  if (key === value) return false
+  // The same reasoning for a pattern that is nothing but a Tailwind arbitrary
+  // value plus a slot: not copy, never displayed as a sentence.
+  const cssOnly = /^\s*(?:[a-z-]+:)?(?:text|bg|border|rounded|p[xytrbl]?|m[xytrbl]?|w|h|gap|inset|z|top|left|right|bottom|opacity|shadow|ring|leading|tracking|font)-\[[^\]]*\]\s*$/
+  if (cssOnly.test(staticText)) return false
   return placeholders(key) === placeholders(value)
 }
 

@@ -6638,7 +6638,6 @@ export const ZH_PATTERNS: ReadonlyArray<readonly [string, string]> = [
   ["server context, {0}", "服务器上下文，{0}"],
   ["t-title truncate {0}", "t-title truncate {0}"],
   ["task-{0}-{1}", "task-{0}-{1}"],
-  ["text-[0.55rem] {0}", "text-[0.55rem] {0}"],
   ["the changes in \"{0}\"", "“{0}”中的改动"],
   ["the file could not be loaded ({0})", "无法加载文件（{0}）"],
   ["the limit for attached files in Settings is {0} tokens", "设置中附件文件的上限为 {0} tokens"],
