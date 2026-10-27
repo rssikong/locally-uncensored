@@ -336,6 +336,32 @@ jobs:
           gh workflow run release-zh.yml --repo "$GITHUB_REPOSITORY" -f tag="$NEW_TAG"
           echo "已触发 $NEW_TAG 的构建与发布"
 
+      # Upstream adds workflows now and then — 3.0.8 brought `codeql.yml` and
+      # `scorecard.yml`, and a newly added workflow file is ACTIVE by default, so
+      # it starts burning minutes on the next push. That is what GitHub's
+      # "workflows on this fork have been disabled" policy exists to punish, and
+      # the last time it fired it stopped every workflow in the repository for
+      # three days. Keep exactly the two this fork owns; everything else off.
+      #
+      # Matching is on the file path, not the display name: the names are
+      # Chinese now and a rename would otherwise take our own workflows down.
+      - name: 只留本 fork 需要的工作流
+        if: always() && inputs.dry_run != true
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          keep='.github/workflows/watch-upstream.yml .github/workflows/release-zh.yml'
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows" \
+            --jq '.workflows[] | select(.state=="active") | "\(.id) \(.path)"' |
+          while read -r id path; do
+            case " $keep " in *" $path "*) continue ;; esac
+            echo "禁用（本 fork 不需要）：$path"
+            gh api -X PUT "repos/$GITHUB_REPOSITORY/actions/workflows/$id/disable" >/dev/null \
+              || echo "  禁用失败，下次巡检再试"
+          done
+
       - name: 失败时开 issue
         if: failure()
         continue-on-error: true
