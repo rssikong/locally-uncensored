@@ -27,6 +27,16 @@ import time
 from pathlib import Path
 
 
+# The app starts Python isolated (-I), which ignores PYTHONIOENCODING and
+# PYTHONUTF8. On Windows a pipe is then cp1252, and Heretic's banner (block
+# characters) killed the search with UnicodeEncodeError on the box.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
+
 def emit(event, **fields):
     fields["event"] = event
     sys.stdout.write("@lu " + json.dumps(fields) + "\n")
@@ -68,6 +78,33 @@ WEIGHT_PATTERNS = [
 ]
 
 
+def byte_progress_class():
+    """A tqdm class for snapshot_download that reports bytes instead of
+    drawing a bar. huggingface_hub 1.x always downloads through Xet, which
+    keeps a file in memory and writes it at the end, so the folder size the
+    app used to read stood at zero until the download was over."""
+    from tqdm import tqdm
+
+    class ByteProgress(tqdm):
+        def __init__(self, *args, **kwargs):
+            kwargs.pop("name", None)
+            kwargs["disable"] = False
+            kwargs["file"] = open(os.devnull, "w")
+            super().__init__(*args, **kwargs)
+            self._said = 0.0
+
+        def update(self, n=1):
+            out = super().update(n)
+            if (self.desc or "").startswith("Downloading bytes"):
+                now = time.time()
+                if now - self._said >= 1.0 or (self.total and self.n >= self.total):
+                    self._said = now
+                    emit("bytes", done=int(self.n), total=int(self.total or 0))
+            return out
+
+    return ByteProgress
+
+
 def cmd_download(a):
     from huggingface_hub import snapshot_download
 
@@ -80,6 +117,7 @@ def cmd_download(a):
         local_dir=a.dest,
         allow_patterns=WEIGHT_PATTERNS,
         ignore_patterns=["*.bin", "*.pt", "*.pth", "*.gguf", "original/*", "consolidated*"],
+        tqdm_class=byte_progress_class(),
     )
     emit("downloaded", path=str(path))
 

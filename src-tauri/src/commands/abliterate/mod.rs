@@ -864,9 +864,17 @@ fn run_job(app: &tauri::AppHandle, job: &Job) -> Result<RunRecord, String> {
             .args(["download", "--repo", &job.repo, "--revision", &job.revision, "--dest"])
             .arg(&source_dir);
         let watcher = watch_size(dir);
-        let result = run_python(cmd, "download", |_| {});
+        // The bytes the hub reports; the folder size alone stays at zero
+        // while Xet holds a file in memory.
+        let result = run_python(cmd, "download", |ev| {
+            if ev.get("event").and_then(|e| e.as_str()) == Some("bytes") {
+                let done = ev.get("done").and_then(|v| v.as_u64()).unwrap_or(0);
+                with_run(|r| r.step = r.step.max(done));
+            }
+        });
         watcher.store(false, Ordering::SeqCst);
         result?;
+        with_run(|r| r.step = r.total);
     }
     check_cancel()?;
 
@@ -969,7 +977,7 @@ fn run_job(app: &tauri::AppHandle, job: &Job) -> Result<RunRecord, String> {
     let converted = if quantize_to.is_some() { job.work.join("converted-bf16.gguf") } else { partial.clone() };
     set_phase("convert", "Converting to GGUF");
     let mut cmd = crate::python::python_command(&py);
-    cmd.env_remove("PYTHONHOME").env_remove("PYTHONPATH").arg("-s").arg("-E");
+    cmd.env_remove("PYTHONHOME").env_remove("PYTHONPATH").args(["-s", "-E", "-X", "utf8"]);
     cmd.arg(convert_dir().join("convert_hf_to_gguf.py"))
         .arg(&merged)
         .args(["--outtype", convert_type, "--outfile"])
@@ -1110,15 +1118,15 @@ fn on_search_event(ev: &Value, job: &Job, picked: &mut Option<Picked>) {
 /// The venv's Python with the environment every step shares.
 fn python(py: &Path, job: &Job) -> Command {
     let mut cmd = crate::python::python_command(py);
-    cmd.env_remove("PYTHONHOME").env_remove("PYTHONPATH").arg("-I");
+    // -I ignores every PYTHON* variable, PYTHONUTF8 and PYTHONIOENCODING
+    // included, so UTF-8 goes on the command line (a Windows pipe is cp1252
+    // otherwise) and -u stands in for PYTHONUNBUFFERED.
+    cmd.env_remove("PYTHONHOME").env_remove("PYTHONPATH").args(["-I", "-X", "utf8", "-u"]);
     cmd.env("PYTHONUNBUFFERED", "1")
         .env("TOKENIZERS_PARALLELISM", "false")
         .env("HF_HUB_DISABLE_TELEMETRY", "1")
         .env("HF_HUB_DISABLE_PROGRESS_BARS", "1")
-        // The Xet path holds a file in memory and writes it at the end, so
-        // the folder size the progress bar reads stood still for minutes.
-        // The plain download writes as it goes.
-        .env("HF_HUB_DISABLE_XET", "1")
+
         .env("HF_HOME", root().join("hf"))
         .env("PYTORCH_ENABLE_MPS_FALLBACK", "1")
         .current_dir(&job.work);
@@ -1253,7 +1261,7 @@ fn watch_size(dir: PathBuf) -> Arc<AtomicBool> {
     std::thread::spawn(move || {
         while flag.load(Ordering::SeqCst) {
             let size = dir_size(&dir);
-            with_run(|r| r.step = size.min(r.total.max(size)));
+            with_run(|r| r.step = r.step.max(size));
             std::thread::sleep(Duration::from_millis(800));
         }
     });
