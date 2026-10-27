@@ -299,14 +299,38 @@ jobs:
         run: |
           set -euo pipefail
           base="${TAG#v}"
+          moved=false
           if [ -n "$RELEASED" ] && [ "$FORCE" != 'true' ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "已发布过 ${RELEASED}，跳过"
-            exit 0
+            # A published version does not stay published: upstream re-tags.
+            # 3.0.8 was released on b86747ba at 17:53, then four "3.0.8 fixes"
+            # were pushed and the tag was MOVED to 0aac9711 at 01:48 — same
+            # name, different code. Comparing tag names alone said "already
+            # released" and the fixes never reached an installer.
+            #
+            # So compare the commits: if the commit the upstream tag points at
+            # is already inside the commit we shipped, there is nothing to do.
+            # Otherwise it is new payload under an old name and gets its own
+            # zh tag (v3.0.8-zh.2), exactly like a new version.
+            upstream_commit="$(git rev-list -n1 "$TAG" 2>/dev/null || echo '')"
+            shipped_commit="$(git rev-list -n1 "$RELEASED" 2>/dev/null || echo '')"
+            if [ -z "$upstream_commit" ] || [ -z "$shipped_commit" ]; then
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              echo "已发布过 ${RELEASED}（取不到提交，保守跳过）"
+              exit 0
+            fi
+            if git merge-base --is-ancestor "$upstream_commit" "$shipped_commit"; then
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              echo "已发布过 ${RELEASED}，且它已包含 ${TAG} 当前的提交 ${upstream_commit:0:8}，跳过"
+              exit 0
+            fi
+            echo "上游把 ${TAG} 从已发布的版本移到了新提交（${shipped_commit:0:8} → ${upstream_commit:0:8}），当作新版本发"
+            moved=true
           fi
           # A tag that exists without a release is a build that ended red: keep
           # that tag and try again, instead of inventing zh.2 for the same commit.
-          if [ -n "$ZH_TAG" ] && [ "$FORCE" != 'true' ]; then
+          # Not when the tag only looks published because upstream moved it — that
+          # is a new payload and needs the next number, not a rebuild of zh.1.
+          if [ "$moved" = 'false' ] && [ -n "$ZH_TAG" ] && [ "$FORCE" != 'true' ]; then
             echo "new_tag=${ZH_TAG}" >> "$GITHUB_OUTPUT"
             echo "skip=false"        >> "$GITHUB_OUTPUT"
             echo "上次发布未完成，重试 ${ZH_TAG}"
