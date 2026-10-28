@@ -800,7 +800,6 @@ export const ZH_CN: Record<string, string> = {
   "Chat, Create renders and voice run on lu-labs.ai against your LU account and are metered against your credits; generated media and job records are stored with your account. Switch to Local in the header to run everything on your machine. What local mode still sends is listed in this section once you are there.": "聊天、Create 渲染和语音在 lu-labs.ai 上使用你的 LU 账户运行，并按你的额度计费；生成的媒体和任务记录保存在你的账户中。在顶栏切换到本地即可全部在本机运行。本地模式仍会发送的内容，切换后会在本节列出。",
   "Chat, agent runs, image & video generation all execute on your machine. LU has no analytics kit and sends no crash reports.": "聊天、智能体运行以及图像和视频生成都在你的机器上执行。LU 没有分析工具，也不会发送崩溃报告。",
   "Chat, agent runs, image &amp; video generation all execute on your machine. LU has no analytics kit and sends no crash reports.": "聊天、智能体运行、图像和视频生成全部在你的机器上执行。LU 没有分析工具，也不发送崩溃报告。",
-  "ChatGPT:": "ChatGPT：",
   "Chats, documents and memories are stored on this phone.": "聊天、文档和记忆都存储在此手机上。",
   "Check again": "重新检查",
   "Check cancelled. Nothing was changed.": "检查已取消。未做任何更改。",

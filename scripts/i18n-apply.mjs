@@ -52,6 +52,25 @@ const current = { ...(module.ZH_CN ?? {}) }
 const patterns = new Map(module.ZH_PATTERNS ?? [])
 
 /**
+ * Hand-maintained corrections. This script never writes them: a key that lives
+ * in `overrides.ts` is skipped here, so the pipeline cannot retranslate it away
+ * or prune it. Reading the file only to stay out of its way is the point.
+ */
+const overridesUrl = new URL(
+  `file://${join(root, 'src', 'lib', 'i18n', 'overrides.ts').replace(/\\/g, '/')}`,
+).href
+let overrideModule
+try {
+  overrideModule = await import(overridesUrl)
+} catch (error) {
+  // fail-closed，和 i18n-check 同一个理由：文件缺失不能退化成空对象 ——
+  // 那会让流水线以为没有手动词条，下一次翻译把它们全部覆盖掉。
+  console.error(`i18n-apply: 无法加载 src/lib/i18n/overrides.ts（${error.message}）`)
+  process.exit(1)
+}
+const overrides = new Set(Object.keys(overrideModule.ZH_OVERRIDES ?? {}))
+
+/**
  * A pattern is applied to every text node, so a bad one is worse than a
  * missing one. Same rules as the extractor: short UI copy only, never a
  * prompt paragraph, never a query string or a path.
@@ -133,6 +152,7 @@ function isFragmentArtefact(key, value) {
 }
 
 const skipped = []
+const prunedKeys = []
 let added = 0
 let updated = 0
 let patternsAdded = 0
@@ -205,6 +225,12 @@ for (const result of results) {
   if (bad) continue
 
   for (const [key, value] of Object.entries(next)) {
+    // A hand-maintained translation wins at runtime, so writing the machine's
+    // version underneath it would only leave a line that never takes effect.
+    if (overrides.has(key)) {
+      skipped.push({ id: result.id, why: `opts out: "${key}" is hand-maintained` })
+      continue
+    }
     if (current[key] === value) continue
     if (key in current) updated += 1
     else added += 1
@@ -217,6 +243,7 @@ for (const result of results) {
 for (const [key, value] of Object.entries(current)) {
   if (!isFragmentArtefact(key, value)) continue
   delete current[key]
+  prunedKeys.push(key)
   pruned += 1
 }
 
@@ -261,11 +288,13 @@ for (const [key, value] of Object.entries(current)) {
   // would write the same text back) and only bloats the table.
   if (key === value) {
     delete current[key]
+    prunedKeys.push(key)
     pruned += 1
     continue
   }
   if (isUsableKey(key)) continue
   delete current[key]
+  prunedKeys.push(key)
   pruned += 1
 }
 
@@ -306,6 +335,11 @@ console.log(
 )
 for (const s of skipped.slice(0, 15)) console.log(`  跳过 ${s.id}: ${s.why}`)
 if (skipped.length > 15) console.log(`  …还有 ${skipped.length - 15} 条`)
+
+// 剔除必须点名：一条人工写进去的词条被某条规则判死时，计数是唯一会消失得
+// 无影无踪的东西。日志里说清楚是哪一条，才知道该修规则还是改词条。
+for (const key of prunedKeys.slice(0, 15)) console.log(`  剔除 ${JSON.stringify(key)}`)
+if (prunedKeys.length > 15) console.log(`  …还有 ${prunedKeys.length - 15} 条被剔除`)
 
 if (dryRun) {
   console.log('--dry-run：未写入')

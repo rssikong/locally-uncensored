@@ -5,9 +5,12 @@
  * copy. `scripts/i18n-apply.mjs` writes `zh-CN.ts`; nothing else in the app
  * knows or cares where a sentence came from.
  *
- * Two lookups, in this order:
- *   1. exact match  — the overwhelming majority
- *   2. pattern      — `Tasks ({0})`, `Remove {0}`: a count or a name inside a
+ * Three lookups, in this order:
+ *   1. override     — `overrides.ts`: hand-maintained corrections. They come
+ *                     first because nothing automated writes that file, so a
+ *                     manual fix cannot be retranslated away or pruned.
+ *   2. exact match  — the generated dictionary, the overwhelming majority
+ *   3. pattern      — `Tasks ({0})`, `Remove {0}`: a count or a name inside a
  *                     sentence, captured and substituted back
  *
  * A miss returns `null`, never the source string. The caller decides what a
@@ -15,6 +18,7 @@
  * deliberate: a wrong Chinese sentence is worse than a right English one.
  */
 import { ZH_CN, ZH_PATTERNS } from './zh-CN'
+import { ZH_OVERRIDES } from './overrides'
 
 interface CompiledPattern {
   readonly replacement: string
@@ -80,6 +84,11 @@ export function resetDictionary(): void {
 
 /** Chinese for an English source string, or `null` when none is known. */
 export function translate(source: string): string | null {
+  // Overrides first, and `Object.hasOwn` for the same reason as the dictionary
+  // below: a rendered word like "constructor" would otherwise reach
+  // Object.prototype and return a function instead of a string.
+  if (Object.hasOwn(ZH_OVERRIDES, source)) return ZH_OVERRIDES[source]
+
   // `Object.hasOwn` and not `dictionary[source]`: a rendered word like
   // "constructor" would otherwise hit Object.prototype and return a function.
   if (Object.hasOwn(dictionary, source)) return dictionary[source]

@@ -6,6 +6,7 @@ import {
   setDictionary,
   translate,
 } from '../i18n/pack'
+import { ZH_OVERRIDES } from '../i18n/overrides'
 
 afterEach(() => resetDictionary())
 
@@ -50,5 +51,22 @@ describe('patterns for strings with a value inside', () => {
   it('prefers an exact entry over a pattern', () => {
     setDictionary({ 'Remove all': '全部移除' }, [['Remove {0}', '移除 {0}']])
     expect(translate('Remove all')).toBe('全部移除')
+  })
+})
+
+describe('hand-maintained overrides', () => {
+  it('wins over the generated dictionary and over patterns', () => {
+    // "Remove" is a generated entry, so without the override this returns "移除".
+    // The pipeline never writes overrides.ts, which is what makes this stable.
+    ZH_OVERRIDES.Remove = '手动移除'
+    try {
+      setDictionary({ Remove: '移除' }, [['Remove {0}', '移除 {0}']])
+      expect(translate('Remove')).toBe('手动移除')
+      // 手动词条只按整串匹配，带变量的句子仍走模式 —— 这是有意的，
+      // 否则一条 override 会连坐所有含这个词的句子。
+      expect(translate('Remove x')).toBe('移除 x')
+    } finally {
+      delete ZH_OVERRIDES.Remove
+    }
   })
 })

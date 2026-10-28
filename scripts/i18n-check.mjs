@@ -33,6 +33,18 @@ const DICT = join(root, 'src', 'lib', 'i18n', 'zh-CN.ts')
 const url = new URL(`file://${DICT.replace(/\\/g, '/')}`).href
 const { ZH_CN, ZH_PATTERNS } = await import(url)
 
+// Hand-maintained corrections. Same rules, plus one extra: they may shadow a
+// generated entry, but the shadowing has to be printed — a silent override
+// reads like something the pipeline produced.
+const OVERRIDES = join(root, 'src', 'lib', 'i18n', 'overrides.ts')
+const overrideUrl = new URL(`file://${OVERRIDES.replace(/\\/g, '/')}`).href
+const { ZH_OVERRIDES } = await import(overrideUrl).catch((error) => {
+  // fail-closed 是有意的：以前这里 catch 成一个空对象，文件丢了就等于"没有手动词条"，
+  // 门禁照样打绿，而每条人工修正都变成不可见的。缺文件必须是红的。
+  console.error(`i18n-check: 无法加载 src/lib/i18n/overrides.ts（${error.message}）`)
+  process.exit(1)
+})
+
 const problems = []
 const placeholders = (text) => (text.match(/\{\w+\}/g) ?? []).sort()
 const slots = (text) => (text.match(/\{\d+\}/g) ?? []).sort()
@@ -88,6 +100,19 @@ for (const [key, value] of Object.entries(ZH_CN ?? {})) {
   }
 }
 
+const shadowed = []
+for (const [key, value] of Object.entries(ZH_OVERRIDES ?? {})) {
+  if (typeof value !== 'string' || value.trim() === '') {
+    problems.push(`手动词条空译文：${key}`)
+    continue
+  }
+  if (placeholders(key).join(',') !== placeholders(value).join(',')) {
+    problems.push(`手动词条占位符不一致：${key} → ${value}`)
+  }
+  if (key === value) problems.push(`手动词条与原文相同（不生效）：${key}`)
+  if (Object.hasOwn(ZH_CN ?? {}, key)) shadowed.push(key)
+}
+
 for (const [pattern, replacement] of ZH_PATTERNS ?? []) {
   const expected = slots(pattern)
   const got = slots(replacement)
@@ -98,6 +123,7 @@ for (const [pattern, replacement] of ZH_PATTERNS ?? []) {
 }
 
 const total = Object.keys(ZH_CN ?? {}).length
+const manual = Object.keys(ZH_OVERRIDES ?? {}).length
 if (problems.length > 0) {
   console.error(`i18n-check: ${problems.length} 个问题（词条 ${total}）`)
   for (const p of problems.slice(0, 30)) console.error(`  - ${p}`)
@@ -105,4 +131,10 @@ if (problems.length > 0) {
   process.exit(1)
 }
 
-console.log(`i18n-check: 通过（词条 ${total}，模式 ${(ZH_PATTERNS ?? []).length}）`)
+console.log(
+  `i18n-check: 通过（词条 ${total}，模式 ${(ZH_PATTERNS ?? []).length}，手动词条 ${manual}）`,
+)
+if (shadowed.length > 0) {
+  console.log(`  手动词条盖住了词典里的 ${shadowed.length} 条（有意为之才正常）：`)
+  for (const key of shadowed) console.log(`    · ${JSON.stringify(key)}`)
+}
