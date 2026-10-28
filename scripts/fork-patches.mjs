@@ -41,6 +41,13 @@ const FILES = [
   // exempt, or it is read as UI copy.
   'src/lib/__tests__/keine-deutschen-saetze-in-der-oberflaeche.test.ts',
   'src/lib/__tests__/no-built-in-engine-left-on-screen.test.ts',
+  // Layout, not copy: the three mode tabs are `flex-1` and `white-space` lets
+  // CSS break Chinese between any two characters. At the minimum sidebar width
+  // (200px) each tab keeps ~20.7px for a 22px label, so 聊天 stacks vertically
+  // while Chat/Code only overflow — Latin words do not break mid-word. Fixing
+  // this needs `whitespace-nowrap` on the buttons and `shrink-0` on the icons;
+  // there is no selector that reaches these three without touching the file.
+  'src/components/layout/Sidebar.tsx',
 ]
 
 const DIR = '.fork/patches'
