@@ -230,24 +230,23 @@ The macOS row of the [Download](#download) table says whether the current releas
 
 ## Roadmap
 
-Updated 22 October 2026. Everything up to 3.0.7 has shipped; [Releases](https://github.com/PurpleDoubleD/locally-uncensored/releases) has the history.
+Updated 28 October 2026. Everything up to 3.0.8 has shipped; [Releases](https://github.com/PurpleDoubleD/locally-uncensored/releases) has the history.
 
-**Now: 3.0.8, built and in testing**
+**Just out: 3.0.8**
 
-- Videos made in chat play in the chat
-- New web search in chat that keeps working when one search source blocks it
-- Change LU settings by asking in chat, with a confirmation card and undo
-- A picture attached in chat reaches the image tools
-- Create tools in chat and agent hardened: attachments, file names, model choice, error messages, stop and timeouts
-- Exact VRAM planning for local models, with a hint and one click fixes when a model does not fit
-- Less RAM in use while idle on Windows
-- Upscale in Edit
-- Choose where models, the gallery and the runtime are stored
-- Binary files in chat, such as ROMs, reach the tools with their full path
-- AMD graphics cards in ComfyUI
-- Faster start of an answer when the model is already loaded
-- Light mode: icons that were hard to see are fixed
-- Security basics: automated code and dependency checks
+- DeepSeek V4.1 Flash Dealigned and Kimi K3.1 Pro in LU Cloud
+- Remove refusals: a local model that refuses less, made inside the app
+- Web search that keeps working, videos that play in the chat, settings from the chat
+- Two graphics cards at once, exact VRAM planning for local models
+- Fixes for Wan 2.2 14B, the character trainer, special characters in Windows user names, the Mac image engine and the Linux AppImage
+
+**Next: 3.0.9**
+
+- Longer local videos: extend a clip and pick the length in seconds, with a time estimate before it starts
+- Faster local video with fewer steps
+- Group chat keeps the full context you picked
+- MCP servers started with uvx work on Windows
+- Your own ComfyUI workflows, for example LTX 2.5 image to video
 
 **Phone**
 
@@ -256,8 +255,8 @@ Updated 22 October 2026. Everything up to 3.0.7 has shipped; [Releases](https://
 
 **Soon**
 
-- Two graphics cards at once: chat stays usable on one card while a video renders on the other
-- Remove refusals from a local model inside the app (abliteration), with the result in the Model Manager
+- 3D in Create: text to 3D and image to 3D
+- LU Sync: your chats, memory and characters on all your devices
 - Partner program
 - Complete remote access via the mobile app: Chat, Agent, Code and all of Create from your phone, running on your PC
 
