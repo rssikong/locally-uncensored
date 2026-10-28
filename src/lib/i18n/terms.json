@@ -1,4 +1,101 @@
 {
   "version": 1,
-  "terms": []
+  "frozenAt": "2026-10-28",
+  "policy": {
+    "minShare": 0.6,
+    "minGap": 0.15,
+    "note": "多数派只用于提案，运行时只认 canonical。冻结是人的动作，不存在自动落盘。"
+  },
+  "terms": [
+    {
+      "id": "chat",
+      "english": "\\bchats?\\b",
+      "scope": "keys",
+      "canonical": "聊天",
+      "variants": ["对话"],
+      "mode": "report",
+      "rationale": "全局唯一干净的多数派，也是唯一同时满足「占比 70% + 领先 40 点」的词。作用域限定在英文 key 含 chat 的条目，所以 conversation 的 134 处「对话」不在管辖内 —— 那里本来就该是对话。",
+      "proposal": { "at": "2026-10-28", "counts": { "聊天": 313, "对话": 134 }, "share": 0.7 }
+    },
+    {
+      "id": "image",
+      "english": "\\bimages?\\b",
+      "scope": "keys",
+      "canonical": "图像",
+      "variants": ["图片"],
+      "mode": "report",
+      "rationale": "实测 234:207（53%），没过 60% 门槛，按规则不能自动归一。而且 UI 自然度上「图片」更顺（请先添加图片 / 请先添加图像）—— 这是本表里唯一建议人可以覆盖多数派的词。要归一就把 mode 改成 normalize，一行的事，但要先认下改哪 207 条。",
+      "proposal": { "at": "2026-10-28", "counts": { "图像": 234, "图片": 207 }, "share": 0.53 }
+    },
+    {
+      "id": "token",
+      "english": "\\btokens?\\b",
+      "scope": "keys",
+      "canonical": "token",
+      "variants": ["令牌"],
+      "mode": "report",
+      "rationale": "保留英文，与翻译提示词的品牌不译清单一致。109 票全部是 token 本身，零违规 —— 这条的价值是回归守卫：以后模型若把它译成「令牌」，这里会先报出来。",
+      "proposal": { "at": "2026-10-28", "counts": { "token": 109 }, "share": 1 }
+    },
+    {
+      "id": "provider",
+      "english": "\\bproviders?\\b",
+      "scope": "keys",
+      "canonical": "提供商",
+      "variants": ["服务商", "提供方"],
+      "mode": "report",
+      "rationale": "三足鼎立（提供方 14 / 服务商 11 / 提供商 11），第一名仅 39%，远不够归一。canonical 取「提供商」是软件语境的常用说法，不是多数派 —— 这张表在 report 模式下 canonical 只是参照点。",
+      "proposal": { "at": "2026-10-28", "counts": { "提供方": 14, "服务商": 11, "提供商": 11 }, "share": 0.39 }
+    },
+    {
+      "id": "persona",
+      "english": "\\bpersonas?\\b",
+      "scope": "keys",
+      "canonical": "人设",
+      "variants": ["角色设定"],
+      "mode": "report",
+      "rationale": "13:5，「人设」占 72%、领先 44 点，数字上其实够格归一。但样本只有 18 条，且「角色设定」在角色卡语境里并非错译，归一收益太小，先留着看。",
+      "proposal": { "at": "2026-10-28", "counts": { "人设": 13, "角色设定": 5 }, "share": 0.72 }
+    },
+    {
+      "id": "agent",
+      "english": "\\bagents?\\b",
+      "scope": "keys",
+      "canonical": "智能体",
+      "variants": ["代理", "Agent"],
+      "mode": "report",
+      "rationale": "精确打平：智能体 76，拉丁 Agent 76，代理 26。三种形态各占三分之一，这已经不是「不一致」而是「没定过标准」。Agent 该不该保留英文是产品决定（它是产品名的一部分），永不自动归一。",
+      "proposal": { "at": "2026-10-28", "counts": { "智能体": 76, "Agent": 76, "代理": 26 }, "share": 0.43 }
+    },
+    {
+      "id": "memory",
+      "english": "\\bmemor(?:y|ies)\\b",
+      "scope": "keys",
+      "canonical": "记忆",
+      "variants": ["内存"],
+      "mode": "report",
+      "rationale": "同形不同义，永远不要 normalize：内存是 RAM（内存占用、显存），记忆是功能名（记忆设置、记住这段对话）。数字上内存 129 : 记忆 83 看似有「多数派」，但那是两个词被算进了一个格子 —— 按值替换会把功能说成硬件。",
+      "proposal": { "at": "2026-10-28", "counts": { "内存": 129, "记忆": 83 }, "share": 0.61 }
+    },
+    {
+      "id": "folder",
+      "english": "\\bfolders?\\b",
+      "scope": "keys",
+      "canonical": "文件夹",
+      "variants": ["目录"],
+      "mode": "report",
+      "rationale": "270:7，数字上最干净。但「目录」多数时候是 catalog / directory（目录布局、完整目录、模型目录），是另一个词而不是 folder 的变体 —— 剩下 7 条里就混着这种。合法歧义，只报不改。",
+      "proposal": { "at": "2026-10-28", "counts": { "文件夹": 270, "目录": 7 }, "share": 0.97 }
+    },
+    {
+      "id": "prompt",
+      "english": "\\bprompts?\\b",
+      "scope": "keys",
+      "canonical": "提示词",
+      "variants": ["提示"],
+      "mode": "report",
+      "rationale": "179:14。数字够干净，但「提示」在 tooltip 语境里是另一个词（hint），不是 prompt 的缩写。分词按最长优先才不会把「提示词」算进「提示」—— 这条词本身就是分词的验收用例。",
+      "proposal": { "at": "2026-10-28", "counts": { "提示词": 179, "提示": 14 }, "share": 0.93 }
+    }
+  ]
 }

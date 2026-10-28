@@ -98,7 +98,9 @@ if (MODE === 'report' || MODE === 'propose') {
           pad(String(row.mixed), 6) +
           `${Math.round(row.share * 100)}%${mark}`,
       )
-      if (!row.matchesFrozen && row.total > 0) {
+      // 只有 normalize 的词，多数派偏离冻结值才是要处理的事（下次 sweep 会改回去）。
+      // report 的词本来就允许偏离（memory 的内存/记忆都正当），每行都提醒只会变噪音。
+      if (row.mode === 'normalize' && !row.matchesFrozen && row.total > 0) {
         console.log(pad('', 14) + `注意：多数派是「${row.top}」，与冻结的「${row.canonical}」不同`)
       }
     }

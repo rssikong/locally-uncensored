@@ -122,10 +122,11 @@ export function validateTerms(raw) {
   }
 
   // 最长优先：`提示词` 必须排在 `提示` 前面，否则短词永远先命中。
+  // 拉丁词形同时存一份小写副本 —— `token` 在句首会写成 `Token`，按原样比对会漏票。
   const ordered = []
   for (const term of compiled) {
     for (const form of [term.canonical, ...term.variants]) {
-      if (form) ordered.push({ form, term })
+      if (form) ordered.push({ form, lower: form.toLowerCase(), term })
     }
   }
   ordered.sort((a, b) => b.form.length - a.form.length || a.form.localeCompare(b.form))
@@ -153,20 +154,29 @@ export function loadTerms(readFileSync, path) {
 /**
  * 最长优先切分。返回逐段 token：命中的 token 带所属 term，未命中的逐字符。
  * 归一与统计都基于它，这样「提示词」不会被拆成「提示」+「词」。
+ *
+ * 拉丁词形按小写比对（`Token` 与 `token` 同票）；中文没有大小写，不受影响。
+ * 先整体小写一次，避免每个位置都做一次 slice + toLowerCase。
  */
 export function tokenize(text, table) {
+  const lowered = text.toLowerCase()
+  // 极少数字符小写后长度会变（如 İ），那种情况退回原文比对，宁可漏票也不要错位。
+  const haystack = lowered.length === text.length ? lowered : text
+  const fold = lowered.length === text.length
+
   const tokens = []
   let index = 0
   while (index < text.length) {
     let hit = null
     for (const candidate of table._forms) {
-      if (text.startsWith(candidate.form, index)) {
+      const probe = fold ? candidate.lower : candidate.form
+      if (haystack.startsWith(probe, index)) {
         hit = candidate
         break
       }
     }
     if (hit) {
-      tokens.push({ text: hit.form, term: hit.term })
+      tokens.push({ text: text.slice(index, index + hit.form.length), term: hit.term })
       index += hit.form.length
     } else {
       tokens.push({ text: text[index], term: null })
@@ -182,6 +192,21 @@ function allowed(term, key, value) {
   return false
 }
 
+/** 分词大小写不敏感，比较也必须如此，否则 `Agent` / `agent` 会被当成两种东西。 */
+const sameText = (a, b) => a === b || a.toLowerCase() === b.toLowerCase()
+const isVariant = (term, text) => term.variants.some((v) => sameText(v, text))
+const isCanonical = (term, text) => sameText(term.canonical, text)
+
+/**
+ * 统计时的归类：大小写不同但同属一个词形的，必须并进同一格。
+ * 否则 `Agent` / `agent` / `AGENT` 会各占一行，票数被摊薄成一堆"少数派"。
+ */
+const labelFor = (term, text) => {
+  if (isCanonical(term, text)) return term.canonical
+  const variant = term.variants.find((v) => sameText(v, text))
+  return variant ?? text
+}
+
 /**
  * 这个词管不管这一条。`keys` 用英文 key 把关（chat 只管 key 里含 chat 的条目，
  * 所以 conversation 的 48 条「对话」根本不在作用域内）；`values` / `both` 不设门槛。
@@ -195,8 +220,8 @@ function hitsOf(term, value, table) {
   const tokens = tokenize(value, table)
   const mine = tokens.filter((t) => t.term && t.term.id === term.id)
   return {
-    canonical: mine.filter((t) => t.text === term.canonical).length,
-    variants: mine.filter((t) => term.variants.includes(t.text)),
+    canonical: mine.filter((t) => isCanonical(term, t.text)).length,
+    variants: mine.filter((t) => isVariant(term, t.text)),
   }
 }
 
@@ -218,7 +243,7 @@ export function normalizeValue(key, value, table, { only = null } = {}) {
     let touched = false
     const rebuilt = tokens.map((token) => {
       if (!token.term || token.term.id !== term.id) return token.text
-      if (!term.variants.includes(token.text)) return token.text
+      if (!isVariant(term, token.text)) return token.text
       touched = true
       changes.push({ term: term.id, from: token.text, to: term.canonical })
       return term.canonical
@@ -302,10 +327,10 @@ export function proposals(entries, patterns, table, { only = null } = {}) {
       const tokens = tokenize(value, table)
       const mine = tokens.filter((t) => t.term && t.term.id === term.id)
       if (mine.length === 0) return
-      const hasCanonical = mine.some((t) => t.text === term.canonical)
-      const hasVariant = mine.some((t) => term.variants.includes(t.text))
+      const hasCanonical = mine.some((t) => isCanonical(term, t.text))
+      const hasVariant = mine.some((t) => isVariant(term, t.text))
       if (hasCanonical && hasVariant) mixed += 1
-      for (const token of mine) bump(token.text)
+      for (const token of mine) bump(labelFor(term, token.text))
     }
 
     if (term.tables.includes('entries')) {
