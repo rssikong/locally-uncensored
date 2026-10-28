@@ -207,7 +207,7 @@ jobs:
         run: |
           node scripts/i18n-check.mjs
           npx tsc -b --force
-          npx vitest run src/lib/__tests__/i18n.test.ts src/lib/__tests__/i18n-pack.test.ts src/lib/__tests__/i18n-bridge.test.ts
+          npx vitest run src/lib/__tests__/i18n.test.ts src/lib/__tests__/i18n-pack.test.ts src/lib/__tests__/i18n-bridge.test.ts src/lib/__tests__/one-word-one-translation.test.ts
 
       - name: 汇总说明
         if: always()

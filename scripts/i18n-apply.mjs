@@ -4,6 +4,7 @@
  *
  *   node scripts/i18n-apply.mjs --in=translations.json
  *   node scripts/i18n-apply.mjs --in=translations.json --dry-run
+ *   node scripts/i18n-apply.mjs --sweep [--dry-run]      只做术语归一与裁剪，不接译文
  *
  * Two kinds of group arrive here:
  *
@@ -19,9 +20,12 @@
  * skipped and reported, never merged. The app keeps its English for that one
  * sentence, which is the safe outcome.
  */
+import { readFileSync } from 'node:fs'
 import { readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+
+import { loadTerms, normalizeValue } from './lib/i18n-terms.mjs'
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const DICT = join(root, 'src', 'lib', 'i18n', 'zh-CN.ts')
@@ -35,13 +39,15 @@ const arg = (name) => {
   return index >= 0 ? (process.argv[index + 1] ?? null) : null
 }
 const IN = arg('in')
-if (!IN) {
+const sweepOnly = process.argv.includes('--sweep')
+if (!IN && !sweepOnly) {
   console.error('用法: node scripts/i18n-apply.mjs --in=translations.json [--dry-run]')
+  console.error('      node scripts/i18n-apply.mjs --sweep [--dry-run]   只做术语归一与裁剪')
   process.exit(2)
 }
 const dryRun = process.argv.includes('--dry-run')
 
-const payload = JSON.parse(await readFile(IN, 'utf8'))
+const payload = IN ? JSON.parse(await readFile(IN, 'utf8')) : { results: [], groups: [] }
 const results = payload.results ?? []
 const groupList = payload.groups ?? []
 const byId = new Map(groupList.map((group) => [group.id, group]))
@@ -69,6 +75,19 @@ try {
   process.exit(1)
 }
 const overrides = new Set(Object.keys(overrideModule.ZH_OVERRIDES ?? {}))
+
+/**
+ * 术语表。加载失败就停：一张被读成空的表会让归一悄悄失效，而门禁仍然是绿的 ——
+ * 和 overrides 的 fail-closed 同一个理由。
+ */
+const TERMS = join(root, 'src', 'lib', 'i18n', 'terms.json')
+let terms
+try {
+  terms = loadTerms(readFileSync, TERMS)
+} catch (error) {
+  console.error(`i18n-apply: ${error.message}`)
+  process.exit(1)
+}
 
 /**
  * A pattern is applied to every text node, so a bad one is worse than a
@@ -188,9 +207,16 @@ for (const result of results) {
       skipped.push({ id: result.id, why: 'fragment artefact' })
       continue
     }
+    // 归一放在 artefact 判定之后重新跑一次：改写可能改变长度，
+    // 而长度正是 isWordFragmentBloat 的判据。
+    const normalizedPattern = normalizeValue(key, value, terms).value
+    if (isFragmentArtefact(key, normalizedPattern)) {
+      skipped.push({ id: result.id, why: 'fragment artefact（归一后）' })
+      continue
+    }
     if (patterns.has(key)) patternsUpdated += 1
     else patternsAdded += 1
-    patterns.set(key, value)
+    patterns.set(key, normalizedPattern)
     continue
   }
 
@@ -220,7 +246,22 @@ for (const result of results) {
       bad = true
       return
     }
-    next[fragment] = piece
+    // 术语归一发生在落盘之前，所以新译文产出即合规，不需要事后补救。
+    // 归一后必须重跑那两条判定：改写会改长度（代理→智能体），也可能碰上占位符。
+    const normalizedPiece = normalizeValue(fragment, piece, terms).value
+    if (normalizedPiece !== piece) {
+      if (placeholders(fragment) !== placeholders(normalizedPiece)) {
+        skipped.push({ id: result.id, why: `归一后占位符不一致: "${fragment}"` })
+        bad = true
+        return
+      }
+      if (isFragmentArtefact(fragment, normalizedPiece)) {
+        skipped.push({ id: result.id, why: `归一后成了碎片: "${fragment}"` })
+        bad = true
+        return
+      }
+    }
+    next[fragment] = normalizedPiece
   })
   if (bad) continue
 
@@ -236,6 +277,29 @@ for (const result of results) {
     else added += 1
     current[key] = value
   }
+}
+
+/**
+ * 术语归一（存量）。新译文在落盘前已经归一过，这一段是让历史数据自愈：
+ * 改了 terms.json 不需要有人记得手动跑 `--sweep`，也不依赖"上次跑是什么时候"。
+ * 幂等 —— 归一后的值里不再含变体，再跑一次不会有任何改动。
+ */
+let normalizedEntries = 0
+const normalizedKeys = []
+for (const [key, value] of Object.entries(current)) {
+  const result = normalizeValue(key, value, terms)
+  if (result.changes.length === 0) continue
+  current[key] = result.value
+  normalizedEntries += 1
+  normalizedKeys.push({ key, from: value, to: result.value })
+}
+
+let normalizedPatterns = 0
+for (const [key, value] of [...patterns]) {
+  const result = normalizeValue(key, value, terms)
+  if (result.changes.length === 0) continue
+  patterns.set(key, result.value)
+  normalizedPatterns += 1
 }
 
 // Entries written by earlier runs keep the artefact rule too: a dictionary that
@@ -331,10 +395,18 @@ ${patternBody}
 
 console.log(
   `新增 ${added}  更新 ${updated}  跳过 ${skipped.length}  剔除 ${pruned}  ` +
+    `归一 ${normalizedEntries}+${normalizedPatterns}  ` +
     `模式 +${patternsAdded}/~${patternsUpdated}/-${patternsPruned}  合计词条 ${keys.length}，模式 ${patternKeys.length}`,
 )
 for (const s of skipped.slice(0, 15)) console.log(`  跳过 ${s.id}: ${s.why}`)
 if (skipped.length > 15) console.log(`  …还有 ${skipped.length - 15} 条`)
+
+// 归一必须点名。界面上某句话被改得别扭时，这段日志是唯一能定位到"是被规则改的
+// 还是模型翻的"的线索；只报一个数字等于没报。
+for (const n of normalizedKeys.slice(0, 15)) {
+  console.log(`  归一 ${JSON.stringify(n.key)}: ${n.from} → ${n.to}`)
+}
+if (normalizedKeys.length > 15) console.log(`  …还有 ${normalizedKeys.length - 15} 条被归一`)
 
 // 剔除必须点名：一条人工写进去的词条被某条规则判死时，计数是唯一会消失得
 // 无影无踪的东西。日志里说清楚是哪一条，才知道该修规则还是改词条。

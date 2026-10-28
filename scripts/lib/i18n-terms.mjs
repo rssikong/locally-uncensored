@@ -207,8 +207,7 @@ const labelFor = (term, text) => {
   return variant ?? text
 }
 
-/**
- * 这个词管不管这一条。`keys` 用英文 key 把关（chat 只管 key 里含 chat 的条目，
+/** 这个词管不管这一条。`keys` 用英文 key 把关（chat 只管 key 里含 chat 的条目，
  * 所以 conversation 的 48 条「对话」根本不在作用域内）；`values` / `both` 不设门槛。
  */
 function inScope(term, key) {
@@ -216,92 +215,83 @@ function inScope(term, key) {
   return true
 }
 
-function hitsOf(term, value, table) {
-  const tokens = tokenize(value, table)
-  const mine = tokens.filter((t) => t.term && t.term.id === term.id)
-  return {
-    canonical: mine.filter((t) => isCanonical(term, t.text)).length,
-    variants: mine.filter((t) => isVariant(term, t.text)),
-  }
-}
-
 /**
- * 把一条译文里的变体改写成 canonical。返回新的值与被改动的明细。
- * 幂等：改写结果里不再含变体，再跑一次不会产生变化。
+ * 把一条**整条就是个术语**的译文改写成 canonical。返回新的值与被改动的明细。
+ *
+ * 只在整条等值时改写，这是被数据逼出来的规则。第一版按"出现次数"替换，结果
+ * 96 条词条被改，其中一大批是错的：
+ *
+ *   一个对话   → 一个聊天      中文里「聊天」不可数
+ *   其他对话   → 其他聊天
+ *   长对话和 RAG → 长聊天和 RAG
+ *   Agent 模式必须在对话开始时启用 → …在聊天开始时启用
+ *
+ * 原因是「对话」在句子里是普通名词（a conversation），只有作为功能名/标签时
+ * 才该叫「聊天」。这个区别无法从字符串形态判断，所以自动改写只能退到最保守的
+ * 位置：整条译文就是那个词的时候。短语内部一律不碰，交给 overrides 人工处理。
+ *
+ * 幂等：结果不再等于任何变体，再跑一次没有改动。
  */
 export function normalizeValue(key, value, table, { only = null } = {}) {
   const changes = []
-  let out = value
+  const lead = value.slice(0, value.length - value.trimStart().length)
+  const trail = value.slice(value.trimEnd().length)
+  const core = value.trim()
+  if (!core) return { value, changes }
 
   for (const term of table.terms) {
     if (term.mode !== 'normalize') continue
     if (only && !only.has(term.id)) continue
     if (!inScope(term, key)) continue
-    if (allowed(term, key, out)) continue
+    if (allowed(term, key, value)) continue
+    if (!isVariant(term, core)) continue
 
-    const tokens = tokenize(out, table)
-    let touched = false
-    const rebuilt = tokens.map((token) => {
-      if (!token.term || token.term.id !== term.id) return token.text
-      if (!isVariant(term, token.text)) return token.text
-      touched = true
-      changes.push({ term: term.id, from: token.text, to: term.canonical })
-      return term.canonical
-    })
-    if (touched) out = rebuilt.join('')
+    changes.push({ term: term.id, from: core, to: term.canonical })
+    return { value: `${lead}${term.canonical}${trail}`, changes }
   }
 
-  return { value: out, changes }
+  return { value, changes }
 }
 
 /**
  * 违规清单。只收 `normalize` 的词 —— `report` 的词列出来只会变成噪音，
  * 而噪音会让人直接关掉这条检查。
  */
+/**
+ * 违规清单：整条译文**就是**某个变体。
+ *
+ * 判定和 `normalizeValue` 严格同一口径，这是有意的：两者不一致的话，门禁会报出
+ * 一堆 sweep 不会修的东西，流水线就永远红着跑到有人把规则关掉。短语内部的出现
+ * 不算违规 —— 那是「对话」作为普通名词的正常用法，不是术语不一致。
+ */
 export function findViolations(entries, patterns, table, { only = null } = {}) {
   const violations = []
 
-  for (const term of table.terms) {
-    if (term.mode !== 'normalize') continue
-    if (only && !only.has(term.id)) continue
-
-    if (term.tables.includes('entries')) {
-      for (const [key, value] of Object.entries(entries ?? {})) {
-        if (!inScope(term, key)) continue
-        if (allowed(term, key, value)) continue
-        const { canonical, variants } = hitsOf(term, value, table)
-        if (variants.length === 0) continue
-        violations.push({
-          term: term.id,
-          table: 'entries',
-          key,
-          expected: term.canonical,
-          actual: variants[0].text,
-          count: variants.length,
-          // 同一条里既有正确形态又有变体：最值得单独标出来，读起来自相矛盾。
-          kind: canonical > 0 ? 'mixed' : 'variant',
-        })
-      }
-    }
-
-    if (term.tables.includes('patterns')) {
-      for (const [pattern, replacement] of patterns ?? []) {
-        if (!inScope(term, pattern)) continue
-        if (allowed(term, pattern, replacement)) continue
-        const { canonical, variants } = hitsOf(term, replacement, table)
-        if (variants.length === 0) continue
-        violations.push({
-          term: term.id,
-          table: 'patterns',
-          key: pattern,
-          expected: term.canonical,
-          actual: variants[0].text,
-          count: variants.length,
-          kind: canonical > 0 ? 'mixed' : 'variant',
-        })
-      }
+  const scan = (where, key, value) => {
+    const core = String(value ?? '').trim()
+    if (!core) return
+    for (const term of table.terms) {
+      if (term.mode !== 'normalize') continue
+      if (only && !only.has(term.id)) continue
+      if (where === 'entries' && !term.tables.includes('entries')) continue
+      if (where === 'patterns' && !term.tables.includes('patterns')) continue
+      if (!inScope(term, key)) continue
+      if (allowed(term, key, value)) continue
+      if (!isVariant(term, core)) continue
+      violations.push({
+        term: term.id,
+        table: where,
+        key,
+        expected: term.canonical,
+        actual: core,
+        count: 1,
+        kind: 'variant',
+      })
     }
   }
+
+  for (const [key, value] of Object.entries(entries ?? {})) scan('entries', key, value)
+  for (const [pattern, replacement] of patterns ?? []) scan('patterns', pattern, replacement)
 
   return violations
 }

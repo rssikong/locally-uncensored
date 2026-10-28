@@ -23,9 +23,12 @@
  * the app itself tolerates a bad dictionary (it falls back to English), so
  * without this gate nobody would notice.
  */
+import { readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+
+import { findViolations, loadTerms } from './lib/i18n-terms.mjs'
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const DICT = join(root, 'src', 'lib', 'i18n', 'zh-CN.ts')
@@ -44,6 +47,16 @@ const { ZH_OVERRIDES } = await import(overrideUrl).catch((error) => {
   console.error(`i18n-check: 无法加载 src/lib/i18n/overrides.ts（${error.message}）`)
   process.exit(1)
 })
+
+// 术语表同理，而且更要紧：一张被读成空的表会让跨词条检查恒真，
+// 却仍然打印"通过" —— 那比没有检查更糟，因为它让人以为守住了。
+let terms
+try {
+  terms = loadTerms(readFileSync, join(root, 'src', 'lib', 'i18n', 'terms.json'))
+} catch (error) {
+  console.error(`i18n-check: ${error.message}`)
+  process.exit(1)
+}
 
 const problems = []
 const placeholders = (text) => (text.match(/\{\w+\}/g) ?? []).sort()
@@ -122,6 +135,21 @@ for (const [pattern, replacement] of ZH_PATTERNS ?? []) {
   if (pattern.trim() === '') problems.push('空模式')
 }
 
+// ── 跨词条一致性 ────────────────────────────────────────────────────────
+// 前面所有规则都在单条词条内部看，这一条比较的是"同一个英文词被译成了几种中文"。
+// 只有 mode:normalize 的词会进这个清单；report 的词（memory 的内存/记忆）故意不拦。
+const violations = findViolations(ZH_CN ?? {}, ZH_PATTERNS ?? [], terms)
+if (violations.length > 0) {
+  for (const v of violations.slice(0, 20)) {
+    const where = v.table === 'entries' ? '词条' : '模式'
+    const kind = v.kind === 'mixed' ? '·同条混用' : ''
+    problems.push(
+      `术语不一致 [${v.term}]${kind}（${where}）：「${v.actual}」应为「${v.expected}」 ${JSON.stringify(v.key)}`,
+    )
+  }
+  if (violations.length > 20) problems.push(`…术语违规共 ${violations.length} 处，上面只列了前 20`)
+}
+
 const total = Object.keys(ZH_CN ?? {}).length
 const manual = Object.keys(ZH_OVERRIDES ?? {}).length
 if (problems.length > 0) {
@@ -132,7 +160,7 @@ if (problems.length > 0) {
 }
 
 console.log(
-  `i18n-check: 通过（词条 ${total}，模式 ${(ZH_PATTERNS ?? []).length}，手动词条 ${manual}）`,
+  `i18n-check: 通过（词条 ${total}，模式 ${(ZH_PATTERNS ?? []).length}，手动词条 ${manual}，术语 ${terms.terms.length} 词）`,
 )
 if (shadowed.length > 0) {
   console.log(`  手动词条盖住了词典里的 ${shadowed.length} 条（有意为之才正常）：`)
