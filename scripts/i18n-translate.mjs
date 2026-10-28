@@ -20,6 +20,7 @@
  *    is the safe state; the sync commit still lands.
  *  - The token never reaches a log. Error bodies are redacted before printing.
  */
+import { readFileSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -72,10 +73,16 @@ if (pending.length === 0) {
   process.exit(0)
 }
 
+// 品牌清单只有一份：scripts/lib/i18n-brands.json。hint 里用 hard 那一半
+// （会影响模型行为的才进提示词），缺口扫描用 hard + also。
+const BRANDS = JSON.parse(
+  readFileSync(new URL('./lib/i18n-brands.json', import.meta.url), 'utf8'),
+)
+
 const SYSTEM = `You translate the user interface of a desktop AI application into Simplified Chinese.
 
 Rules:
-- Translate only interface copy. Keep product and technology names exactly as written: LU, LU Cloud, ComfyUI, Ollama, LM Studio, Hugging Face, CivitAI, GGUF, LoRA, MCP, API, GPU, VRAM, token.
+- Translate only interface copy. Keep product and technology names exactly as written: ${BRANDS.hard.join(', ')}.
 - Keep code, file paths, file extensions, URLs, keyboard shortcuts and option flags untouched.
 - The marker [[0]], [[1]] … stands for a value the app inserts (a number, a name). Keep every marker, exactly once, in the same order.
 - Chinese must read like software written in Chinese: short, direct, no machine-translation stiffness. No trailing full stop on buttons and menu items.

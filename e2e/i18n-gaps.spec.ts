@@ -1,5 +1,5 @@
 import { test, type Page } from '@playwright/test'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { tauriMockInit, DEFAULT_MODEL_NAME } from './support/tauri-mock'
@@ -25,15 +25,12 @@ import { seedOnboardingDone } from './support/cloud-mock'
  * runtime. Only a rendered page can tell you about those.
  */
 
-const BRANDS = [
-  'LU', 'LU Cloud', 'ComfyUI', 'Ollama', 'LM Studio', 'Hugging Face', 'CivitAI',
-  'GGUF', 'LoRA', 'MCP', 'API', 'GPU', 'VRAM', 'CPU', 'TTS', 'STT', 'Piper',
-  'Whisper', 'Qwen', 'Llama', 'Gemma', 'Mistral', 'DeepSeek', 'OpenAI',
-  'Anthropic', 'OpenRouter', 'Groq', 'Together', 'Jan', 'GPT4All', 'KoboldCpp',
-  'vLLM', 'LocalAI', 'TabbyAPI', 'Aphrodite', 'SGLang', 'MLX', 'Metal', 'CUDA',
-  'Vulkan', 'ROCm', 'Flux', 'SDXL', 'Wan', 'Hunyuan', 'AnimateDiff', 'FramePack',
-  'ACE Step', 'Windows', 'macOS', 'Linux', 'Android', 'iOS', 'GitHub', 'Discord',
-]
+// 品牌清单只有一份（scripts/lib/i18n-brands.json）。这里要的是并集：扫描时凡是
+// 产品名/技术名都不算"漏译"，而提示词只带 hard 那一半。
+const brands = JSON.parse(
+  readFileSync(new URL('../scripts/lib/i18n-brands.json', import.meta.url), 'utf8'),
+) as { hard: string[]; also: string[] }
+const BRANDS = [...brands.hard, ...brands.also]
 
 function looksLikeGap(text: string): boolean {
   const value = text.replace(/\s+/g, ' ').trim()
