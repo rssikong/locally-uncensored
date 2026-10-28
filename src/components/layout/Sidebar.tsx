@@ -644,13 +644,22 @@ export function Sidebar() {
               onClick={() => { setChatMode('lu'); setActiveConversation(latestConversationOfMode(useChatStore.getState().conversations, 'lu')); setView('chat'); setDispatchPicker(false) }}
               title="Chat"
               aria-label="Chat"
-              className={`flex items-center gap-1.25 justify-center px-2.5 h-[var(--control-h-md)] rounded-[5px] font-medium transition-all flex-1 min-w-0 ${
+              className={`flex items-center gap-1.25 justify-center px-2.5 h-[var(--control-h-md)] rounded-[5px] font-medium transition-all flex-1 min-w-0 whitespace-nowrap ${
                 !isCodingMode && !isRemoteMode
                   ? 'bg-gray-200 dark:bg-white/10 text-gray-900 dark:text-white border border-gray-300 dark:border-white/15'
                   : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5 border border-transparent'
               }`}
             >
-              <MessageSquare size={11} />
+              <MessageSquare size={11} className="shrink-0" />
+              {/* 这三个标签是 flex-1 等分的。侧栏拉到最小 200px 时每个只剩
+                  ~20.7px 给文字，而两个汉字约 22px —— 差一点点就够换行，
+                  于是「聊天」竖成两列。英文 Chat/Code 是单个词，CSS 不在词中
+                  断，所以只是溢出、不竖排。
+                  `whitespace-nowrap` 放在按钮（不是 span）上：white-space 会
+                  继承给子元素，而且三条类链必须逐字相同，见
+                  die-spalte-zeigt-ihre-primaeraktion.test.ts。
+                  `shrink-0` 放在图标上：不换行之后，溢出的宽度原先是从 SVG
+                  身上挤走的，图标被压成 0 宽、只剩文字。 */}
               <span>Chat</span>
             </button>
 
@@ -660,13 +669,13 @@ export function Sidebar() {
               onClick={() => { setChatMode('codex'); setActiveConversation(latestConversationOfMode(useChatStore.getState().conversations, 'codex')); setView('chat'); setDispatchPicker(false) }}
               title="Code"
               aria-label="Code"
-              className={`flex items-center gap-1.25 justify-center px-2.5 h-[var(--control-h-md)] rounded-[5px] font-medium transition-all flex-1 min-w-0 ${
+              className={`flex items-center gap-1.25 justify-center px-2.5 h-[var(--control-h-md)] rounded-[5px] font-medium transition-all flex-1 min-w-0 whitespace-nowrap ${
                 isCodingMode
                   ? 'bg-gray-200 dark:bg-white/10 text-gray-900 dark:text-white border border-gray-300 dark:border-white/15'
                   : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5 border border-transparent'
               }`}
             >
-              <Code size={11} />
+              <Code size={11} className="shrink-0" />
               <span>Code</span>
             </button>
 
@@ -726,13 +735,13 @@ export function Sidebar() {
               onClick={() => { setChatMode('remote'); setActiveConversation(dispatchedConversationId); setView('chat') }}
               title="Remote"
               aria-label="Remote"
-              className={`flex items-center gap-1.25 justify-center px-2.5 h-[var(--control-h-md)] rounded-[5px] font-medium transition-all flex-1 min-w-0 ${
+              className={`flex items-center gap-1.25 justify-center px-2.5 h-[var(--control-h-md)] rounded-[5px] font-medium transition-all flex-1 min-w-0 whitespace-nowrap ${
                 isRemoteMode
                   ? 'bg-gray-200 dark:bg-white/10 text-gray-900 dark:text-white border border-gray-300 dark:border-white/15'
                   : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5 border border-transparent'
               }`}
             >
-              <Radio size={11} />
+              <Radio size={11} className="shrink-0" />
               <span>Remote</span>
             </button>
           </div>
