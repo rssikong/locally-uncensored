@@ -82,7 +82,20 @@ Rules:
 - Never invent entries. Return exactly one result per input id.
 - Output JSON only: {"results":[{"id":"g1","text":"…"}]}`
 
-const redact = (text) => String(text ?? '').replace(/\bsk-[A-Za-z0-9_-]+/g, 'sk-***').replace(/Bearer\s+\S+/gi, 'Bearer ***')
+const redact = (text) => {
+  const scrubbed = String(text ?? '')
+    .replace(/\bsk-[A-Za-z0-9_-]{8,}/g, 'sk-***')
+    .replace(/Bearer\s+\S+/gi, 'Bearer ***')
+  // The literal token last, and the reason this is not just the two patterns
+  // above: the error body is written by the provider, and an unauthorised
+  // response often echoes the key back in whatever shape that provider uses —
+  // Google's `AIza…`, an Azure `Ocp-Apim-Subscription-Key`, a bare JWT. GitHub
+  // masks the secret value in the log stream, but only verbatim and only within
+  // one line; it cannot help with anything we quote or reformat ourselves. The
+  // length guard keeps a short or empty value from splitting every message.
+  if (token && token.length >= 8) return scrubbed.split(token).join('***')
+  return scrubbed
+}
 
 async function ask(batch) {
   const body = {

@@ -84,7 +84,49 @@ const toPattern = (text) => text.replace(SLOT, (_, index) => `{${index}}`).trim(
  *  letters, is a fragment artefact ("(The" → "（"): the model translated a
  *  sentence stub and dropped content. Keeping the English is the safe call. */
 const CJK = /[\u3400-\u9fff]/
+
+/**
+ * Letters or Chinese — what makes a fragment a *word* rather than a separator.
+ *
+ * The mirror image of the rule above. A fragment with no word of its own is
+ * punctuation (`·`, `(`, `…`), and the model still answers it as if it were a
+ * sentence: `·` came back as `· 已选`, `.` as `的文件。`. Written into the
+ * dictionary that is worse than a mistranslation, because the bridge matches a
+ * text node on its trimmed content and `{a} · {b}` in JSX renders exactly the
+ * text node `" · "` — trimmed to `·`. Every separator in the UI would read
+ * `· 已选`. Punctuation may become its full-width twin and nothing more, so
+ * length is the honest test: one character in, one character out, or no entry.
+ */
+const HAS_WORD = /[A-Za-z\u3400-\u9fff]/
+function isPunctuationBloat(key, value) {
+  if (HAS_WORD.test(key)) return false
+  return value.replace(/\s+/g, '').length > key.replace(/\s+/g, '').length
+}
+
+/**
+ * A single word may not come back as a phrase.
+ *
+ * Fragment groups are split at the DOM slots, and Chinese word order moves
+ * content across those boundaries: `Delete [[0]] from the LoRA folder?` puts the
+ * whole verb phrase into the slot that held "Delete". Correct for that sentence,
+ * wrong for the dictionary — the key is the bare word, the bridge matches it on
+ * every screen, and "Delete" is a button label and a tooltip in eight places.
+ * All eight read "从 LoRA 文件夹删除".
+ *
+ * The cut is measured, not aesthetic: of the 185 keys with no whitespace, four
+ * grew by five characters or more and all four were this artefact.
+ */
+const WORD_MAX_GROWTH = 4
+function isWordFragmentBloat(key, value) {
+  if (/\s/.test(key)) return false
+  if (!/[A-Za-z]/.test(key)) return false
+  if (key.length > 12) return false
+  return value.length - key.length > WORD_MAX_GROWTH
+}
+
 function isFragmentArtefact(key, value) {
+  if (isPunctuationBloat(key, value)) return true
+  if (isWordFragmentBloat(key, value)) return true
   if (CJK.test(value)) return false
   if (!/[A-Za-z]/.test(key)) return false
   return value !== key

@@ -11,6 +11,13 @@
  *   - a pattern whose replacement does not use every slot
  *   - duplicate keys (JSON objects hide those silently; the object literal in
  *     zh-CN.ts does not, but a bad write could still produce one)
+ *   - a punctuation fragment that was answered as a sentence (`·` → `· 已选`):
+ *     the bridge trims a text node before matching, so `{a} · {b}` in JSX hits
+ *     that entry and every separator in the UI changes. `i18n-apply.mjs` prunes
+ *     these on write; this is the backstop that catches a hand edit.
+ *   - a bare word that was answered as a whole sentence (`Delete` → `从 LoRA
+ *     文件夹删除`), which happens when Chinese word order moves content across a
+ *     slot boundary; the key is that word's button label everywhere else.
  *
  * A failure here blocks the commit in the sync workflow, which is the point:
  * the app itself tolerates a bad dictionary (it falls back to English), so
@@ -32,6 +39,26 @@ const slots = (text) => (text.match(/\{\d+\}/g) ?? []).sort()
 
 const source = await readFile(DICT, 'utf8')
 
+/**
+ * Same rule as `isPunctuationBloat` in i18n-apply.mjs: a key with no letters
+ * and no Chinese is punctuation, so it may only map to something of its own
+ * length. Longer means a phrase was written into a separator's slot.
+ */
+const HAS_WORD = /[A-Za-z\u3400-\u9fff]/
+function isPunctuationBloat(key, value) {
+  if (HAS_WORD.test(key)) return false
+  return value.replace(/\s+/g, '').length > key.replace(/\s+/g, '').length
+}
+
+/** Same rule and threshold as `isWordFragmentBloat` in i18n-apply.mjs. */
+const WORD_MAX_GROWTH = 4
+function isWordFragmentBloat(key, value) {
+  if (/\s/.test(key)) return false
+  if (!/[A-Za-z]/.test(key)) return false
+  if (key.length > 12) return false
+  return value.length - key.length > WORD_MAX_GROWTH
+}
+
 // Duplicate keys are invisible once the object is built, so count them in the
 // text. A key appears once as `"key":`.
 const seen = new Map()
@@ -52,6 +79,12 @@ for (const [key, value] of Object.entries(ZH_CN ?? {})) {
   }
   if (placeholders(key).join(',') !== placeholders(value).join(',')) {
     problems.push(`占位符不一致：${key} → ${value}`)
+  }
+  if (isPunctuationBloat(key, value)) {
+    problems.push(`标点碎片被当成句子翻译：${JSON.stringify(key)} → ${JSON.stringify(value)}`)
+  }
+  if (isWordFragmentBloat(key, value)) {
+    problems.push(`单词被塞进了整句：${JSON.stringify(key)} → ${JSON.stringify(value)}`)
   }
 }
 
