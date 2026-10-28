@@ -337,8 +337,14 @@ function looksLikeClasses(text) {
 }
 
 /** "Qwen 3.6 35B MoE" is a model name; translating it breaks the catalogue. */
+/**
+ * "Qwen 3.6 35B MoE", "Gemma 4 12B HERETIC" — a name, not copy.
+ *
+ * 尺寸标记是唯一可靠的信号。原先还有一条"每个词都大写就算型号"，它会在裁剪阶段
+ * 把 Chat Backup、Cloud API Keys、No GPU 这类正常英文标题删掉 —— 英文 UI 本来
+ * 就是 Title Case。只删那一条，尺寸判据不动。
+ */
 function looksLikeName(text) {
-  if (/^(?:[A-Z0-9][\w.+-]*)(?:\s+[A-Z0-9][\w.+-]*)+$/.test(text)) return true
   return /\b\d+(?:\.\d+)?\s*[BT]\b/.test(text) && !/[a-z]{4}/.test(text)
 }
 

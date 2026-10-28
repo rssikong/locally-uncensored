@@ -40,9 +40,21 @@ function looksLikeGap(text: string): boolean {
   if (!/[A-Za-z]{2}/.test(value)) return false
   if (BRANDS.includes(value)) return false
   if (BRANDS.some((brand) => value === brand || value.startsWith(`${brand}:`))) return false
-  // Model names and sizes: every word capitalised (or numeric) and no lowercase
-  // word of its own — "DeepSeek V4 Flash 0731", "11 GB", ">20 GB".
-  if (/^(?:[A-Z0-9][\w.+-]*\s*)+$/.test(value)) return false
+  // 型号名带尺寸标记（27B / 1.5B），这是唯一可靠的信号。
+  //
+  // 原先这里是 `/^(?:[A-Z0-9][\w.+-]*\s*)+$/` —— "每个词都大写就当模型名"。
+  // 英文 UI 标签本来就是 Title Case，于是 Chat Backup、Installed、Get、No GPU
+  // 全被当成型号排除了，扫描器因此长期少报：设置页 13 个英文标题、模型页十几个
+  // 标签，一条都没进过报告。判据与 scripts/i18n-extract.mjs 的 looksLikeName
+  // 保持一致，宁可多报一条"Qwen 3.8 27B (Ollama)"，也不要漏掉整页。
+  if (/\b\d+(?:\.\d+)?\s*[BT]\b/.test(value) && !/[a-z]{4}/.test(value)) return false
+
+  // 上一轮放宽后，型号名成了噪音的主力（39/53）。这两条把它们收回去，同时
+  // 不碰任何 UI 标签：
+  //   - "Gemma 4 12B" / "GLM 4.7 Flash" / "Phi-4 Mini"：全大写分词 + 含数字
+  //   - "11 GB" / ">20 GB" / "≤4 GB"：纯容量写法
+  if (/\d/.test(value) && /^(?:[A-Z0-9][\w.+-]*\s*)+$/.test(value)) return false
+  if (/^[<>≤≥]?\s*\d+(\.\d+)?\s*(GB|MB|TB|KB)$/i.test(value)) return false
   // identifiers, paths, urls, versions, key caps
   if (/^https?:\/\//i.test(value)) return false
   if (/^[\w.+-]+@[\w.-]+$/.test(value)) return false

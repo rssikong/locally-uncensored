@@ -92,12 +92,22 @@ function looksLikeCopy(value) {
   if (text.length < 2) return false
   if (!/[A-Za-z]{2}/.test(text)) return false
   if (/^https?:\/\//i.test(text) || /^[\w.+-]+@[\w.-]+$/.test(text)) return false
-  if (/^[a-z0-9]+(?:[-_.][a-z0-9]+)*$/i.test(text) && !text.includes(' ')) return false
   if (/^[.#]?[a-z][\w-]*$/.test(text)) return false
   if (/^[\d\s.,:%+-]+$/.test(text)) return false
   if (/[\\/]/.test(text) && !/\s/.test(text)) return false
   if (/^\.[a-z0-9]{1,5}$/i.test(text)) return false
   if (/^-{1,2}[a-z]/i.test(text)) return false
+  // 单个 token 既可能是 UI 标签（Installed / Get / All），也可能是标识符
+  // （q4_k_m / foo-bar / modelId / CUDA）。原先一条 `^[a-z0-9]+([-_.][a-z0-9]+)*$`
+  // 把两拨全部丢掉了 —— 英文 UI 里大量按钮就是一个词，于是它们从来没进过词典。
+  // 现在只丢"有标识符特征"的，剩下的交给上层判断。
+  if (!text.includes(' ')) {
+    if (/[-_.:/]/.test(text)) return false // foo-bar, a.b, v1.2
+    if (/\d/.test(text)) return false // q4_k_m, 8B, v2
+    if (/^[A-Z]{2,}$/.test(text)) return false // CUDA, GPU, API
+    if (/^[a-z]+$/.test(text)) return false // constructor, localhost, textarea
+    if (/^[a-z]+[A-Z]/.test(text)) return false // modelId, isInstalled
+  }
   return true
 }
 
@@ -230,9 +240,16 @@ function looksLikeClasses(text) {
   return (text.match(CSS_TOKEN) ?? []).length >= 2
 }
 
-/** "Qwen 3.6 35B MoE", "Gemma 4 12B HERETIC" — a name, not copy. */
+/**
+ * "Qwen 3.6 35B MoE", "Gemma 4 12B HERETIC" — a name, not copy.
+ *
+ * 尺寸标记（27B / 1.5B / 744B）是唯一可靠的信号。原先还有一条"每个词都大写
+ * 就算型号"，它把 Chat Backup、Cloud API Keys、No GPU、Troubleshoot 这类正常
+ * 英文标题全判成了名字 —— 英文 UI 本来就是 Title Case，那条规则的实际效果是
+ * "凡标题不译"。这里只删掉那一条，尺寸标记的判据一个字没动：改它会连带把
+ * 已经译好的型号重新判死。
+ */
 function looksLikeName(text) {
-  if (/^(?:[A-Z0-9][\w.+-]*)(?:\s+[A-Z0-9][\w.+-]*)+$/.test(text)) return true
   return /\b\d+(?:\.\d+)?\s*[BT]\b/.test(text) && !/[a-z]{4}/.test(text)
 }
 
