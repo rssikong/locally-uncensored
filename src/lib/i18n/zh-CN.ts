@@ -819,7 +819,7 @@ export const ZH_CN: Record<string, string> = {
   "Card per task": "按任务分配显卡",
   "Casual Guy": "随性男声",
   "Catalogue": "目录",
-  "Caveman Mode": "穴居人模式",
+  "Caveman Mode": "惜字如金",
   "Caveman mode": "原始人模式",
   "Chain items freely: item:<n> uses the result of item n of the same order. Details: create_options with intent, preset or model.": "可自由串联各项：item:<n> 使用同一订单中第 n 项的结果。详情：create_options 传入 intent、preset 或 model。",
   "Chain-of-thought model, shows its thinking process": "思维链模型，会展示其思考过程",
