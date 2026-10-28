@@ -1,4 +1,7 @@
 import { test, type Page } from '@playwright/test'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { tauriMockInit, DEFAULT_MODEL_NAME } from './support/tauri-mock'
 import { seedOnboardingDone } from './support/cloud-mock'
 
@@ -10,9 +13,12 @@ import { seedOnboardingDone } from './support/cloud-mock'
  * and did the dictionary miss it" — by booting the real UI in Chinese mode and
  * reading the DOM. It is opt-in: it produces a report, it is not a gate.
  *
- *   $env:LU_I18N_SCAN='1'; npx playwright test e2e/i18n-gaps.spec.ts
+ *   node scripts/i18n-gaps.mjs          # 包装器：设好环境变量、跑 chromium、读回 JSON
+ *   LU_I18N_SCAN=1 npx playwright test e2e/i18n-gaps.spec.ts --project=chromium
  *
- * Output: test-results/i18n-gaps.json (gitignored) + a console summary.
+ * Output: <repo>/test-results/i18n-gaps.json (gitignored) — 绝对路径会打印出来，
+ * 也接受 LU_I18N_GAPS_OUT 覆盖。以前这里写的是相对 cwd 的路径，从别的目录跑就会
+ * 写到一个你找不到的地方。
  *
  * Why it matters: strings reach the screen through paths the AST cannot see —
  * a constant passed as a prop, an array of options, a sentence assembled at
@@ -105,15 +111,41 @@ test('collect the strings the app still shows in English', async ({ page }) => {
   await page.waitForTimeout(2500)
 
   const hits: Hit[] = []
-  const views = ['聊天', '创作', '语音', '对比', '跑分', '模型', '设置']
-  for (const view of views) {
-    const button = page.getByRole('button', { name: view, exact: true }).first()
-    if ((await button.count()) === 0) continue
-    await button.click({ timeout: 5000 }).catch(() => {})
-    await page.waitForTimeout(1200)
-    await harvest(page, view, hits)
+
+  // 导航按结构定位，不按中文名。`nav[aria-label="Main"]` 里的 Main 不在词典里
+  // （词典只有 "Main I2V model" 这类长串），所以术语怎么统一都不会让选择器失效。
+  //
+  // 以前是 `getByRole('button', { name: '聊天' })` 加 `if (count === 0) continue`：
+  // chat 一旦统一成别的译法，那一页就被静默跳过，报告反而变成"全好了"。这才是
+  // 这个扫描器最坏的失败方式 —— 它不报错，它报平安。
+  const navButtons = page.locator('nav[aria-label="Main"]').first().getByRole('button')
+  const navCount = await navButtons.count()
+  if (navCount === 0) {
+    throw new Error('nav[aria-label="Main"] 里一个按钮都没有 —— Header 结构变了？')
   }
-  await harvest(page, 'chat', hits)
+
+  const visited: string[] = []
+  for (let index = 0; index < navCount; index += 1) {
+    const button = navButtons.nth(index)
+    const label = ((await button.innerText().catch(() => '')) || '').replace(/\s+/g, ' ').trim()
+    await button.click({ timeout: 5000 })
+    await page.waitForTimeout(1200)
+    // view 用当前真实标签：术语改了，报告跟着改，不会撒谎。
+    const name = label || `nav#${index}`
+    await harvest(page, name, hits)
+    visited.push(name)
+  }
+  await harvest(page, 'start', hits)
+
+  // 本地模式 7 个目标；云端模式会隐藏 localOnly 的三个，剩 4 个。
+  // 少于这个数说明结构变了，必须响 —— 而不是安静地少扫几页。
+  const minViews = Number(process.env.LU_I18N_MIN_VIEWS ?? 6)
+  if (visited.length < minViews) {
+    throw new Error(
+      `只访问到 ${visited.length} 个视图（期望 ≥ ${minViews}）：${visited.join(' / ')}` +
+        ' —— 导航结构变了，还是 appMode 变成了 cloud？',
+    )
+  }
 
   // Deduplicate by text: one entry per distinct string, with where it was seen.
   const unique = new Map<string, Hit & { views: Set<string> }>()
@@ -126,11 +158,15 @@ test('collect the strings the app still shows in English', async ({ page }) => {
     .map((hit) => ({ text: hit.text, kind: hit.kind, views: [...hit.views] }))
     .sort((a, b) => a.text.localeCompare(b.text))
 
-  const fs = await import('node:fs')
-  fs.mkdirSync('test-results', { recursive: true })
-  fs.writeFileSync('test-results/i18n-gaps.json', JSON.stringify(report, null, 2), 'utf8')
+  const outFile = process.env.LU_I18N_GAPS_OUT
+    ? resolve(process.env.LU_I18N_GAPS_OUT)
+    : resolve(dirname(fileURLToPath(import.meta.url)), '..', 'test-results', 'i18n-gaps.json')
+  mkdirSync(dirname(outFile), { recursive: true })
+  writeFileSync(outFile, JSON.stringify(report, null, 2), 'utf8')
 
-  console.log(`\n仍显示英文的文本：${report.length} 条（写入 test-results/i18n-gaps.json）`)
+  console.log(`\n仍显示英文的文本：${report.length} 条`)
+  console.log(`写入 ${outFile}`)
+  console.log(`（cwd 是 ${process.cwd()}，路径与它无关）`)
   for (const item of report.slice(0, 40)) {
     console.log(`  [${item.kind}] ${JSON.stringify(item.text).slice(0, 80)}  (${item.views.join('/')})`)
   }
