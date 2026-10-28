@@ -73,6 +73,7 @@ export function setDictionary(
   dictionary = strings
   activePatterns = patterns
   compiledPatterns = null
+  sortedKeys = null
 }
 
 /** Restore the bundled dictionary. */
@@ -80,10 +81,43 @@ export function resetDictionary(): void {
   dictionary = ZH_CN
   activePatterns = ZH_PATTERNS
   compiledPatterns = null
+  sortedKeys = null
+}
+
+let sortedKeys: string[] | null = null
+
+/**
+ * Look up a string that was cut before we saw it.
+ *
+ * Model cards shorten catalogue copy to 89 characters plus `…` inside
+ * `shortBlurb` (ModelTiles.tsx), i.e. before the text reaches the DOM. A cut
+ * sentence matches nothing in a dictionary keyed by whole sentences, so the two
+ * longest blurbs stayed English on the card while their translations sat
+ * unused in zh-CN.ts.
+ *
+ * A head this long (16+ characters, usually ~89) is unambiguous, and the card
+ * is `line-clamp-2`, so the longer Chinese cannot break the layout the way a
+ * fixed-height box would.
+ */
+function lookupTruncated(source: string): string | null {
+  if (source.length < 17 || !source.endsWith('…')) return null
+  const head = source.slice(0, -1)
+  if (sortedKeys === null) sortedKeys = Object.keys(dictionary).sort()
+  // Binary search for the first key that is not ordered before `head`.
+  let lo = 0
+  let hi = sortedKeys.length
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if (sortedKeys[mid] < head) lo = mid + 1
+    else hi = mid
+  }
+  const candidate = sortedKeys[lo]
+  if (candidate !== undefined && candidate.startsWith(head)) return dictionary[candidate]
+  return null
 }
 
 /** Chinese for an English source string, or `null` when none is known. */
-export function translate(source: string): string | null {
+export function translate(source: string, depth = 0): string | null {
   // Overrides first, and `Object.hasOwn` for the same reason as the dictionary
   // below: a rendered word like "constructor" would otherwise reach
   // Object.prototype and return a function instead of a string.
@@ -93,16 +127,35 @@ export function translate(source: string): string | null {
   // "constructor" would otherwise hit Object.prototype and return a function.
   if (Object.hasOwn(dictionary, source)) return dictionary[source]
 
+  // Nested lookups (depth > 0) only accept exact entries. Running patterns
+  // again on a fragment is what produced "Large 个对话模型": the outer pattern
+  // `{0} {1} run on LU Cloud.` splits lazily, so `{1}` was "big for this
+  // graphics card. Large chat models", and `{0} chat models` happily matched
+  // that half-sentence. A captured value is a name or a phrase, never a
+  // sentence to be re-parsed.
+  if (depth > 0) return lookupTruncated(source)
+
   for (const pattern of patterns()) {
     const match = pattern.regex.exec(source)
     if (!match) continue
     return pattern.replacement.replace(/\{(\d+)\}/g, (whole, index: string) => {
       const captured = match[Number(index) + 1]
-      return captured ?? whole
+      if (captured === undefined) return whole
+      // A slot often holds English of its own — `将 [[0]] 重置为默认` with [[0]]
+      // = "Voice & Remote", or `[[0]] [[1]] run on LU Cloud.`. Inserting it raw
+      // produced half-Chinese sentences: "将 Voice & Remote 重置为默认".
+      // Translate the captured value once, and only once: the guard against
+      // `captured === source` keeps a slot-only pattern from recursing forever,
+      // and `depth` stops a second nested lookup from starting a chain.
+      if (depth === 0 && captured !== source) {
+        const inner = translate(captured, 1)
+        if (inner !== null) return inner
+      }
+      return captured
     })
   }
 
-  return null
+  return lookupTruncated(source)
 }
 
 /** How many exact entries the dictionary carries (for the settings/diagnostic line). */

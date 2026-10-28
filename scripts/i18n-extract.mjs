@@ -102,7 +102,10 @@ function looksLikeCopy(value) {
   // 把两拨全部丢掉了 —— 英文 UI 里大量按钮就是一个词，于是它们从来没进过词典。
   // 现在只丢"有标识符特征"的，剩下的交给上层判断。
   if (!text.includes(' ')) {
-    if (/[-_.:/]/.test(text)) return false // foo-bar, a.b, v1.2
+    // 连字符要分两种：`Sub-agents` / `Multi-agent` 是英文 UI 里正常的合成词，
+    // `foo-bar` / `app-shell` 是 CSS 类和路径。区别在首段是否大写开头且
+    // 每一段都是纯小写字母 —— 大写开头说明它是给人读的。
+    if (/[-_.:/]/.test(text) && !/^[A-Z][a-z]+(?:-[a-z]+)+$/.test(text)) return false
     if (/\d/.test(text)) return false // q4_k_m, 8B, v2
     if (/^[A-Z]{2,}$/.test(text)) return false // CUDA, GPU, API
     if (/^[a-z]+$/.test(text)) return false // constructor, localhost, textarea
